@@ -1,4 +1,4 @@
-import { Link, useNavigate } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { supabase } from "../../../lib/supabase";
@@ -7,6 +7,7 @@ import { useAuth } from "../../context/AuthContext";
 
 export default function ResetPassword() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [showPassword, setShowPassword] = useState(false);
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -16,17 +17,30 @@ export default function ResetPassword() {
   const { session } = useAuth();
 
   useEffect(() => {
-    // Listen for the hash change. Supabase handles the session natively 
-    // when arriving with an access_token in the URL.
-    const hash = window.location.hash;
-    if (hash && hash.includes("error_description")) {
-      const params = new URLSearchParams(hash.substring(1));
-      const errorDesc = params.get("error_description");
-      if (errorDesc) {
-         setError(errorDesc.replace(/\+/g, " "));
+    // Check for PKCE flow `code` first
+    const code = searchParams.get("code");
+    if (code) {
+      setLoading(true);
+      supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
+        setLoading(false);
+        if (error) {
+          setError("The password reset link has expired or is invalid. Please request a new one.");
+        } else {
+          navigate("/reset-password", { replace: true });
+        }
+      });
+    } else {
+      // Fallback for legacy implicit grant
+      const hash = window.location.hash;
+      if (hash && hash.includes("error_description")) {
+        const params = new URLSearchParams(hash.substring(1));
+        const errorDesc = params.get("error_description");
+        if (errorDesc) {
+           setError(errorDesc.replace(/\+/g, " "));
+        }
       }
     }
-  }, []);
+  }, [searchParams, navigate]);
 
   const handleUpdatePassword = async (e: React.FormEvent) => {
     e.preventDefault();

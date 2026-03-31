@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useParams, useNavigate } from "react-router";
 import { ArrowLeft, Share2, Heart, Star, MapPin, Shield, MessageCircle, Phone, ShoppingCart, ChevronLeft, ChevronRight, BadgeCheck } from "lucide-react";
 import {  } from "../data/mockData";
 import { useCurrency } from "../hooks/useCurrency";
 import { useCart } from "../context/CartContext";
+import { supabase } from "../../lib/supabase";
 import { toast } from "sonner";
 export default function ProductDetail() {
   const formatPrice = useCurrency();
@@ -12,6 +13,7 @@ export default function ProductDetail() {
   const { addToCart } = useCart();
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [isFavorite, setIsFavorite] = useState(false);
+  const [sellerProfile, setSellerProfile] = useState<any>(null);
 
   const CUSTOM_PRODUCTS_KEY = "greenhub-custom-products";
   const customProductsRaw = localStorage.getItem(CUSTOM_PRODUCTS_KEY);
@@ -95,6 +97,18 @@ export default function ProductDetail() {
   const allProducts = [...customProducts, ...defaultProducts];
   const foundProduct = allProducts.find((p: any) => p.id.toString() === id);
 
+  useEffect(() => {
+    if (foundProduct?.sellerId) {
+      if (typeof foundProduct.sellerId === 'string' && foundProduct.sellerId.length > 10) { // Supabase UUID lookup
+        supabase.from('profiles').select('*').eq('id', foundProduct.sellerId).single()
+          .then(({ data }) => {
+            if (data) setSellerProfile(data);
+          })
+          .catch(console.error);
+      }
+    }
+  }, [foundProduct?.sellerId]);
+
   if (!foundProduct) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
@@ -120,12 +134,16 @@ export default function ProductDetail() {
     views: Math.floor(Math.random() * 500) + 50,
     seller: {
       id: foundProduct.sellerId || 1,
-      name: foundProduct.sellerName || "GreenHub Seller",
-      avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200",
+      name: sellerProfile?.full_name || foundProduct.sellerName || "GreenHub Seller",
+      avatar: sellerProfile?.avatar_url || "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200",
       rating: foundProduct.rating || 4.8,
       reviews: foundProduct.reviews || 0,
       verified: ['crown', 'blue', 'standard'].includes(foundProduct.sellerTier),
-      memberSince: "Jan 2023",
+      memberSince: sellerProfile?.created_at 
+        ? new Date(sellerProfile.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) 
+        : sellerProfile?.updated_at
+          ? new Date(sellerProfile.updated_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+          : "Jan 2023",
       responseTime: "Within hours",
       tier: foundProduct.sellerTier || "standard"
     },

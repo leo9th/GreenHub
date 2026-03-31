@@ -1,12 +1,14 @@
 import { useState, useEffect } from "react";
 import { Link, useSearchParams } from "react-router";
-import { Search, Filter, ArrowLeft, ChevronDown, X, Star, MapPin, BadgeCheck } from "lucide-react";
+import { Search, Filter, ArrowLeft, X, BadgeCheck } from "lucide-react";
 import {  categories, nigerianStates  } from "../data/mockData";
 import { useCurrency } from "../hooks/useCurrency";
+import { ProductCard } from "../components/cards/ProductCard";
 
 export default function Products() {
   const [searchParams, setSearchParams] = useSearchParams();
   const formatPrice = useCurrency();
+  const CUSTOM_PRODUCTS_KEY = "greenhub-custom-products";
   const [showFilters, setShowFilters] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>(searchParams.get("category") || "all");
 
@@ -32,7 +34,7 @@ export default function Products() {
   const [sortBy, setSortBy] = useState<string>("recent");
   const [searchQuery, setSearchQuery] = useState("");
 
-  const products = [
+  const defaultProducts = [
     {
       id: 1,
       image: "https://images.unsplash.com/photo-1632661674596-df8be070a5c5?w=400",
@@ -106,6 +108,10 @@ export default function Products() {
       sellerTier: "blue"
     },
   ];
+
+  const customProductsRaw = localStorage.getItem(CUSTOM_PRODUCTS_KEY);
+  const customProducts = customProductsRaw ? JSON.parse(customProductsRaw) : [];
+  const products = [...customProducts, ...defaultProducts];
 
   const conditions = ["New", "Like New", "Good", "Fair"];
   const priceRanges = [
@@ -226,33 +232,18 @@ export default function Products() {
       <div className="px-4 py-4 max-w-7xl mx-auto">
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
           {filteredProducts.map((product) => (
-            <Link
-              key={product.id}
-              to={`/products/${product.id}`}
-              className="bg-white rounded-lg overflow-hidden border border-gray-200 hover:shadow-md transition-shadow"
-            >
-              <div className="relative aspect-square bg-gray-100">
-                <img src={product.image} alt={product.title} className="w-full h-full object-cover" />
-                <span className="absolute top-2 right-2 bg-[#22c55e] text-white text-xs px-2 py-1 rounded">
-                  {product.condition}
-                </span>
-              </div>
-              <div className="p-3">
-                <h3 className="text-sm font-medium text-gray-800 mb-1 line-clamp-2 flex items-center">
-                  <span className="truncate">{product.title}</span>
-                  {getTierIcon(product.sellerTier)}
-                </h3>
-                <p className="text-lg font-bold text-gray-900 mb-1">{(product.price)}</p>
-                <div className="flex items-center gap-1 text-xs text-gray-500 mb-2">
-                  <MapPin className="w-3 h-3" />
-                  <span className="line-clamp-1">{product.location}</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <Star className="w-3 h-3 fill-[#eab308] text-[#eab308]" />
-                  <span className="text-xs text-gray-600">{product.rating}</span>
-                  <span className="text-xs text-gray-400">({product.reviews})</span>
-                </div>
-              </div>
+            <Link key={product.id} to={`/products/${product.id}`}>
+              <ProductCard
+                image={product.image}
+                condition={product.condition}
+                title={product.title}
+                titleAdornment={getTierIcon(product.sellerTier)}
+                price={product.price}
+                priceDisplay={formatPrice(product.price)}
+                location={product.location}
+                rating={product.rating}
+                reviews={product.reviews}
+              />
             </Link>
           ))}
         </div>

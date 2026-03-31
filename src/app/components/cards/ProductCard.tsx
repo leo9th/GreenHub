@@ -1,14 +1,19 @@
 import { Star, MapPin } from "lucide-react";
 import { Badge } from "../ui/badge";
 import { Card, CardContent } from "../ui/card";
+import { ReactNode } from "react";
 
 export interface ProductCardProps {
   image: string;
   condition: "New" | "Like New" | "Good" | "Fair";
   title: string;
   price: number;
+  priceDisplay?: string;
   location: string;
   rating: number;
+  reviews?: number;
+  titleAdornment?: ReactNode;
+  topRightBadge?: ReactNode;
   deliveryFee?: number;
 }
 
@@ -17,8 +22,12 @@ export function ProductCard({
   condition,
   title,
   price,
+  priceDisplay,
   location,
   rating,
+  reviews,
+  titleAdornment,
+  topRightBadge,
   deliveryFee,
 }: ProductCardProps) {
   const getConditionColor = (cond: string) => {
@@ -42,13 +51,15 @@ export function ProductCard({
         <Badge className={`absolute top-2 left-2 ${getConditionColor(condition)}`}>
           {condition}
         </Badge>
+        {topRightBadge && <div className="absolute top-2 right-2">{topRightBadge}</div>}
       </div>
       <CardContent className="p-4">
-        <h3 className="text-sm font-medium text-gray-900 line-clamp-2 min-h-[40px] mb-2 leading-tight">
-          {title}
+        <h3 className="text-sm font-medium text-gray-900 line-clamp-2 min-h-[40px] mb-2 leading-tight flex items-center gap-1">
+          <span className="truncate">{title}</span>
+          {titleAdornment}
         </h3>
         <p className="text-lg font-bold text-gray-900 mb-2">
-          ₦{price.toLocaleString()}
+          {priceDisplay ?? `₦${price.toLocaleString()}`}
         </p>
         <div className="flex items-center justify-between text-xs text-gray-500 mb-2">
           <div className="flex items-center gap-1">
@@ -58,6 +69,7 @@ export function ProductCard({
           <div className="flex items-center gap-1 text-yellow-500">
             <Star className="w-3 h-3 fill-current" />
             <span className="text-gray-700">{rating.toFixed(1)}</span>
+            {reviews !== undefined && <span className="text-gray-400">({reviews})</span>}
           </div>
         </div>
         {deliveryFee !== undefined && (

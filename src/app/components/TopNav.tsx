@@ -168,7 +168,7 @@ export default function TopNav() {
                 )}
               </div>
               <Link
-                to="/seller/products/add"
+                to="/seller/products/new"
                 className="hidden md:flex bg-[#f97316] hover:bg-[#ea580c] text-white font-bold px-6 py-2 rounded shadow-sm transition-colors text-sm tracking-wide"
               >
                 SELL

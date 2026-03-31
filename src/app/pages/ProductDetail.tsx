@@ -205,7 +205,7 @@ export default function ProductDetail() {
               <Phone className="w-4 h-4 text-gray-600" />
             </a>
             <Link
-              to={`/sellers/${product.seller.id}/reviews`}
+              to={`/seller/${product.seller.id}/reviews`}
               className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700"
             >
               View Profile

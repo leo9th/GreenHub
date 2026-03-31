@@ -1,4 +1,11 @@
 {
+  "redirects": [
+    {
+      "source": "/seller/products/add",
+      "destination": "/seller/products/new",
+      "permanent": false
+    }
+  ],
   "rewrites": [
     {
       "source": "/(.*)",

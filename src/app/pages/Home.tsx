@@ -1,10 +1,11 @@
 import { Link } from "react-router";
-import { Search, Bell, ShoppingCart, MapPin, ChevronDown, Star, Globe, Home as HomeIcon, PlusCircle, MessageCircle, User, Zap } from "lucide-react";
+import { Search, ChevronDown, Star, Globe, Home as HomeIcon, PlusCircle, MessageCircle, Zap } from "lucide-react";
 import { categories } from "../data/mockData";
 import { getMockProductsForRegion } from "../data/mockData";
 import { useRegion, regions } from "../context/RegionContext";
 import { useCurrency } from "../hooks/useCurrency";
 import { useState } from "react";
+import { ProductCard } from "../components/cards/ProductCard";
 
 export default function Home() {
   const { activeRegion, setRegion } = useRegion();
@@ -213,11 +214,25 @@ export default function Home() {
 
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 gap-4">
               {products.map((product) => (
-                <ProductCard 
-                  key={product.id} 
-                  product={product} 
-                  isPromoted={featuredProduct?.id === product.id} 
-                />
+                <Link key={product.id} to={`/products/${product.id}`}>
+                  <ProductCard
+                    image={product.image}
+                    condition={product.condition}
+                    title={product.title}
+                    price={product.price}
+                    priceDisplay={formatPrice(product.price)}
+                    location={product.location}
+                    rating={product.rating}
+                    topRightBadge={
+                      featuredProduct?.id === product.id ? (
+                        <span className="bg-yellow-400 text-yellow-900 text-[10px] md:text-xs font-bold px-2 py-1 rounded flex items-center gap-1 shadow-sm">
+                          <Zap className="w-3 h-3 fill-current" />
+                          Ad
+                        </span>
+                      ) : undefined
+                    }
+                  />
+                </Link>
               ))}
             </div>
           </div>
@@ -227,7 +242,17 @@ export default function Home() {
             <h2 className="font-semibold text-gray-800 mb-3">Recently Viewed</h2>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 gap-4">
               {products.slice(0, 2).map((product) => (
-                <ProductCard key={product.id} product={product} />
+                <Link key={product.id} to={`/products/${product.id}`}>
+                  <ProductCard
+                    image={product.image}
+                    condition={product.condition}
+                    title={product.title}
+                    price={product.price}
+                    priceDisplay={formatPrice(product.price)}
+                    location={product.location}
+                    rating={product.rating}
+                  />
+                </Link>
               ))}
             </div>
           </div>
@@ -245,37 +270,5 @@ export default function Home() {
         </div>
       </div>
     </div>
-  );
-}
-
-function ProductCard({ product, isPromoted = false }: { product: any, isPromoted?: boolean }) {
-  const formatPrice = useCurrency();
-  return (
-    <Link to={`/products/${product.id}`} className={`bg-white rounded-lg overflow-hidden border transition-shadow block ${isPromoted ? 'border-[#22c55e] shadow-[0_0_15px_rgba(34,197,94,0.15)] bg-green-50/20' : 'border-gray-200 hover:shadow-md'}`}>
-      <div className="relative aspect-square bg-gray-100">
-        <img src={product.image} alt={product.title} className="w-full h-full object-cover" />
-        <span className="absolute top-2 right-2 bg-[#22c55e] text-white text-[10px] md:text-xs px-2 py-1 rounded">
-          {product.condition}
-        </span>
-        {isPromoted && (
-          <span className="absolute top-2 left-2 bg-yellow-400 text-yellow-900 text-[10px] md:text-xs font-bold px-2 py-1 rounded flex items-center gap-1 shadow-sm">
-            <Zap className="w-3 h-3 fill-current" />
-            Ad
-          </span>
-        )}
-      </div>
-      <div className="p-3">
-        <h3 className="text-sm font-medium text-gray-800 mb-1 line-clamp-2">{product.title}</h3>
-        <p className="text-lg font-bold text-gray-900 mb-1">{formatPrice(product.price)}</p>
-        <div className="flex items-center gap-1 text-xs text-gray-500 mb-2">
-          <MapPin className="w-3 h-3" />
-          <span className="line-clamp-1">{product.location}</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <Star className="w-3 h-3 fill-[#eab308] text-[#eab308]" />
-          <span className="text-xs text-gray-600">{product.rating}</span>
-        </div>
-      </div>
-    </Link>
   );
 }

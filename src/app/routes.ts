@@ -1,4 +1,4 @@
-import { createBrowserRouter } from "react-router";
+import { createBrowserRouter, Navigate } from "react-router";
 import Root from "./pages/Root";
 import Home from "./pages/Home";
 import About from "./pages/About";
@@ -39,6 +39,38 @@ import AdminProducts from "./pages/admin/Products";
 import AdPricingControl from "./pages/admin/AdPricingControl";
 import NotFound from "./pages/NotFound";
 
+function LegacySellRouteRedirect() {
+  return <Navigate to="/seller/products/new" replace />;
+}
+
+function LegacyHelpRedirect() {
+  return <Navigate to="/faq" replace />;
+}
+
+function LegacySupportRedirect() {
+  return <Navigate to="/messages" replace />;
+}
+
+function LegacyContactRedirect() {
+  return <Navigate to="/about" replace />;
+}
+
+function LegacySettingsRedirect() {
+  return <Navigate to="/settings" replace />;
+}
+
+function LegacyFavoritesRedirect() {
+  return <Navigate to="/products" replace />;
+}
+
+function LegacyReviewsRedirect() {
+  return <Navigate to="/orders" replace />;
+}
+
+function LegacyAdminRedirect() {
+  return <Navigate to="/admin/dashboard" replace />;
+}
+
 export const router = createBrowserRouter([
   {
     path: "/",
@@ -69,6 +101,7 @@ export const router = createBrowserRouter([
       { path: "seller/dashboard", Component: SellerDashboard },
       { path: "seller/products", Component: SellerProducts },
       { path: "seller/products/new", Component: AddProduct },
+      { path: "seller/products/add", Component: LegacySellRouteRedirect },
       { path: "seller/products/:id/edit", Component: AddProduct },
       { path: "seller/bank-details", Component: BankDetails },
       { path: "seller/advertise", Component: Advertise },
@@ -76,12 +109,24 @@ export const router = createBrowserRouter([
       { path: "reviews/:orderId", Component: WriteReview },
       { path: "seller/:id/reviews", Component: SellerReviews },
       { path: "profile", Component: Profile },
+      { path: "favorites", Component: LegacyFavoritesRedirect },
+      { path: "reviews", Component: LegacyReviewsRedirect },
       { path: "settings/profile/edit", Component: ProfileEdit },
       { path: "settings", Component: Settings },
+      { path: "settings/password", Component: LegacySettingsRedirect },
+      { path: "settings/address", Component: LegacySettingsRedirect },
+      { path: "settings/privacy", Component: LegacySettingsRedirect },
+      { path: "settings/blocked-users", Component: LegacySettingsRedirect },
+      { path: "settings/language", Component: LegacySettingsRedirect },
       { path: "admin/dashboard", Component: AdminDashboard },
       { path: "admin/users", Component: AdminUsers },
       { path: "admin/products", Component: AdminProducts },
       { path: "admin/pricing", Component: AdPricingControl },
+      { path: "admin/orders", Component: LegacyAdminRedirect },
+      { path: "admin/reports", Component: LegacyAdminRedirect },
+      { path: "help", Component: LegacyHelpRedirect },
+      { path: "support", Component: LegacySupportRedirect },
+      { path: "contact", Component: LegacyContactRedirect },
       { path: "*", Component: NotFound },
     ],
   },

@@ -24,6 +24,7 @@ export default function AddProduct() {
   const [state, setState] = useState("");
   const [lga, setLga] = useState("");
   const [delivery, setDelivery] = useState<string[]>([]);
+  const CUSTOM_PRODUCTS_KEY = "greenhub-custom-products";
 
   const conditions = ["New", "Like New", "Good", "Fair"];
 
@@ -96,9 +97,30 @@ export default function AddProduct() {
 
       console.log("Successfully Uploaded Permanent Image URLs:", uploadedUrls);
       console.log("Product Form Data:", { title, description, price, category, condition, state, lga, delivery });
+
+      const newProduct = {
+        id: Date.now(),
+        image: uploadedUrls[0] || imageFiles[0]?.preview || "",
+        title,
+        description,
+        price: Number(price),
+        location: lga && state ? `${lga}, ${state}` : state,
+        rating: 5.0,
+        reviews: 0,
+        condition: condition as "New" | "Like New" | "Good" | "Fair",
+        category,
+        sellerTier: "standard",
+        sellerId: authUser.id,
+        deliveryOptions: delivery,
+        createdAt: new Date().toISOString(),
+      };
+
+      const existingRaw = localStorage.getItem(CUSTOM_PRODUCTS_KEY);
+      const existingProducts = existingRaw ? JSON.parse(existingRaw) : [];
+      localStorage.setItem(CUSTOM_PRODUCTS_KEY, JSON.stringify([newProduct, ...existingProducts]));
       
       alert("Product and images successfully uploaded to the marketplace!");
-      navigate("/seller/dashboard");
+      navigate("/products");
     } catch (error) {
       console.error(error);
       alert("Error securely uploading product images.");

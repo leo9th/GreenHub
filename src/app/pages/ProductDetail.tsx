@@ -13,37 +13,128 @@ export default function ProductDetail() {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [isFavorite, setIsFavorite] = useState(false);
 
-  const product = {
-    id: 1,
-    title: "iPhone 13 Pro Max 256GB - Pacific Blue",
-    price: 450000,
-    images: [
-      "https://images.unsplash.com/photo-1632661674596-df8be070a5c5?w=800",
-      "https://images.unsplash.com/photo-1591337676887-a217a6970a8a?w=800",
-      "https://images.unsplash.com/photo-1591360236618-b1c30d6e5eaf?w=800",
-    ],
-    condition: "Like New",
-    category: "Electronics",
-    description: "iPhone 13 Pro Max in excellent condition. Only used for 6 months. Comes with original box, charger, and unused earphones. No scratches on screen or body. Battery health at 98%. Phone has been well maintained and always used with a case and screen protector.\n\nFeatures:\n- 256GB Storage\n- Pacific Blue Color\n- A15 Bionic chip\n- Pro camera system\n- Super Retina XDR display\n- 5G capable\n\nIncludes:\n- Original box\n- Lightning cable\n- 20W USB-C power adapter\n- EarPods with Lightning connector\n- Case and screen protector",
-    location: "Ikeja, Lagos",
-    postedDate: "2 days ago",
-    views: 234,
-    seller: {
+  const CUSTOM_PRODUCTS_KEY = "greenhub-custom-products";
+  const customProductsRaw = localStorage.getItem(CUSTOM_PRODUCTS_KEY);
+  const customProducts = customProductsRaw ? JSON.parse(customProductsRaw) : [];
+
+  const defaultProducts = [
+    {
       id: 1,
-      name: "Chidi Okonkwo",
-      avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200",
+      image: "https://images.unsplash.com/photo-1632661674596-df8be070a5c5?w=400",
+      title: "iPhone 13 Pro Max 256GB",
+      price: 450000,
+      location: "Ikeja, Lagos",
       rating: 4.8,
-      reviews: 156,
-      verified: true,
+      reviews: 24,
+      condition: "Like New",
+      category: "electronics",
+      sellerTier: "crown",
+    },
+    {
+      id: 2,
+      image: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=400",
+      title: "Nike Air Max 270 Shoes",
+      price: 25000,
+      location: "Wuse, Abuja",
+      rating: 5.0,
+      reviews: 18,
+      condition: "New",
+      category: "fashion",
+      sellerTier: "blue"
+    },
+    {
+      id: 3,
+      image: "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400",
+      title: "Sony WH-1000XM4 Headphones",
+      price: 85000,
+      location: "Victoria Island, Lagos",
+      rating: 4.5,
+      reviews: 32,
+      condition: "Good",
+      category: "electronics",
+      sellerTier: "standard"
+    },
+    {
+      id: 4,
+      image: "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=400",
+      title: "Timex Classic Watch",
+      price: 15000,
+      location: "Enugu",
+      rating: 4.7,
+      reviews: 12,
+      condition: "Like New",
+      category: "fashion",
+      sellerTier: "crown"
+    },
+    {
+      id: 5,
+      image: "https://images.unsplash.com/photo-1585386959984-a4155224a1ad?w=400",
+      title: "Samsung Galaxy S21",
+      price: 220000,
+      location: "Lekki, Lagos",
+      rating: 4.9,
+      reviews: 45,
+      condition: "New",
+      category: "electronics",
+      sellerTier: "unverified"
+    },
+    {
+      id: 6,
+      image: "https://images.unsplash.com/photo-1606107557195-0e29a4b5b4aa?w=400",
+      title: "Adidas Sneakers",
+      price: 18000,
+      location: "Garki, Abuja",
+      rating: 4.6,
+      reviews: 20,
+      condition: "Good",
+      category: "fashion",
+      sellerTier: "blue"
+    },
+  ];
+
+  const allProducts = [...customProducts, ...defaultProducts];
+  const foundProduct = allProducts.find((p: any) => p.id.toString() === id);
+
+  if (!foundProduct) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold text-gray-800 mb-2">Product not found</h2>
+          <p className="text-gray-600 mb-4">The product you're looking for doesn't exist.</p>
+          <button onClick={() => navigate(-1)} className="px-6 py-2 bg-[#22c55e] text-white rounded-lg font-medium">Go Back</button>
+        </div>
+      </div>
+    );
+  }
+
+  const product = {
+    id: foundProduct.id,
+    title: foundProduct.title,
+    price: foundProduct.price,
+    images: foundProduct.image ? [foundProduct.image] : ["https://images.unsplash.com/photo-1632661674596-df8be070a5c5?w=800"],
+    condition: foundProduct.condition || "Like New",
+    category: foundProduct.category || "General",
+    description: foundProduct.description || `${foundProduct.title} in excellent condition. Great value for your money. Please contact me for more details.`,
+    location: foundProduct.location,
+    postedDate: foundProduct.createdAt ? new Date(foundProduct.createdAt).toLocaleDateString() : "Just now",
+    views: Math.floor(Math.random() * 500) + 50,
+    seller: {
+      id: foundProduct.sellerId || 1,
+      name: foundProduct.sellerName || "GreenHub Seller",
+      avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200",
+      rating: foundProduct.rating || 4.8,
+      reviews: foundProduct.reviews || 0,
+      verified: ['crown', 'blue', 'standard'].includes(foundProduct.sellerTier),
       memberSince: "Jan 2023",
       responseTime: "Within hours",
-      tier: "crown"
+      tier: foundProduct.sellerTier || "standard"
     },
-    deliveryOptions: [
-      { name: "GIGL", fee: 3000, duration: "2-3 days" },
-      { name: "Sendy", fee: 2500, duration: "Same day (Lagos only)" },
-      { name: "Pickup", fee: 0, duration: "Arrange with seller" },
-    ],
+    deliveryOptions: Array.isArray(foundProduct.deliveryOptions) && foundProduct.deliveryOptions.length > 0
+      ? foundProduct.deliveryOptions.map((name: string) => ({ name, fee: 3000, duration: "2-3 days" }))
+      : [
+          { name: "GIGL", fee: 3000, duration: "2-3 days" },
+          { name: "Pickup", fee: 0, duration: "Arrange with seller" },
+        ],
   };
 
   const relatedProducts = [

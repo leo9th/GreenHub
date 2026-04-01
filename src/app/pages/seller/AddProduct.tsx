@@ -98,7 +98,37 @@ export default function AddProduct() {
       console.log("Successfully Uploaded Permanent Image URLs:", uploadedUrls);
       console.log("Product Form Data:", { title, description, price, category, condition, state, lga, delivery });
 
-      const newProduct = {
+      const productPayload = {
+        seller_id: authUser.id,
+        title,
+        description,
+        price: Number(price),
+        image: uploadedUrls[0] || imageFiles[0]?.preview || "",
+        location: lga && state ? `${lga}, ${state}` : state,
+        rating: 5.0,
+        reviews: 0,
+        condition: condition as "New" | "Like New" | "Good" | "Fair",
+        category,
+        seller_tier: "standard",
+        delivery_options: delivery,
+      };
+
+      const { data: savedProduct, error: insertError } = await supabase
+        .from("products")
+        .insert([productPayload])
+        .select()
+        .single();
+
+      if (insertError) {
+        throw insertError;
+      }
+
+      alert("Product and images successfully uploaded to the marketplace!");
+      navigate("/products");
+    } catch (error) {
+      console.error(error);
+
+      const fallbackProduct = {
         id: Date.now(),
         image: uploadedUrls[0] || imageFiles[0]?.preview || "",
         title,
@@ -117,13 +147,10 @@ export default function AddProduct() {
 
       const existingRaw = localStorage.getItem(CUSTOM_PRODUCTS_KEY);
       const existingProducts = existingRaw ? JSON.parse(existingRaw) : [];
-      localStorage.setItem(CUSTOM_PRODUCTS_KEY, JSON.stringify([newProduct, ...existingProducts]));
-      
-      alert("Product and images successfully uploaded to the marketplace!");
+      localStorage.setItem(CUSTOM_PRODUCTS_KEY, JSON.stringify([fallbackProduct, ...existingProducts]));
+
+      alert("Product saved locally because saving to Supabase failed. It will appear in fallback mode.");
       navigate("/products");
-    } catch (error) {
-      console.error(error);
-      alert("Error securely uploading product images.");
     } finally {
       setIsUploading(false);
     }

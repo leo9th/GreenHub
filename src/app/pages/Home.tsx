@@ -4,7 +4,8 @@ import { categories } from "../data/mockData";
 import { getMockProductsForRegion } from "../data/mockData";
 import { useRegion, regions } from "../context/RegionContext";
 import { useCurrency } from "../hooks/useCurrency";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { supabase } from "../lib/supabase";
 import { ProductCard } from "../components/cards/ProductCard";
 
 export default function Home() {
@@ -13,27 +14,77 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const baseProducts = getMockProductsForRegion(activeRegion.id as "NG" | "US" | "CN");
+  const CUSTOM_PRODUCTS_KEY = "greenhub-custom-products";
   
   // Custom Ad State
   const [customBanner, setCustomBanner] = useState<string | null>(null);
   const [featuredProduct, setFeaturedProduct] = useState<any | null>(null);
-  const [products, setProducts] = useState(baseProducts);
+  const [products, setProducts] = useState<any[]>(baseProducts);
+  const [isLoadingProducts, setIsLoadingProducts] = useState<boolean>(true);
+  const [productLoadError, setProductLoadError] = useState<string | null>(null);
 
-  // Read LocalStorage on mount
-  useState(() => {
+  useEffect(() => {
     const banner = localStorage.getItem("greenhub_custom_banner");
     if (banner) setCustomBanner(banner);
 
-    const featId = localStorage.getItem("greenhub_featured_product");
-    if (featId) {
-      // Find product and pin it to the front
-      const found = baseProducts.find(p => p.id.toString() === featId);
-      if (found) {
-        setFeaturedProduct(found);
-        setProducts([found, ...baseProducts.filter(p => p.id !== found.id)]);
+    const loadProducts = async () => {
+      setIsLoadingProducts(true);
+      setProductLoadError(null);
+
+      try {
+        const { data, error } = await supabase
+          .from("products")
+          .select("*")
+          .order("created_at", { ascending: false });
+
+        if (error) throw error;
+
+        const serverProducts = data.map((product: any) => ({
+          ...product,
+          sellerId: product.seller_id,
+          sellerTier: product.seller_tier,
+          deliveryOptions: product.delivery_options,
+          createdAt: product.created_at,
+          updatedAt: product.updated_at,
+        }));
+
+        let nextProducts = serverProducts.length > 0 ? serverProducts : baseProducts;
+
+        const featId = localStorage.getItem("greenhub_featured_product");
+        if (featId) {
+          const found = nextProducts.find((p: any) => p.id.toString() === featId);
+          if (found) {
+            setFeaturedProduct(found);
+            nextProducts = [found, ...nextProducts.filter((p: any) => p.id.toString() !== featId)];
+          }
+        }
+
+        setProducts(nextProducts);
+      } catch (error: any) {
+        console.error("Error loading products from Supabase:", error);
+        setProductLoadError(error?.message || "Unable to load server products");
+
+        const rawProducts = localStorage.getItem(CUSTOM_PRODUCTS_KEY);
+        const customProducts = rawProducts ? JSON.parse(rawProducts) : [];
+        let nextProducts = [...customProducts, ...baseProducts];
+
+        const featId = localStorage.getItem("greenhub_featured_product");
+        if (featId) {
+          const found = nextProducts.find((p: any) => p.id.toString() === featId);
+          if (found) {
+            setFeaturedProduct(found);
+            nextProducts = [found, ...nextProducts.filter((p: any) => p.id.toString() !== featId)];
+          }
+        }
+
+        setProducts(nextProducts);
+      } finally {
+        setIsLoadingProducts(false);
       }
-    }
-  });
+    };
+
+    loadProducts();
+  }, [activeRegion.id]);
 
   const searchSuggestions = [
     "Home & Garden",

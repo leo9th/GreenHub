@@ -49,3 +49,36 @@ $$ language plpgsql security definer;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute procedure public.handle_new_user();
+
+-- Create a products table for marketplace listings
+create table if not exists public.products (
+  id bigint generated always as identity primary key,
+  seller_id uuid references auth.users not null,
+  title text not null,
+  description text,
+  price numeric not null,
+  image text,
+  location text,
+  condition text,
+  category text,
+  rating numeric not null default 0,
+  reviews integer not null default 0,
+  seller_tier text,
+  delivery_options text[],
+  created_at timestamptz not null default timezone('utc'::text, now()),
+  updated_at timestamptz not null default timezone('utc'::text, now())
+);
+
+alter table public.products enable row level security;
+
+create policy "Public products are viewable by everyone." on public.products
+  for select using (true);
+
+create policy "Authenticated users can insert products." on public.products
+  for insert with check (auth.role() = 'authenticated');
+
+create policy "Product owners can update their products." on public.products
+  for update using (auth.uid() = seller_id);
+
+create policy "Product owners can delete their products." on public.products
+  for delete using (auth.uid() = seller_id);

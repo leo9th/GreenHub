@@ -15,6 +15,8 @@ export default function ProductDetail() {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [isFavorite, setIsFavorite] = useState(false);
   const [sellerProfile, setSellerProfile] = useState<any>(null);
+  const [serverProduct, setServerProduct] = useState<any>(null);
+  const [isServerProductLoading, setIsServerProductLoading] = useState<boolean>(true);
 
   const CUSTOM_PRODUCTS_KEY = "greenhub-custom-products";
   const customProductsRaw = localStorage.getItem(CUSTOM_PRODUCTS_KEY);
@@ -96,7 +98,43 @@ export default function ProductDetail() {
   ];
 
   const allProducts = [...customProducts, ...defaultProducts];
-  const foundProduct = allProducts.find((p: any) => p.id.toString() === id);
+  const foundProduct = serverProduct ?? allProducts.find((p: any) => p.id.toString() === id);
+
+  useEffect(() => {
+    const loadServerProduct = async () => {
+      if (!id) {
+        setIsServerProductLoading(false);
+        return;
+      }
+
+      const numericId = Number(id);
+      if (Number.isNaN(numericId)) {
+        setIsServerProductLoading(false);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("products")
+        .select("*")
+        .eq("id", numericId)
+        .single();
+
+      if (!error && data) {
+        setServerProduct({
+          ...data,
+          sellerId: data.seller_id,
+          sellerTier: data.seller_tier,
+          deliveryOptions: data.delivery_options,
+          createdAt: data.created_at,
+          updatedAt: data.updated_at,
+        });
+      }
+
+      setIsServerProductLoading(false);
+    };
+
+    loadServerProduct();
+  }, [id]);
 
   useEffect(() => {
     if (foundProduct?.sellerId) {

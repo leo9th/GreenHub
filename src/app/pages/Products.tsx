@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router";
 import { Search, Filter, ArrowLeft, X, BadgeCheck } from "lucide-react";
 import {  categories, nigerianStates  } from "../data/mockData";
 import { useCurrency } from "../hooks/useCurrency";
+import { supabase } from "../lib/supabase";
 import { ProductCard } from "../components/cards/ProductCard";
 
 export default function Products() {
@@ -109,9 +110,51 @@ export default function Products() {
     },
   ];
 
-  const customProductsRaw = localStorage.getItem(CUSTOM_PRODUCTS_KEY);
-  const customProducts = customProductsRaw ? JSON.parse(customProductsRaw) : [];
-  const products = [...customProducts, ...defaultProducts];
+  const CUSTOM_PRODUCTS_KEY = "greenhub-custom-products";
+  const [products, setProducts] = useState<any[]>(defaultProducts);
+  const [isLoadingProducts, setIsLoadingProducts] = useState<boolean>(true);
+  const [productLoadError, setProductLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const loadProducts = async () => {
+      setIsLoadingProducts(true);
+      setProductLoadError(null);
+
+      try {
+        const { data, error } = await supabase
+          .from("products")
+          .select("*")
+          .order("created_at", { ascending: false });
+
+        if (error) throw error;
+
+        if (data?.length) {
+          const serverProducts = data.map((product: any) => ({
+            ...product,
+            sellerId: product.seller_id,
+            sellerTier: product.seller_tier,
+            deliveryOptions: product.delivery_options,
+            createdAt: product.created_at,
+            updatedAt: product.updated_at,
+          }));
+          setProducts(serverProducts);
+        } else {
+          setProducts(defaultProducts);
+        }
+      } catch (error: any) {
+        console.error("Error loading products from Supabase:", error);
+        setProductLoadError(error?.message || "Unable to load server products");
+
+        const rawProducts = localStorage.getItem(CUSTOM_PRODUCTS_KEY);
+        const fallbackProducts = rawProducts ? JSON.parse(rawProducts) : [];
+        setProducts([...fallbackProducts, ...defaultProducts]);
+      } finally {
+        setIsLoadingProducts(false);
+      }
+    };
+
+    loadProducts();
+  }, []);
 
   const conditions = ["New", "Like New", "Good", "Fair"];
   const priceRanges = [

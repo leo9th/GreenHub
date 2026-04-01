@@ -1,7 +1,7 @@
 import { Link, useNavigate } from "react-router";
 import { ArrowLeft, Star, Package, Heart, MapPin, Edit } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
-import { getAvatarUrl } from "../../utils/getAvatar";
+import { getAvatarUrl } from "../utils/getAvatar";
 
 export default function Profile() {
   const navigate = useNavigate();

@@ -1,6 +1,6 @@
 import { Link, useNavigate } from "react-router";
 import { ArrowLeft, Search, MessageCircle } from "lucide-react";
-import { getAvatarUrl } from "../../utils/getAvatar";
+import { getAvatarUrl } from "../utils/getAvatar";
 
 export default function Messages() {
   const navigate = useNavigate();

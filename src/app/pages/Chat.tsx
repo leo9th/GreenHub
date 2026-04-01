@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useParams, useNavigate } from "react-router";
 import { ArrowLeft, Send, MoreVertical, Image as ImageIcon, Phone, Video } from "lucide-react";
-import { getAvatarUrl } from "../../utils/getAvatar";
+import { getAvatarUrl } from "../utils/getAvatar";
 
 export default function Chat() {
   const { id } = useParams();

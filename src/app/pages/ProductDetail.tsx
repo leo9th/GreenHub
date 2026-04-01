@@ -5,7 +5,7 @@ import {  } from "../data/mockData";
 import { useCurrency } from "../hooks/useCurrency";
 import { useCart } from "../context/CartContext";
 import { supabase } from "../../lib/supabase";
-import { getAvatarUrl } from "../../utils/getAvatar";
+import { getAvatarUrl } from "../utils/getAvatar";
 import { toast } from "sonner";
 export default function ProductDetail() {
   const formatPrice = useCurrency();

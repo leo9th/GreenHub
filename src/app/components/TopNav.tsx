@@ -1,7 +1,8 @@
 import { Link, useLocation, useNavigate } from "react-router";
-import { Bell, ShoppingCart, User, LogOut, Settings, Store, MessageSquare, BarChart2 } from "lucide-react";
+import { Bell, ShoppingCart, LogOut, Settings, Store, MessageSquare, BarChart2 } from "lucide-react";
 import { useCart } from "../context/CartContext";
 import { useAuth } from "../context/AuthContext";
+import { getAvatarUrl } from "../utils/getAvatar";
 import { useState, useRef, useEffect } from "react";
 
 export default function TopNav() {
@@ -43,6 +44,17 @@ export default function TopNav() {
   const hideNavOnPaths = ["/login", "/register", "/verify-otp"];
   const isHidden = hideNavOnPaths.some(path => location.pathname.startsWith(path));
   const isHome = location.pathname === "/";
+
+  const fullName =
+    profile?.full_name?.trim() ||
+    authUser?.user_metadata?.full_name?.trim() ||
+    authUser?.email?.split("@")[0] ||
+    "User";
+  const avatarUrl = getAvatarUrl(
+    profile?.avatar_url || authUser?.user_metadata?.avatar_url,
+    profile?.gender || authUser?.user_metadata?.gender,
+    fullName
+  );
 
   if (isHidden) return null;
 
@@ -116,11 +128,27 @@ export default function TopNav() {
                   }}
                   className="relative p-1 flex items-center gap-2 outline-none"
                 >
-                  <User className={`w-6 h-6 transition-colors ${iconClass}`} />
+                  <img src={avatarUrl} alt={fullName} className="w-8 h-8 rounded-full object-cover border border-gray-200" />
                 </button>
                 
                 {showDropdown && (
                   <div className="absolute top-full right-0 mt-3 w-48 bg-white shadow-xl border border-gray-200 rounded-md py-2 z-50">
+                    <div className="px-4 py-3 border-b border-gray-100">
+                      <div className="flex items-center gap-3">
+                        <img src={avatarUrl} alt={fullName} className="w-10 h-10 rounded-full object-cover" />
+                        <div>
+                          <p className="text-[11px] uppercase tracking-[0.24em] text-gray-500">Welcome back</p>
+                          <p className="text-base font-semibold text-gray-900 leading-tight">{fullName}</p>
+                          <Link 
+                            to="/profile"
+                            onClick={() => setShowDropdown(false)}
+                            className="text-xs text-[#22c55e] hover:underline"
+                          >
+                            View profile
+                          </Link>
+                        </div>
+                      </div>
+                    </div>
                     <Link 
                       to="/seller/dashboard" 
                       onClick={() => setShowDropdown(false)}

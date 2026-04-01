@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useParams, useNavigate } from "react-router";
 import { ArrowLeft, Star, ThumbsUp, MoreVertical } from "lucide-react";
-import { getAvatarUrl } from "../../utils/getAvatar";
+import { getAvatarUrl } from "../utils/getAvatar";
 
 export default function SellerReviews() {
   const { id } = useParams();

@@ -1,7 +1,7 @@
 import { Link, useParams, useNavigate } from "react-router";
 import { ArrowLeft, Package, MapPin, Phone, MessageCircle, CheckCircle, Star } from "lucide-react";
 import { useCurrency } from "../hooks/useCurrency";
-import { getAvatarUrl } from "../../utils/getAvatar";
+import { getAvatarUrl } from "../utils/getAvatar";
 
 export default function OrderDetail() {
   const formatPrice = useCurrency();

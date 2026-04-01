@@ -1,5 +1,6 @@
 import { Link, useNavigate } from "react-router";
 import { ArrowLeft, Search, MessageCircle } from "lucide-react";
+import { getAvatarUrl } from "../../utils/getAvatar";
 
 export default function Messages() {
   const navigate = useNavigate();
@@ -9,7 +10,7 @@ export default function Messages() {
       id: 1,
       user: {
         name: "Chidi Okonkwo",
-        avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100",
+        avatar: getAvatarUrl("https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100", "male", "Chidi Okonkwo"),
       },
       product: {
         title: "iPhone 13 Pro Max 256GB",
@@ -24,7 +25,7 @@ export default function Messages() {
       id: 2,
       user: {
         name: "Amina Yusuf",
-        avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100",
+        avatar: getAvatarUrl("https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100", "female", "Amina Yusuf"),
       },
       product: {
         title: "Nike Air Max 270 Shoes",
@@ -39,7 +40,7 @@ export default function Messages() {
       id: 3,
       user: {
         name: "Tunde Adebayo",
-        avatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100",
+        avatar: getAvatarUrl("https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100", "male", "Tunde Adebayo"),
       },
       product: {
         title: "Sony WH-1000XM4 Headphones",
@@ -54,7 +55,7 @@ export default function Messages() {
       id: 4,
       user: {
         name: "Fatima Mohammed",
-        avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100",
+        avatar: getAvatarUrl("https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100", "female", "Fatima Mohammed"),
       },
       product: {
         title: "Samsung Galaxy S21",

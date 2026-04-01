@@ -8,6 +8,7 @@ export interface UserProfile {
   email?: string | null;
   phone?: string | null;
   avatar_url?: string | null;
+  gender?: string | null;
   state?: string | null;
   lga?: string | null;
   address?: string | null;

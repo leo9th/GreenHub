@@ -1,6 +1,7 @@
 import { Link, useNavigate } from "react-router";
 import { ArrowLeft, Star, Package, Heart, MapPin, Edit } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import { getAvatarUrl } from "../../utils/getAvatar";
 
 export default function Profile() {
   const navigate = useNavigate();
@@ -10,7 +11,11 @@ export default function Profile() {
     name: profile?.full_name || authUser?.user_metadata?.full_name || "Guest User",
     email: profile?.email || authUser?.email || "No email",
     phone: profile?.phone || authUser?.user_metadata?.phone || "No phone",
-    avatar: profile?.avatar_url || authUser?.user_metadata?.avatar_url || "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200",
+    avatar: getAvatarUrl(
+      profile?.avatar_url || authUser?.user_metadata?.avatar_url,
+      profile?.gender || authUser?.user_metadata?.gender,
+      profile?.full_name || authUser?.user_metadata?.full_name || "Guest User"
+    ),
     memberSince: "Joined Recently",
     location: profile?.state && profile?.lga ? `${profile.lga}, ${profile.state}` : profile?.address || authUser?.user_metadata?.state || "Nigeria",
     verified: true,

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useParams, useNavigate } from "react-router";
 import { ArrowLeft, Star, ThumbsUp, MoreVertical } from "lucide-react";
+import { getAvatarUrl } from "../../utils/getAvatar";
 
 export default function SellerReviews() {
   const { id } = useParams();
@@ -10,7 +11,7 @@ export default function SellerReviews() {
   const seller = {
     id: 1,
     name: "Chidi Okonkwo",
-    avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200",
+    avatar: getAvatarUrl("https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200", "male", "Chidi Okonkwo"),
     rating: 4.8,
     totalReviews: 156,
     verified: true,
@@ -29,7 +30,7 @@ export default function SellerReviews() {
       id: 1,
       user: {
         name: "Amina Yusuf",
-        avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100",
+        avatar: getAvatarUrl("https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100", "female", "Amina Yusuf"),
       },
       rating: 5,
       date: "2 days ago",
@@ -44,7 +45,7 @@ export default function SellerReviews() {
       id: 2,
       user: {
         name: "Tunde Adebayo",
-        avatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100",
+        avatar: getAvatarUrl("https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100", "male", "Tunde Adebayo"),
       },
       rating: 5,
       date: "5 days ago",
@@ -57,7 +58,7 @@ export default function SellerReviews() {
       id: 3,
       user: {
         name: "Fatima Mohammed",
-        avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100",
+        avatar: getAvatarUrl("https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100", "female", "Fatima Mohammed"),
       },
       rating: 4,
       date: "1 week ago",
@@ -70,7 +71,7 @@ export default function SellerReviews() {
       id: 4,
       user: {
         name: "Emeka Nwosu",
-        avatar: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=100",
+        avatar: getAvatarUrl("https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=100", "male", "Emeka Nwosu"),
       },
       rating: 5,
       date: "2 weeks ago",

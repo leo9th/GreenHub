@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useParams, useNavigate } from "react-router";
 import { ArrowLeft, Send, MoreVertical, Image as ImageIcon, Phone, Video } from "lucide-react";
+import { getAvatarUrl } from "../../utils/getAvatar";
 
 export default function Chat() {
   const { id } = useParams();
@@ -13,7 +14,7 @@ export default function Chat() {
     user: {
       id: 1,
       name: "Chidi Okonkwo",
-      avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100",
+      avatar: getAvatarUrl("https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100", "male", "Chidi Okonkwo"),
       online: false,
       lastActive: "2 hours ago",
     },

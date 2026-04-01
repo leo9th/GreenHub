@@ -13,6 +13,7 @@ export default function Register() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [gender, setGender] = useState("Prefer not to say");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const selectedRole = "buyer"; // Unified accounts 
@@ -67,6 +68,7 @@ export default function Register() {
           full_name: fullName,
           phone: phone,
           role: selectedRole,
+          gender: gender,
           state: selectedState,
           lga: lga,
           address: address,
@@ -232,6 +234,18 @@ export default function Register() {
                     placeholder="Confirm password"
                     className="w-full px-4 py-3 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-[#22c55e] focus:border-[#22c55e] pr-12"
                   />
+                </div>
+
+                <div className="pt-2">
+                  <select
+                    value={gender}
+                    onChange={(e) => setGender(e.target.value)}
+                    className="w-full px-4 py-3 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-[#22c55e] focus:border-[#22c55e] appearance-none bg-transparent"
+                  >
+                    <option value="Prefer not to say">Prefer not to say (Default)</option>
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                  </select>
                 </div>
 
                 <div className="pt-2">

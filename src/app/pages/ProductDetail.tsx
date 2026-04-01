@@ -5,6 +5,7 @@ import {  } from "../data/mockData";
 import { useCurrency } from "../hooks/useCurrency";
 import { useCart } from "../context/CartContext";
 import { supabase } from "../../lib/supabase";
+import { getAvatarUrl } from "../../utils/getAvatar";
 import { toast } from "sonner";
 export default function ProductDetail() {
   const formatPrice = useCurrency();
@@ -135,7 +136,11 @@ export default function ProductDetail() {
     seller: {
       id: foundProduct.sellerId || 1,
       name: sellerProfile?.full_name || foundProduct.sellerName || "GreenHub Seller",
-      avatar: sellerProfile?.avatar_url || "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200",
+      avatar: getAvatarUrl(
+        sellerProfile?.avatar_url, 
+        sellerProfile?.gender, 
+        sellerProfile?.full_name || foundProduct.sellerName || "GreenHub Seller"
+      ),
       rating: foundProduct.rating || 4.8,
       reviews: foundProduct.reviews || 0,
       verified: ['crown', 'blue', 'standard'].includes(foundProduct.sellerTier),

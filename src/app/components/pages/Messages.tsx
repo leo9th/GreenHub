@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { Search, Send, ArrowLeft } from "lucide-react";
+import { getAvatarUrl } from "../../../utils/getAvatar";
 
 const conversations = [
   {
     id: 1,
     seller: "TechHub Store",
-    avatar: "TH",
+    avatar: null,
     lastMessage: "The item is still available. Would you like to proceed?",
     time: "10:30 AM",
     unread: 2,
@@ -14,7 +15,7 @@ const conversations = [
   {
     id: 2,
     seller: "ShoeLand",
-    avatar: "SL",
+    avatar: null,
     lastMessage: "Thank you for your purchase!",
     time: "Yesterday",
     unread: 0,
@@ -23,7 +24,7 @@ const conversations = [
   {
     id: 3,
     seller: "ElectroMart",
-    avatar: "EM",
+    avatar: null,
     lastMessage: "Delivery scheduled for tomorrow",
     time: "2 days ago",
     unread: 1,
@@ -74,8 +75,8 @@ export function Messages() {
           >
             <ArrowLeft className="w-6 h-6" />
           </button>
-          <div className="w-10 h-10 rounded-full bg-[#22c55e] flex items-center justify-center">
-            <span className="text-white">{conversation?.avatar}</span>
+          <div className="w-10 h-10 rounded-full flex items-center justify-center overflow-hidden">
+            <img src={getAvatarUrl(conversation?.avatar, null, conversation?.seller)} className="w-full h-full object-cover" />
           </div>
           <div className="flex-1">
             <h2 className="text-foreground">{conversation?.seller}</h2>
@@ -148,9 +149,9 @@ export function Messages() {
             onClick={() => setSelectedConversation(conversation.id)}
             className="w-full p-4 flex items-start gap-3 hover:bg-muted transition-colors"
           >
-            <div className="relative">
-              <div className="w-12 h-12 rounded-full bg-[#22c55e] flex items-center justify-center">
-                <span className="text-white">{conversation.avatar}</span>
+            <div className="relative flex-shrink-0">
+              <div className="w-12 h-12 rounded-full flex items-center justify-center overflow-hidden">
+                <img src={getAvatarUrl(conversation.avatar, null, conversation.seller)} className="w-full h-full object-cover" />
               </div>
               {conversation.unread > 0 && (
                 <div className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">

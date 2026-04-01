@@ -2,6 +2,7 @@ import { Star, MessageSquare, PhoneCall, BadgeCheck } from "lucide-react";
 import { Card, CardContent } from "../ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar";
 import { Button } from "../ui/button";
+import { getAvatarUrl } from "../../utils/getAvatar";
 
 export interface SellerCardProps {
   avatarUrl?: string;
@@ -9,6 +10,7 @@ export interface SellerCardProps {
   rating: number;
   totalReviews: number;
   totalSales: number;
+  gender?: string;
   isVerified?: boolean;
 }
 
@@ -18,6 +20,7 @@ export function SellerCard({
   rating,
   totalReviews,
   totalSales,
+  gender,
   isVerified = false,
 }: SellerCardProps) {
   const initials = name
@@ -32,7 +35,7 @@ export function SellerCard({
       <CardContent className="p-4 flex flex-col gap-4">
         <div className="flex items-start gap-4">
           <Avatar className="h-12 w-12 border border-gray-100">
-            <AvatarImage src={avatarUrl} alt={name} />
+            <AvatarImage src={getAvatarUrl(avatarUrl, gender, name)} alt={name} />
             <AvatarFallback className="bg-primary/10 text-primary font-medium">
               {initials}
             </AvatarFallback>

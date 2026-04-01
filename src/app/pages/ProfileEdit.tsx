@@ -4,6 +4,13 @@ import { useNavigate } from "react-router";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../../lib/supabase";
 
+const ALLOWED_GENDERS = ["Male", "Female", "Prefer not to say"] as const;
+type AllowedGender = (typeof ALLOWED_GENDERS)[number];
+
+function normalizeGender(value?: string | null): AllowedGender {
+  return ALLOWED_GENDERS.includes(value as AllowedGender) ? (value as AllowedGender) : "Prefer not to say";
+}
+
 export default function ProfileEdit() {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -17,7 +24,8 @@ export default function ProfileEdit() {
     email: "",
     phone: "",
     location: "",
-    autoReply: ""
+    autoReply: "",
+    gender: "Prefer not to say"
   });
 
   useEffect(() => {
@@ -27,7 +35,8 @@ export default function ProfileEdit() {
         email: profile?.email || authUser?.email || "",
         phone: profile?.phone || authUser?.user_metadata?.phone || "",
         location: profile?.address || authUser?.user_metadata?.address || "",
-        autoReply: profile?.auto_reply || authUser?.user_metadata?.auto_reply || ""
+        autoReply: profile?.auto_reply || authUser?.user_metadata?.auto_reply || "",
+        gender: normalizeGender(profile?.gender || authUser?.user_metadata?.gender)
       });
       if (profile?.avatar_url || authUser?.user_metadata?.avatar_url) {
         setProfileImage(profile?.avatar_url || authUser?.user_metadata?.avatar_url);
@@ -53,6 +62,7 @@ export default function ProfileEdit() {
 
     try {
       let finalAvatarUrl = profileImage;
+      const normalizedGender = normalizeGender(formData.gender);
 
       // If user provided a tangible image file, push to Supabase storage
       if (selectedFile) {
@@ -82,6 +92,7 @@ export default function ProfileEdit() {
           phone: formData.phone,
           address: formData.location,
           auto_reply: formData.autoReply,
+          gender: normalizedGender,
           avatar_url: finalAvatarUrl !== "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200" ? finalAvatarUrl : null,
         }
       });
@@ -94,6 +105,7 @@ export default function ProfileEdit() {
         phone: formData.phone,
         address: formData.location,
         auto_reply: formData.autoReply,
+        gender: normalizedGender,
         avatar_url: finalAvatarUrl !== "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200" ? finalAvatarUrl : null,
         updated_at: new Date().toISOString()
       }, { onConflict: "id" });
@@ -250,11 +262,13 @@ export default function ProfileEdit() {
 
                 {/* Sex */}
                 <div className="relative">
-                  <label className="absolute -top-2 left-3 bg-white px-1 text-xs text-[#22c55e] font-semibold">Sex</label>
+                  <label className="absolute -top-2 left-3 bg-white px-1 text-xs text-[#22c55e] font-semibold">Gender</label>
                   <select
+                    value={formData.gender}
+                    onChange={(e) => setFormData({...formData, gender: e.target.value})}
                     className="w-full border border-gray-300 rounded p-3 text-sm focus:border-[#22c55e] focus:outline-none text-gray-800 appearance-none bg-transparent"
                   >
-                    <option value="">Do not specify</option>
+                    <option value="Prefer not to say">Prefer not to say</option>
                     <option value="Male">Male</option>
                     <option value="Female">Female</option>
                   </select>

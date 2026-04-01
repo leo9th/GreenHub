@@ -1,7 +1,7 @@
 import { Link, useParams, useNavigate } from "react-router";
 import { ArrowLeft, Package, MapPin, Phone, MessageCircle, CheckCircle, Star } from "lucide-react";
-import {  } from "../data/mockData";
 import { useCurrency } from "../hooks/useCurrency";
+import { getAvatarUrl } from "../../utils/getAvatar";
 
 export default function OrderDetail() {
   const formatPrice = useCurrency();
@@ -23,7 +23,7 @@ export default function OrderDetail() {
         seller: {
           id: 1,
           name: "Chidi Okonkwo",
-          avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100",
+          avatar: getAvatarUrl("https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100", "male", "Chidi Okonkwo"),
           phone: "08012345678",
         },
       },
@@ -36,7 +36,7 @@ export default function OrderDetail() {
         seller: {
           id: 2,
           name: "Amina Yusuf",
-          avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100",
+          avatar: getAvatarUrl("https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100", "female", "Amina Yusuf"),
           phone: "08098765432",
         },
       },

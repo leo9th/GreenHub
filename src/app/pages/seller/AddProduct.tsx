@@ -74,9 +74,9 @@ export default function AddProduct() {
 
     setIsUploading(true);
 
-    try {
-      const uploadedUrls: string[] = [];
+    let uploadedUrls: string[] = [];
 
+    try {
       // Serially upload each image to Supabase storage to handle multiple files safely
       for (const item of imageFiles) {
         const fileExt = item.file.name.split('.').pop();
@@ -104,11 +104,11 @@ export default function AddProduct() {
         description,
         price: Number(price),
         image: uploadedUrls[0] || imageFiles[0]?.preview || "",
-        location: lga && state ? `${lga}, ${state}` : state,
+        location: lga && state ? `${lga}, ${state}` : state || null,
+        condition: condition || null,
+        category: category || null,
         rating: 5.0,
         reviews: 0,
-        condition: condition as "New" | "Like New" | "Good" | "Fair",
-        category,
         seller_tier: "standard",
         delivery_options: delivery,
       };
@@ -123,10 +123,10 @@ export default function AddProduct() {
         throw insertError;
       }
 
-      alert("Product and images successfully uploaded to the marketplace!");
+      alert("Product successfully saved to Supabase and is now available to all users.");
       navigate("/products");
-    } catch (error) {
-      console.error(error);
+    } catch (error: any) {
+      console.error("Supabase save failed:", error);
 
       const fallbackProduct = {
         id: Date.now(),

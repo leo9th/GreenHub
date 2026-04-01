@@ -15,7 +15,7 @@ export default function AddProduct() {
   const { user: authUser } = useAuth();
 
   const [isUploading, setIsUploading] = useState(false);
-  const [imageFiles, setImageFiles] = useState<{file: File, preview: string}[]>([]);
+  const [imageFiles, setImageFiles] = useState<Array<{ file: File; preview: string }>>([]);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
@@ -23,7 +23,7 @@ export default function AddProduct() {
   const [condition, setCondition] = useState("");
   const [state, setState] = useState("");
   const [lga, setLga] = useState("");
-  const [delivery, setDelivery] = useState<string[]>([]);
+  const [delivery, setDelivery] = useState<Array<string>>([]);
   const CUSTOM_PRODUCTS_KEY = "greenhub-custom-products";
 
   const conditions = ["New", "Like New", "Good", "Fair"];

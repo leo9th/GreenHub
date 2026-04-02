@@ -78,22 +78,28 @@ export default function AddProduct() {
     let uploadedUrls: string[] = [];
 
     try {
-      // Serially upload each image to Supabase storage to handle multiple files safely
+      // Serially upload each image to Supabase storage to handle multiple files safely.
+      // If storage fails, still continue and insert the product row so it is visible to all users.
       for (const item of imageFiles) {
         const fileExt = item.file.name.split('.').pop();
         const fileName = `${authUser.id}/${Math.random().toString(36).substring(7)}.${fileExt}`;
-        
+
         const { error: uploadError } = await supabase.storage
           .from('products')
           .upload(fileName, item.file);
-          
-        if (uploadError) throw uploadError;
 
-        const { data: { publicUrl } } = supabase.storage
+        if (uploadError) {
+          console.warn('Image upload failed for', fileName, uploadError);
+          continue;
+        }
+
+        const { data } = supabase.storage
           .from('products')
           .getPublicUrl(fileName);
-          
-        uploadedUrls.push(publicUrl);
+
+        if (data?.publicUrl) {
+          uploadedUrls.push(data.publicUrl);
+        }
       }
 
       console.log("Successfully Uploaded Permanent Image URLs:", uploadedUrls);
@@ -104,7 +110,7 @@ export default function AddProduct() {
         title,
         description,
         price: Number(price),
-        image: uploadedUrls[0] || imageFiles[0]?.preview || "",
+        image: uploadedUrls[0] || null,
         location: lga && state ? `${lga}, ${state}` : state || null,
         condition: condition || null,
         category: category || null,
@@ -114,11 +120,10 @@ export default function AddProduct() {
         delivery_options: delivery,
       };
 
-      const { data: savedProduct, error: insertError } = await supabase
+      const { error: insertError } = await supabase
         .from("products")
         .insert([productPayload])
-        .select()
-        .single();
+        .select("*");
 
       if (insertError) {
         throw insertError;

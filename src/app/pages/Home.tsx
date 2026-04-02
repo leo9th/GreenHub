@@ -85,7 +85,7 @@ export default function Home() {
         }));
 
         const nextProducts = applyFeaturedProduct(
-          mergeUniqueProducts([localProducts, serverProducts, baseProducts])
+          mergeUniqueProducts([serverProducts, localProducts, baseProducts])
         );
 
         setProducts(nextProducts);

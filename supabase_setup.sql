@@ -57,6 +57,7 @@ create table if not exists public.products (
   title text not null,
   description text,
   price numeric not null,
+  price_local numeric not null default 0,
   image text,
   location text,
   condition text,
@@ -74,6 +75,7 @@ alter table public.products add column if not exists category text;
 alter table public.products add column if not exists condition text;
 alter table public.products add column if not exists location text;
 alter table public.products add column if not exists image text;
+alter table public.products add column if not exists price_local numeric not null default 0;
 alter table public.products add column if not exists rating numeric default 0;
 alter table public.products add column if not exists reviews integer default 0;
 alter table public.products add column if not exists seller_tier text;

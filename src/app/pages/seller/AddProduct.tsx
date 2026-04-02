@@ -115,6 +115,7 @@ export default function AddProduct() {
         title,
         description,
         price: Number(price),
+        price_local: Number(price),
         image: uploadedUrls[0] || null,
         location: lga && state ? `${lga}, ${state}` : state || null,
         condition: condition || null,

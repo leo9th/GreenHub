@@ -110,8 +110,7 @@ export default function Products() {
     },
   ];
 
-  const CUSTOM_PRODUCTS_KEY = "greenhub-custom-products";
-  const [products, setProducts] = useState<any[]>(defaultProducts);
+  const [products, setProducts] = useState(defaultProducts as Array<any>);
   const [isLoadingProducts, setIsLoadingProducts] = useState<boolean>(true);
   const [productLoadError, setProductLoadError] = useState<string | null>(null);
 

@@ -64,7 +64,10 @@ export default function AddProduct() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!authUser) return;
+    if (!authUser) {
+      alert("Please sign in before adding a product.");
+      return;
+    }
 
     if (imageFiles.length === 0) {
       alert("Please upload at least one product image.");
@@ -76,6 +79,10 @@ export default function AddProduct() {
     let uploadedUrls: string[] = [];
 
     try {
+      if (!authUser?.id) {
+        throw new Error("You must be signed in to add a product.");
+      }
+
       // Serially upload each image to Supabase storage to handle multiple files safely.
       // If storage fails, still continue and insert the product row so it is visible to all users.
       for (const item of imageFiles) {
@@ -118,20 +125,22 @@ export default function AddProduct() {
         delivery_options: delivery,
       };
 
-      const { error: insertError } = await supabase
+      const { data: insertData, error: insertError } = await supabase
         .from("products")
         .insert([productPayload])
-        .select("*");
+        .select();
 
       if (insertError) {
+        console.error("Supabase insert error:", insertError);
         throw insertError;
       }
 
+      console.log("Supabase insert succeeded:", insertData);
       alert("Product successfully saved to Supabase and is now available to all users.");
       navigate("/products");
     } catch (error: any) {
       console.error("Supabase save failed:", error);
-      alert("Product could not be saved. Please try again.");
+      alert(error?.message || "Product could not be saved. Please try again.");
       return;
     } finally {
       setIsUploading(false);

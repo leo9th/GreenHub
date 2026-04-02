@@ -23,7 +23,7 @@ export default function AddProduct() {
   const [condition, setCondition] = useState("");
   const [state, setState] = useState("");
   const [lga, setLga] = useState("");
-  const [delivery, setDelivery] = useState<string[]>([]);
+  
   const CUSTOM_PRODUCTS_KEY = "greenhub-custom-products";
 
   const conditions = ["New", "Like New", "Good", "Fair"];

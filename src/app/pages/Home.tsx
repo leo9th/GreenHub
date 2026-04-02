@@ -5,7 +5,7 @@ import { getMockProductsForRegion } from "../data/mockData";
 import { useRegion, regions } from "../context/RegionContext";
 import { useCurrency } from "../hooks/useCurrency";
 import { useState, useEffect } from "react";
-import { supabase } from "../lib/supabase";
+import { supabase } from "../../lib/supabase";
 import { ProductCard } from "../components/cards/ProductCard";
 
 export default function Home() {

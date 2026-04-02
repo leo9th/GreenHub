@@ -9,7 +9,6 @@ import { ProductCard } from "../components/cards/ProductCard";
 export default function Products() {
   const [searchParams, setSearchParams] = useSearchParams();
   const formatPrice = useCurrency();
-  const CUSTOM_PRODUCTS_KEY = "greenhub-custom-products";
   const [showFilters, setShowFilters] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>(searchParams.get("category") || "all");
 
@@ -143,10 +142,7 @@ export default function Products() {
       } catch (error: any) {
         console.error("Error loading products from Supabase:", error);
         setProductLoadError(error?.message || "Unable to load server products");
-
-        const rawProducts = localStorage.getItem(CUSTOM_PRODUCTS_KEY);
-        const fallbackProducts = rawProducts ? JSON.parse(rawProducts) : [];
-        setProducts([...fallbackProducts, ...defaultProducts]);
+        setProducts(defaultProducts);
       } finally {
         setIsLoadingProducts(false);
       }

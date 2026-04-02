@@ -14,22 +14,6 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const baseProducts = getMockProductsForRegion(activeRegion.id as "NG" | "US" | "CN");
-  const CUSTOM_PRODUCTS_KEY = "greenhub-custom-products";
-
-  const getLocalProducts = () => {
-    const rawProducts = localStorage.getItem(CUSTOM_PRODUCTS_KEY);
-    return rawProducts ? JSON.parse(rawProducts) : [];
-  };
-
-  const mergeUniqueProducts = (productLists: any[][]) => {
-    const productMap = new Map<string, any>();
-    productLists.flat().forEach((product) => {
-      const key = product?.id?.toString();
-      if (!key) return;
-      if (!productMap.has(key)) productMap.set(key, product);
-    });
-    return Array.from(productMap.values());
-  };
 
   const applyFeaturedProduct = (products: any[]) => {
     const featId = localStorage.getItem("greenhub_featured_product");
@@ -59,8 +43,7 @@ export default function Home() {
     const banner = localStorage.getItem("greenhub_custom_banner");
     if (banner) setCustomBanner(banner);
 
-    const localProducts = getLocalProducts();
-    const initialProducts = applyFeaturedProduct(mergeUniqueProducts([localProducts, baseProducts]));
+    const initialProducts = applyFeaturedProduct(baseProducts);
     setProducts(initialProducts);
 
     const loadProducts = async () => {
@@ -84,20 +67,14 @@ export default function Home() {
           updatedAt: product.updated_at,
         }));
 
-        const nextProducts = applyFeaturedProduct(
-          mergeUniqueProducts([serverProducts, localProducts, baseProducts])
-        );
+        const nextProducts = applyFeaturedProduct(serverProducts);
 
         setProducts(nextProducts);
       } catch (error: any) {
         console.error("Error loading products from Supabase:", error);
         setProductLoadError(error?.message || "Unable to load server products");
 
-        const nextProducts = applyFeaturedProduct(
-          mergeUniqueProducts([localProducts, baseProducts])
-        );
-
-        setProducts(nextProducts);
+        setProducts(applyFeaturedProduct(baseProducts));
       } finally {
         setIsLoadingProducts(false);
       }

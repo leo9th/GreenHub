@@ -24,8 +24,6 @@ export default function AddProduct() {
   const [state, setState] = useState("");
   const [lga, setLga] = useState("");
   const [delivery, setDelivery] = useState<string[]>([]);
-  
-  const CUSTOM_PRODUCTS_KEY = "greenhub-custom-products";
 
   const conditions = ["New", "Like New", "Good", "Fair"];
 
@@ -133,30 +131,8 @@ export default function AddProduct() {
       navigate("/products");
     } catch (error: any) {
       console.error("Supabase save failed:", error);
-
-      const fallbackProduct = {
-        id: Date.now(),
-        image: uploadedUrls[0] || imageFiles[0]?.preview || "",
-        title,
-        description,
-        price: Number(price),
-        location: lga && state ? `${lga}, ${state}` : state,
-        rating: 5.0,
-        reviews: 0,
-        condition: condition as "New" | "Like New" | "Good" | "Fair",
-        category,
-        sellerTier: "standard",
-        sellerId: authUser.id,
-        deliveryOptions: delivery,
-        createdAt: new Date().toISOString(),
-      };
-
-      const existingRaw = localStorage.getItem(CUSTOM_PRODUCTS_KEY);
-      const existingProducts = existingRaw ? JSON.parse(existingRaw) : [];
-      localStorage.setItem(CUSTOM_PRODUCTS_KEY, JSON.stringify([fallbackProduct, ...existingProducts]));
-
-      alert("Product saved locally because saving to Supabase failed. It will appear in fallback mode.");
-      navigate("/products");
+      alert("Product could not be saved. Please try again.");
+      return;
     } finally {
       setIsUploading(false);
     }

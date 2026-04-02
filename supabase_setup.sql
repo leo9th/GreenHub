@@ -69,6 +69,16 @@ create table if not exists public.products (
   updated_at timestamptz not null default timezone('utc'::text, now())
 );
 
+-- Ensure missing product columns are added when updating an older schema.
+alter table public.products add column if not exists category text;
+alter table public.products add column if not exists condition text;
+alter table public.products add column if not exists location text;
+alter table public.products add column if not exists image text;
+alter table public.products add column if not exists rating numeric default 0;
+alter table public.products add column if not exists reviews integer default 0;
+alter table public.products add column if not exists seller_tier text;
+alter table public.products add column if not exists delivery_options text[];
+
 alter table public.products enable row level security;
 
 create policy "Public products are viewable by everyone." on public.products

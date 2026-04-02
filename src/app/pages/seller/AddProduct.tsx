@@ -2,12 +2,14 @@ import { useState, useRef } from "react";
 import { useNavigate, useParams } from "react-router";
 import { ArrowLeft, Upload, X } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
+import { useRegion } from "../../context/RegionContext";
 import { supabase } from "../../../lib/supabase";
 import {  categories, nigerianStates, getLGAsForState, deliveryServices  } from "../../data/mockData";
 import { useCurrency } from "../../hooks/useCurrency";
 
 export default function AddProduct() {
   const formatPrice = useCurrency();
+  const { activeRegion } = useRegion();
   const navigate = useNavigate();
   const { id } = useParams();
   const isEdit = Boolean(id);
@@ -116,6 +118,7 @@ export default function AddProduct() {
         description,
         price: Number(price),
         price_local: Number(price),
+        currency_code: activeRegion.currencyCode,
         image: uploadedUrls[0] || null,
         location: lga && state ? `${lga}, ${state}` : state || null,
         condition: condition || null,
@@ -126,13 +129,17 @@ export default function AddProduct() {
         delivery_options: delivery,
       };
 
+      console.log("Auth user:", authUser);
+      console.log("Product payload:", productPayload);
+      console.log("Supabase productPayload:", productPayload);
+
       const { data: insertData, error: insertError } = await supabase
         .from("products")
         .insert([productPayload])
         .select();
 
       if (insertError) {
-        console.error("Supabase insert error:", insertError);
+        console.error("Supabase insert error:", insertError, "payload:", productPayload);
         throw insertError;
       }
 

@@ -3,7 +3,7 @@ import { Link, useSearchParams } from "react-router";
 import { Search, Filter, ArrowLeft, X, BadgeCheck } from "lucide-react";
 import {  categories, nigerianStates  } from "../data/mockData";
 import { useCurrency } from "../hooks/useCurrency";
-import { supabase } from "../lib/supabase";
+import { supabase } from "../../lib/supabase";
 import { ProductCard } from "../components/cards/ProductCard";
 
 export default function Products() {

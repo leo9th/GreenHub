@@ -15,17 +15,53 @@ export default function Home() {
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const baseProducts = getMockProductsForRegion(activeRegion.id as "NG" | "US" | "CN");
   const CUSTOM_PRODUCTS_KEY = "greenhub-custom-products";
-  
+
+  const getLocalProducts = () => {
+    const rawProducts = localStorage.getItem(CUSTOM_PRODUCTS_KEY);
+    return rawProducts ? JSON.parse(rawProducts) : [];
+  };
+
+  const mergeUniqueProducts = (productLists: any[][]) => {
+    const productMap = new Map<string, any>();
+    productLists.flat().forEach((product) => {
+      const key = product?.id?.toString();
+      if (!key) return;
+      if (!productMap.has(key)) productMap.set(key, product);
+    });
+    return Array.from(productMap.values());
+  };
+
+  const applyFeaturedProduct = (products: any[]) => {
+    const featId = localStorage.getItem("greenhub_featured_product");
+    if (!featId) {
+      setFeaturedProduct(null);
+      return products;
+    }
+
+    const found = products.find((p: any) => p.id?.toString() === featId);
+    if (!found) {
+      setFeaturedProduct(null);
+      return products;
+    }
+
+    setFeaturedProduct(found);
+    return [found, ...products.filter((p: any) => p.id?.toString() !== featId)];
+  };
+
   // Custom Ad State
   const [customBanner, setCustomBanner] = useState<string | null>(null);
   const [featuredProduct, setFeaturedProduct] = useState<any | null>(null);
-  const [products, setProducts] = useState<any[]>(baseProducts);
+  const [products, setProducts] = useState(baseProducts as Array<any>);
   const [isLoadingProducts, setIsLoadingProducts] = useState<boolean>(true);
   const [productLoadError, setProductLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     const banner = localStorage.getItem("greenhub_custom_banner");
     if (banner) setCustomBanner(banner);
+
+    const localProducts = getLocalProducts();
+    const initialProducts = applyFeaturedProduct(mergeUniqueProducts([localProducts, baseProducts]));
+    setProducts(initialProducts);
 
     const loadProducts = async () => {
       setIsLoadingProducts(true);
@@ -48,34 +84,18 @@ export default function Home() {
           updatedAt: product.updated_at,
         }));
 
-        let nextProducts = serverProducts.length > 0 ? serverProducts : baseProducts;
-
-        const featId = localStorage.getItem("greenhub_featured_product");
-        if (featId) {
-          const found = nextProducts.find((p: any) => p.id.toString() === featId);
-          if (found) {
-            setFeaturedProduct(found);
-            nextProducts = [found, ...nextProducts.filter((p: any) => p.id.toString() !== featId)];
-          }
-        }
+        const nextProducts = applyFeaturedProduct(
+          mergeUniqueProducts([localProducts, serverProducts, baseProducts])
+        );
 
         setProducts(nextProducts);
       } catch (error: any) {
         console.error("Error loading products from Supabase:", error);
         setProductLoadError(error?.message || "Unable to load server products");
 
-        const rawProducts = localStorage.getItem(CUSTOM_PRODUCTS_KEY);
-        const customProducts = rawProducts ? JSON.parse(rawProducts) : [];
-        let nextProducts = [...customProducts, ...baseProducts];
-
-        const featId = localStorage.getItem("greenhub_featured_product");
-        if (featId) {
-          const found = nextProducts.find((p: any) => p.id.toString() === featId);
-          if (found) {
-            setFeaturedProduct(found);
-            nextProducts = [found, ...nextProducts.filter((p: any) => p.id.toString() !== featId)];
-          }
-        }
+        const nextProducts = applyFeaturedProduct(
+          mergeUniqueProducts([localProducts, baseProducts])
+        );
 
         setProducts(nextProducts);
       } finally {

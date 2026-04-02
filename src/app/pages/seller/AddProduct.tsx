@@ -112,13 +112,15 @@ export default function AddProduct() {
       console.log("Successfully Uploaded Permanent Image URLs:", uploadedUrls);
       console.log("Product Form Data:", { title, description, price, category, condition, state, lga, delivery });
 
+      const currencyCode = activeRegion?.currencyCode || "NGN";
+
       const productPayload = {
         seller_id: authUser.id,
         title,
         description,
         price: Number(price),
         price_local: Number(price),
-        currency_code: activeRegion.currencyCode,
+        currency_code: currencyCode,
         image: uploadedUrls[0] || null,
         location: lga && state ? `${lga}, ${state}` : state || null,
         condition: condition || null,

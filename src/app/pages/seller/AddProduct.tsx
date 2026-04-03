@@ -1,397 +1,506 @@
-import { useEffect, useState, type FormEvent } from "react";
-import { useNavigate } from "react-router";
-import { ArrowLeft, Loader2, Upload } from "lucide-react";
-import { supabase } from "../../../lib/supabase";
+import { useState, useRef, useEffect } from "react";
+import { useNavigate, useParams } from "react-router";
+import { ArrowLeft, Upload, X } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
+import { useRegion } from "../../context/RegionContext";
+import { supabase } from "../../../lib/supabase";
+import { categories, nigerianStates, getLGAsForState, deliveryServices } from "../../data/mockData";
+import { useCurrency } from "../../hooks/useCurrency";
 
-const DEFAULT_CURRENCY = "NGN" as const;
-
-const CATEGORIES: { value: string; label: string }[] = [
-  { value: "Electronics", label: "📱 Electronics" },
-  { value: "Fashion", label: "👗 Fashion" },
-  { value: "Home & Garden", label: "🏠 Home & Garden" },
-  { value: "Sports", label: "⚽ Sports" },
-  { value: "Vehicles", label: "🚗 Vehicles" },
-  { value: "Services", label: "💼 Services" },
-  { value: "Other", label: "📦 Other" },
-];
-
-const CONDITIONS = ["New", "Like New", "Good", "Fair"] as const;
-
-const NIGERIAN_STATES = ["Lagos", "Abuja", "Kano", "Rivers", "Oyo", "Delta", "Kaduna", "Enugu"];
-
-const DELIVERY_OPTIONS = [
-  "Local pickup",
-  "Nationwide delivery",
-  "Pay on delivery",
-  "Same-day (where available)",
-] as const;
-
-function sanitizeFileName(name: string): string {
-  return name.replace(/[^\w.\-]+/g, "_").slice(0, 120);
-}
-
-/** Build a row that matches `public.products` in supabase_setup.sql */
-function buildProductRow(params: {
-  sellerId: string;
-  title: string;
-  description: string;
-  price: number;
-  imageUrl: string | null;
-  location: string;
-  condition: string;
-  category: string;
-  deliveryOptions: string[];
-  sellerTier: string | null;
-}) {
-  const price = Number.isFinite(params.price) ? params.price : 0;
-
-  return {
-    seller_id: params.sellerId,
-    title: params.title.trim(),
-    description: params.description.trim() || null,
-    price,
-    price_local: price,
-    currency_code: DEFAULT_CURRENCY,
-    image: params.imageUrl,
-    location: params.location.trim() || null,
-    condition: params.condition,
-    category: params.category.trim() || null,
-    rating: 0,
-    reviews: 0,
-    seller_tier: params.sellerTier?.trim() || null,
-    delivery_options:
-      params.deliveryOptions.length > 0 ? params.deliveryOptions : null,
-  };
+/** Never persist null/empty — PostgREST may send null and bypass column DEFAULT. */
+function resolveCurrencyCode(code: string | null | undefined): string {
+  const t = typeof code === "string" ? code.trim().toUpperCase() : "";
+  return t.length > 0 ? t : "NGN";
 }
 
 export default function AddProduct() {
+  const formatPrice = useCurrency();
+  const { activeRegion } = useRegion();
   const navigate = useNavigate();
-  const { user, loading: authLoading } = useAuth();
+  const { id } = useParams();
+  const isEdit = Boolean(id);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { user: authUser } = useAuth();
 
+  const [isUploading, setIsUploading] = useState(false);
+  const [imageFiles, setImageFiles] = useState<{ file: File; preview: string }[]>([]);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [priceInput, setPriceInput] = useState("");
+  const [price, setPrice] = useState("");
   const [category, setCategory] = useState("");
-  const [condition, setCondition] = useState<string>(CONDITIONS[0]);
-  const [state, setState] = useState(NIGERIAN_STATES[0]);
+  const [condition, setCondition] = useState("");
+  const [state, setState] = useState("");
   const [lga, setLga] = useState("");
-  const [sellerTier, setSellerTier] = useState("");
-  const [selectedDelivery, setSelectedDelivery] = useState<string[]>([]);
-  const [files, setFiles] = useState<File[]>([]);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [delivery, setDelivery] = useState<string[]>([]);
+  const [existingImageUrl, setExistingImageUrl] = useState<string | null>(null);
+  const [loadingProduct, setLoadingProduct] = useState(false);
+
+  const conditions = ["New", "Like New", "Good", "Fair"];
 
   useEffect(() => {
-    if (authLoading) return;
-    if (!user) navigate("/login", { replace: true });
-  }, [authLoading, user, navigate]);
+    if (!isEdit || !id || !authUser?.id) return;
+    let cancelled = false;
+    setLoadingProduct(true);
+    void (async () => {
+      const { data, error } = await supabase
+        .from("products")
+        .select("*")
+        .eq("id", id)
+        .eq("seller_id", authUser.id)
+        .maybeSingle();
 
-  function toggleDelivery(opt: string) {
-    setSelectedDelivery((prev) =>
-      prev.includes(opt) ? prev.filter((x) => x !== opt) : [...prev, opt]
-    );
-  }
+      if (cancelled) return;
+      setLoadingProduct(false);
 
-  async function uploadPrimaryImage(
-    sellerId: string,
-    file: File
-  ): Promise<string | null> {
-    const path = `${sellerId}/${Date.now()}-${sanitizeFileName(file.name)}`;
-    const { error: upErr } = await supabase.storage
-      .from("products")
-      .upload(path, file, { upsert: false });
-    if (upErr) {
-      throw new Error(upErr.message || "Image upload failed");
+      if (error || !data) {
+        alert(error?.message ?? "Product not found.");
+        navigate("/seller/products", { replace: true });
+        return;
+      }
+
+      setTitle(data.title ?? "");
+      setDescription(data.description ?? "");
+      setPrice(
+        data.price != null && !Number.isNaN(Number(data.price))
+          ? String(data.price)
+          : ""
+      );
+      setCategory(data.category ?? "");
+      setCondition(data.condition ?? "");
+      const loc = ((data.location as string | null) ?? "").trim();
+      const comma = loc.indexOf(",");
+      if (comma >= 0) {
+        setLga(loc.slice(0, comma).trim());
+        setState(loc.slice(comma + 1).trim());
+      } else if (loc) {
+        setState(loc);
+        setLga("");
+      } else {
+        setState("");
+        setLga("");
+      }
+      setDelivery(Array.isArray(data.delivery_options) ? data.delivery_options : []);
+      setExistingImageUrl(data.image ?? null);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isEdit, id, authUser?.id, navigate]);
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    
+    // Only take enough to satisfy the 5 max limit
+    const availableSlots = 5 - imageFiles.length;
+    const filesToAdd = files.slice(0, availableSlots);
+    
+    const newImageFiles = filesToAdd.map(file => ({
+      file,
+      preview: URL.createObjectURL(file)
+    }));
+    
+    if (newImageFiles.length > 0) {
+      setImageFiles(prev => [...prev, ...newImageFiles]);
     }
-    const { data } = supabase.storage.from("products").getPublicUrl(path);
-    return data.publicUrl;
-  }
+    
+    // Reset file input so same file can be selected again if removed
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
 
-  async function handleSubmit(e: FormEvent) {
+  const removeImage = (index: number) => {
+    setImageFiles(imageFiles.filter((_, i) => i !== index));
+  };
+
+  const toggleDelivery = (deliveryName: string) => {
+    if (delivery.includes(deliveryName)) {
+      setDelivery(delivery.filter(d => d !== deliveryName));
+    } else {
+      setDelivery([...delivery, deliveryName]);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
-    if (!user) return;
-
-    const trimmedTitle = title.trim();
-    if (!trimmedTitle) {
-      setError("Please enter a product title.");
+    if (!authUser) {
+      alert("Please sign in before adding a product.");
       return;
     }
 
-    const price = parseFloat(priceInput.replace(/,/g, ""));
-    if (!Number.isFinite(price) || price < 0) {
-      setError("Please enter a valid price.");
+    if (imageFiles.length === 0 && !existingImageUrl) {
+      alert("Please upload at least one product image.");
       return;
     }
 
-    const location =
-      lga.trim().length > 0
-        ? `${lga.trim()}, ${state}`
-        : state;
+    if (delivery.length === 0) {
+      alert("Please select at least one delivery option.");
+      return;
+    }
 
-    setSaving(true);
+    setIsUploading(true);
+
+    let uploadedUrls: string[] = [];
+
     try {
-      let imageUrl: string | null = null;
-      const primary = files[0];
-      if (primary) {
-        imageUrl = await uploadPrimaryImage(user.id, primary);
+      if (!authUser?.id) {
+        throw new Error("You must be signed in to add a product.");
       }
 
-      const row = buildProductRow({
-        sellerId: user.id,
-        title: trimmedTitle,
-        description,
-        price,
-        imageUrl,
-        location,
-        condition,
-        category,
-        deliveryOptions: selectedDelivery,
-        sellerTier: sellerTier || null,
-      });
+      // Serially upload each image to Supabase storage to handle multiple files safely.
+      // If storage fails, still continue and insert the product row so it is visible to all users.
+      for (const item of imageFiles) {
+        const fileExt = item.file.name.split('.').pop();
+        const fileName = `${authUser.id}/${Math.random().toString(36).substring(7)}.${fileExt}`;
 
-      const { error: insertError } = await supabase.from("products").insert(row);
+        const { error: uploadError } = await supabase.storage
+          .from('products')
+          .upload(fileName, item.file);
 
-      if (insertError) {
-        throw new Error(insertError.message);
+        if (uploadError) {
+          console.warn('Image upload failed for', fileName, uploadError);
+          continue;
+        }
+
+        const { data } = supabase.storage
+          .from('products')
+          .getPublicUrl(fileName);
+
+        if (data?.publicUrl) {
+          uploadedUrls.push(data.publicUrl);
+        }
       }
 
-      navigate("/", { replace: true });
-      alert("Product saved successfully.");
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Could not save product.";
-      setError(msg);
+      const priceNum = Number.parseFloat(String(price));
+      if (!Number.isFinite(priceNum) || priceNum < 0) {
+        throw new Error("Please enter a valid price.");
+      }
+
+      const currencyCode = resolveCurrencyCode(activeRegion?.currencyCode);
+      const mainImage = uploadedUrls[0] ?? existingImageUrl ?? null;
+
+      const productPayload = {
+        seller_id: authUser.id,
+        title: title.trim(),
+        description: description.trim() || null,
+        price: priceNum,
+        price_local: priceNum,
+        currency_code: currencyCode,
+        image: mainImage,
+        location: lga && state ? `${lga}, ${state}` : state || null,
+        condition: condition || null,
+        category: category || null,
+        rating: 0,
+        reviews: 0,
+        seller_tier: "standard",
+        delivery_options: delivery.length > 0 ? delivery : null,
+      };
+
+      if (isEdit && id) {
+        const { seller_id: _ignoredSellerId, ...updateRow } = productPayload;
+        void _ignoredSellerId;
+        const { error: updateError } = await supabase
+          .from("products")
+          .update({
+            ...updateRow,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", id)
+          .eq("seller_id", authUser.id);
+
+        if (updateError) {
+          console.error("Supabase update error:", updateError, "payload:", updateRow);
+          throw updateError;
+        }
+
+        alert("Product updated successfully.");
+        navigate("/seller/products");
+      } else {
+        const { data: insertData, error: insertError } = await supabase
+          .from("products")
+          .insert([productPayload])
+          .select();
+
+        if (insertError) {
+          console.error("Supabase insert error:", insertError, "payload:", productPayload);
+          throw insertError;
+        }
+
+        console.log("Supabase insert succeeded:", insertData);
+        alert("Product successfully saved to Supabase and is now available to all users.");
+        navigate("/products");
+      }
+    } catch (error: any) {
+      console.error("Supabase save failed:", error);
+      alert(error?.message || "Product could not be saved. Please try again.");
+      return;
     } finally {
-      setSaving(false);
+      setIsUploading(false);
     }
-  }
+  };
 
-  if (authLoading || !user) {
+  if (isEdit && loadingProduct) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#f4f5f7]">
-        <Loader2 className="w-8 h-8 animate-spin text-[#22c55e]" />
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-600">
+        Loading product…
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#f4f5f7] pb-16 pt-6 px-4">
-      <div className="max-w-lg mx-auto">
-        <button
-          type="button"
-          onClick={() => navigate(-1)}
-          className="flex items-center gap-2 text-gray-700 font-medium mb-4 hover:text-[#22c55e]"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Back
-        </button>
+    <div className="min-h-screen bg-gray-50 pb-6">
+      {/* Header */}
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
+        <div className="px-4 py-3 max-w-7xl mx-auto flex items-center gap-3">
+          <button onClick={() => navigate(-1)} className="p-2 -ml-2">
+            <ArrowLeft className="w-5 h-5 text-gray-700" />
+          </button>
+          <h1 className="text-lg font-semibold text-gray-800">
+            {isEdit ? "Edit Product" : "Add New Product"}
+          </h1>
+        </div>
+      </header>
 
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-          <div className="px-5 py-4 border-b border-gray-100">
-            <h1 className="text-xl font-bold text-gray-900">Add product</h1>
-            <p className="text-sm text-gray-500 mt-1">
-              Listing uses {DEFAULT_CURRENCY} — currency is set automatically.
+      <form onSubmit={handleSubmit} className="px-4 py-4 max-w-7xl mx-auto space-y-4">
+        {/* Images */}
+        <div className="bg-white rounded-lg p-4">
+          <label className="block font-semibold text-gray-800 mb-3">
+            Product Images * (Max 5)
+          </label>
+          <div className="grid grid-cols-3 gap-3 mb-3">
+            {imageFiles.map((img, index) => (
+              <div key={index} className="relative aspect-square bg-gray-100 rounded-lg overflow-hidden">
+                <img src={img.preview} alt={`Product ${index + 1}`} className="w-full h-full object-cover" />
+                <button
+                  type="button"
+                  onClick={() => removeImage(index)}
+                  className="absolute top-1 right-1 w-6 h-6 bg-[#ef4444] rounded-full flex items-center justify-center text-white shadow-sm"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+                {index === 0 && (
+                  <span className="absolute bottom-1 left-1 bg-[#22c55e] text-white text-xs px-2 py-0.5 rounded shadow-sm">
+                    Main
+                  </span>
+                )}
+              </div>
+            ))}
+            {imageFiles.length < 5 && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="aspect-square border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center text-gray-500 hover:border-[#22c55e] hover:text-[#22c55e] transition-colors"
+                >
+                  <Upload className="w-6 h-6 mb-1" />
+                  <span className="text-xs">Upload</span>
+                </button>
+                <input 
+                  type="file" 
+                  ref={fileInputRef}
+                  onChange={handleImageUpload}
+                  accept="image/*" 
+                  multiple
+                  className="hidden" 
+                />
+              </>
+            )}
+          </div>
+          <p className="text-xs text-gray-600">
+            First image will be the main product image
+          </p>
+          {isEdit && existingImageUrl && imageFiles.length === 0 ? (
+            <p className="text-xs text-[#16a34a] mt-2">
+              Current listing photo kept. Add new images above to replace it.
             </p>
+          ) : null}
+        </div>
+
+        {/* Title */}
+        <div className="bg-white rounded-lg p-4">
+          <label className="block font-semibold text-gray-800 mb-2">
+            Product Title *
+          </label>
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            required
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#22c55e]"
+            placeholder="E.g., iPhone 13 Pro Max 256GB"
+          />
+        </div>
+
+        {/* Description */}
+        <div className="bg-white rounded-lg p-4">
+          <label className="block font-semibold text-gray-800 mb-2">
+            Description *
+          </label>
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            required
+            rows={6}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#22c55e]"
+            placeholder="Describe your product in detail..."
+          />
+          <p className="text-xs text-gray-600 mt-2">
+            Include condition, features, and what's included
+          </p>
+        </div>
+
+        {/* Price */}
+        <div className="bg-white rounded-lg p-4">
+          <label className="block font-semibold text-gray-800 mb-2">
+            Price (₦) *
+          </label>
+          <input
+            type="number"
+            value={price}
+            onChange={(e) => setPrice(e.target.value)}
+            required
+            min="0"
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#22c55e]"
+            placeholder="0"
+          />
+        </div>
+
+        {/* Category & Condition */}
+        <div className="bg-white rounded-lg p-4 space-y-4">
+          <div>
+            <label className="block font-semibold text-gray-800 mb-2">
+              Category *
+            </label>
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              required
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#22c55e]"
+            >
+              <option value="">Select category</option>
+              {categories.map((cat) => (
+                <option key={cat.id} value={cat.id}>
+                  {cat.emoji} {cat.name}
+                </option>
+              ))}
+            </select>
           </div>
 
-          <form onSubmit={handleSubmit} className="p-5 space-y-5">
-            {error ? (
-              <div
-                className="text-sm text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2"
-                role="alert"
-              >
-                {error}
-              </div>
-            ) : null}
-
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">
-                Photos (first image is the main listing photo)
-              </label>
-              <label className="flex flex-col items-center justify-center border-2 border-dashed border-gray-200 rounded-lg py-8 cursor-pointer hover:border-[#22c55e]/50 transition-colors">
-                <Upload className="w-8 h-8 text-gray-400 mb-2" />
-                <span className="text-sm text-gray-600">Up to 5 images</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  className="hidden"
-                  onChange={(ev) => {
-                    const list = ev.target.files
-                      ? Array.from(ev.target.files).slice(0, 5)
-                      : [];
-                    setFiles(list);
-                  }}
-                />
-              </label>
-              {files.length > 0 ? (
-                <p className="text-xs text-gray-500 mt-2">
-                  {files.length} file(s) selected — primary: {files[0].name}
-                </p>
-              ) : null}
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-[#22c55e] mb-1">
-                Title *
-              </label>
-              <input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                placeholder="What are you selling?"
-                maxLength={200}
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">
-                Description
-              </label>
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                rows={4}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-y"
-                placeholder="Describe condition, accessories, warranty…"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-[#22c55e] mb-1">
-                  Price ({DEFAULT_CURRENCY}) *
-                </label>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={priceInput}
-                  onChange={(e) => setPriceInput(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                  placeholder="e.g. 25000"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">
-                  Category *
-                </label>
-                <select
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
-                  required
+          <div>
+            <label className="block font-semibold text-gray-800 mb-2">
+              Condition *
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              {conditions.map((cond) => (
+                <label
+                  key={cond}
+                  className={`p-3 border-2 rounded-lg cursor-pointer transition-colors text-center ${
+                    condition === cond
+                      ? "border-[#22c55e] bg-[#22c55e]/5"
+                      : "border-gray-200"
+                  }`}
                 >
-                  <option value="">Select</option>
-                  {CATEGORIES.map((c) => (
-                    <option key={c.value} value={c.value}>
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">
-                Condition *
-              </label>
-              <select
-                value={condition}
-                onChange={(e) => setCondition(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
-              >
-                {CONDITIONS.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">
-                  State *
+                  <input
+                    type="radio"
+                    name="condition"
+                    value={cond}
+                    checked={condition === cond}
+                    onChange={(e) => setCondition(e.target.value)}
+                    required
+                    className="sr-only"
+                  />
+                  <span className="text-sm font-medium text-gray-800">{cond}</span>
                 </label>
-                <select
-                  value={state}
-                  onChange={(e) => setState(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
-                >
-                  {NIGERIAN_STATES.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">
-                  City / LGA
-                </label>
-                <input
-                  value={lga}
-                  onChange={(e) => setLga(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                  placeholder="e.g. Ikeja"
-                />
-              </div>
+              ))}
             </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">
-                Seller tier (optional)
-              </label>
-              <input
-                value={sellerTier}
-                onChange={(e) => setSellerTier(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                placeholder="e.g. Verified"
-              />
-            </div>
-
-            <div>
-              <span className="block text-xs font-semibold text-gray-700 mb-2">
-                Delivery options
-              </span>
-              <div className="space-y-2">
-                {DELIVERY_OPTIONS.map((opt) => (
-                  <label
-                    key={opt}
-                    className="flex items-center gap-2 text-sm text-gray-800 cursor-pointer"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedDelivery.includes(opt)}
-                      onChange={() => toggleDelivery(opt)}
-                      className="rounded border-gray-300 text-[#22c55e] focus:ring-[#22c55e]"
-                    />
-                    {opt}
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={saving}
-              className="w-full bg-[#22c55e] text-white font-semibold py-3 rounded-lg text-sm hover:bg-[#16a34a] disabled:opacity-50 flex items-center justify-center gap-2"
-            >
-              {saving ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Saving…
-                </>
-              ) : (
-                "Publish product"
-              )}
-            </button>
-          </form>
+          </div>
         </div>
-      </div>
+
+        {/* Location */}
+        <div className="bg-white rounded-lg p-4 space-y-4">
+          <div>
+            <label className="block font-semibold text-gray-800 mb-2">
+              State *
+            </label>
+            <select
+              value={state}
+              onChange={(e) => {
+                setState(e.target.value);
+                setLga("");
+              }}
+              required
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#22c55e]"
+            >
+              <option value="">Select state</option>
+              {nigerianStates.map((s) => (
+                <option key={s.code} value={s.name}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block font-semibold text-gray-800 mb-2">
+              LGA *
+            </label>
+            <select
+              value={lga}
+              onChange={(e) => setLga(e.target.value)}
+              required
+              disabled={!state}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#22c55e] disabled:bg-gray-100"
+            >
+              <option value="">Select LGA</option>
+              {getLGAsForState(state).map((l) => (
+                <option key={l} value={l}>
+                  {l}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Delivery Options */}
+        <div className="bg-white rounded-lg p-4">
+          <label className="block font-semibold text-gray-800 mb-3">
+            Delivery Options *
+          </label>
+          <div className="space-y-2">
+            {deliveryServices.map((service) => (
+              <label
+                key={service.name}
+                className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:border-[#22c55e] transition-colors"
+              >
+                <input
+                  type="checkbox"
+                  checked={delivery.includes(service.name)}
+                  onChange={() => toggleDelivery(service.name)}
+                  className="w-5 h-5 text-[#22c55e] rounded focus:ring-[#22c55e]"
+                />
+                <span className="text-2xl">{service.logo}</span>
+                <div className="flex-1">
+                  <p className="font-medium text-gray-800">{service.name}</p>
+                  <p className="text-xs text-gray-600">{service.description}</p>
+                </div>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        {/* Submit Button */}
+        <div className="pt-2">
+          <button
+            type="submit"
+            disabled={isUploading}
+            className="w-full py-4 bg-[#22c55e] text-white rounded-xl font-bold text-lg disabled:opacity-50 hover:bg-[#16a34a] transition-colors"
+          >
+            {isUploading ? "Uploading Images..." : (isEdit ? "Update Product" : "Add Product")}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }

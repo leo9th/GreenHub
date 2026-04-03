@@ -61,9 +61,17 @@ export default function AddProduct() {
       setTitle(data.title ?? "");
       setDescription(data.description ?? "");
       setPrice(
-        data.price != null && !Number.isNaN(Number(data.price))
-          ? String(data.price)
-          : ""
+        (() => {
+          const local = data.price_local;
+          const legacy = data.price;
+          const n =
+            local != null && !Number.isNaN(Number(local))
+              ? local
+              : legacy != null && !Number.isNaN(Number(legacy))
+                ? legacy
+                : null;
+          return n != null ? String(n) : "";
+        })()
       );
       setCategory(data.category ?? "");
       setCondition(data.condition ?? "");
@@ -173,8 +181,8 @@ export default function AddProduct() {
         }
       }
 
-      const priceNum = Number.parseFloat(String(price));
-      if (!Number.isFinite(priceNum) || priceNum < 0) {
+      const priceLocalNum = Number.parseFloat(String(price));
+      if (!Number.isFinite(priceLocalNum) || priceLocalNum < 0) {
         throw new Error("Please enter a valid price.");
       }
 
@@ -185,8 +193,7 @@ export default function AddProduct() {
         seller_id: authUser.id,
         title: title.trim(),
         description: description.trim() || null,
-        price: priceNum,
-        price_local: priceNum,
+        price_local: priceLocalNum,
         currency_code: currencyCode,
         image: mainImage,
         location: lga && state ? `${lga}, ${state}` : state || null,

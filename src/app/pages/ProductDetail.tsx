@@ -89,13 +89,13 @@ function RelatedProductsCarousel({
           {items.map((item) => (
             <div
               key={String(item.id)}
-              className="min-w-0 shrink-0 grow-0 pl-3 sm:pl-4 basis-[200px] w-[200px] max-w-[200px]"
+              className="min-w-0 shrink-0 grow-0 pl-3 sm:pl-4 basis-[220px] w-[220px] max-w-[220px]"
             >
               <Link
                 to={`/products/${item.id}`}
                 className="group block rounded-xl overflow-hidden bg-gray-50/80 ring-1 ring-gray-100 hover:ring-[#22c55e]/35 transition-shadow hover:shadow-md"
               >
-                <div className="relative h-[150px] w-full overflow-hidden bg-gray-100">
+                <div className="relative aspect-[16/9] w-full overflow-hidden bg-gray-100">
                   <img
                     src={item.image}
                     alt={item.title}
@@ -123,7 +123,7 @@ function RelatedProductsCarousel({
             type="button"
             aria-label="Previous related products"
             onClick={scrollPrev}
-            className="absolute left-0 top-[75px] z-10 -translate-x-1 sm:-translate-x-2 w-9 h-9 rounded-full bg-white shadow-md ring-1 ring-gray-200/80 flex items-center justify-center text-gray-800 hover:bg-gray-50 hover:text-[#15803d]"
+            className="absolute left-0 top-[62px] z-10 -translate-x-1 sm:-translate-x-2 w-9 h-9 rounded-full bg-white shadow-md ring-1 ring-gray-200/80 flex items-center justify-center text-gray-800 hover:bg-gray-50 hover:text-[#15803d]"
           >
             <ChevronLeft className="w-5 h-5" />
           </button>
@@ -131,7 +131,7 @@ function RelatedProductsCarousel({
             type="button"
             aria-label="Next related products"
             onClick={scrollNext}
-            className="absolute right-0 top-[75px] z-10 translate-x-1 sm:translate-x-2 w-9 h-9 rounded-full bg-white shadow-md ring-1 ring-gray-200/80 flex items-center justify-center text-gray-800 hover:bg-gray-50 hover:text-[#15803d]"
+            className="absolute right-0 top-[62px] z-10 translate-x-1 sm:translate-x-2 w-9 h-9 rounded-full bg-white shadow-md ring-1 ring-gray-200/80 flex items-center justify-center text-gray-800 hover:bg-gray-50 hover:text-[#15803d]"
           >
             <ChevronRight className="w-5 h-5" />
           </button>
@@ -163,12 +163,12 @@ function MoreFromSellerStrip({
       <div className="overflow-hidden" ref={emblaRef}>
         <div className="flex -ml-3 sm:-ml-4">
           {items.map((item) => (
-            <div key={String(item.id)} className="min-w-0 shrink-0 grow-0 pl-3 sm:pl-4 w-[200px] basis-[200px] max-w-[200px]">
+            <div key={String(item.id)} className="min-w-0 shrink-0 grow-0 pl-3 sm:pl-4 w-[220px] basis-[220px] max-w-[220px]">
               <Link
                 to={`/products/${item.id}`}
                 className="block rounded-xl overflow-hidden bg-gray-50/80 ring-1 ring-gray-100 hover:ring-[#22c55e]/35 transition-shadow"
               >
-                <div className="relative h-[150px] w-full overflow-hidden bg-gray-100">
+                <div className="relative aspect-[16/9] w-full overflow-hidden bg-gray-100">
                   <img src={item.image} alt="" className="h-full w-full object-cover" />
                   <span className="absolute top-2 left-2 bg-[#16a34a] text-white text-[10px] font-semibold px-2 py-0.5 rounded-md">
                     {item.condition || "—"}
@@ -189,7 +189,7 @@ function MoreFromSellerStrip({
             type="button"
             aria-label="Scroll seller listings left"
             onClick={() => emblaApi?.scrollPrev()}
-            className="hidden sm:flex absolute left-0 top-[72px] z-10 -translate-x-1 w-8 h-8 rounded-full bg-white border border-gray-200 shadow items-center justify-center text-gray-700 opacity-0 group-hover/strip:opacity-100 transition-opacity"
+            className="hidden sm:flex absolute left-0 top-[62px] z-10 -translate-x-1 w-8 h-8 rounded-full bg-white border border-gray-200 shadow items-center justify-center text-gray-700 opacity-0 group-hover/strip:opacity-100 transition-opacity"
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
@@ -197,7 +197,7 @@ function MoreFromSellerStrip({
             type="button"
             aria-label="Scroll seller listings right"
             onClick={() => emblaApi?.scrollNext()}
-            className="hidden sm:flex absolute right-0 top-[72px] z-10 translate-x-1 w-8 h-8 rounded-full bg-white border border-gray-200 shadow items-center justify-center text-gray-700 opacity-0 group-hover/strip:opacity-100 transition-opacity"
+            className="hidden sm:flex absolute right-0 top-[62px] z-10 translate-x-1 w-8 h-8 rounded-full bg-white border border-gray-200 shadow items-center justify-center text-gray-700 opacity-0 group-hover/strip:opacity-100 transition-opacity"
           >
             <ChevronRight className="w-4 h-4" />
           </button>
@@ -619,12 +619,12 @@ export default function ProductDetail() {
         <div className="grid grid-cols-1 md:grid-cols-2 md:gap-10 lg:gap-14 md:items-start">
           {/* Left: product image */}
           <div className="flex justify-center md:justify-start md:sticky md:top-14">
-            <div className="relative w-full max-w-[240px] mx-auto">
+            <div className="relative w-full max-w-[480px] mx-auto">
               <div className="relative rounded-2xl overflow-hidden bg-gray-50 ring-1 ring-gray-100">
                 <img
                   src={product.images[currentImageIndex]}
                   alt={product.title}
-                  className="block w-full max-w-[240px] h-auto mx-auto object-contain"
+                  className="block w-full max-w-[480px] h-auto mx-auto object-contain"
                 />
                 {product.images.length > 1 && (
                   <>
@@ -651,18 +651,24 @@ export default function ProductDetail() {
                 </span>
               </div>
               {product.images.length > 1 && (
-                <div className="flex justify-center gap-1.5 mt-3">
-                  {product.images.map((_, index) => (
-                    <button
-                      key={index}
-                      type="button"
-                      onClick={() => setCurrentImageIndex(index)}
-                      className={`h-1.5 rounded-full transition-all ${
-                        index === currentImageIndex ? "w-5 bg-[#16a34a]" : "w-1.5 bg-gray-300"
-                      }`}
-                      aria-label={`Image ${index + 1}`}
-                    />
-                  ))}
+                <div className="mt-3 w-full max-w-[480px] mx-auto">
+                  <div className="flex gap-2 overflow-x-auto pb-1 justify-center md:justify-start snap-x snap-mandatory">
+                    {product.images.map((src, index) => (
+                      <button
+                        key={index}
+                        type="button"
+                        onClick={() => setCurrentImageIndex(index)}
+                        className={`relative shrink-0 snap-start rounded-lg overflow-hidden ring-2 transition-shadow w-24 sm:w-28 aspect-[16/9] ${
+                          index === currentImageIndex
+                            ? "ring-[#16a34a] shadow-md"
+                            : "ring-transparent opacity-85 hover:opacity-100"
+                        }`}
+                        aria-label={`Show image ${index + 1}`}
+                      >
+                        <img src={src} alt="" className="w-full h-full object-cover" />
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>

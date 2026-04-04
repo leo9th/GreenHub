@@ -118,11 +118,11 @@ function RelatedProductsCarousel({
                 to={`/products/${item.id}`}
                 className="group block bg-white rounded-lg overflow-hidden border border-gray-200 shadow-sm transition-shadow hover:shadow-md hover:border-[#22c55e]/40"
               >
-                <div className="relative aspect-square bg-gray-100">
+                <div className="relative h-[150px] w-full overflow-hidden bg-gray-100">
                   <img
                     src={item.image}
                     alt={item.title}
-                    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
                   />
                   <span className="absolute top-2 left-2 bg-[#22c55e] text-white text-xs font-medium px-2 py-0.5 rounded-full shadow-sm">
                     {item.condition || "—"}

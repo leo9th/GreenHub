@@ -1,8 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import useEmblaCarousel from "embla-carousel-react";
 import { Link, useParams, useNavigate } from "react-router";
-import { ArrowLeft, Share2, Heart, Star, MapPin, Shield, MessageCircle, Phone, ShoppingCart, ChevronLeft, ChevronRight, BadgeCheck } from "lucide-react";
-import {  } from "../data/mockData";
+import { ArrowLeft, Share2, Heart, Star, MapPin, ShoppingCart, ChevronLeft, ChevronRight, BadgeCheck } from "lucide-react";
 import { useCurrency } from "../hooks/useCurrency";
 import { useCart } from "../context/CartContext";
 import { supabase } from "../../lib/supabase";
@@ -45,29 +44,12 @@ function RelatedProductsCarousel({
     },
     [],
   );
-  const [selectedIndex, setSelectedIndex] = useState(0);
   const [isHovering, setIsHovering] = useState(false);
   const pauseUntilRef = useRef(0);
 
   const bumpNavPause = useCallback(() => {
     pauseUntilRef.current = Date.now() + 10000;
   }, []);
-
-  const onSelect = useCallback(() => {
-    if (!emblaApi) return;
-    setSelectedIndex(emblaApi.selectedScrollSnap());
-  }, [emblaApi]);
-
-  useEffect(() => {
-    if (!emblaApi) return;
-    onSelect();
-    emblaApi.on("select", onSelect);
-    emblaApi.on("reInit", onSelect);
-    return () => {
-      emblaApi.off("select", onSelect);
-      emblaApi.off("reInit", onSelect);
-    };
-  }, [emblaApi, onSelect]);
 
   useEffect(() => {
     if (!emblaApi) return;
@@ -94,29 +76,24 @@ function RelatedProductsCarousel({
     emblaApi?.scrollNext();
   };
 
-  const scrollTo = (idx: number) => {
-    bumpNavPause();
-    emblaApi?.scrollTo(idx);
-  };
-
   if (items.length === 0) return null;
 
   return (
     <div
-      className="relative"
+      className="relative -mx-1 sm:mx-0"
       onMouseEnter={() => setIsHovering(true)}
       onMouseLeave={() => setIsHovering(false)}
     >
-      <div className="overflow-hidden rounded-xl" ref={emblaRef}>
-        <div className="flex -ml-3 md:-ml-4 touch-pan-y">
+      <div className="overflow-hidden sm:rounded-xl" ref={emblaRef}>
+        <div className="flex -ml-3 sm:-ml-4 touch-pan-x">
           {items.map((item) => (
             <div
               key={String(item.id)}
-              className="min-w-0 shrink-0 grow-0 pl-3 md:pl-4 basis-full md:basis-1/2 lg:basis-1/3"
+              className="min-w-0 shrink-0 grow-0 pl-3 sm:pl-4 basis-[200px] w-[200px] max-w-[200px]"
             >
               <Link
                 to={`/products/${item.id}`}
-                className="group block bg-white rounded-lg overflow-hidden border border-gray-200 shadow-sm transition-shadow hover:shadow-md hover:border-[#22c55e]/40"
+                className="group block rounded-xl overflow-hidden bg-gray-50/80 ring-1 ring-gray-100 hover:ring-[#22c55e]/35 transition-shadow hover:shadow-md"
               >
                 <div className="relative h-[150px] w-full overflow-hidden bg-gray-100">
                   <img
@@ -124,15 +101,15 @@ function RelatedProductsCarousel({
                     alt={item.title}
                     className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
                   />
-                  <span className="absolute top-2 left-2 bg-[#22c55e] text-white text-xs font-medium px-2 py-0.5 rounded-full shadow-sm">
+                  <span className="absolute top-2 left-2 bg-[#16a34a] text-white text-[10px] font-semibold px-2 py-0.5 rounded-md">
                     {item.condition || "—"}
                   </span>
                 </div>
-                <div className="p-3">
-                  <h3 className="text-sm font-medium text-gray-800 mb-1 line-clamp-2 group-hover:text-[#16a34a] transition-colors">
+                <div className="p-2.5">
+                  <h3 className="text-xs font-medium text-gray-900 mb-1 line-clamp-2 leading-snug group-hover:text-[#15803d]">
                     {item.title}
                   </h3>
-                  <p className="text-lg font-bold text-gray-900">{formatPrice(item.price)}</p>
+                  <p className="text-sm font-bold text-gray-900 tabular-nums">{formatPrice(item.price)}</p>
                 </div>
               </Link>
             </div>
@@ -146,7 +123,7 @@ function RelatedProductsCarousel({
             type="button"
             aria-label="Previous related products"
             onClick={scrollPrev}
-            className="absolute left-0 top-[calc(50%-1.5rem)] z-10 -translate-x-1 sm:-translate-x-2 w-9 h-9 rounded-full bg-white/95 border border-gray-200 shadow-md flex items-center justify-center text-gray-700 hover:bg-white hover:text-[#16a34a] transition-colors"
+            className="absolute left-0 top-[75px] z-10 -translate-x-1 sm:-translate-x-2 w-9 h-9 rounded-full bg-white shadow-md ring-1 ring-gray-200/80 flex items-center justify-center text-gray-800 hover:bg-gray-50 hover:text-[#15803d]"
           >
             <ChevronLeft className="w-5 h-5" />
           </button>
@@ -154,28 +131,11 @@ function RelatedProductsCarousel({
             type="button"
             aria-label="Next related products"
             onClick={scrollNext}
-            className="absolute right-0 top-[calc(50%-1.5rem)] z-10 translate-x-1 sm:translate-x-2 w-9 h-9 rounded-full bg-white/95 border border-gray-200 shadow-md flex items-center justify-center text-gray-700 hover:bg-white hover:text-[#16a34a] transition-colors"
+            className="absolute right-0 top-[75px] z-10 translate-x-1 sm:translate-x-2 w-9 h-9 rounded-full bg-white shadow-md ring-1 ring-gray-200/80 flex items-center justify-center text-gray-800 hover:bg-gray-50 hover:text-[#15803d]"
           >
             <ChevronRight className="w-5 h-5" />
           </button>
         </>
-      ) : null}
-
-      {items.length > 1 ? (
-        <div className="flex justify-center gap-2 mt-4" role="tablist" aria-label="Related products position">
-          {items.map((item, idx) => (
-            <button
-              key={`dot-${String(item.id)}-${idx}`}
-              type="button"
-              aria-label={`Go to slide ${idx + 1}`}
-              aria-current={idx === selectedIndex}
-              onClick={() => scrollTo(idx)}
-              className={`h-2 rounded-full transition-all duration-300 ${
-                idx === selectedIndex ? "w-6 bg-[#22c55e]" : "w-2 bg-gray-300 hover:bg-gray-400"
-              }`}
-            />
-          ))}
-        </div>
       ) : null}
     </div>
   );
@@ -201,22 +161,22 @@ function MoreFromSellerStrip({
   return (
     <div className="relative group/strip">
       <div className="overflow-hidden" ref={emblaRef}>
-        <div className="flex -ml-3">
+        <div className="flex -ml-3 sm:-ml-4">
           {items.map((item) => (
-            <div key={String(item.id)} className="min-w-0 shrink-0 grow-0 pl-3 w-[148px] sm:w-[160px]">
+            <div key={String(item.id)} className="min-w-0 shrink-0 grow-0 pl-3 sm:pl-4 w-[200px] basis-[200px] max-w-[200px]">
               <Link
                 to={`/products/${item.id}`}
-                className="block bg-white rounded-lg overflow-hidden border border-gray-200 shadow-sm hover:border-[#22c55e]/50 transition-colors"
+                className="block rounded-xl overflow-hidden bg-gray-50/80 ring-1 ring-gray-100 hover:ring-[#22c55e]/35 transition-shadow"
               >
                 <div className="relative h-[150px] w-full overflow-hidden bg-gray-100">
                   <img src={item.image} alt="" className="h-full w-full object-cover" />
-                  <span className="absolute top-2 left-2 bg-[#22c55e] text-white text-[10px] font-medium px-2 py-0.5 rounded-full">
+                  <span className="absolute top-2 left-2 bg-[#16a34a] text-white text-[10px] font-semibold px-2 py-0.5 rounded-md">
                     {item.condition || "—"}
                   </span>
                 </div>
-                <div className="p-2">
-                  <p className="text-xs font-medium text-gray-800 line-clamp-2 leading-tight mb-1">{item.title}</p>
-                  <p className="text-sm font-bold text-gray-900">{formatPrice(item.price)}</p>
+                <div className="p-2.5">
+                  <p className="text-xs font-medium text-gray-900 line-clamp-2 leading-snug mb-1">{item.title}</p>
+                  <p className="text-sm font-bold text-gray-900 tabular-nums">{formatPrice(item.price)}</p>
                 </div>
               </Link>
             </div>
@@ -528,7 +488,7 @@ export default function ProductDetail() {
 
   if (isServerProductLoading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4 text-gray-600">
+      <div className="min-h-screen bg-white flex items-center justify-center p-4 text-gray-500 text-sm">
         Loading…
       </div>
     );
@@ -536,12 +496,16 @@ export default function ProductDetail() {
 
   if (!foundProduct) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold text-gray-800 mb-2">Product not found</h2>
-          <p className="text-gray-600 mb-4">The product you&apos;re looking for doesn&apos;t exist.</p>
-          <button type="button" onClick={() => navigate(-1)} className="px-6 py-2 bg-[#22c55e] text-white rounded-lg font-medium">
-            Go Back
+      <div className="min-h-screen bg-white flex items-center justify-center p-4">
+        <div className="text-center max-w-sm">
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Product not found</h2>
+          <p className="text-gray-600 text-sm mb-6">The product you&apos;re looking for doesn&apos;t exist.</p>
+          <button
+            type="button"
+            onClick={() => navigate(-1)}
+            className="px-5 py-2.5 bg-[#16a34a] text-white rounded-lg text-sm font-medium hover:bg-[#15803d]"
+          >
+            Go back
           </button>
         </div>
       </div>
@@ -613,202 +577,233 @@ export default function ProductDetail() {
     }
   };
 
+  const priceNum = Number(product.price);
+  const priceDisplay = formatPrice(Number.isFinite(priceNum) ? priceNum : null);
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
-        <div className="px-4 py-3 max-w-7xl mx-auto flex items-center justify-between">
-          <button onClick={() => navigate(-1)} className="p-2 -ml-2">
-            <ArrowLeft className="w-5 h-5 text-gray-700" />
+    <div className="min-h-screen bg-white text-gray-900 pb-28 md:pb-8">
+      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-sm border-b border-gray-100">
+        <div className="max-w-5xl mx-auto px-4 h-12 flex items-center justify-between">
+          <button
+            type="button"
+            onClick={() => navigate(-1)}
+            className="p-2 -ml-2 rounded-lg hover:bg-gray-50 text-gray-700"
+            aria-label="Back"
+          >
+            <ArrowLeft className="w-5 h-5" />
           </button>
-          <div className="flex items-center gap-2">
-            <button onClick={handleShare} className="p-2 relative active:scale-95 transition-transform">
-              <Share2 className="w-5 h-5 text-gray-600 hover:text-[#22c55e] transition-colors" />
+          <div className="flex items-center gap-0.5">
+            <button
+              type="button"
+              onClick={() => void handleShare()}
+              className="p-2 rounded-lg hover:bg-gray-50 text-gray-600"
+              aria-label="Share"
+            >
+              <Share2 className="w-[18px] h-[18px]" />
             </button>
-            <button onClick={() => setIsFavorite(!isFavorite)} className="p-2 relative active:scale-95 transition-transform">
-              <Heart className={`w-5 h-5 transition-colors ${isFavorite ? "fill-[#ef4444] text-[#ef4444]" : "text-gray-600 hover:text-[#ef4444]"}`} />
+            <button
+              type="button"
+              onClick={() => setIsFavorite(!isFavorite)}
+              className="p-2 rounded-lg hover:bg-gray-50 text-gray-600"
+              aria-label="Save"
+            >
+              <Heart
+                className={`w-[18px] h-[18px] ${isFavorite ? "fill-red-500 text-red-500" : ""}`}
+              />
             </button>
           </div>
         </div>
       </header>
 
-      <div className="max-w-7xl mx-auto md:grid md:grid-cols-2 md:gap-8 md:items-start md:py-6">
-        {/* Image Gallery */}
-        <div className="relative bg-white md:px-4">
-          <div className="relative aspect-square max-w-7xl mx-auto md:rounded-2xl md:overflow-hidden md:border md:border-gray-200">
-          <img
-            src={product.images[currentImageIndex]}
-            alt={product.title}
-            className="w-full h-full object-cover"
-          />
-          {product.images.length > 1 && (
-            <>
-              <button
-                onClick={handlePrevImage}
-                className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 bg-black/50 rounded-full flex items-center justify-center text-white"
-              >
-                <ChevronLeft className="w-5 h-5" />
-              </button>
-              <button
-                onClick={handleNextImage}
-                className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 bg-black/50 rounded-full flex items-center justify-center text-white"
-              >
-                <ChevronRight className="w-5 h-5" />
-              </button>
-              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-1">
-                {product.images.map((_, index) => (
-                  <div
-                    key={index}
-                    className={`w-2 h-2 rounded-full ${index === currentImageIndex ? "bg-white" : "bg-white/50"}`}
-                  />
-                ))}
+      <div className="max-w-5xl mx-auto px-4 pt-6 md:pt-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 md:gap-10 lg:gap-14 md:items-start">
+          {/* Left: product image */}
+          <div className="flex justify-center md:justify-start md:sticky md:top-14">
+            <div className="relative w-full max-w-[240px] mx-auto">
+              <div className="relative rounded-2xl overflow-hidden bg-gray-50 ring-1 ring-gray-100">
+                <img
+                  src={product.images[currentImageIndex]}
+                  alt={product.title}
+                  className="block w-full max-w-[240px] h-auto mx-auto object-contain"
+                />
+                {product.images.length > 1 && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handlePrevImage}
+                      className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white/90 shadow-sm ring-1 ring-gray-200/80 flex items-center justify-center text-gray-800"
+                      aria-label="Previous image"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleNextImage}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white/90 shadow-sm ring-1 ring-gray-200/80 flex items-center justify-center text-gray-800"
+                      aria-label="Next image"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </>
+                )}
+                <span className="absolute top-3 left-3 bg-[#15803d] text-white text-[11px] font-semibold px-2 py-1 rounded-lg">
+                  {product.condition}
+                </span>
               </div>
-            </>
-          )}
-          <span className="absolute top-4 left-4 bg-[#22c55e] text-white text-sm px-3 py-1 rounded-full">
-            {product.condition}
-          </span>
-        </div>
-        </div>
-
-      {/* Content */}
-      <div className="px-4 py-4 max-w-7xl mx-auto space-y-4 md:px-4 md:py-0">
-        {/* Price & Title */}
-        <div className="bg-white rounded-lg p-4">
-          <div className="flex items-start justify-between mb-2">
-            <h1 className="text-xl font-bold text-gray-900 flex-1">{product.title}</h1>
-          </div>
-          <p className="text-2xl font-bold text-[#22c55e] mb-3">{(product.price)}</p>
-          <div className="flex items-center gap-4 text-sm text-gray-600">
-            <div className="flex items-center gap-1">
-              <MapPin className="w-4 h-4" />
-              <span>{product.location}</span>
-            </div>
-            <span>•</span>
-            <span>{product.postedDate}</span>
-            <span>•</span>
-            <span>{product.views} views</span>
-          </div>
-        </div>
-
-        {/* Seller Card */}
-        <div className="bg-white rounded-lg p-4">
-          <h2 className="font-semibold text-gray-800 mb-3">Seller Information</h2>
-          <div className="flex items-center gap-3 mb-3">
-            <img src={product.seller.avatar} alt={product.seller.name} className="w-12 h-12 rounded-full" />
-            <div className="flex-1">
-              <div className="flex items-center gap-2">
-                <h3 className="font-semibold text-gray-800 flex items-center gap-1">
-                  {product.seller.name}
-                  {product.seller.tier === 'crown' && <span title="Crown Verified"><BadgeCheck className="w-[18px] h-[18px] ml-0.5 text-white fill-yellow-500 drop-shadow-sm" /></span>}
-                  {product.seller.tier === 'blue' && <span title="Blue Verified"><BadgeCheck className="w-[18px] h-[18px] ml-0.5 text-white fill-blue-500 drop-shadow-sm" /></span>}
-                  {product.seller.tier === 'standard' && <span title="Standard Verified"><BadgeCheck className="w-[18px] h-[18px] ml-0.5 text-white fill-green-500 drop-shadow-sm" /></span>}
-                </h3>
-              </div>
-              <div className="flex items-center gap-1 text-sm mt-1">
-                <Star className="w-3 h-3 fill-[#eab308] text-[#eab308]" />
-                <span className="text-gray-600">{product.seller.rating}</span>
-                <span className="text-gray-400">({product.seller.reviews} reviews)</span>
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center justify-between text-sm text-gray-600 mb-3">
-            <span>Member since {product.seller.memberSince}</span>
-            <span>Response: {product.seller.responseTime}</span>
-          </div>
-          <div className="flex gap-2">
-            <Link
-              to={`/messages/${product.seller.id}`}
-              className="flex-1 py-2 bg-[#22c55e] text-white rounded-lg font-medium flex items-center justify-center gap-2"
-            >
-              <MessageCircle className="w-4 h-4" />
-              Chat
-            </Link>
-            <a href={`tel:${"+2348012345678"}`} className="px-4 py-2 border border-gray-300 rounded-lg flex items-center justify-center hover:bg-gray-50 transition-colors">
-              <Phone className="w-4 h-4 text-gray-600" />
-            </a>
-            <Link
-              to={`/seller/${product.seller.id}/reviews`}
-              className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700"
-            >
-              View Profile
-            </Link>
-          </div>
-        </div>
-
-        {/* Description */}
-        <div className="bg-white rounded-lg p-4">
-          <h2 className="font-semibold text-gray-800 mb-3">Description</h2>
-          <p className="text-sm text-gray-700 whitespace-pre-line">{product.description}</p>
-        </div>
-
-        {/* Delivery Options */}
-        <div className="bg-white rounded-lg p-4">
-          <h2 className="font-semibold text-gray-800 mb-3">Delivery Options</h2>
-          <div className="space-y-3">
-            {product.deliveryOptions.map((option, index) => (
-              <div key={index} className="flex items-center justify-between pb-3 border-b border-gray-100 last:border-0 last:pb-0">
-                <div>
-                  <p className="font-medium text-gray-800">{option.name}</p>
-                  <p className="text-sm text-gray-600">{option.duration}</p>
+              {product.images.length > 1 && (
+                <div className="flex justify-center gap-1.5 mt-3">
+                  {product.images.map((_, index) => (
+                    <button
+                      key={index}
+                      type="button"
+                      onClick={() => setCurrentImageIndex(index)}
+                      className={`h-1.5 rounded-full transition-all ${
+                        index === currentImageIndex ? "w-5 bg-[#16a34a]" : "w-1.5 bg-gray-300"
+                      }`}
+                      aria-label={`Image ${index + 1}`}
+                    />
+                  ))}
                 </div>
-                <p className="font-semibold text-gray-800">
-                  {option.fee === 0 ? "Free" : (option.fee)}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Safety Tips */}
-        <div className="bg-[#eab308]/10 border border-[#eab308]/30 rounded-lg p-4">
-          <div className="flex items-start gap-2">
-            <Shield className="w-5 h-5 text-[#eab308] mt-0.5" />
-            <div>
-              <h3 className="font-semibold text-gray-800 mb-2">Safety Tips</h3>
-              <ul className="text-sm text-gray-700 space-y-1">
-                <li>• Meet in a safe public place</li>
-                <li>• Check the item before you buy</li>
-                <li>• Pay only after collecting item</li>
-                <li>• Don't share sensitive financial info</li>
-              </ul>
+              )}
             </div>
           </div>
+
+          {/* Right: details */}
+          <div className="space-y-8 pt-8 md:pt-0">
+            <div>
+              <h1 className="text-xl md:text-2xl font-semibold text-gray-900 leading-snug tracking-tight">
+                {product.title}
+              </h1>
+              <p className="text-2xl md:text-3xl font-bold text-[#15803d] mt-3 tabular-nums">{priceDisplay}</p>
+              <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-500">
+                {product.location ? (
+                  <span className="inline-flex items-center gap-1">
+                    <MapPin className="w-3.5 h-3.5 shrink-0 opacity-70" aria-hidden />
+                    {product.location}
+                  </span>
+                ) : null}
+                {product.location ? <span className="text-gray-300">·</span> : null}
+                <span>Listed {product.postedDate}</span>
+                <span className="text-gray-300">·</span>
+                <span>{product.views} views</span>
+              </div>
+            </div>
+
+            <section className="pt-2 border-t border-gray-100">
+              <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-4">Seller</h2>
+              <div className="flex items-start gap-3">
+                <img
+                  src={product.seller.avatar}
+                  alt=""
+                  className="w-11 h-11 rounded-full object-cover bg-gray-100 shrink-0"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1 flex-wrap">
+                    <span className="font-medium text-gray-900">{product.seller.name}</span>
+                    {product.seller.tier === "crown" && (
+                      <BadgeCheck className="w-4 h-4 text-amber-500 fill-amber-400 shrink-0" title="Crown verified" />
+                    )}
+                    {product.seller.tier === "blue" && (
+                      <BadgeCheck className="w-4 h-4 text-blue-500 fill-blue-400 shrink-0" title="Blue verified" />
+                    )}
+                    {product.seller.tier === "standard" && (
+                      <BadgeCheck className="w-4 h-4 text-green-600 fill-green-500 shrink-0" title="Verified" />
+                    )}
+                  </div>
+                  <p className="text-sm text-gray-500 mt-0.5">
+                    <Star className="w-3 h-3 inline text-amber-400 fill-amber-400 align-[-2px] mr-0.5" aria-hidden />
+                    {product.seller.rating} · {product.seller.reviews} reviews · Since {product.seller.memberSince}
+                  </p>
+                </div>
+              </div>
+              <div className="mt-4 grid grid-cols-2 sm:flex sm:flex-wrap gap-2">
+                <Link
+                  to={`/messages/${product.seller.id}`}
+                  className="sm:flex-1 min-h-[44px] inline-flex items-center justify-center gap-2 rounded-xl bg-[#16a34a] text-white text-sm font-semibold px-4 hover:bg-[#15803d]"
+                >
+                  Message seller
+                </Link>
+                <a
+                  href="tel:+2348012345678"
+                  className="min-h-[44px] inline-flex items-center justify-center rounded-xl ring-1 ring-gray-200 text-sm font-medium text-gray-800 px-4 hover:bg-gray-50"
+                >
+                  Call
+                </a>
+                <Link
+                  to={`/seller/${product.seller.id}/reviews`}
+                  className="col-span-2 sm:col-span-1 min-h-[44px] inline-flex items-center justify-center rounded-xl ring-1 ring-gray-200 text-sm font-medium text-gray-700 px-4 hover:bg-gray-50"
+                >
+                  Reviews
+                </Link>
+              </div>
+            </section>
+
+            <section>
+              <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-3">Description</h2>
+              <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-line">{product.description}</p>
+            </section>
+
+            <section>
+              <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-3">Delivery</h2>
+              <ul className="space-y-3">
+                {product.deliveryOptions.map((option, index) => (
+                  <li
+                    key={index}
+                    className="flex items-center justify-between gap-4 text-sm py-2 border-b border-gray-50 last:border-0"
+                  >
+                    <div>
+                      <p className="font-medium text-gray-900">{option.name}</p>
+                      <p className="text-gray-500 text-xs mt-0.5">{option.duration}</p>
+                    </div>
+                    <p className="font-semibold text-gray-900 tabular-nums shrink-0">
+                      {option.fee === 0 ? "Free" : formatPrice(option.fee)}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </section>
+
+            <section className="rounded-xl bg-amber-50/80 px-4 py-3 text-sm text-gray-700">
+              <p className="font-medium text-gray-900 mb-1">Safety</p>
+              <p className="text-xs text-gray-600 leading-relaxed">
+                Meet in public when possible. Inspect the item before paying. Never share OTPs or bank PINs.
+              </p>
+            </section>
+          </div>
         </div>
 
-        {/* More from this seller */}
-        {moreFromSeller.length > 0 ? (
-          <div className="pb-2">
-            <h2 className="font-semibold text-gray-800 mb-1">More from this seller</h2>
-            <p className="text-xs text-gray-500 mb-3">Other active listings by {product.seller.name}</p>
-            <MoreFromSellerStrip items={moreFromSeller} formatPrice={formatPrice} />
-          </div>
-        ) : null}
+        {/* Full width below grid */}
+        <div className="mt-12 md:mt-16 space-y-12 border-t border-gray-100 pt-10">
+          {moreFromSeller.length > 0 ? (
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">More from this seller</h2>
+              <p className="text-sm text-gray-500 mt-1 mb-4">Other listings by {product.seller.name}</p>
+              <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 sm:overflow-visible">
+                <MoreFromSellerStrip items={moreFromSeller} formatPrice={formatPrice} />
+              </div>
+            </div>
+          ) : null}
 
-        {/* Related — same category, other sellers */}
-        {relatedProducts.length > 0 ? (
-          <div className="pb-2">
-            <h2 className="font-semibold text-gray-800 mb-1">Similar from other sellers</h2>
-            <p className="text-xs text-gray-500 mb-3">Same category, different sellers</p>
-            <RelatedProductsCarousel items={relatedProducts} formatPrice={formatPrice} />
-          </div>
-        ) : null}
-
-        <div className="h-20 md:hidden"></div>
+          {relatedProducts.length > 0 ? (
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Similar from other sellers</h2>
+              <p className="text-sm text-gray-500 mt-1 mb-4">Same category · swipe or use arrows</p>
+              <RelatedProductsCarousel items={relatedProducts} formatPrice={formatPrice} />
+            </div>
+          ) : null}
+        </div>
       </div>
-      </div>
 
-      {/* Bottom Actions */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-3 z-30">
-        <div className="max-w-7xl mx-auto flex gap-2 sm:gap-3">
+      <div className="fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-sm border-t border-gray-100">
+        <div className="max-w-5xl mx-auto px-4 py-3 flex gap-2">
           <Link
             to={`/messages/${product.seller.id}`}
-            className="px-3 sm:px-6 py-3 border border-gray-300 text-gray-700 rounded-lg font-semibold flex items-center justify-center hover:bg-gray-50 transition-colors"
+            className="hidden sm:inline-flex px-4 py-3 rounded-xl ring-1 ring-gray-200 text-sm font-semibold text-gray-800 items-center justify-center hover:bg-gray-50"
           >
-            <MessageCircle className="w-5 h-5 sm:mr-2" />
-            <span className="hidden sm:inline">Chat</span>
+            Chat
           </Link>
-          <button 
+          <button
+            type="button"
             onClick={() => {
               addToCart({
                 id: product.id.toString(),
@@ -817,16 +812,19 @@ export default function ProductDetail() {
                 image: product.images[0],
                 quantity: 1,
                 sellerId: product.seller.id.toString(),
-                deliveryFee: product.deliveryOptions[0].fee
+                deliveryFee: product.deliveryOptions[0].fee,
               });
               toast.success("Added to cart");
             }}
-            className="flex-1 py-3 bg-[#f97316] text-white rounded-lg font-semibold flex items-center justify-center gap-2 hover:bg-[#ea580c] transition-colors shadow-sm"
+            className="flex-1 py-3 rounded-xl bg-orange-500 text-white text-sm font-semibold hover:bg-orange-600"
           >
-            <ShoppingCart className="w-5 h-5" />
-            <span className="hidden sm:inline">Add to Cart</span>
+            <span className="inline-flex items-center justify-center gap-2">
+              <ShoppingCart className="w-4 h-4 sm:hidden" />
+              Add to cart
+            </span>
           </button>
-          <button 
+          <button
+            type="button"
             onClick={() => {
               addToCart({
                 id: product.id.toString(),
@@ -835,13 +833,13 @@ export default function ProductDetail() {
                 image: product.images[0],
                 quantity: 1,
                 sellerId: product.seller.id.toString(),
-                deliveryFee: product.deliveryOptions[0].fee
+                deliveryFee: product.deliveryOptions[0].fee,
               });
               navigate("/checkout");
             }}
-            className="flex-1 py-3 bg-[#22c55e] text-white rounded-lg font-bold flex items-center justify-center gap-2 hover:bg-[#16a34a] transition-colors shadow-sm"
+            className="flex-1 py-3 rounded-xl bg-[#16a34a] text-white text-sm font-bold hover:bg-[#15803d]"
           >
-            Buy Now
+            Buy now
           </button>
         </div>
       </div>

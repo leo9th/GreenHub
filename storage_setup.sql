@@ -3,7 +3,8 @@
 insert into storage.buckets (id, name, public)
 values 
   ('avatars', 'avatars', true),
-  ('products', 'products', true)
+  ('products', 'products', true),
+  ('job-application-uploads', 'job-application-uploads', false)
 on conflict on constraint buckets_pkey do nothing;
 
 -- Set up security policies for Avatars
@@ -47,3 +48,10 @@ create policy "Sellers can update own product images."
 create policy "Sellers can delete own product images."
   on storage.objects for delete
   using ( bucket_id = 'products' AND auth.uid() = owner );
+
+-- Job application uploads (/apply) — private bucket; anon + authenticated may upload only
+drop policy if exists "Job application files upload." on storage.objects;
+create policy "Job application files upload."
+  on storage.objects for insert
+  to anon, authenticated
+  with check ( bucket_id = 'job-application-uploads' );

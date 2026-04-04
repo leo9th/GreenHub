@@ -214,7 +214,14 @@ export default function ApplyJob() {
       setAgreeTerms(false);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Something went wrong";
-      toast.error(msg);
+      const m = msg.toLowerCase();
+      if (m.includes("bucket") && (m.includes("not found") || m.includes("does not exist"))) {
+        toast.error(
+          "File upload failed: storage bucket missing. In Supabase → Storage, create a private bucket named job-application-uploads, or run the migration 20260409120000_job_application_uploads_bucket.sql.",
+        );
+      } else {
+        toast.error(msg);
+      }
     } finally {
       setSubmitting(false);
     }

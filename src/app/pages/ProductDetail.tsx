@@ -7,6 +7,7 @@ import { useCart } from "../context/CartContext";
 import { supabase } from "../../lib/supabase";
 import { getAvatarUrl } from "../utils/getAvatar";
 import { getProductPrice } from "../utils/getProductPrice";
+import { activeProductsQuery, mapProductRow } from "../utils/productSearch";
 import { toast } from "sonner";
 export default function ProductDetail() {
   const formatPrice = useCurrency();
@@ -18,6 +19,9 @@ export default function ProductDetail() {
   const [sellerProfile, setSellerProfile] = useState<any>(null);
   const [serverProduct, setServerProduct] = useState<any>(null);
   const [isServerProductLoading, setIsServerProductLoading] = useState<boolean>(true);
+  const [relatedProducts, setRelatedProducts] = useState<
+    Array<{ id: string | number; title: string; image: string; price: number; location: string }>
+  >([]);
 
   const CUSTOM_PRODUCTS_KEY = "greenhub-custom-products";
   const customProductsRaw = localStorage.getItem(CUSTOM_PRODUCTS_KEY);
@@ -176,6 +180,52 @@ export default function ProductDetail() {
   }, [id]);
 
   useEffect(() => {
+    let cancelled = false;
+
+    const loadRelated = async () => {
+      if (!serverProduct?.id) {
+        setRelatedProducts([]);
+        return;
+      }
+      const raw =
+        typeof serverProduct.category === "string" ? serverProduct.category.replace(/"/g, "").trim() : "";
+      if (!raw) {
+        setRelatedProducts([]);
+        return;
+      }
+
+      const { data, error } = await activeProductsQuery(supabase)
+        .neq("id", serverProduct.id)
+        .ilike("category", raw)
+        .limit(6);
+
+      if (cancelled) return;
+      if (error) {
+        console.warn("Related products:", error.message);
+        setRelatedProducts([]);
+        return;
+      }
+
+      const rows = (data ?? []).map((r) => mapProductRow(r as Record<string, unknown>));
+      const placeholder = "https://images.unsplash.com/photo-1632661674596-df8be070a5c5?w=400";
+      setRelatedProducts(
+        rows.map((r) => ({
+          id: r.id as string | number,
+          title: String((r as { title?: string }).title ?? ""),
+          image: String((r as { image?: string }).image ?? "") || placeholder,
+          price: typeof r.price === "number" ? r.price : getProductPrice(r as { price?: unknown; price_local?: unknown }),
+          location: String((r as { location?: string }).location ?? ""),
+        }))
+      );
+    };
+
+    void loadRelated();
+    return () => {
+      cancelled = true;
+    };
+  }, [serverProduct?.id, serverProduct?.category]);
+
+  useEffect(() => {
     if (foundProduct?.sellerId) {
       if (typeof foundProduct.sellerId === 'string' && foundProduct.sellerId.length > 10) { // Supabase UUID lookup
         supabase.from('profiles').select('*').eq('id', foundProduct.sellerId).single()
@@ -246,23 +296,6 @@ export default function ProductDetail() {
           { name: "Pickup", fee: 0, duration: "Arrange with seller" },
         ],
   };
-
-  const relatedProducts = [
-    {
-      id: 2,
-      image: "https://images.unsplash.com/photo-1585386959984-a4155224a1ad?w=400",
-      title: "Samsung Galaxy S21",
-      price: 220000,
-      location: "Lekki, Lagos",
-    },
-    {
-      id: 3,
-      image: "https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?w=400",
-      title: "iPhone 12 Pro",
-      price: 350000,
-      location: "Victoria Island, Lagos",
-    },
-  ];
 
   const handlePrevImage = () => {
     setCurrentImageIndex((prev) => (prev === 0 ? product.images.length - 1 : prev - 1));
@@ -454,31 +487,33 @@ export default function ProductDetail() {
           </div>
         </div>
 
-        {/* Related Products */}
-        <div>
-          <h2 className="font-semibold text-gray-800 mb-3">Related Products</h2>
-          <div className="grid grid-cols-2 gap-3">
-            {relatedProducts.map((item) => (
-              <Link
-                key={item.id}
-                to={`/products/${item.id}`}
-                className="bg-white rounded-lg overflow-hidden border border-gray-200"
-              >
-                <div className="aspect-square bg-gray-100">
-                  <img src={item.image} alt={item.title} className="w-full h-full object-cover" />
-                </div>
-                <div className="p-3">
-                  <h3 className="text-sm font-medium text-gray-800 mb-1 line-clamp-2">{item.title}</h3>
-                  <p className="text-lg font-bold text-gray-900 mb-1">{(item.price)}</p>
-                  <div className="flex items-center gap-1 text-xs text-gray-500">
-                    <MapPin className="w-3 h-3" />
-                    <span className="line-clamp-1">{item.location}</span>
+        {/* Related Products — same category + active only (fetched when listing is from Supabase) */}
+        {relatedProducts.length > 0 ? (
+          <div>
+            <h2 className="font-semibold text-gray-800 mb-3">Related Products</h2>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {relatedProducts.map((item) => (
+                <Link
+                  key={String(item.id)}
+                  to={`/products/${item.id}`}
+                  className="bg-white rounded-lg overflow-hidden border border-gray-200"
+                >
+                  <div className="aspect-square bg-gray-100">
+                    <img src={item.image} alt={item.title} className="w-full h-full object-cover" />
                   </div>
-                </div>
-              </Link>
-            ))}
+                  <div className="p-3">
+                    <h3 className="text-sm font-medium text-gray-800 mb-1 line-clamp-2">{item.title}</h3>
+                    <p className="text-lg font-bold text-gray-900 mb-1">{formatPrice(item.price)}</p>
+                    <div className="flex items-center gap-1 text-xs text-gray-500">
+                      <MapPin className="w-3 h-3" />
+                      <span className="line-clamp-1">{item.location}</span>
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
           </div>
-        </div>
+        ) : null}
 
         <div className="h-20 md:hidden"></div>
       </div>

@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import useEmblaCarousel from "embla-carousel-react";
 import { Link, useParams, useNavigate } from "react-router";
 import { ArrowLeft, Share2, Heart, Star, MapPin, Shield, MessageCircle, Phone, ShoppingCart, ChevronLeft, ChevronRight, BadgeCheck } from "lucide-react";
 import {  } from "../data/mockData";
@@ -9,6 +10,177 @@ import { getAvatarUrl } from "../utils/getAvatar";
 import { getProductPrice } from "../utils/getProductPrice";
 import { activeProductsQuery, mapProductRow } from "../utils/productSearch";
 import { toast } from "sonner";
+
+function shuffleRelatedProducts<T>(items: T[]): T[] {
+  const next = [...items];
+  for (let i = next.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [next[i], next[j]] = [next[j], next[i]];
+  }
+  return next;
+}
+
+type RelatedCarouselItem = {
+  id: string | number;
+  title: string;
+  image: string;
+  price: number;
+  location: string;
+  condition: string;
+};
+
+function RelatedProductsCarousel({
+  items,
+  formatPrice,
+}: {
+  items: RelatedCarouselItem[];
+  formatPrice: (amount: number | null | undefined) => string;
+}) {
+  const [emblaRef, emblaApi] = useEmblaCarousel(
+    {
+      loop: true,
+      align: "start",
+      duration: 30,
+      dragFree: false,
+    },
+    [],
+  );
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [isHovering, setIsHovering] = useState(false);
+  const pauseUntilRef = useRef(0);
+
+  const bumpNavPause = useCallback(() => {
+    pauseUntilRef.current = Date.now() + 10000;
+  }, []);
+
+  const onSelect = useCallback(() => {
+    if (!emblaApi) return;
+    setSelectedIndex(emblaApi.selectedScrollSnap());
+  }, [emblaApi]);
+
+  useEffect(() => {
+    if (!emblaApi) return;
+    onSelect();
+    emblaApi.on("select", onSelect);
+    emblaApi.on("reInit", onSelect);
+    return () => {
+      emblaApi.off("select", onSelect);
+      emblaApi.off("reInit", onSelect);
+    };
+  }, [emblaApi, onSelect]);
+
+  useEffect(() => {
+    if (!emblaApi) return;
+    emblaApi.reInit();
+  }, [emblaApi, items]);
+
+  useEffect(() => {
+    if (!emblaApi || items.length === 0) return;
+    const tick = window.setInterval(() => {
+      if (isHovering) return;
+      if (Date.now() < pauseUntilRef.current) return;
+      emblaApi.scrollNext();
+    }, 5000);
+    return () => window.clearInterval(tick);
+  }, [emblaApi, items.length, isHovering]);
+
+  const scrollPrev = () => {
+    bumpNavPause();
+    emblaApi?.scrollPrev();
+  };
+
+  const scrollNext = () => {
+    bumpNavPause();
+    emblaApi?.scrollNext();
+  };
+
+  const scrollTo = (idx: number) => {
+    bumpNavPause();
+    emblaApi?.scrollTo(idx);
+  };
+
+  if (items.length === 0) return null;
+
+  return (
+    <div
+      className="relative"
+      onMouseEnter={() => setIsHovering(true)}
+      onMouseLeave={() => setIsHovering(false)}
+    >
+      <div className="overflow-hidden rounded-xl" ref={emblaRef}>
+        <div className="flex -ml-3 md:-ml-4 touch-pan-y">
+          {items.map((item) => (
+            <div
+              key={String(item.id)}
+              className="min-w-0 shrink-0 grow-0 pl-3 md:pl-4 basis-full md:basis-1/2 lg:basis-1/3"
+            >
+              <Link
+                to={`/products/${item.id}`}
+                className="group block bg-white rounded-lg overflow-hidden border border-gray-200 shadow-sm transition-shadow hover:shadow-md hover:border-[#22c55e]/40"
+              >
+                <div className="relative aspect-square bg-gray-100">
+                  <img
+                    src={item.image}
+                    alt={item.title}
+                    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+                  />
+                  <span className="absolute top-2 left-2 bg-[#22c55e] text-white text-xs font-medium px-2 py-0.5 rounded-full shadow-sm">
+                    {item.condition || "—"}
+                  </span>
+                </div>
+                <div className="p-3">
+                  <h3 className="text-sm font-medium text-gray-800 mb-1 line-clamp-2 group-hover:text-[#16a34a] transition-colors">
+                    {item.title}
+                  </h3>
+                  <p className="text-lg font-bold text-gray-900">{formatPrice(item.price)}</p>
+                </div>
+              </Link>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {items.length > 1 ? (
+        <>
+          <button
+            type="button"
+            aria-label="Previous related products"
+            onClick={scrollPrev}
+            className="absolute left-0 top-[calc(50%-1.5rem)] z-10 -translate-x-1 sm:-translate-x-2 w-9 h-9 rounded-full bg-white/95 border border-gray-200 shadow-md flex items-center justify-center text-gray-700 hover:bg-white hover:text-[#16a34a] transition-colors"
+          >
+            <ChevronLeft className="w-5 h-5" />
+          </button>
+          <button
+            type="button"
+            aria-label="Next related products"
+            onClick={scrollNext}
+            className="absolute right-0 top-[calc(50%-1.5rem)] z-10 translate-x-1 sm:translate-x-2 w-9 h-9 rounded-full bg-white/95 border border-gray-200 shadow-md flex items-center justify-center text-gray-700 hover:bg-white hover:text-[#16a34a] transition-colors"
+          >
+            <ChevronRight className="w-5 h-5" />
+          </button>
+        </>
+      ) : null}
+
+      {items.length > 1 ? (
+        <div className="flex justify-center gap-2 mt-4" role="tablist" aria-label="Related products position">
+          {items.map((item, idx) => (
+            <button
+              key={`dot-${String(item.id)}-${idx}`}
+              type="button"
+              aria-label={`Go to slide ${idx + 1}`}
+              aria-current={idx === selectedIndex}
+              onClick={() => scrollTo(idx)}
+              className={`h-2 rounded-full transition-all duration-300 ${
+                idx === selectedIndex ? "w-6 bg-[#22c55e]" : "w-2 bg-gray-300 hover:bg-gray-400"
+              }`}
+            />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export default function ProductDetail() {
   const formatPrice = useCurrency();
   const { id } = useParams();
@@ -19,9 +191,7 @@ export default function ProductDetail() {
   const [sellerProfile, setSellerProfile] = useState<any>(null);
   const [serverProduct, setServerProduct] = useState<any>(null);
   const [isServerProductLoading, setIsServerProductLoading] = useState<boolean>(true);
-  const [relatedProducts, setRelatedProducts] = useState<
-    Array<{ id: string | number; title: string; image: string; price: number; location: string }>
-  >([]);
+  const [relatedProducts, setRelatedProducts] = useState<RelatedCarouselItem[]>([]);
 
   const CUSTOM_PRODUCTS_KEY = "greenhub-custom-products";
   const customProductsRaw = localStorage.getItem(CUSTOM_PRODUCTS_KEY);
@@ -197,7 +367,7 @@ export default function ProductDetail() {
       const { data, error } = await activeProductsQuery(supabase)
         .neq("id", serverProduct.id)
         .ilike("category", raw)
-        .limit(6);
+        .limit(12);
 
       if (cancelled) return;
       if (error) {
@@ -208,15 +378,15 @@ export default function ProductDetail() {
 
       const rows = (data ?? []).map((r) => mapProductRow(r as Record<string, unknown>));
       const placeholder = "https://images.unsplash.com/photo-1632661674596-df8be070a5c5?w=400";
-      setRelatedProducts(
-        rows.map((r) => ({
-          id: r.id as string | number,
-          title: String((r as { title?: string }).title ?? ""),
-          image: String((r as { image?: string }).image ?? "") || placeholder,
-          price: typeof r.price === "number" ? r.price : getProductPrice(r as { price?: unknown; price_local?: unknown }),
-          location: String((r as { location?: string }).location ?? ""),
-        }))
-      );
+      const mapped = rows.map((r) => ({
+        id: r.id as string | number,
+        title: String((r as { title?: string }).title ?? ""),
+        image: String((r as { image?: string }).image ?? "") || placeholder,
+        price: typeof r.price === "number" ? r.price : getProductPrice(r as { price?: unknown; price_local?: unknown }),
+        location: String((r as { location?: string }).location ?? ""),
+        condition: String((r as { condition?: string }).condition ?? "Like New"),
+      }));
+      setRelatedProducts(shuffleRelatedProducts(mapped));
     };
 
     void loadRelated();
@@ -489,29 +659,9 @@ export default function ProductDetail() {
 
         {/* Related Products — same category + active only (fetched when listing is from Supabase) */}
         {relatedProducts.length > 0 ? (
-          <div>
+          <div className="pb-2">
             <h2 className="font-semibold text-gray-800 mb-3">Related Products</h2>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              {relatedProducts.map((item) => (
-                <Link
-                  key={String(item.id)}
-                  to={`/products/${item.id}`}
-                  className="bg-white rounded-lg overflow-hidden border border-gray-200"
-                >
-                  <div className="aspect-square bg-gray-100">
-                    <img src={item.image} alt={item.title} className="w-full h-full object-cover" />
-                  </div>
-                  <div className="p-3">
-                    <h3 className="text-sm font-medium text-gray-800 mb-1 line-clamp-2">{item.title}</h3>
-                    <p className="text-lg font-bold text-gray-900 mb-1">{formatPrice(item.price)}</p>
-                    <div className="flex items-center gap-1 text-xs text-gray-500">
-                      <MapPin className="w-3 h-3" />
-                      <span className="line-clamp-1">{item.location}</span>
-                    </div>
-                  </div>
-                </Link>
-              ))}
-            </div>
+            <RelatedProductsCarousel items={relatedProducts} formatPrice={formatPrice} />
           </div>
         ) : null}
 

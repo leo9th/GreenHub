@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, type ReactNode } from "react";
+import { useState, useEffect, useLayoutEffect, useMemo, useCallback, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router";
 import { Search, Filter, ArrowLeft, X, BadgeCheck, Star } from "lucide-react";
 import { categories, nigerianStates } from "../data/mockData";
@@ -18,7 +18,7 @@ import {
   withSearchOr,
 } from "../utils/productSearch";
 
-const conditions = ["New", "Like New", "Good", "Fair"];
+const conditions = ["New", "Like New", "Good Fair"];
 const priceRanges = [
   { label: "Under ₦10,000", value: "0-10000" },
   { label: "₦10,000 - ₦50,000", value: "10000-50000" },
@@ -31,20 +31,20 @@ function ProductsFilterFields({
   selectedCategory,
   handleCategoryChange,
   selectedCondition,
-  onConditionChange,
+  setSelectedCondition,
   priceRange,
-  onPriceRangeChange,
+  setPriceRange,
   selectedState,
-  onStateChange,
+  setSelectedState,
 }: {
   selectedCategory: string;
   handleCategoryChange: (val: string) => void;
   selectedCondition: string;
-  onConditionChange: (v: string) => void;
+  setSelectedCondition: (v: string) => void;
   priceRange: string;
-  onPriceRangeChange: (v: string) => void;
+  setPriceRange: (v: string) => void;
   selectedState: string;
-  onStateChange: (v: string) => void;
+  setSelectedState: (v: string) => void;
 }): ReactNode {
   return (
     <>
@@ -86,7 +86,7 @@ function ProductsFilterFields({
               type="radio"
               name="condition-sidebar"
               checked={selectedCondition === "all"}
-              onChange={() => onConditionChange("all")}
+              onChange={() => setSelectedCondition("all")}
               className="text-[#22c55e] focus:ring-[#22c55e]"
             />
             <span className="text-sm text-gray-700">All Conditions</span>
@@ -97,7 +97,7 @@ function ProductsFilterFields({
                 type="radio"
                 name="condition-sidebar"
                 checked={selectedCondition === c}
-                onChange={() => onConditionChange(c)}
+                onChange={() => setSelectedCondition(c)}
                 className="text-[#22c55e] focus:ring-[#22c55e]"
               />
               <span className="text-sm text-gray-700">{c}</span>
@@ -114,7 +114,7 @@ function ProductsFilterFields({
               type="radio"
               name="price-sidebar"
               checked={priceRange === "all"}
-              onChange={() => onPriceRangeChange("all")}
+              onChange={() => setPriceRange("all")}
               className="text-[#22c55e] focus:ring-[#22c55e]"
             />
             <span className="text-sm text-gray-700">All Prices</span>
@@ -125,7 +125,7 @@ function ProductsFilterFields({
                 type="radio"
                 name="price-sidebar"
                 checked={priceRange === range.value}
-                onChange={() => onPriceRangeChange(range.value)}
+                onChange={() => setPriceRange(range.value)}
                 className="text-[#22c55e] focus:ring-[#22c55e]"
               />
               <span className="text-sm text-gray-700">{range.label}</span>
@@ -138,7 +138,7 @@ function ProductsFilterFields({
         <h3 className="font-semibold text-gray-800 mb-3 text-sm uppercase tracking-wide">Location</h3>
         <select
           value={selectedState}
-          onChange={(e) => onStateChange(e.target.value)}
+          onChange={(e) => setSelectedState(e.target.value)}
           className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#22c55e]"
         >
           <option value="all">All States</option>
@@ -165,7 +165,6 @@ export default function Products() {
   }, [searchParams]);
 
   const handleCategoryChange = (val: string) => {
-    setListPage(0);
     setSelectedCategory(val);
     const next = new URLSearchParams(searchParams);
     if (val === "all") next.delete("category");
@@ -297,6 +296,10 @@ export default function Products() {
   }, [urlSearch]);
 
   useEffect(() => {
+    setListPage(0);
+  }, [filterSignal]);
+
+  useEffect(() => {
     let cancelled = false;
 
     const run = async () => {
@@ -349,10 +352,9 @@ export default function Products() {
     return () => {
       cancelled = true;
     };
-  }, [listPage, filterSignal, filterOpts]);
+  }, [listPage, filterSignal, filterOpts, sortBy, urlSearch]);
 
   const commitSearch = () => {
-    setListPage(0);
     const next = new URLSearchParams(searchParams);
     const q = sanitizeSearchTerm(searchInput);
     if (q) next.set("search", q);
@@ -367,26 +369,10 @@ export default function Products() {
   }, [isLoadingProducts, isLoadingMore, totalCount, products.length]);
 
   const clearAllFilters = () => {
-    setListPage(0);
     handleCategoryChange("all");
     setSelectedCondition("all");
     setPriceRange("all");
     setSelectedState("all");
-  };
-
-  const onConditionChange = (v: string) => {
-    setListPage(0);
-    setSelectedCondition(v);
-  };
-
-  const onPriceRangeChange = (v: string) => {
-    setListPage(0);
-    setPriceRange(v);
-  };
-
-  const onStateChange = (v: string) => {
-    setListPage(0);
-    setSelectedState(v);
   };
 
   const getTierIcon = (tier: string) => {
@@ -421,11 +407,11 @@ export default function Products() {
     selectedCategory,
     handleCategoryChange,
     selectedCondition,
-    onConditionChange,
+    setSelectedCondition,
     priceRange,
-    onPriceRangeChange,
+    setPriceRange,
     selectedState,
-    onStateChange,
+    setSelectedState,
   };
 
   return (
@@ -478,7 +464,6 @@ export default function Products() {
                     type="button"
                     aria-label="Clear search"
                     onClick={() => {
-                      setListPage(0);
                       const next = new URLSearchParams(searchParams);
                       next.delete("search");
                       setSearchParams(next);
@@ -499,14 +484,7 @@ export default function Products() {
               {selectedCondition !== "all" && (
                 <div className="flex items-center gap-1 bg-[#22c55e]/10 text-[#22c55e] px-2 py-1 rounded text-xs">
                   <span>{selectedCondition}</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setListPage(0);
-                      setSelectedCondition("all");
-                    }}
-                    aria-label="Clear condition"
-                  >
+                  <button type="button" onClick={() => setSelectedCondition("all")} aria-label="Clear condition">
                     <X className="w-3 h-3" />
                   </button>
                 </div>
@@ -514,14 +492,7 @@ export default function Products() {
               {priceRange !== "all" && (
                 <div className="flex items-center gap-1 bg-[#22c55e]/10 text-[#22c55e] px-2 py-1 rounded text-xs">
                   <span>{priceRanges.find((r) => r.value === priceRange)?.label ?? "Price"}</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setListPage(0);
-                      setPriceRange("all");
-                    }}
-                    aria-label="Clear price filter"
-                  >
+                  <button type="button" onClick={() => setPriceRange("all")} aria-label="Clear price filter">
                     <X className="w-3 h-3" />
                   </button>
                 </div>
@@ -529,15 +500,8 @@ export default function Products() {
               {selectedState !== "all" && (
                 <div className="flex items-center gap-1 bg-[#22c55e]/10 text-[#22c55e] px-2 py-1 rounded text-xs">
                   <span>{selectedState}</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setListPage(0);
-                      setSelectedState("all");
-                    }}
-                    aria-label="Clear location"
-                  >
-                    <X className="w-3 h-3" />
+                  <button type="button" onClick={() => setSelectedState("all")} aria-label="Clear location">
+                    <X className="x-3 h-3" />
                   </button>
                 </div>
               )}
@@ -547,7 +511,7 @@ export default function Products() {
       </header>
 
       <div className="bg-white border-b border-gray-200 px-4 py-2">
-        <div className="flex flex-wrap items-center justify-between gap-3 max-w-7xl mx-auto">
+        <div className="flex flex-wrap items-center justify_gap gap-3 max-w-7xl mx-auto">
           <span className="text-sm text-gray-600">
             {isLoadingProducts && listPage === 0
               ? "Loading…"
@@ -562,10 +526,7 @@ export default function Products() {
             <span className="text-sm text-gray-600">Sort:</span>
             <select
               value={sortBy}
-              onChange={(e) => {
-                setListPage(0);
-                setSortBy(e.target.value as ListingSort);
-              }}
+              onChange={(e) => setSortBy(e.target.value as ListingSort)}
               className="text-sm font-medium text-[#22c55e] bg-transparent border border-[#22c55e]/30 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-[#22c55e]"
             >
               <option value="recent">Newest first</option>
@@ -600,7 +561,7 @@ export default function Products() {
                   <Link key={String(product.id)} to={`/products/${product.id}`}>
                     <ProductCard
                       image={String(product.image ?? "")}
-                      condition={normalizeCondition(product.condition)}
+                      condition={(product.condition as ProductCardPropsCondition) ?? "Good"}
                       title={String(product.title ?? "")}
                       titleAdornment={getTierIcon(String(product.sellerTier ?? ""))}
                       price={Number(product.price) || 0}
@@ -706,8 +667,3 @@ export default function Products() {
 }
 
 type ProductCardPropsCondition = "New" | "Like New" | "Good" | "Fair";
-
-function normalizeCondition(raw: unknown): ProductCardPropsCondition {
-  const s = String(raw ?? "");
-  return s === "New" || s === "Like New" || s === "Good" || s === "Fair" ? s : "Good";
-}

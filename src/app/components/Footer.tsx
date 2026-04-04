@@ -12,12 +12,7 @@ export default function Footer() {
             <h3 className="font-bold text-lg mb-4">About us</h3>
             <ul className="space-y-3 text-sm">
               <li><Link to="/about" className="hover:underline">About GreenHub</Link></li>
-              <li>
-                <Link to="/apply-for-job" className="hover:underline inline-flex items-center gap-2 font-medium">
-                  <span className="text-base" aria-hidden>💼</span>
-                  Jobs / Employment
-                </Link>
-              </li>
+              <li><Link to="/apply" className="hover:underline">Apply for Job</Link></li>
               <li><Link to="/terms" className="hover:underline">Terms & Conditions</Link></li>
               <li><Link to="/privacy" className="hover:underline">Privacy Policy</Link></li>
             </ul>

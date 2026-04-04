@@ -38,7 +38,6 @@ import AdminDashboard from "./pages/admin/Dashboard";
 import AdminUsers from "./pages/admin/Users";
 import AdminProducts from "./pages/admin/Products";
 import AdPricingControl from "./pages/admin/AdPricingControl";
-import AdminJobApplications from "./pages/admin/JobApplications";
 import NotFound from "./pages/NotFound";
 
 function LegacySellRouteRedirect() {
@@ -80,8 +79,7 @@ export const router = createBrowserRouter([
     children: [
       { index: true, Component: Home },
       { path: "about", Component: About },
-      { path: "apply-for-job", Component: ApplyJob },
-      { path: "apply", element: <Navigate to="/apply-for-job" replace /> },
+      { path: "apply", Component: ApplyJob },
       { path: "how-to-sell", Component: HowToSell },
       { path: "how-to-buy", Component: HowToBuy },
       { path: "terms", Component: Terms },
@@ -126,7 +124,6 @@ export const router = createBrowserRouter([
       { path: "admin/users", Component: AdminUsers },
       { path: "admin/products", Component: AdminProducts },
       { path: "admin/pricing", Component: AdPricingControl },
-      { path: "admin/job-applications", Component: AdminJobApplications },
       { path: "admin/orders", Component: LegacyAdminRedirect },
       { path: "admin/reports", Component: LegacyAdminRedirect },
       { path: "help", Component: LegacyHelpRedirect },

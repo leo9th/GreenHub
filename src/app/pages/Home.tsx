@@ -279,31 +279,22 @@ export default function Home() {
         <div className="flex-1 min-w-0 px-4 py-0 md:px-0">
           
           {/* Primary Navigation Icons (Moved to Top) */}
-          <div className="grid grid-cols-5 gap-1 sm:gap-2 md:gap-3 mb-6 bg-white py-4 md:py-6 border-b border-gray-200 md:border md:rounded-xl md:shadow-sm">
-            <Link to="/" className="flex flex-col items-center justify-center gap-1 md:gap-2 group cursor-pointer text-[#22c55e] min-w-0">
-              <HomeIcon className="w-5 h-5 md:w-8 md:h-8 transition-transform group-hover:scale-110 shrink-0" />
-              <span className="font-medium text-[10px] md:text-sm text-center leading-tight">Home</span>
+          <div className="grid grid-cols-4 gap-2 md:gap-4 mb-6 bg-white py-4 md:py-6 border-b border-gray-200 md:border md:rounded-xl md:shadow-sm">
+            <Link to="/" className="flex flex-col items-center justify-center gap-2 group cursor-pointer text-[#22c55e]">
+              <HomeIcon className="w-6 h-6 md:w-8 md:h-8 transition-transform group-hover:scale-110" />
+              <span className="font-medium text-xs md:text-sm">Home</span>
             </Link>
-            <Link to="/products" className="flex flex-col items-center justify-center gap-1 md:gap-2 group cursor-pointer text-gray-600 hover:text-[#22c55e] min-w-0">
-              <Search className="w-5 h-5 md:w-8 md:h-8 transition-transform group-hover:scale-110 shrink-0" />
-              <span className="font-medium text-[10px] md:text-sm text-center leading-tight">Search</span>
+            <Link to="/products" className="flex flex-col items-center justify-center gap-2 group cursor-pointer text-gray-600 hover:text-[#22c55e]">
+              <Search className="w-6 h-6 md:w-8 md:h-8 transition-transform group-hover:scale-110" />
+              <span className="font-medium text-xs md:text-sm">Search</span>
             </Link>
-            <Link
-              to="/apply-for-job"
-              className="flex flex-col items-center justify-center gap-1 md:gap-2 group cursor-pointer text-gray-600 hover:text-[#22c55e] min-w-0"
-            >
-              <span className="text-lg md:text-2xl leading-none" aria-hidden>
-                💼
-              </span>
-              <span className="font-medium text-[10px] md:text-sm text-center leading-tight">Jobs</span>
+            <Link to="/seller/products/new" className="flex flex-col items-center justify-center gap-2 group cursor-pointer text-gray-600 hover:text-[#22c55e]">
+              <PlusCircle className="w-6 h-6 md:w-8 md:h-8 transition-transform group-hover:scale-110" />
+              <span className="font-medium text-xs md:text-sm">Sell</span>
             </Link>
-            <Link to="/seller/products/new" className="flex flex-col items-center justify-center gap-1 md:gap-2 group cursor-pointer text-gray-600 hover:text-[#22c55e] min-w-0">
-              <PlusCircle className="w-5 h-5 md:w-8 md:h-8 transition-transform group-hover:scale-110 shrink-0" />
-              <span className="font-medium text-[10px] md:text-sm text-center leading-tight">Sell</span>
-            </Link>
-            <Link to="/messages" className="flex flex-col items-center justify-center gap-1 md:gap-2 group cursor-pointer text-gray-600 hover:text-[#22c55e] min-w-0">
-              <MessageCircle className="w-5 h-5 md:w-8 md:h-8 transition-transform group-hover:scale-110 shrink-0" />
-              <span className="font-medium text-[10px] md:text-sm text-center leading-tight">Messages</span>
+            <Link to="/messages" className="flex flex-col items-center justify-center gap-2 group cursor-pointer text-gray-600 hover:text-[#22c55e]">
+              <MessageCircle className="w-6 h-6 md:w-8 md:h-8 transition-transform group-hover:scale-110" />
+              <span className="font-medium text-xs md:text-sm">Messages</span>
             </Link>
           </div>
 

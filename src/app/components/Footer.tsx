@@ -13,6 +13,11 @@ export default function Footer() {
             <ul className="space-y-3 text-sm">
               <li><Link to="/about" className="hover:underline">About GreenHub</Link></li>
               <li><Link to="/apply" className="hover:underline">Apply for Job</Link></li>
+              <li>
+                <Link to="/workers" className="hover:underline">
+                  Find staff &amp; labour (directory)
+                </Link>
+              </li>
               <li><Link to="/terms" className="hover:underline">Terms & Conditions</Link></li>
               <li><Link to="/privacy" className="hover:underline">Privacy Policy</Link></li>
             </ul>

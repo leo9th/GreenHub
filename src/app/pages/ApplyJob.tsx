@@ -247,6 +247,17 @@ export default function ApplyJob() {
 
       <form onSubmit={step === TOTAL_STEPS - 1 ? handleSubmit : (e) => e.preventDefault()} className="max-w-2xl mx-auto px-4 py-6">
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 md:p-8 space-y-5">
+          <div className="rounded-lg border border-[#bbf7d0] bg-[#ecfdf5] px-4 py-3 text-sm text-gray-800 -mt-1">
+            <strong className="text-[#14532d]">Casual labour or staff?</strong>{" "}
+            <Link to="/workers/register" className="text-[#166534] font-semibold underline">
+              Publish a short profile
+            </Link>{" "}
+            so employers can call you, or{" "}
+            <Link to="/workers" className="text-[#166534] font-semibold underline">
+              browse worker profiles
+            </Link>{" "}
+            if you are hiring.
+          </div>
 
           {step === 0 && (
             <>

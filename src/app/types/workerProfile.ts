@@ -1,0 +1,20 @@
+export type WorkerProfileRow = {
+  id: string;
+  user_id: string | null;
+  full_name: string;
+  phone: string;
+  email: string;
+  city_state: string;
+  headline: string;
+  trade_category: string;
+  skills_summary: string;
+  years_experience: number | null;
+  availability: string;
+  education_level: string | null;
+  languages: string | null;
+  expected_pay: string | null;
+  portfolio_url: string | null;
+  status: string;
+  created_at: string;
+  updated_at: string;
+};

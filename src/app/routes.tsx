@@ -39,6 +39,9 @@ import AdminUsers from "./pages/admin/Users";
 import AdminProducts from "./pages/admin/Products";
 import AdPricingControl from "./pages/admin/AdPricingControl";
 import NotFound from "./pages/NotFound";
+import WorkersBrowse from "./pages/workers/WorkersBrowse";
+import WorkerProfileDetail from "./pages/workers/WorkerProfileDetail";
+import WorkerProfileRegister from "./pages/workers/WorkerProfileRegister";
 
 function LegacySellRouteRedirect() {
   return <Navigate to="/seller/products/new" replace />;
@@ -80,6 +83,9 @@ export const router = createBrowserRouter([
       { index: true, Component: Home },
       { path: "about", Component: About },
       { path: "apply", Component: ApplyJob },
+      { path: "workers", Component: WorkersBrowse },
+      { path: "workers/register", Component: WorkerProfileRegister },
+      { path: "workers/:id", Component: WorkerProfileDetail },
       { path: "how-to-sell", Component: HowToSell },
       { path: "how-to-buy", Component: HowToBuy },
       { path: "terms", Component: Terms },

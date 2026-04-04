@@ -131,9 +131,11 @@ export default function WorkerProfileDetail() {
             )}
 
             <section className="rounded-xl bg-gray-50 border border-gray-100 p-4">
-              <h2 className="text-sm font-bold text-gray-700 uppercase tracking-wide">Contact for interview</h2>
-              <p className="text-xs text-gray-500 mt-1">
-                GreenHub does not employ these individuals; you hire directly. Verify identity and terms yourself.
+              <h2 className="text-sm font-bold text-gray-700 uppercase tracking-wide">Contact to hire</h2>
+              <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+                This profile is in GreenHub&apos;s <strong className="text-gray-700">public hire directory</strong>.
+                GreenHub does not employ this person—you agree pay and terms with them directly. Always verify identity
+                and work expectations yourself.
               </p>
               <div className="mt-4 flex flex-col sm:flex-row flex-wrap gap-3">
                 <a

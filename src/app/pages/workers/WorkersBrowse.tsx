@@ -54,6 +54,10 @@ export default function WorkersBrowse() {
     <div className="min-h-screen bg-[#f8faf8] pb-20">
       <WorkersSectionHeader />
       <div className="max-w-5xl mx-auto px-4 py-8">
+        <p className="text-sm text-gray-600 mb-6 max-w-3xl">
+          Use the search and filters below to find artisans or workers you can employ. Open a profile to call,
+          email, or WhatsApp them—your arrangement is between you and them.
+        </p>
         <div className="rounded-xl border border-gray-200 bg-white p-4 md:p-5 shadow-sm mb-8 space-y-4">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" aria-hidden />

@@ -94,10 +94,11 @@ export default function WorkerProfileRegister() {
     <div className="min-h-screen bg-[#f8faf8] pb-20">
       <WorkersSectionHeader />
       <div className="max-w-xl mx-auto px-4 py-8">
-        <h1 className="text-2xl font-bold text-gray-900">List yourself for work</h1>
-        <p className="text-gray-600 text-sm mt-2">
-          Share honest details. Employers use this to shortlist and contact you by phone or email. You can sign in
-          first to link this profile to your account (optional).
+        <h1 className="text-2xl font-bold text-gray-900">Get found by people hiring</h1>
+        <p className="text-gray-600 text-sm mt-2 leading-relaxed">
+          This <strong className="text-gray-800">public directory</strong> helps visitors to GreenHub—families, shops,
+          anyone—find artisans, drivers, and skilled labour. List what you do and how to reach you; hirers contact you
+          directly. Not a GreenHub job. You can sign in to link this listing to your account (optional).
         </p>
 
         <form onSubmit={(e) => void onSubmit(e)} className="mt-6 space-y-4 bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
@@ -245,7 +246,10 @@ export default function WorkerProfileRegister() {
 
           <label className="flex items-start gap-2 text-sm text-gray-700 cursor-pointer">
             <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} className="mt-1" />
-            <span>I confirm my details are accurate and I agree GreenHub only displays this information—employers hire me directly.</span>
+            <span>
+              I confirm my details are accurate. GreenHub runs this public board so visitors can find me—I am hired
+              by the public, not by GreenHub.
+            </span>
           </label>
 
           <button
@@ -256,9 +260,9 @@ export default function WorkerProfileRegister() {
             {submitting ? "Publishing…" : "Publish my profile"}
           </button>
           <p className="text-xs text-gray-500 text-center">
-            Need a formal GreenHub job pipeline?{" "}
+            Applying for a role with GreenHub or a partner company (different from this public list)?{" "}
             <Link to="/apply" className="text-[#166534] font-medium underline">
-              Apply for job
+              Use the formal application
             </Link>
             .
           </p>

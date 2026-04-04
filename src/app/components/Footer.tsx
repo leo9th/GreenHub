@@ -15,7 +15,7 @@ export default function Footer() {
               <li><Link to="/apply" className="hover:underline">Apply for Job</Link></li>
               <li>
                 <Link to="/workers" className="hover:underline">
-                  Find staff &amp; labour (directory)
+                  Hire artisans &amp; workers (public directory)
                 </Link>
               </li>
               <li><Link to="/terms" className="hover:underline">Terms & Conditions</Link></li>

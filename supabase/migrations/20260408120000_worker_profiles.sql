@@ -1,4 +1,4 @@
--- Public directory: people share what work they do so employers can browse and contact them.
+-- Public hire directory (not GreenHub HR): visitors search for artisans/workers; contact is direct between hirer and profile owner.
 
 create table if not exists public.worker_profiles (
   id uuid primary key default gen_random_uuid(),

@@ -97,19 +97,19 @@ export default function AddProduct() {
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
-
+    
     const availableSlots = 5 - imageFiles.length;
     const filesToAdd = files.slice(0, availableSlots);
-
+    
     const newImageFiles = filesToAdd.map((file) => ({
       file,
       preview: URL.createObjectURL(file),
     }));
-
+    
     if (newImageFiles.length > 0) {
       setImageFiles((prev) => [...prev, ...newImageFiles]);
     }
-
+    
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -214,10 +214,10 @@ export default function AddProduct() {
 
       if (isEdit && id) {
         const updatePayload: Record<string, unknown> = {
-          title: title.trim(),
+        title: title.trim(),
           description: description.trim(),
-          price_local: priceLocalNum,
-          image: mainImage,
+        price_local: priceLocalNum,
+        image: mainImage,
           category: category.trim(),
           condition,
           location: location.trim(),
@@ -325,13 +325,13 @@ export default function AddProduct() {
                   <Upload className="w-6 h-6 mb-1" />
                   <span className="text-xs">Upload</span>
                 </button>
-                <input
-                  type="file"
+                <input 
+                  type="file" 
                   ref={fileInputRef}
                   onChange={handleImageUpload}
-                  accept="image/*"
+                  accept="image/*" 
                   multiple
-                  className="hidden"
+                  className="hidden" 
                 />
               </>
             )}

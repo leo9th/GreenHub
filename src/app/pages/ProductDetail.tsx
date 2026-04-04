@@ -141,68 +141,42 @@ function RelatedProductsCarousel({
   );
 }
 
-/** Same seller’s other listings — horizontal scroll, no autoplay */
-function MoreFromSellerStrip({
+/** Same seller’s other listings — aligned grid (side by side, wraps in neat rows) */
+function MoreFromSellerGrid({
   items,
   formatPrice,
 }: {
   items: RelatedCarouselItem[];
   formatPrice: (amount: number | null | undefined) => string;
 }) {
-  const [emblaRef, emblaApi] = useEmblaCarousel({ loop: false, align: "start", dragFree: true, duration: 25 }, []);
-
-  useEffect(() => {
-    if (!emblaApi) return;
-    emblaApi.reInit();
-  }, [emblaApi, items]);
-
   if (items.length === 0) return null;
 
   return (
-    <div className="relative group/strip">
-      <div className="overflow-hidden" ref={emblaRef}>
-        <div className="flex -ml-3 sm:-ml-4">
-          {items.map((item) => (
-            <div key={String(item.id)} className="min-w-0 shrink-0 grow-0 pl-3 sm:pl-4 w-[220px] basis-[220px] max-w-[220px]">
-              <Link
-                to={`/products/${item.id}`}
-                className="block rounded-xl overflow-hidden bg-gray-50/80 ring-1 ring-gray-100 hover:ring-[#22c55e]/35 transition-shadow"
-              >
-                <div className="relative aspect-[16/9] w-full overflow-hidden bg-gray-100">
-                  <img src={item.image} alt="" className="h-full w-full object-cover" />
-                  <span className="absolute top-2 left-2 bg-[#16a34a] text-white text-[10px] font-semibold px-2 py-0.5 rounded-md">
-                    {item.condition || "—"}
-                  </span>
-                </div>
-                <div className="p-2.5">
-                  <p className="text-xs font-medium text-gray-900 line-clamp-2 leading-snug mb-1">{item.title}</p>
-                  <p className="text-sm font-bold text-gray-900 tabular-nums">{formatPrice(item.price)}</p>
-                </div>
-              </Link>
-            </div>
-          ))}
-        </div>
-      </div>
-      {items.length > 1 ? (
-        <>
-          <button
-            type="button"
-            aria-label="Scroll seller listings left"
-            onClick={() => emblaApi?.scrollPrev()}
-            className="hidden sm:flex absolute left-0 top-[62px] z-10 -translate-x-1 w-8 h-8 rounded-full bg-white border border-gray-200 shadow items-center justify-center text-gray-700 opacity-0 group-hover/strip:opacity-100 transition-opacity"
-          >
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-          <button
-            type="button"
-            aria-label="Scroll seller listings right"
-            onClick={() => emblaApi?.scrollNext()}
-            className="hidden sm:flex absolute right-0 top-[62px] z-10 translate-x-1 w-8 h-8 rounded-full bg-white border border-gray-200 shadow items-center justify-center text-gray-700 opacity-0 group-hover/strip:opacity-100 transition-opacity"
-          >
-            <ChevronRight className="w-4 h-4" />
-          </button>
-        </>
-      ) : null}
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
+      {items.map((item) => (
+        <Link
+          key={String(item.id)}
+          to={`/products/${item.id}`}
+          className="group flex flex-col h-full rounded-xl overflow-hidden bg-gray-50/80 ring-1 ring-gray-100 hover:ring-[#22c55e]/35 hover:shadow-md transition-shadow"
+        >
+          <div className="relative aspect-[16/9] w-full shrink-0 overflow-hidden bg-gray-100">
+            <img
+              src={item.image}
+              alt=""
+              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+            />
+            <span className="absolute top-2 left-2 bg-[#16a34a] text-white text-[10px] font-semibold px-2 py-0.5 rounded-md">
+              {item.condition || "—"}
+            </span>
+          </div>
+          <div className="p-2.5 flex flex-col flex-1 min-h-[3.25rem]">
+            <p className="text-xs font-medium text-gray-900 line-clamp-2 leading-snug mb-1 flex-1">
+              {item.title}
+            </p>
+            <p className="text-sm font-bold text-gray-900 tabular-nums mt-auto">{formatPrice(item.price)}</p>
+          </div>
+        </Link>
+      ))}
     </div>
   );
 }
@@ -784,9 +758,7 @@ export default function ProductDetail() {
             <div>
               <h2 className="text-lg font-semibold text-gray-900">More from this seller</h2>
               <p className="text-sm text-gray-500 mt-1 mb-4">Other listings by {product.seller.name}</p>
-              <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 sm:overflow-visible">
-                <MoreFromSellerStrip items={moreFromSeller} formatPrice={formatPrice} />
-              </div>
+              <MoreFromSellerGrid items={moreFromSeller} formatPrice={formatPrice} />
             </div>
           ) : null}
 

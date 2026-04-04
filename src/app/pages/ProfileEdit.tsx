@@ -25,6 +25,7 @@ export default function ProfileEdit() {
     phone: "",
     location: "",
     autoReply: "",
+    bio: "",
     gender: "Prefer not to say"
   });
 
@@ -36,6 +37,7 @@ export default function ProfileEdit() {
         phone: profile?.phone || authUser?.user_metadata?.phone || "",
         location: profile?.address || authUser?.user_metadata?.address || "",
         autoReply: profile?.auto_reply || authUser?.user_metadata?.auto_reply || "",
+        bio: profile?.bio || (authUser?.user_metadata as { bio?: string })?.bio || "",
         gender: normalizeGender(profile?.gender || authUser?.user_metadata?.gender)
       });
       if (profile?.avatar_url || authUser?.user_metadata?.avatar_url) {
@@ -92,6 +94,7 @@ export default function ProfileEdit() {
           phone: formData.phone,
           address: formData.location,
           auto_reply: formData.autoReply,
+          bio: formData.bio.trim() || undefined,
           gender: normalizedGender,
           avatar_url: finalAvatarUrl !== "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200" ? finalAvatarUrl : null,
         }
@@ -105,6 +108,7 @@ export default function ProfileEdit() {
         phone: formData.phone,
         address: formData.location,
         auto_reply: formData.autoReply,
+        bio: formData.bio.trim() || null,
         gender: normalizedGender,
         avatar_url: finalAvatarUrl !== "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200" ? finalAvatarUrl : null,
         updated_at: new Date().toISOString()
@@ -243,6 +247,18 @@ export default function ProfileEdit() {
                   <div className="absolute top-1/2 right-3 -translate-y-1/2 pointer-events-none">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-gray-400"><path d="m6 9 6 6 6-6"/></svg>
                   </div>
+                </div>
+
+                {/* Bio (public profile) */}
+                <div className="relative">
+                  <label className="absolute -top-2 left-3 bg-white px-1 text-xs text-[#22c55e] font-semibold">About you (bio)</label>
+                  <textarea
+                    value={formData.bio}
+                    onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
+                    placeholder="Short intro buyers see on your profile..."
+                    rows={3}
+                    className="w-full border border-gray-300 rounded p-3 text-sm focus:border-[#22c55e] focus:outline-none text-gray-800 resize-y"
+                  />
                 </div>
 
                 {/* Auto Reply (Substituting for Birthday) */}

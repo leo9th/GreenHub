@@ -7,6 +7,7 @@ import { useCurrency } from "../hooks/useCurrency";
 import { useState, useEffect } from "react";
 import { supabase } from "../../lib/supabase";
 import { ProductCard } from "../components/cards/ProductCard";
+import { getProductPrice } from "../utils/getProductPrice";
 
 export default function Home() {
   const { activeRegion, setRegion } = useRegion();
@@ -60,6 +61,7 @@ export default function Home() {
 
         const serverProducts = data.map((product: any) => ({
           ...product,
+          price: getProductPrice(product),
           sellerId: product.seller_id,
           sellerTier: product.seller_tier,
           deliveryOptions: product.delivery_options,

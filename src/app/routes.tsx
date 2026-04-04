@@ -28,6 +28,7 @@ import AddProduct from "./pages/seller/AddProduct";
 import BankDetails from "./pages/seller/BankDetails";
 import Advertise from "./pages/seller/Advertise";
 import SetupAd from "./pages/seller/SetupAd";
+import SellerVerification from "./pages/seller/Verification";
 import WriteReview from "./pages/WriteReview";
 import SellerReviews from "./pages/SellerReviews";
 import Profile from "./pages/Profile";
@@ -104,6 +105,7 @@ export const router = createBrowserRouter([
       { path: "seller/products/add", Component: LegacySellRouteRedirect },
       { path: "seller/products/:id/edit", Component: AddProduct },
       { path: "seller/bank-details", Component: BankDetails },
+      { path: "seller/verification", Component: SellerVerification },
       { path: "seller/advertise", Component: Advertise },
       { path: "seller/advertise/setup", Component: SetupAd },
       { path: "reviews/:orderId", Component: WriteReview },

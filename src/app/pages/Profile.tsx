@@ -1,181 +1,470 @@
-import { Link, useNavigate } from "react-router";
-import { ArrowLeft, Star, Package, Heart, MapPin, Edit } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router";
+import {
+  ArrowLeft,
+  Star,
+  MapPin,
+  Edit,
+  BadgeCheck,
+  MessageCircle,
+  Phone,
+  Settings,
+  LogOut,
+  Loader2,
+  Shield,
+  ShieldAlert,
+  Clock,
+} from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { getAvatarUrl } from "../utils/getAvatar";
+import { supabase } from "../../lib/supabase";
+import { useCurrency } from "../hooks/useCurrency";
+import { getProductPrice } from "../utils/getProductPrice";
+
+type TabId = "products" | "reviews" | "about" | "contact";
+
+type Listing = {
+  id: string | number;
+  title: string;
+  image: string | null;
+  condition: string | null;
+  price_local: number | null;
+  price: number | null;
+  status: string | null;
+};
+
+type ReviewRow = {
+  id: string;
+  rating: number;
+  comment: string;
+  created_at: string;
+  reviewer_id: string;
+  reviewer_name: string;
+};
+
+function isActiveListing(status: string | null | undefined): boolean {
+  const s = (status ?? "").toLowerCase();
+  if (!s || s === "active") return true;
+  return s !== "sold" && s !== "inactive";
+}
+
+function StarRow({ value, max = 5 }: { value: number; max?: number }) {
+  return (
+    <div className="flex items-center justify-center gap-0.5" aria-hidden>
+      {Array.from({ length: max }, (_, i) => (
+        <Star
+          key={i}
+          className={`w-4 h-4 ${i < Math.round(value) ? "fill-amber-400 text-amber-400" : "text-gray-200"}`}
+        />
+      ))}
+    </div>
+  );
+}
 
 export default function Profile() {
   const navigate = useNavigate();
-  const { profile, user: authUser, signOut } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabFromUrl = (searchParams.get("tab") || "").toLowerCase();
+  const formatPrice = useCurrency();
+  const { profile, user: authUser, loading: authLoading, signOut } = useAuth();
 
-  const user = {
-    name: profile?.full_name || authUser?.user_metadata?.full_name || "Guest User",
-    email: profile?.email || authUser?.email || "No email",
-    phone: profile?.phone || authUser?.user_metadata?.phone || "No phone",
-    avatar: getAvatarUrl(
-      profile?.avatar_url || authUser?.user_metadata?.avatar_url,
-      profile?.gender || authUser?.user_metadata?.gender,
-      profile?.full_name || authUser?.user_metadata?.full_name || "Guest User"
-    ),
-    memberSince: "Joined Recently",
-    location: profile?.state && profile?.lga ? `${profile.lga}, ${profile.state}` : profile?.address || authUser?.user_metadata?.state || "Nigeria",
-    verified: true,
-    stats: {
-      orders: 24,
-      favorites: 12,
-      reviews: 8,
-    },
+  const validTabs: TabId[] = ["products", "reviews", "about", "contact"];
+  const initialTab = validTabs.includes(tabFromUrl as TabId) ? (tabFromUrl as TabId) : "products";
+  const [tab, setTab] = useState<TabId>(initialTab);
+
+  useEffect(() => {
+    const t = (searchParams.get("tab") || "").toLowerCase();
+    if (validTabs.includes(t as TabId)) setTab(t as TabId);
+  }, [searchParams]);
+
+  const setTabAndUrl = (next: TabId) => {
+    setTab(next);
+    setSearchParams({ tab: next }, { replace: true });
   };
 
+  const [listings, setListings] = useState<Listing[]>([]);
+  const [reviews, setReviews] = useState<ReviewRow[]>([]);
+  const [soldCount, setSoldCount] = useState(0);
+  const [verificationLabel, setVerificationLabel] = useState<"none" | "pending" | "approved" | "rejected">("none");
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [dataLoading, setDataLoading] = useState(true);
+
+  const displayName = profile?.full_name || authUser?.user_metadata?.full_name || "Member";
+  const avatar = getAvatarUrl(
+    profile?.avatar_url || authUser?.user_metadata?.avatar_url,
+    profile?.gender || authUser?.user_metadata?.gender,
+    displayName
+  );
+  const locationLabel =
+    profile?.state && profile?.lga
+      ? `${profile.lga}, ${profile.state}`
+      : profile?.address || profile?.state || "Nigeria";
+
+  const memberSince =
+    authUser?.created_at || profile?.created_at
+      ? new Date(authUser?.created_at || profile?.created_at || "").toLocaleDateString(undefined, {
+          month: "short",
+          year: "numeric",
+        })
+      : "—";
+
+  const reviewCount = reviews.length;
+  const avgRating =
+    reviewCount > 0 ? reviews.reduce((s, r) => s + r.rating, 0) / reviewCount : 0;
+
+  const activeListings = listings.filter((p) => isActiveListing(p.status));
+
+  const loadData = useCallback(async () => {
+    if (!authUser?.id) {
+      setListings([]);
+      setReviews([]);
+      setSoldCount(0);
+      setDataLoading(false);
+      return;
+    }
+
+    setDataLoading(true);
+    setLoadError(null);
+
+    try {
+      const { data: productRows, error: pErr } = await supabase
+        .from("products")
+        .select("id, title, image, condition, price_local, price, status")
+        .eq("seller_id", authUser.id)
+        .order("created_at", { ascending: false });
+
+      if (pErr) throw pErr;
+      setListings((productRows ?? []) as Listing[]);
+      setSoldCount((productRows ?? []).filter((r: { status?: string | null }) => (r.status ?? "").toLowerCase() === "sold").length);
+
+      const { data: verRows, error: vErr } = await supabase
+        .from("seller_verification")
+        .select("status")
+        .eq("seller_id", authUser.id);
+
+      if (vErr && vErr.code !== "PGRST116" && !vErr.message.includes("does not exist")) {
+        console.warn(vErr);
+      }
+      const statuses = (verRows ?? []).map((r: { status: string }) => String(r.status).toLowerCase());
+      if (statuses.includes("approved")) setVerificationLabel("approved");
+      else if (statuses.includes("pending")) setVerificationLabel("pending");
+      else if (statuses.includes("rejected")) setVerificationLabel("rejected");
+      else setVerificationLabel("none");
+
+      const { data: revRows, error: rErr } = await supabase
+        .from("seller_reviews")
+        .select("id, rating, comment, created_at, reviewer_id")
+        .eq("seller_id", authUser.id)
+        .order("created_at", { ascending: false });
+
+      if (rErr) {
+        if (rErr.code === "42P01" || rErr.message.includes("does not exist") || rErr.message.includes("schema cache")) {
+          setReviews([]);
+        } else throw rErr;
+      } else {
+        const rows = (revRows ?? []) as {
+          id: string;
+          rating: number;
+          comment: string;
+          created_at: string;
+          reviewer_id: string;
+        }[];
+        const ids = [...new Set(rows.map((r) => r.reviewer_id))];
+        let nameMap = new Map<string, string>();
+        if (ids.length > 0) {
+          const { data: profs } = await supabase.from("profiles").select("id, full_name").in("id", ids);
+          for (const p of profs ?? []) {
+            if (p.id) nameMap.set(String(p.id), (p.full_name as string) || "Buyer");
+          }
+        }
+        setReviews(
+          rows.map((r) => ({
+            ...r,
+            reviewer_name: nameMap.get(r.reviewer_id) || "Buyer",
+          }))
+        );
+      }
+    } catch (e: unknown) {
+      console.error(e);
+      setLoadError(e instanceof Error ? e.message : "Could not load profile data");
+      setListings([]);
+      setReviews([]);
+    } finally {
+      setDataLoading(false);
+    }
+  }, [authUser?.id]);
+
+  useEffect(() => {
+    if (authLoading) return;
+    if (!authUser) {
+      navigate("/login", { replace: true });
+      return;
+    }
+    void loadData();
+  }, [authLoading, authUser, navigate, loadData]);
+
+  if (authLoading || !authUser) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <Loader2 className="w-10 h-10 animate-spin text-[#22c55e]" />
+      </div>
+    );
+  }
+
+  const tabs: { id: TabId; label: string }[] = [
+    { id: "products", label: "Products" },
+    { id: "reviews", label: "Reviews" },
+    { id: "about", label: "About" },
+    { id: "contact", label: "Contact" },
+  ];
+
+  const phoneDisplay = profile?.phone || authUser.user_metadata?.phone || null;
+
   return (
-    <div className="min-h-screen bg-gray-50 pb-6">
-      {/* Header */}
+    <div className="min-h-screen bg-gray-50 pb-28">
       <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
-        <div className="px-4 py-3 max-w-7xl mx-auto flex items-center gap-3">
-          <button onClick={() => navigate(-1)} className="p-2 -ml-2">
+        <div className="max-w-lg mx-auto px-4 py-3 flex items-center gap-3">
+          <button type="button" onClick={() => navigate(-1)} className="p-2 -ml-2 rounded-lg hover:bg-gray-100" aria-label="Back">
             <ArrowLeft className="w-5 h-5 text-gray-700" />
           </button>
-          <h1 className="text-lg font-semibold text-gray-800">My Profile</h1>
+          <h1 className="text-base font-semibold text-gray-900">Profile</h1>
         </div>
       </header>
 
-      <div className="px-4 py-4 max-w-7xl mx-auto space-y-4">
-        {/* Profile Card */}
-        <div className="bg-gradient-to-br from-[#22c55e] to-[#16a34a] rounded-lg p-6 text-white">
-          <div className="flex items-start gap-4 mb-4">
-            <img
-              src={user.avatar}
-              alt={user.name}
-              className="w-20 h-20 rounded-full border-4 border-white/20"
-            />
-            <div className="flex-1">
-              <div className="flex items-center gap-2 mb-1">
-                <h2 className="text-xl font-bold">{user.name}</h2>
-                {user.verified && (
-                  <span className="text-white text-sm">✓</span>
-                )}
-              </div>
-              <p className="text-white/90 text-sm mb-1">{user.email}</p>
-              <p className="text-white/90 text-sm">{user.phone}</p>
-            </div>
+      <div className="max-w-lg mx-auto px-4 pt-6">
+        <div className="text-center">
+          <img
+            src={avatar}
+            alt=""
+            className="w-24 h-24 rounded-full object-cover mx-auto ring-4 ring-white shadow-md border border-gray-100"
+          />
+          <h2 className="mt-4 text-xl font-semibold text-gray-900">{displayName}</h2>
+
+          <div className="mt-2 flex flex-col items-center gap-1">
+            <StarRow value={avgRating} />
+            <p className="text-sm text-gray-600">
+              {avgRating > 0 ? avgRating.toFixed(1) : "—"} · {reviewCount} review{reviewCount !== 1 ? "s" : ""}
+            </p>
           </div>
-          <div className="flex items-center gap-2 text-sm text-white/90">
-            <MapPin className="w-4 h-4" />
-            <span>{user.location}</span>
-            <span>•</span>
-            <span>Member since {user.memberSince}</span>
+
+          <p className="mt-2 text-sm text-gray-500 flex items-center justify-center gap-1">
+            <MapPin className="w-3.5 h-3.5 shrink-0" />
+            {locationLabel}
+          </p>
+
+          <div className="mt-3 flex items-center justify-center gap-2 flex-wrap">
+            {verificationLabel === "approved" ? (
+              <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#15803d] bg-[#dcfce7] px-2.5 py-1 rounded-full">
+                <BadgeCheck className="w-3.5 h-3.5" />
+                Verified
+              </span>
+            ) : verificationLabel === "pending" ? (
+              <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-800 bg-amber-100 px-2.5 py-1 rounded-full">
+                <Clock className="w-3.5 h-3.5" />
+                Verification pending
+              </span>
+            ) : verificationLabel === "rejected" ? (
+              <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-800 bg-red-100 px-2.5 py-1 rounded-full">
+                <ShieldAlert className="w-3.5 h-3.5" />
+                Verification needs update
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-xs font-semibold text-gray-600 bg-gray-100 px-2.5 py-1 rounded-full">
+                <Shield className="w-3.5 h-3.5" />
+                Not verified
+              </span>
+            )}
           </div>
+
           <Link
             to="/settings/profile/edit"
-            className="mt-4 w-full py-2 bg-white text-[#22c55e] rounded-lg font-medium text-center flex items-center justify-center gap-2"
+            className="inline-flex items-center gap-1.5 mt-4 px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 shadow-sm"
           >
-            <Edit className="w-4 h-4" />
-            Edit Profile
+            <Edit className="w-3.5 h-3.5" />
+            Edit profile
           </Link>
         </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-3 gap-3">
-          <Link to="/orders" className="bg-white rounded-lg p-4 text-center">
-            <Package className="w-6 h-6 text-[#22c55e] mx-auto mb-2" />
-            <p className="text-2xl font-bold text-gray-900">{user.stats.orders}</p>
-            <p className="text-sm text-gray-600">Orders</p>
-          </Link>
-          <Link to="/favorites" className="bg-white rounded-lg p-4 text-center">
-            <Heart className="w-6 h-6 text-red-500 mx-auto mb-2" />
-            <p className="text-2xl font-bold text-gray-900">{user.stats.favorites}</p>
-            <p className="text-sm text-gray-600">Favorites</p>
-          </Link>
-          <Link to="/reviews" className="bg-white rounded-lg p-4 text-center">
-            <Star className="w-6 h-6 text-[#eab308] mx-auto mb-2" />
-            <p className="text-2xl font-bold text-gray-900">{user.stats.reviews}</p>
-            <p className="text-sm text-gray-600">Reviews</p>
-          </Link>
-        </div>
-
-        {/* Quick Links */}
-        <div className="bg-white rounded-lg divide-y divide-gray-100">
-          <Link to="/orders" className="flex items-center justify-between p-4 hover:bg-gray-50">
-            <div className="flex items-center gap-3">
-              <Package className="w-5 h-5 text-gray-600" />
-              <span className="font-medium text-gray-800">My Orders</span>
-            </div>
-            <span className="text-gray-400">→</span>
-          </Link>
-          <Link to="/favorites" className="flex items-center justify-between p-4 hover:bg-gray-50">
-            <div className="flex items-center gap-3">
-              <Heart className="w-5 h-5 text-gray-600" />
-              <span className="font-medium text-gray-800">Favorites</span>
-            </div>
-            <span className="text-gray-400">→</span>
-          </Link>
-          <Link to="/messages" className="flex items-center justify-between p-4 hover:bg-gray-50">
-            <div className="flex items-center gap-3">
-              <span className="text-xl">💬</span>
-              <span className="font-medium text-gray-800">Messages</span>
-            </div>
-            <span className="text-gray-400">→</span>
-          </Link>
-          <Link to="/settings" className="flex items-center justify-between p-4 hover:bg-gray-50">
-            <div className="flex items-center gap-3">
-              <span className="text-xl">⚙️</span>
-              <span className="font-medium text-gray-800">Settings</span>
-            </div>
-            <span className="text-gray-400">→</span>
-          </Link>
-        </div>
-
-        {/* Seller Section */}
-        <div className="bg-white rounded-lg p-4">
-          <h3 className="font-semibold text-gray-800 mb-3">Seller Account</h3>
-          <p className="text-sm text-gray-600 mb-4">
-            Start selling on GreenHub and earn money from items you no longer need
-          </p>
-          <div className="flex gap-2">
-            <Link
-              to="/seller/dashboard"
-              className="flex-1 py-3 bg-[#22c55e] text-white rounded-lg font-semibold text-center hover:bg-[#16a34a] transition-colors"
-            >
-              Dashboard
-            </Link>
-            <Link
-              to="/seller/advertise"
-              className="flex-1 py-3 bg-orange-100 text-orange-600 rounded-lg font-semibold text-center border border-orange-200 hover:bg-orange-200 transition-colors"
-            >
-              Boost Sales
-            </Link>
+        <div className="mt-8 border-b border-gray-200 overflow-x-auto no-scrollbar -mx-4 px-4">
+          <div className="flex min-w-max gap-1 pb-px">
+            {tabs.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setTabAndUrl(t.id)}
+                className={`px-4 py-2.5 text-sm font-medium rounded-t-lg whitespace-nowrap transition-colors ${
+                  tab === t.id
+                    ? "text-[#15803d] bg-white border border-b-0 border-gray-200 -mb-px z-10"
+                    : "text-gray-500 hover:text-gray-800"
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
           </div>
         </div>
 
-        {/* About */}
-        <div className="bg-white rounded-lg p-4">
-          <h3 className="font-semibold text-gray-800 mb-3">About</h3>
-          <div className="space-y-2 text-sm">
-            <Link to="/about" className="block text-gray-700 hover:text-[#22c55e]">
-              About GreenHub
-            </Link>
-            <Link to="/terms" className="block text-gray-700 hover:text-[#22c55e]">
-              Terms & Conditions
-            </Link>
-            <Link to="/privacy" className="block text-gray-700 hover:text-[#22c55e]">
-              Privacy Policy
-            </Link>
-            <Link to="/help" className="block text-gray-700 hover:text-[#22c55e]">
-              Help Center
-            </Link>
-          </div>
-        </div>
+        <div className="mt-4 min-h-[200px]">
+          {loadError ? (
+            <p className="text-sm text-red-600 text-center py-8 px-2">{loadError}</p>
+          ) : null}
 
-        {/* Logout */}
-        <button 
-          onClick={async () => {
-            await signOut();
-            navigate('/login');
-          }} 
-          className="w-full py-3 bg-white text-red-600 rounded-lg font-semibold border border-red-200"
-        >
-          Logout
-        </button>
+          {tab === "products" && (
+            <div>
+              {dataLoading ? (
+                <div className="flex justify-center py-16">
+                  <Loader2 className="w-8 h-8 animate-spin text-[#22c55e]" />
+                </div>
+              ) : activeListings.length === 0 ? (
+                <p className="text-center text-sm text-gray-500 py-12">No active listings yet.</p>
+              ) : (
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
+                  {activeListings.map((p) => (
+                    <Link
+                      key={String(p.id)}
+                      to={`/products/${p.id}`}
+                      className="bg-white rounded-xl border border-gray-100 overflow-hidden hover:border-gray-200 hover:shadow-sm transition-shadow"
+                    >
+                      <div className="aspect-[4/3] bg-gray-100">
+                        <img
+                          src={p.image || undefined}
+                          alt=""
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            e.currentTarget.src =
+                              "data:image/svg+xml," +
+                              encodeURIComponent(
+                                `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="150"><rect fill="#f3f4f6" width="200" height="150"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#9ca3af" font-size="12">No image</text></svg>`
+                              );
+                          }}
+                        />
+                      </div>
+                      <div className="p-3">
+                        {p.condition ? (
+                          <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">{p.condition}</span>
+                        ) : null}
+                        <p className="text-sm font-medium text-gray-900 line-clamp-2 mt-0.5 leading-snug">{p.title}</p>
+                        <p className="text-sm font-bold text-[#15803d] mt-1">{formatPrice(getProductPrice(p))}</p>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {tab === "reviews" && (
+            <div className="space-y-3">
+              {dataLoading ? (
+                <div className="flex justify-center py-16">
+                  <Loader2 className="w-8 h-8 animate-spin text-[#22c55e]" />
+                </div>
+              ) : reviews.length === 0 ? (
+                <p className="text-center text-sm text-gray-500 py-12">No reviews yet.</p>
+              ) : (
+                reviews.map((r) => (
+                  <article key={r.id} className="bg-white rounded-xl border border-gray-100 p-4">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-sm font-semibold text-gray-900">{r.reviewer_name}</p>
+                      <StarRow value={r.rating} max={5} />
+                    </div>
+                    <p className="text-xs text-gray-400 mt-1">
+                      {new Date(r.created_at).toLocaleDateString(undefined, {
+                        dateStyle: "medium",
+                      })}
+                    </p>
+                    {r.comment ? <p className="text-sm text-gray-700 mt-3 leading-relaxed">{r.comment}</p> : null}
+                  </article>
+                ))
+              )}
+            </div>
+          )}
+
+          {tab === "about" && (
+            <div className="bg-white rounded-xl border border-gray-100 p-4 space-y-4 text-sm">
+              <div className="flex justify-between gap-4 py-2 border-b border-gray-50">
+                <span className="text-gray-500">Member since</span>
+                <span className="font-medium text-gray-900 text-right">{memberSince}</span>
+              </div>
+              <div className="flex justify-between gap-4 py-2 border-b border-gray-50">
+                <span className="text-gray-500">Response rate</span>
+                <span className="font-medium text-gray-900 text-right">Coming soon</span>
+              </div>
+              <div className="flex justify-between gap-4 py-2 border-b border-gray-50">
+                <span className="text-gray-500">Listings marked sold</span>
+                <span className="font-medium text-gray-900 text-right">{soldCount}</span>
+              </div>
+              <div>
+                <p className="text-gray-500 mb-1">Bio</p>
+                <p className="text-gray-900 leading-relaxed">
+                  {profile?.bio?.trim() ? profile.bio : "Add a short bio in Edit profile → About you."}
+                </p>
+              </div>
+              <div className="flex justify-between gap-4 py-2 border-t border-gray-50 pt-3">
+                <span className="text-gray-500">Verification</span>
+                <span className="font-medium text-gray-900 text-right capitalize">{verificationLabel}</span>
+              </div>
+            </div>
+          )}
+
+          {tab === "contact" && (
+            <div className="space-y-4">
+              <div className="bg-white rounded-xl border border-gray-100 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2">Phone</p>
+                {phoneDisplay ? (
+                  <a href={`tel:${phoneDisplay}`} className="inline-flex items-center gap-2 text-[#15803d] font-medium text-sm">
+                    <Phone className="w-4 h-4 shrink-0" />
+                    {phoneDisplay}
+                  </a>
+                ) : (
+                  <p className="text-sm text-gray-500">Add a phone number in Edit profile.</p>
+                )}
+              </div>
+
+              <Link
+                to="/messages"
+                className="flex items-center justify-center gap-2 w-full py-3 rounded-xl bg-[#22c55e] text-white font-semibold text-sm hover:bg-[#16a34a] transition-colors"
+              >
+                <MessageCircle className="w-5 h-5" />
+                Open messages
+              </Link>
+              <p className="text-xs text-center text-gray-500">Chats with interested buyers appear here.</p>
+
+              <div className="bg-amber-50 border border-amber-100 rounded-xl p-4">
+                <p className="text-sm font-semibold text-amber-950 mb-2">Safety tips</p>
+                <ul className="text-sm text-amber-900/90 space-y-2 list-disc pl-4">
+                  <li>Meet in a public place and inspect items before you pay.</li>
+                  <li>Keep communication on GreenHub when possible.</li>
+                  <li>Never share bank PINs or pressure to pay off-platform.</li>
+                </ul>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
+
+      <footer className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-30">
+        <div className="max-w-lg mx-auto px-4 py-3 flex items-center justify-center gap-6">
+          <Link
+            to="/settings"
+            className="flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-gray-900"
+          >
+            <Settings className="w-4 h-4" />
+            Settings
+          </Link>
+          <button
+            type="button"
+            onClick={async () => {
+              await signOut();
+              navigate("/login", { replace: true });
+            }}
+            className="flex items-center gap-2 text-sm font-medium text-red-600 hover:text-red-700"
+          >
+            <LogOut className="w-4 h-4" />
+            Log out
+          </button>
+        </div>
+      </footer>
     </div>
   );
 }

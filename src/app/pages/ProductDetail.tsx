@@ -6,6 +6,7 @@ import { useCurrency } from "../hooks/useCurrency";
 import { useCart } from "../context/CartContext";
 import { supabase } from "../../lib/supabase";
 import { getAvatarUrl } from "../utils/getAvatar";
+import { getProductPrice } from "../utils/getProductPrice";
 import { toast } from "sonner";
 export default function ProductDetail() {
   const formatPrice = useCurrency();
@@ -98,42 +99,80 @@ export default function ProductDetail() {
   ];
 
   const allProducts = [...customProducts, ...defaultProducts];
-  const foundProduct = serverProduct ?? allProducts.find((p: any) => p.id.toString() === id);
+  /** URL `products/:id` — pass through trimmed string so PostgREST matches int/bigint/uuid PKs without Number() precision loss */
+  const normalizeRouteProductId = (raw: string | undefined): string | null => {
+    if (raw == null) return null;
+    const t = raw.trim();
+    return t || null;
+  };
+
+  const foundProduct =
+    serverProduct ?? (!isServerProductLoading ? allProducts.find((p: any) => p.id.toString() === id) : null);
 
   useEffect(() => {
+    if (!serverProduct?.id) return;
+    const pid = serverProduct.id;
+    const key = `gh_view_${pid}`;
+    if (import.meta.env.DEV) {
+      if (sessionStorage.getItem(key)) return;
+      sessionStorage.setItem(key, "1");
+    }
+    const asNum = typeof pid === "number" ? pid : Number(pid);
+    if (!Number.isFinite(asNum)) return;
+    void supabase.rpc("increment_product_views", { p_product_id: asNum }).then(({ error }) => {
+      if (error) console.warn("increment_product_views:", error.message);
+    });
+  }, [serverProduct?.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+
     const loadServerProduct = async () => {
-      if (!id) {
+      const idForQuery = normalizeRouteProductId(id);
+      if (idForQuery == null) {
+        setServerProduct(null);
         setIsServerProductLoading(false);
         return;
       }
 
-      const numericId = Number(id);
-      if (Number.isNaN(numericId)) {
+      setIsServerProductLoading(true);
+      setServerProduct(null);
+
+      const { data, error } = await supabase.from("products").select("*").eq("id", idForQuery).maybeSingle();
+
+      if (cancelled) return;
+
+      if (error) {
+        console.warn("ProductDetail:", error.message);
+        setServerProduct(null);
         setIsServerProductLoading(false);
         return;
       }
 
-      const { data, error } = await supabase
-        .from("products")
-        .select("*")
-        .eq("id", numericId)
-        .single();
-
-      if (!error && data) {
+      if (data) {
+        const v = data.views;
+        const viewsNum = typeof v === "number" ? v : v != null ? Number(v) : 0;
         setServerProduct({
           ...data,
+          price: getProductPrice(data),
+          views: Number.isFinite(viewsNum) ? viewsNum : 0,
           sellerId: data.seller_id,
           sellerTier: data.seller_tier,
           deliveryOptions: data.delivery_options,
           createdAt: data.created_at,
           updatedAt: data.updated_at,
         });
+      } else {
+        setServerProduct(null);
       }
 
       setIsServerProductLoading(false);
     };
 
-    loadServerProduct();
+    void loadServerProduct();
+    return () => {
+      cancelled = true;
+    };
   }, [id]);
 
   useEffect(() => {
@@ -148,13 +187,23 @@ export default function ProductDetail() {
     }
   }, [foundProduct?.sellerId]);
 
+  if (isServerProductLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4 text-gray-600">
+        Loading…
+      </div>
+    );
+  }
+
   if (!foundProduct) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
         <div className="text-center">
           <h2 className="text-2xl font-bold text-gray-800 mb-2">Product not found</h2>
-          <p className="text-gray-600 mb-4">The product you're looking for doesn't exist.</p>
-          <button onClick={() => navigate(-1)} className="px-6 py-2 bg-[#22c55e] text-white rounded-lg font-medium">Go Back</button>
+          <p className="text-gray-600 mb-4">The product you&apos;re looking for doesn&apos;t exist.</p>
+          <button type="button" onClick={() => navigate(-1)} className="px-6 py-2 bg-[#22c55e] text-white rounded-lg font-medium">
+            Go Back
+          </button>
         </div>
       </div>
     );
@@ -170,7 +219,7 @@ export default function ProductDetail() {
     description: foundProduct.description || `${foundProduct.title} in excellent condition. Great value for your money. Please contact me for more details.`,
     location: foundProduct.location,
     postedDate: foundProduct.createdAt ? new Date(foundProduct.createdAt).toLocaleDateString() : "Just now",
-    views: Math.floor(Math.random() * 500) + 50,
+    views: typeof foundProduct.views === "number" ? foundProduct.views : Number(foundProduct.views) || 0,
     seller: {
       id: foundProduct.sellerId || 1,
       name: sellerProfile?.full_name || foundProduct.sellerName || "GreenHub Seller",

@@ -5,6 +5,7 @@ import {  categories, nigerianStates  } from "../data/mockData";
 import { useCurrency } from "../hooks/useCurrency";
 import { supabase } from "../../lib/supabase";
 import { ProductCard } from "../components/cards/ProductCard";
+import { getProductPrice } from "../utils/getProductPrice";
 
 export default function Products() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -129,6 +130,7 @@ export default function Products() {
         if (data?.length) {
           const serverProducts = data.map((product: any) => ({
             ...product,
+            price: getProductPrice(product),
             sellerId: product.seller_id,
             sellerTier: product.seller_tier,
             deliveryOptions: product.delivery_options,

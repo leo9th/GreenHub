@@ -1,152 +1,333 @@
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
-import { Package, User as UserIcon } from "lucide-react";
+import { Package, Loader2, ShoppingBag, Eye, BarChart3 } from "lucide-react";
 import { useCurrency } from "../../hooks/useCurrency";
 import { useAuth } from "../../context/AuthContext";
+import { supabase } from "../../../lib/supabase";
+import { getAvatarUrl } from "../../utils/getAvatar";
+
+/** Order is "realized" for seller revenue once payment succeeded or fulfillment completed. Adjust to match your workflow. */
+const REVENUE_ORDER_STATUSES = new Set(["paid", "delivered", "completed"]);
+
+type OrderRow = { id: string; status: string | null; created_at: string | null; buyer_id: string | null };
+
+type OrderItemRow = {
+  order_id: string;
+  product_title: string | null;
+  price_at_time: number | null;
+  quantity: number | null;
+};
+
+type RecentRow = {
+  orderId: string;
+  productTitle: string;
+  lineTotal: number;
+  orderStatus: string;
+  createdAt: string | null;
+  buyerLabel: string;
+};
 
 export default function SellerDashboard() {
   const formatPrice = useCurrency();
-  const { profile, user: authUser } = useAuth();
-  
+  const { profile, user: authUser, loading: authLoading } = useAuth();
+
   const userName = profile?.full_name || authUser?.user_metadata?.full_name || "GreenHub Seller";
   const userPhone = profile?.phone || authUser?.user_metadata?.phone || "ADD PHONE NUMBER";
+  const avatarUrl = getAvatarUrl(profile?.avatar_url, profile?.gender, userName);
 
-  const recentOrders = [
-    {
-      id: "ORD-2024-101",
-      buyer: "Amina Yusuf",
-      product: "iPhone 13 Pro Max 256GB - Free Delivery",
-      amount: 450000,
-      status: "pending",
-      date: "2 hours ago",
-    },
-    {
-      id: "ORD-2024-100",
-      buyer: "Tunde Adebayo",
-      product: "Samsung Galaxy S21 Ultra used",
-      amount: 220000,
-      status: "processing",
-      date: "5 hours ago",
-    },
-    {
-      id: "ORD-2024-099",
-      buyer: "Ngozi Okafor",
-      product: "Sony Noise Cancelling Headphones",
-      amount: 85000,
-      status: "shipped",
-      date: "1 day ago",
-    },
-  ];
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [totalProducts, setTotalProducts] = useState(0);
+  const [totalViews, setTotalViews] = useState(0);
+  const [totalOrders, setTotalOrders] = useState(0);
+  const [totalRevenue, setTotalRevenue] = useState(0);
+  const [recent, setRecent] = useState<RecentRow[]>([]);
 
-  const earnings = {
-    thisMonth: 850000,
-    lastMonth: 720000,
-    pending: 125000,
-    available: 725000,
+  const loadMetrics = useCallback(async () => {
+    if (!authUser?.id) {
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const { data: productRows, error: productsError } = await supabase
+        .from("products")
+        .select("views")
+        .eq("seller_id", authUser.id);
+
+      if (productsError) throw productsError;
+
+      const rows = productRows ?? [];
+      setTotalProducts(rows.length);
+      setTotalViews(rows.reduce((sum, r) => sum + (typeof r.views === "number" ? r.views : Number(r.views) || 0), 0));
+
+      const { data: itemRows, error: itemsError } = await supabase
+        .from("order_items")
+        .select("order_id, product_title, price_at_time, quantity")
+        .eq("seller_id", authUser.id);
+
+      if (itemsError) throw itemsError;
+
+      const items = (itemRows ?? []) as OrderItemRow[];
+      const orderIds = [...new Set(items.map((i) => String(i.order_id)).filter(Boolean))];
+
+      let orders: OrderRow[] = [];
+      if (orderIds.length > 0) {
+        const { data: orderData, error: ordersError } = await supabase
+          .from("orders")
+          .select("id, status, created_at, buyer_id")
+          .in("id", orderIds);
+
+        if (ordersError) throw ordersError;
+        orders = (orderData ?? []) as OrderRow[];
+      }
+
+      const orderMap = new Map<string, OrderRow>();
+      for (const o of orders) {
+        orderMap.set(String(o.id), o);
+      }
+
+      setTotalOrders(orderIds.length);
+
+      let revenue = 0;
+      for (const it of items) {
+        const o = orderMap.get(String(it.order_id));
+        if (!o?.status) continue;
+        if (!REVENUE_ORDER_STATUSES.has(String(o.status).toLowerCase())) continue;
+        const qty = Math.max(0, Number(it.quantity) || 0);
+        const unit = Number(it.price_at_time) || 0;
+        revenue += unit * qty;
+      }
+      setTotalRevenue(revenue);
+
+      const buyerIds = [...new Set(orders.map((o) => o.buyer_id).filter(Boolean))] as string[];
+      const buyerNames = new Map<string, string>();
+      if (buyerIds.length > 0) {
+        const { data: profs } = await supabase.from("profiles").select("id, full_name").in("id", buyerIds);
+        for (const p of profs ?? []) {
+          if (p.id && p.full_name) buyerNames.set(p.id, p.full_name as string);
+        }
+      }
+
+      const byOrder = new Map<string, { order: OrderRow; items: OrderItemRow[] }>();
+      for (const it of items) {
+        const oid = String(it.order_id);
+        const o = orderMap.get(oid);
+        if (!o) continue;
+        if (!byOrder.has(oid)) byOrder.set(oid, { order: o, items: [] });
+        byOrder.get(oid)!.items.push(it);
+      }
+
+      const recentSorted = [...byOrder.entries()]
+        .map(([orderId, { order, items: its }]) => {
+          const lineTotal = its.reduce((sum, it) => {
+            const qty = Math.max(0, Number(it.quantity) || 0);
+            const unit = Number(it.price_at_time) || 0;
+            return sum + unit * qty;
+          }, 0);
+          const first = its[0];
+          const productTitle =
+            its.length === 1
+              ? first?.product_title?.trim() || "Product"
+              : `${its.length} items from your listings`;
+          const bid = order.buyer_id;
+          const buyerLabel = bid ? buyerNames.get(bid) || "Buyer" : "Buyer";
+          return {
+            orderId,
+            productTitle,
+            lineTotal,
+            orderStatus: String(order.status || "—"),
+            createdAt: order.created_at,
+            buyerLabel,
+          } satisfies RecentRow;
+        })
+        .sort((a, b) => {
+          const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+          return tb - ta;
+        })
+        .slice(0, 8);
+
+      setRecent(recentSorted);
+    } catch (e: unknown) {
+      console.error(e);
+      setError(e instanceof Error ? e.message : "Could not load dashboard");
+      setTotalProducts(0);
+      setTotalViews(0);
+      setTotalOrders(0);
+      setTotalRevenue(0);
+      setRecent([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [authUser?.id]);
+
+  useEffect(() => {
+    if (authLoading) return;
+    void loadMetrics();
+  }, [authLoading, loadMetrics]);
+
+  const formatOrderWhen = (iso: string | null) => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    return d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
   };
 
   return (
     <div className="min-h-screen bg-[#f2f4f8] pb-10">
       <div className="max-w-6xl mx-auto px-4 py-6 md:py-8 flex flex-col md:flex-row gap-6 md:gap-8">
-        
-        {/* Left Sidebar */}
         <div className="w-full md:w-[280px] flex-shrink-0">
           <div className="bg-transparent">
-            {/* User Card */}
             <div className="flex flex-col items-center justify-center p-6 mb-2">
-              <div className="w-[100px] h-[100px] bg-[#b2dfdb] rounded-full flex items-center justify-center mb-4">
-                <UserIcon className="w-12 h-12 text-white" />
+              <div className="w-[100px] h-[100px] rounded-full overflow-hidden mb-4 ring-2 ring-[#b2dfdb]">
+                <img src={avatarUrl} alt="" className="w-full h-full object-cover bg-[#b2dfdb]" />
               </div>
               <h2 className="text-xl font-medium text-gray-800 text-center">{userName}</h2>
-              <Link to="/settings/profile/edit" className="text-[11px] font-bold text-gray-400 mt-2 tracking-wider uppercase hover:text-[#22c55e] transition-colors">
+              <Link
+                to="/settings/profile/edit"
+                className="text-[11px] font-bold text-gray-400 mt-2 tracking-wider uppercase hover:text-[#22c55e] transition-colors"
+              >
                 {userPhone}
               </Link>
             </div>
 
-            {/* Sidebar Links */}
             <div className="space-y-1">
-              <Link to="/seller/products/add" className="flex items-center gap-4 px-4 py-3 text-gray-700 hover:bg-gray-200/50 rounded-lg">
+              <Link
+                to="/seller/products/new"
+                className="flex items-center gap-4 px-4 py-3 text-gray-700 hover:bg-gray-200/50 rounded-lg"
+              >
                 <span className="text-xl w-6 text-center">➕</span>
                 <span className="text-[15px] font-medium text-gray-600">Add New Product</span>
-              </Link>
-              <Link to="/profile" className="flex items-center gap-4 px-4 py-3 text-gray-700 hover:bg-gray-200/50 rounded-lg">
-                <span className="text-xl w-6 text-center">👥</span>
-                <span className="text-[15px] font-medium text-gray-600">Followers</span>
               </Link>
               <Link to="/seller/products" className="flex items-center gap-4 px-4 py-3 text-gray-700 hover:bg-gray-200/50 rounded-lg">
                 <span className="text-xl w-6 text-center">📋</span>
                 <span className="text-[15px] font-medium text-gray-600">My adverts</span>
               </Link>
+              <Link
+                to="/seller/verification"
+                className="flex items-center gap-4 px-4 py-3 text-gray-700 hover:bg-gray-200/50 rounded-lg"
+              >
+                <span className="text-xl w-6 text-center">✓</span>
+                <span className="text-[15px] font-medium text-gray-600">Verification</span>
+              </Link>
+              <Link to="/profile" className="flex items-center gap-4 px-4 py-3 text-gray-700 hover:bg-gray-200/50 rounded-lg">
+                <span className="text-xl w-6 text-center">👤</span>
+                <span className="text-[15px] font-medium text-gray-600">Profile</span>
+              </Link>
               <Link to="/messages" className="flex items-center gap-4 px-4 py-3 text-gray-700 hover:bg-gray-200/50 rounded-lg">
                 <span className="text-xl w-6 text-center">💬</span>
-                <span className="text-[15px] font-medium text-gray-600">Feedback</span>
+                <span className="text-[15px] font-medium text-gray-600">Messages</span>
               </Link>
             </div>
           </div>
         </div>
 
-        {/* Right Main Content */}
         <div className="flex-1">
-          <div className="bg-white rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-transparent min-h-[600px]">
-            {/* Main Content Header */}
-            <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between">
+          <div className="bg-white rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-transparent min-h-[480px]">
+            <div className="px-6 py-5 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
               <h1 className="text-xl font-medium text-gray-800">Dashboard Insights</h1>
-              <div className="flex items-center gap-3">
-                <span className="hidden md:inline-block bg-[#b2dfdb] text-[#00695c] px-3 py-1 rounded-full text-xs font-bold mr-1">
-                  Orders ({recentOrders.length})
-                </span>
-                <Link to="/seller/products/add" className="bg-[#22c55e] hover:bg-[#16a34a] text-white px-5 py-2.5 rounded shadow-sm text-sm font-bold flex items-center gap-2 transition-colors">
-                  <span className="text-lg leading-none">+</span> Add Product
-                </Link>
-              </div>
+              <Link
+                to="/seller/products/new"
+                className="bg-[#22c55e] hover:bg-[#16a34a] text-white px-5 py-2.5 rounded shadow-sm text-sm font-bold flex items-center gap-2 transition-colors"
+              >
+                <span className="text-lg leading-none">+</span> Add Product
+              </Link>
             </div>
 
-            {/* Main Content Body */}
             <div className="p-6">
-              <div className="space-y-4">
-                {recentOrders.map((order) => (
-                  <Link 
-                    to={`/orders/${order.id}`}
-                    key={order.id} 
-                    className="flex gap-4 p-4 hover:bg-gray-50 transition-colors border-b border-gray-50 last:border-0 rounded-lg"
-                  >
-                    <div className="w-24 h-24 bg-gray-100 rounded-lg flex items-center justify-center shrink-0">
-                      <Package className="w-8 h-8 text-gray-300" />
-                    </div>
-                    <div className="flex-1 flex flex-col justify-center">
-                      <h3 className="font-semibold text-[15px] text-gray-900 line-clamp-2">{order.product}</h3>
-                      <p className="text-[#22c55e] font-bold text-lg mt-1">{formatPrice(order.amount)}</p>
-                      <div className="flex items-center gap-2 mt-2">
-                        <span className="text-[11px] text-gray-500 bg-gray-100 px-2 flex items-center h-5 rounded-sm uppercase tracking-wider font-semibold">{order.status}</span>
-                        <span className="text-[12px] text-gray-400">• {order.date}</span>
+              {error ? (
+                <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+                  {error}
+                  <p className="mt-2 text-xs text-red-700">
+                    Run the SQL in{" "}
+                    <code className="rounded bg-red-100 px-1">supabase/migrations/20260404120000_seller_dashboard_and_verification.sql</code>{" "}
+                    if columns or policies are missing.
+                  </p>
+                </div>
+              ) : null}
+
+              {loading ? (
+                <div className="flex justify-center py-20">
+                  <Loader2 className="h-10 w-10 animate-spin text-[#22c55e]" />
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
+                    <div className="rounded-xl border border-gray-100 bg-gray-50/80 p-4">
+                      <div className="flex items-center gap-2 text-gray-500 mb-2">
+                        <ShoppingBag className="h-4 w-4" />
+                        <span className="text-[11px] font-bold uppercase tracking-wider">Total products</span>
                       </div>
+                      <p className="text-2xl font-bold text-gray-900">{totalProducts}</p>
                     </div>
-                  </Link>
-                ))}
-              </div>
-              
-              {/* Minimal Earnings Stats */}
-              <div className="mt-8 pt-6 border-t border-gray-100 grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="text-center p-3 rounded-lg hover:bg-gray-50 transition-colors">
-                  <p className="text-[11px] text-gray-400 mb-1.5 uppercase tracking-wider font-bold">This Month</p>
-                  <p className="text-lg font-bold text-gray-800">{formatPrice(earnings.thisMonth)}</p>
-                </div>
-                <div className="text-center p-3 rounded-lg hover:bg-gray-50 transition-colors">
-                  <p className="text-[11px] text-gray-400 mb-1.5 uppercase tracking-wider font-bold">Last Month</p>
-                  <p className="text-lg font-bold text-gray-800">{formatPrice(earnings.lastMonth)}</p>
-                </div>
-                <div className="text-center p-3 rounded-lg hover:bg-gray-50 transition-colors">
-                  <p className="text-[11px] text-gray-400 mb-1.5 uppercase tracking-wider font-bold">Pending</p>
-                  <p className="text-lg font-bold text-orange-500">{formatPrice(earnings.pending)}</p>
-                </div>
-                <div className="text-center p-3 rounded-lg bg-[#22c55e]/5 hover:bg-[#22c55e]/10 transition-colors cursor-pointer border border-[#22c55e]/20">
-                  <p className="text-[11px] text-[#22c55e] mb-1.5 uppercase tracking-wider font-bold">Withdraw</p>
-                  <p className="text-lg font-bold text-[#22c55e]">{formatPrice(earnings.available)}</p>
-                </div>
-              </div>
+                    <div className="rounded-xl border border-gray-100 bg-gray-50/80 p-4">
+                      <div className="flex items-center gap-2 text-gray-500 mb-2">
+                        <Eye className="h-4 w-4" />
+                        <span className="text-[11px] font-bold uppercase tracking-wider">Total views</span>
+                      </div>
+                      <p className="text-2xl font-bold text-gray-900">{totalViews.toLocaleString()}</p>
+                    </div>
+                    <div className="rounded-xl border border-gray-100 bg-gray-50/80 p-4">
+                      <div className="flex items-center gap-2 text-gray-500 mb-2">
+                        <Package className="h-4 w-4" />
+                        <span className="text-[11px] font-bold uppercase tracking-wider">Total orders</span>
+                      </div>
+                      <p className="text-2xl font-bold text-gray-900">{totalOrders}</p>
+                      <p className="text-[10px] text-gray-400 mt-1">Orders that include your items</p>
+                    </div>
+                    <div className="rounded-xl border border-[#22c55e]/25 bg-[#22c55e]/5 p-4">
+                      <div className="flex items-center gap-2 text-[#15803d] mb-2">
+                        <BarChart3 className="h-4 w-4" />
+                        <span className="text-[11px] font-bold uppercase tracking-wider">Total revenue</span>
+                      </div>
+                      <p className="text-2xl font-bold text-[#15803d]">{formatPrice(totalRevenue)}</p>
+                      <p className="text-[10px] text-[#166534]/80 mt-1">Paid / delivered / completed line items</p>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-gray-100 pt-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <h2 className="text-sm font-semibold text-gray-800">Recent activity</h2>
+                      <span className="text-xs text-gray-400">{recent.length} shown</span>
+                    </div>
+
+                    {recent.length === 0 ? (
+                      <p className="text-sm text-gray-500 py-8 text-center">No orders with your listings yet.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {recent.map((row) => (
+                          <Link
+                            key={row.orderId}
+                            to={`/orders/${row.orderId}`}
+                            className="flex gap-4 p-4 rounded-xl border border-gray-100 hover:bg-gray-50 transition-colors"
+                          >
+                            <div className="w-14 h-14 bg-gray-100 rounded-lg flex items-center justify-center shrink-0">
+                              <Package className="w-7 h-7 text-gray-300" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs text-gray-500 mb-0.5">
+                                {row.buyerLabel} · {formatOrderWhen(row.createdAt)}
+                              </p>
+                              <h3 className="font-semibold text-[15px] text-gray-900 line-clamp-2">{row.productTitle}</h3>
+                              <p className="text-[#22c55e] font-bold text-base mt-1">{formatPrice(row.lineTotal)}</p>
+                              <span className="inline-block mt-2 text-[10px] text-gray-600 bg-gray-100 px-2 py-0.5 rounded uppercase tracking-wider font-semibold">
+                                {row.orderStatus}
+                              </span>
+                            </div>
+                          </Link>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
-
       </div>
     </div>
   );

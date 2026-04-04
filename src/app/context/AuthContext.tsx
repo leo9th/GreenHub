@@ -13,7 +13,9 @@ export interface UserProfile {
   lga?: string | null;
   address?: string | null;
   auto_reply?: string | null;
+  bio?: string | null;
   updated_at?: string | null;
+  created_at?: string | null;
 }
 
 interface AuthContextType {

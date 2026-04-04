@@ -38,6 +38,7 @@ import AdminDashboard from "./pages/admin/Dashboard";
 import AdminUsers from "./pages/admin/Users";
 import AdminProducts from "./pages/admin/Products";
 import AdPricingControl from "./pages/admin/AdPricingControl";
+import AdminJobApplications from "./pages/admin/JobApplications";
 import NotFound from "./pages/NotFound";
 import WorkersBrowse from "./pages/workers/WorkersBrowse";
 import WorkerProfileDetail from "./pages/workers/WorkerProfileDetail";
@@ -130,6 +131,7 @@ export const router = createBrowserRouter([
       { path: "admin/users", Component: AdminUsers },
       { path: "admin/products", Component: AdminProducts },
       { path: "admin/pricing", Component: AdPricingControl },
+      { path: "admin/job-applications", Component: AdminJobApplications },
       { path: "admin/orders", Component: LegacyAdminRedirect },
       { path: "admin/reports", Component: LegacyAdminRedirect },
       { path: "help", Component: LegacyHelpRedirect },

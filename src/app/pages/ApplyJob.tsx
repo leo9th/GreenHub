@@ -4,25 +4,24 @@ import { ArrowLeft, ArrowRight, CheckCircle2, Loader2 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { toast } from "sonner";
 
-const ID_TYPES = [
-  { value: "national_id", label: "National ID" },
-  { value: "voters_card", label: "Voter's Card" },
-  { value: "drivers_license", label: "Driver's License" },
-  { value: "international_passport", label: "International Passport" },
-  { value: "nin", label: "NIN" },
-] as const;
-
 const EDUCATION_LEVELS = ["SSCE", "OND", "HND", "Bachelor's", "Master's", "PhD"] as const;
 
 const JOB_CATEGORIES = [
   "Sales",
   "Marketing",
   "Tech",
+  "ICT (Information & Communications Technology)",
   "Driving",
-  "Cleaning",
   "Delivery",
   "Customer Service",
+  "Cleaning",
   "Admin",
+  "Security",
+  "Accounting",
+  "Hospitality",
+  "Education",
+  "Healthcare",
+  "Engineering",
   "Others",
 ] as const;
 
@@ -40,6 +39,41 @@ function safeStorageFileName(name: string) {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 180) || "file";
 }
 
+const CV_MAX_BYTES = 5 * 1024 * 1024;
+const ID_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+const ID_IMAGE_ACCEPT = "image/jpeg,image/png,image/webp";
+
+function ageFromDateOfBirth(isoDate: string): number | null {
+  if (!isoDate) return null;
+  const d = new Date(isoDate + (isoDate.length === 10 ? "T12:00:00" : ""));
+  if (Number.isNaN(d.getTime())) return null;
+  const today = new Date();
+  let age = today.getFullYear() - d.getFullYear();
+  const m = today.getMonth() - d.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < d.getDate())) age -= 1;
+  return age;
+}
+
+function validateIdPhoto(file: File | null, label: string): string | null {
+  if (!file) return `Upload ${label}.`;
+  if (file.size > ID_IMAGE_MAX_BYTES) return `${label} must be 5MB or smaller.`;
+  if (!/^image\/(jpeg|png|webp)$/i.test(file.type)) return `${label}: use JPG, PNG, or WebP.`;
+  return null;
+}
+
+function validateCvFile(file: File | null): string | null {
+  if (!file) return "Upload your CV.";
+  if (file.size > CV_MAX_BYTES) return "CV must be 5MB or smaller.";
+  const extOk = /\.(pdf|doc|docx)$/i.test(file.name);
+  const mimeOk = [
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ].includes(file.type);
+  if (!extOk && !mimeOk) return "CV must be PDF or Word (.doc, .docx).";
+  return null;
+}
+
 export default function ApplyJob() {
   const [step, setStep] = useState(0);
   const [submitting, setSubmitting] = useState(false);
@@ -50,9 +84,12 @@ export default function ApplyJob() {
   const [dateOfBirth, setDateOfBirth] = useState("");
   const [gender, setGender] = useState<string>("");
 
-  const [idType, setIdType] = useState<string>("");
-  const [idNumber, setIdNumber] = useState("");
-  const [idFile, setIdFile] = useState<File | null>(null);
+  const [idFrontFile, setIdFrontFile] = useState<File | null>(null);
+  const [idBackFile, setIdBackFile] = useState<File | null>(null);
+  const [idSelfieFile, setIdSelfieFile] = useState<File | null>(null);
+  const [idFrontKey, setIdFrontKey] = useState(0);
+  const [idBackKey, setIdBackKey] = useState(0);
+  const [idSelfieKey, setIdSelfieKey] = useState(0);
 
   const [educationLevel, setEducationLevel] = useState<string>("");
   const [yearsExperience, setYearsExperience] = useState<string>("");
@@ -60,6 +97,7 @@ export default function ApplyJob() {
   const [previousJobTitle, setPreviousJobTitle] = useState("");
   const [previousCompany, setPreviousCompany] = useState("");
   const [cvFile, setCvFile] = useState<File | null>(null);
+  const [cvInputKey, setCvInputKey] = useState(0);
   const [portfolioUrl, setPortfolioUrl] = useState("");
 
   const [desiredCategory, setDesiredCategory] = useState<string>("");
@@ -74,6 +112,9 @@ export default function ApplyJob() {
 
   const progressPct = ((step + 1) / TOTAL_STEPS) * 100;
 
+  const ageForDob = dateOfBirth ? ageFromDateOfBirth(dateOfBirth) : null;
+  const under18 = ageForDob !== null && ageForDob < 18;
+
   const canGoNext = (() => {
     switch (step) {
       case 0:
@@ -82,10 +123,16 @@ export default function ApplyJob() {
           phone.trim().length > 5 &&
           /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) &&
           !!dateOfBirth &&
+          ageForDob !== null &&
+          ageForDob >= 18 &&
           !!gender
         );
       case 1:
-        return !!idType && idNumber.trim().length > 2 && idFile !== null;
+        return (
+          validateIdPhoto(idFrontFile, "ID front") === null &&
+          validateIdPhoto(idBackFile, "ID back") === null &&
+          validateIdPhoto(idSelfieFile, "selfie with ID") === null
+        );
       case 2:
         return (
           !!educationLevel &&
@@ -94,7 +141,7 @@ export default function ApplyJob() {
           Number(yearsExperience) >= 0 &&
           skills.trim().length > 1 &&
           previousJobTitle.trim().length > 0 &&
-          cvFile !== null
+          validateCvFile(cvFile) === null
         );
       case 3:
         return (
@@ -126,6 +173,25 @@ export default function ApplyJob() {
     e.preventDefault();
     if (!canGoNext || submitting) return;
 
+    const age = dateOfBirth ? ageFromDateOfBirth(dateOfBirth) : null;
+    if (age === null || age < 18) {
+      toast.error("You must be at least 18 years old to apply.");
+      return;
+    }
+    const cvErr = validateCvFile(cvFile);
+    if (cvErr) {
+      toast.error(cvErr);
+      return;
+    }
+    const idErr =
+      validateIdPhoto(idFrontFile, "ID front") ||
+      validateIdPhoto(idBackFile, "ID back") ||
+      validateIdPhoto(idSelfieFile, "selfie with ID");
+    if (idErr) {
+      toast.error(idErr);
+      return;
+    }
+
     if (!import.meta.env.VITE_SUPABASE_URL) {
       toast.error("Application upload is not configured. Set Supabase environment variables.");
       return;
@@ -135,38 +201,55 @@ export default function ApplyJob() {
     const applicationId = crypto.randomUUID();
 
     try {
-      let idPath: string | null = null;
+      let idFrontPath: string | null = null;
+      let idBackPath: string | null = null;
+      let idSelfiePath: string | null = null;
       let cvPath: string | null = null;
 
-      if (idFile) {
-        const idExt = idFile.name.includes(".") ? idFile.name.split(".").pop() : "bin";
-        idPath = `${applicationId}/id_document_${safeStorageFileName(idFile.name)}`;
-        const { error: idErr } = await supabase.storage.from("job-application-uploads").upload(idPath, idFile, {
+      if (idFrontFile) {
+        idFrontPath = `${applicationId}/id_front_${safeStorageFileName(idFrontFile.name)}`;
+        const { error } = await supabase.storage.from("job-application-uploads").upload(idFrontPath, idFrontFile, {
           cacheControl: "3600",
           upsert: false,
         });
-        if (idErr) throw new Error(idErr.message);
+        if (error) throw new Error(error.message);
+      }
+      if (idBackFile) {
+        idBackPath = `${applicationId}/id_back_${safeStorageFileName(idBackFile.name)}`;
+        const { error } = await supabase.storage.from("job-application-uploads").upload(idBackPath, idBackFile, {
+          cacheControl: "3600",
+          upsert: false,
+        });
+        if (error) throw new Error(error.message);
+      }
+      if (idSelfieFile) {
+        idSelfiePath = `${applicationId}/id_selfie_${safeStorageFileName(idSelfieFile.name)}`;
+        const { error } = await supabase.storage.from("job-application-uploads").upload(idSelfiePath, idSelfieFile, {
+          cacheControl: "3600",
+          upsert: false,
+        });
+        if (error) throw new Error(error.message);
       }
 
       if (cvFile) {
         cvPath = `${applicationId}/cv_${safeStorageFileName(cvFile.name)}`;
-        const { error: cvErr } = await supabase.storage.from("job-application-uploads").upload(cvPath, cvFile, {
+        const { error: cvErrUp } = await supabase.storage.from("job-application-uploads").upload(cvPath, cvFile, {
           cacheControl: "3600",
           upsert: false,
         });
-        if (cvErr) throw new Error(cvErr.message);
+        if (cvErrUp) throw new Error(cvErrUp.message);
       }
 
-      const row = {
+      const row: Record<string, unknown> = {
         id: applicationId,
         full_name: fullName.trim(),
         phone: phone.trim(),
         email: email.trim().toLowerCase(),
         date_of_birth: dateOfBirth,
         gender,
-        id_type: idType,
-        id_number: idNumber.trim(),
-        id_document_storage_path: idPath,
+        id_document_front_storage_path: idFrontPath,
+        id_document_back_storage_path: idBackPath,
+        id_selfie_storage_path: idSelfiePath,
         education_level: educationLevel,
         years_experience: Number(yearsExperience),
         skills: skills.trim(),
@@ -182,27 +265,32 @@ export default function ApplyJob() {
         why_greenhub: whyGreenhub.trim(),
         confirms_accurate: true,
         agrees_terms: true,
+        review_status: "pending",
       };
 
       const { error: insErr } = await supabase.from("job_applications").insert(row);
       if (insErr) throw new Error(insErr.message);
 
-      toast.success("Application submitted successfully! We'll contact you if there's a match.");
+      toast.success("Application submitted! Our team will review it and contact you if there is a match.");
       setStep(0);
       setFullName("");
       setPhone("");
       setEmail("");
       setDateOfBirth("");
       setGender("");
-      setIdType("");
-      setIdNumber("");
-      setIdFile(null);
+      setIdFrontFile(null);
+      setIdBackFile(null);
+      setIdSelfieFile(null);
+      setIdFrontKey((k) => k + 1);
+      setIdBackKey((k) => k + 1);
+      setIdSelfieKey((k) => k + 1);
       setEducationLevel("");
       setYearsExperience("");
       setSkills("");
       setPreviousJobTitle("");
       setPreviousCompany("");
       setCvFile(null);
+      setCvInputKey((k) => k + 1);
       setPortfolioUrl("");
       setDesiredCategory("");
       setDesiredLocation("");
@@ -305,6 +393,9 @@ export default function ApplyJob() {
                     onChange={(e) => setDateOfBirth(e.target.value)}
                     className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#22c55e] focus:border-transparent"
                   />
+                  {under18 ? (
+                    <p className="text-sm text-red-600 mt-1">You must be at least 18 years old to apply.</p>
+                  ) : null}
                 </label>
                 <fieldset>
                   <legend className="text-sm font-medium text-gray-700">Gender *</legend>
@@ -330,39 +421,120 @@ export default function ApplyJob() {
           {step === 1 && (
             <>
               <h2 className="text-base font-semibold text-gray-800 border-b border-gray-100 pb-2">Means of identification</h2>
-              <label className="block">
-                <span className="text-sm font-medium text-gray-700">ID type *</span>
-                <select
-                  value={idType}
-                  onChange={(e) => setIdType(e.target.value)}
-                  className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#22c55e] focus:border-transparent"
-                >
-                  <option value="">Select…</option>
-                  {ID_TYPES.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block">
-                <span className="text-sm font-medium text-gray-700">ID number *</span>
-                <input
-                  value={idNumber}
-                  onChange={(e) => setIdNumber(e.target.value)}
-                  className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#22c55e] focus:border-transparent"
-                />
-              </label>
-              <label className="block">
-                <span className="text-sm font-medium text-gray-700">Upload ID document * (image or PDF)</span>
-                <input
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,application/pdf"
-                  onChange={(e) => setIdFile(e.target.files?.[0] ?? null)}
-                  className="mt-1 w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-[#22c55e] file:text-white"
-                />
-                {idFile && <p className="text-xs text-gray-500 mt-1">Selected: {idFile.name}</p>}
-              </label>
+              <p className="text-sm text-gray-600">
+                Upload clear photos: ID front, ID back, and a selfie of you holding the same ID. JPG, PNG, or WebP only — up
+                to 5MB each.
+              </p>
+
+              <div className="space-y-4">
+                <div className="block">
+                  <span className="text-sm font-medium text-gray-700">ID document — front *</span>
+                  <input
+                    key={idFrontKey}
+                    type="file"
+                    accept={ID_IMAGE_ACCEPT}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0] ?? null;
+                      const err = validateIdPhoto(f, "ID front");
+                      if (err && f) {
+                        toast.error(err);
+                        e.target.value = "";
+                        setIdFrontFile(null);
+                        return;
+                      }
+                      setIdFrontFile(f);
+                    }}
+                    className="mt-1 w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-[#22c55e] file:text-white"
+                  />
+                  {idFrontFile ? (
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                      <p className="text-xs text-gray-500">{idFrontFile.name}</p>
+                      <button
+                        type="button"
+                        className="text-xs text-red-600 font-medium hover:underline"
+                        onClick={() => {
+                          setIdFrontFile(null);
+                          setIdFrontKey((k) => k + 1);
+                        }}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="block">
+                  <span className="text-sm font-medium text-gray-700">ID document — back *</span>
+                  <input
+                    key={idBackKey}
+                    type="file"
+                    accept={ID_IMAGE_ACCEPT}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0] ?? null;
+                      const err = validateIdPhoto(f, "ID back");
+                      if (err && f) {
+                        toast.error(err);
+                        e.target.value = "";
+                        setIdBackFile(null);
+                        return;
+                      }
+                      setIdBackFile(f);
+                    }}
+                    className="mt-1 w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-[#22c55e] file:text-white"
+                  />
+                  {idBackFile ? (
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                      <p className="text-xs text-gray-500">{idBackFile.name}</p>
+                      <button
+                        type="button"
+                        className="text-xs text-red-600 font-medium hover:underline"
+                        onClick={() => {
+                          setIdBackFile(null);
+                          setIdBackKey((k) => k + 1);
+                        }}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="block">
+                  <span className="text-sm font-medium text-gray-700">Selfie holding your ID *</span>
+                  <input
+                    key={idSelfieKey}
+                    type="file"
+                    accept={ID_IMAGE_ACCEPT}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0] ?? null;
+                      const err = validateIdPhoto(f, "selfie with ID");
+                      if (err && f) {
+                        toast.error(err);
+                        e.target.value = "";
+                        setIdSelfieFile(null);
+                        return;
+                      }
+                      setIdSelfieFile(f);
+                    }}
+                    className="mt-1 w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-[#22c55e] file:text-white"
+                  />
+                  {idSelfieFile ? (
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                      <p className="text-xs text-gray-500">{idSelfieFile.name}</p>
+                      <button
+                        type="button"
+                        className="text-xs text-red-600 font-medium hover:underline"
+                        onClick={() => {
+                          setIdSelfieFile(null);
+                          setIdSelfieKey((k) => k + 1);
+                        }}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
             </>
           )}
 
@@ -420,16 +592,41 @@ export default function ApplyJob() {
                   className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#22c55e] focus:border-transparent"
                 />
               </label>
-              <label className="block">
-                <span className="text-sm font-medium text-gray-700">CV / Resume * (PDF or DOCX)</span>
+              <div className="block">
+                <span className="text-sm font-medium text-gray-700">CV / Resume * (PDF, DOC, DOCX — max 5MB)</span>
                 <input
+                  key={cvInputKey}
                   type="file"
                   accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                  onChange={(e) => setCvFile(e.target.files?.[0] ?? null)}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0] ?? null;
+                    const err = validateCvFile(f);
+                    if (err && f) {
+                      toast.error(err);
+                      e.target.value = "";
+                      setCvFile(null);
+                      return;
+                    }
+                    setCvFile(f);
+                  }}
                   className="mt-1 w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-[#22c55e] file:text-white"
                 />
-                {cvFile && <p className="text-xs text-gray-500 mt-1">Selected: {cvFile.name}</p>}
-              </label>
+                {cvFile ? (
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <p className="text-xs text-gray-600">Selected: {cvFile.name}</p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCvFile(null);
+                        setCvInputKey((k) => k + 1);
+                      }}
+                      className="text-xs font-medium text-red-600 hover:underline"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ) : null}
+              </div>
               <label className="block">
                 <span className="text-sm font-medium text-gray-700">Portfolio link (optional)</span>
                 <input

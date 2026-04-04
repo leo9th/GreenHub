@@ -1,7 +1,20 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import useEmblaCarousel from "embla-carousel-react";
 import { Link, useParams, useNavigate } from "react-router";
-import { ArrowLeft, Share2, Heart, Star, MapPin, ShoppingCart, ChevronLeft, ChevronRight, BadgeCheck } from "lucide-react";
+import {
+  ArrowLeft,
+  Share2,
+  Heart,
+  Star,
+  MapPin,
+  ShoppingCart,
+  ChevronLeft,
+  ChevronRight,
+  BadgeCheck,
+  Shield,
+  MessageCircle,
+  Phone,
+} from "lucide-react";
 import { useCurrency } from "../hooks/useCurrency";
 import { useCart } from "../context/CartContext";
 import { supabase } from "../../lib/supabase";
@@ -96,11 +109,15 @@ function RelatedProductsCarousel({
                 className="group block rounded-xl overflow-hidden bg-gray-50/80 ring-1 ring-gray-100 hover:ring-[#22c55e]/35 transition-shadow hover:shadow-md"
               >
                 <div className="relative aspect-[16/9] w-full overflow-hidden bg-gray-100">
-                  <img
-                    src={item.image}
-                    alt={item.title}
-                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
-                  />
+                  {item.image ? (
+                    <img
+                      src={item.image}
+                      alt={item.title}
+                      className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+                    />
+                  ) : (
+                    <div className="h-full w-full bg-gray-200" aria-hidden />
+                  )}
                   <span className="absolute top-2 left-2 bg-[#16a34a] text-white text-[10px] font-semibold px-2 py-0.5 rounded-md">
                     {item.condition || "—"}
                   </span>
@@ -141,46 +158,6 @@ function RelatedProductsCarousel({
   );
 }
 
-/** Same seller’s other listings — aligned grid (side by side, wraps in neat rows) */
-function MoreFromSellerGrid({
-  items,
-  formatPrice,
-}: {
-  items: RelatedCarouselItem[];
-  formatPrice: (amount: number | null | undefined) => string;
-}) {
-  if (items.length === 0) return null;
-
-  return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
-      {items.map((item) => (
-        <Link
-          key={String(item.id)}
-          to={`/products/${item.id}`}
-          className="group flex flex-col h-full rounded-xl overflow-hidden bg-gray-50/80 ring-1 ring-gray-100 hover:ring-[#22c55e]/35 hover:shadow-md transition-shadow"
-        >
-          <div className="relative aspect-[16/9] w-full shrink-0 overflow-hidden bg-gray-100">
-            <img
-              src={item.image}
-              alt=""
-              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
-            />
-            <span className="absolute top-2 left-2 bg-[#16a34a] text-white text-[10px] font-semibold px-2 py-0.5 rounded-md">
-              {item.condition || "—"}
-            </span>
-          </div>
-          <div className="p-2.5 flex flex-col flex-1 min-h-[3.25rem]">
-            <p className="text-xs font-medium text-gray-900 line-clamp-2 leading-snug mb-1 flex-1">
-              {item.title}
-            </p>
-            <p className="text-sm font-bold text-gray-900 tabular-nums mt-auto">{formatPrice(item.price)}</p>
-          </div>
-        </Link>
-      ))}
-    </div>
-  );
-}
-
 export default function ProductDetail() {
   const formatPrice = useCurrency();
   const { id } = useParams();
@@ -194,86 +171,6 @@ export default function ProductDetail() {
   const [relatedProducts, setRelatedProducts] = useState<RelatedCarouselItem[]>([]);
   const [moreFromSeller, setMoreFromSeller] = useState<RelatedCarouselItem[]>([]);
 
-  const CUSTOM_PRODUCTS_KEY = "greenhub-custom-products";
-  const customProductsRaw = localStorage.getItem(CUSTOM_PRODUCTS_KEY);
-  const customProducts = customProductsRaw ? JSON.parse(customProductsRaw) : [];
-
-  const defaultProducts = [
-    {
-      id: 1,
-      image: "https://images.unsplash.com/photo-1632661674596-df8be070a5c5?w=400",
-      title: "iPhone 13 Pro Max 256GB",
-      price: 450000,
-      location: "Ikeja, Lagos",
-      rating: 4.8,
-      reviews: 24,
-      condition: "Like New",
-      category: "electronics",
-      sellerTier: "crown",
-    },
-    {
-      id: 2,
-      image: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=400",
-      title: "Nike Air Max 270 Shoes",
-      price: 25000,
-      location: "Wuse, Abuja",
-      rating: 5.0,
-      reviews: 18,
-      condition: "New",
-      category: "fashion",
-      sellerTier: "blue"
-    },
-    {
-      id: 3,
-      image: "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400",
-      title: "Sony WH-1000XM4 Headphones",
-      price: 85000,
-      location: "Victoria Island, Lagos",
-      rating: 4.5,
-      reviews: 32,
-      condition: "Good",
-      category: "electronics",
-      sellerTier: "standard"
-    },
-    {
-      id: 4,
-      image: "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=400",
-      title: "Timex Classic Watch",
-      price: 15000,
-      location: "Enugu",
-      rating: 4.7,
-      reviews: 12,
-      condition: "Like New",
-      category: "fashion",
-      sellerTier: "crown"
-    },
-    {
-      id: 5,
-      image: "https://images.unsplash.com/photo-1585386959984-a4155224a1ad?w=400",
-      title: "Samsung Galaxy S21",
-      price: 220000,
-      location: "Lekki, Lagos",
-      rating: 4.9,
-      reviews: 45,
-      condition: "New",
-      category: "electronics",
-      sellerTier: "unverified"
-    },
-    {
-      id: 6,
-      image: "https://images.unsplash.com/photo-1606107557195-0e29a4b5b4aa?w=400",
-      title: "Adidas Sneakers",
-      price: 18000,
-      location: "Garki, Abuja",
-      rating: 4.6,
-      reviews: 20,
-      condition: "Good",
-      category: "fashion",
-      sellerTier: "blue"
-    },
-  ];
-
-  const allProducts = [...customProducts, ...defaultProducts];
   /** URL `products/:id` — pass through trimmed string so PostgREST matches int/bigint/uuid PKs without Number() precision loss */
   const normalizeRouteProductId = (raw: string | undefined): string | null => {
     if (raw == null) return null;
@@ -281,8 +178,7 @@ export default function ProductDetail() {
     return t || null;
   };
 
-  const foundProduct =
-    serverProduct ?? (!isServerProductLoading ? allProducts.find((p: any) => p.id.toString() === id) : null);
+  const foundProduct = serverProduct;
 
   useEffect(() => {
     if (!serverProduct?.id) return;
@@ -380,11 +276,10 @@ export default function ProductDetail() {
       }
 
       const rows = (data ?? []).map((r) => mapProductRow(r as Record<string, unknown>));
-      const placeholder = "https://images.unsplash.com/photo-1632661674596-df8be070a5c5?w=400";
       const mapped = rows.map((r) => ({
         id: r.id as string | number,
         title: String((r as { title?: string }).title ?? ""),
-        image: String((r as { image?: string }).image ?? "") || placeholder,
+        image: String((r as { image?: string }).image ?? ""),
         price: typeof r.price === "number" ? r.price : getProductPrice(r as { price?: unknown; price_local?: unknown }),
         location: String((r as { location?: string }).location ?? ""),
         condition: String((r as { condition?: string }).condition ?? "Like New"),
@@ -429,12 +324,11 @@ export default function ProductDetail() {
       }
 
       const rows = (data ?? []).map((r) => mapProductRow(r as Record<string, unknown>));
-      const placeholder = "https://images.unsplash.com/photo-1632661674596-df8be070a5c5?w=400";
       setMoreFromSeller(
         rows.map((r) => ({
           id: r.id as string | number,
           title: String((r as { title?: string }).title ?? ""),
-          image: String((r as { image?: string }).image ?? "") || placeholder,
+          image: String((r as { image?: string }).image ?? ""),
           price: typeof r.price === "number" ? r.price : getProductPrice(r as { price?: unknown; price_local?: unknown }),
           location: String((r as { location?: string }).location ?? ""),
           condition: String((r as { condition?: string }).condition ?? "Like New"),
@@ -554,10 +448,13 @@ export default function ProductDetail() {
   const priceNum = Number(product.price);
   const priceDisplay = formatPrice(Number.isFinite(priceNum) ? priceNum : null);
 
+  const sellerPhoneRaw = sellerProfile?.phone != null ? String(sellerProfile.phone).trim() : "";
+  const sellerTelHref = sellerPhoneRaw ? `tel:${sellerPhoneRaw.replace(/\s/g, "")}` : "";
+
   return (
-    <div className="min-h-screen bg-white text-gray-900 pb-28 md:pb-8">
+    <div className="min-h-screen bg-gray-100 text-gray-900 pb-28 md:pb-8">
       <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-sm border-b border-gray-100">
-        <div className="max-w-5xl mx-auto px-4 h-12 flex items-center justify-between">
+        <div className="max-w-6xl mx-auto px-4 h-12 flex items-center justify-between">
           <button
             type="button"
             onClick={() => navigate(-1)}
@@ -589,17 +486,18 @@ export default function ProductDetail() {
         </div>
       </header>
 
-      <div className="max-w-5xl mx-auto px-4 pt-6 md:pt-8">
-        <div className="grid grid-cols-1 md:grid-cols-2 md:gap-10 lg:gap-14 md:items-start">
-          {/* Left: product image */}
-          <div className="flex justify-center md:justify-start md:sticky md:top-14">
-            <div className="relative w-full max-w-[480px] mx-auto">
-              <div className="relative rounded-2xl overflow-hidden bg-gray-50 ring-1 ring-gray-100">
-                <img
-                  src={product.images[currentImageIndex]}
-                  alt={product.title}
-                  className="block w-full max-w-[480px] h-auto mx-auto object-contain"
-                />
+      <div className="max-w-6xl mx-auto px-4 pt-6 md:pt-8">
+        {/* Image column first = left on desktop (matches marketplace listing layout) */}
+        <div className="grid grid-cols-1 md:grid-cols-12 md:gap-8 lg:gap-12 xl:gap-14 md:items-start">
+          <div className="md:col-span-5 lg:col-span-5 flex justify-center md:justify-start md:sticky md:top-14 shrink-0">
+            <div className="relative w-full max-w-[520px] md:max-w-none mx-auto">
+              <div className="relative rounded-2xl overflow-hidden bg-white shadow-sm ring-1 ring-gray-200/90">
+                <div className="relative aspect-[3/4] w-full bg-gray-100 md:min-h-[min(70vh,560px)] md:aspect-auto md:h-[min(70vh,560px)]">
+                  <img
+                    src={product.images[currentImageIndex]}
+                    alt={product.title}
+                    className="absolute inset-0 w-full h-full object-cover"
+                  />
                 {product.images.length > 1 && (
                   <>
                     <button
@@ -620,12 +518,13 @@ export default function ProductDetail() {
                     </button>
                   </>
                 )}
-                <span className="absolute top-3 left-3 bg-[#15803d] text-white text-[11px] font-semibold px-2 py-1 rounded-lg">
-                  {product.condition}
-                </span>
+                  <span className="absolute top-3 left-3 z-[1] bg-[#15803d] text-white text-[11px] font-semibold px-2 py-1 rounded-lg shadow-sm">
+                    {product.condition}
+                  </span>
+                </div>
               </div>
               {product.images.length > 1 && (
-                <div className="mt-3 w-full max-w-[480px] mx-auto">
+                <div className="mt-3 w-full mx-auto">
                   <div className="flex gap-2 overflow-x-auto pb-1 justify-center md:justify-start snap-x snap-mandatory">
                     {product.images.map((src, index) => (
                       <button
@@ -648,9 +547,8 @@ export default function ProductDetail() {
             </div>
           </div>
 
-          {/* Right: details */}
-          <div className="space-y-8 pt-8 md:pt-0">
-            <div>
+          <div className="md:col-span-7 lg:col-span-7 space-y-4 pt-8 md:pt-0">
+            <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200/80">
               <h1 className="text-xl md:text-2xl font-semibold text-gray-900 leading-snug tracking-tight">
                 {product.title}
               </h1>
@@ -663,74 +561,90 @@ export default function ProductDetail() {
                   </span>
                 ) : null}
                 {product.location ? <span className="text-gray-300">·</span> : null}
-                <span>Listed {product.postedDate}</span>
+                <span>{product.postedDate}</span>
                 <span className="text-gray-300">·</span>
                 <span>{product.views} views</span>
               </div>
             </div>
 
-            <section className="pt-2 border-t border-gray-100">
-              <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-4">Seller</h2>
+            <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200/80">
               <div className="flex items-start gap-3">
                 <img
                   src={product.seller.avatar}
                   alt=""
-                  className="w-11 h-11 rounded-full object-cover bg-gray-100 shrink-0"
+                  className="w-12 h-12 rounded-full object-cover bg-gray-100 shrink-0 ring-1 ring-gray-100"
                 />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1 flex-wrap">
-                    <span className="font-medium text-gray-900">{product.seller.name}</span>
-                    {product.seller.tier === "crown" && (
+                    <span className="font-semibold text-gray-900">{product.seller.name}</span>
+                    {product.seller.verified ? (
+                      <BadgeCheck className="w-4 h-4 text-[#16a34a] fill-emerald-100 shrink-0" title="Verified seller" />
+                    ) : product.seller.tier === "crown" ? (
                       <BadgeCheck className="w-4 h-4 text-amber-500 fill-amber-400 shrink-0" title="Crown verified" />
-                    )}
-                    {product.seller.tier === "blue" && (
+                    ) : product.seller.tier === "blue" ? (
                       <BadgeCheck className="w-4 h-4 text-blue-500 fill-blue-400 shrink-0" title="Blue verified" />
-                    )}
-                    {product.seller.tier === "standard" && (
-                      <BadgeCheck className="w-4 h-4 text-green-600 fill-green-500 shrink-0" title="Verified" />
-                    )}
+                    ) : null}
                   </div>
-                  <p className="text-sm text-gray-500 mt-0.5">
-                    <Star className="w-3 h-3 inline text-amber-400 fill-amber-400 align-[-2px] mr-0.5" aria-hidden />
-                    {product.seller.rating} · {product.seller.reviews} reviews · Since {product.seller.memberSince}
+                  <p className="text-sm text-gray-600 mt-1">
+                    <Star className="w-3.5 h-3.5 inline text-amber-400 fill-amber-400 align-[-2px] mr-0.5" aria-hidden />
+                    {product.seller.rating}{" "}
+                    <span className="text-gray-500">
+                      ({product.seller.reviews} {product.seller.reviews === 1 ? "review" : "reviews"})
+                    </span>
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1.5">
+                    Member since {product.seller.memberSince}
+                    <span className="text-gray-300 mx-1.5">·</span>
+                    Response: {product.seller.responseTime}
                   </p>
                 </div>
               </div>
-              <div className="mt-4 grid grid-cols-2 sm:flex sm:flex-wrap gap-2">
+              <div className="mt-4 flex flex-col gap-2">
                 <Link
                   to={`/messages/${product.seller.id}`}
-                  className="sm:flex-1 min-h-[44px] inline-flex items-center justify-center gap-2 rounded-xl bg-[#16a34a] text-white text-sm font-semibold px-4 hover:bg-[#15803d]"
+                  className="w-full min-h-[46px] inline-flex items-center justify-center gap-2 rounded-xl bg-[#16a34a] text-white text-sm font-semibold px-4 hover:bg-[#15803d] shadow-sm"
                 >
-                  Message seller
+                  <MessageCircle className="w-4 h-4 shrink-0" aria-hidden />
+                  Chat
                 </Link>
-                <a
-                  href="tel:+2348012345678"
-                  className="min-h-[44px] inline-flex items-center justify-center rounded-xl ring-1 ring-gray-200 text-sm font-medium text-gray-800 px-4 hover:bg-gray-50"
-                >
-                  Call
-                </a>
-                <Link
-                  to={`/seller/${product.seller.id}/reviews`}
-                  className="col-span-2 sm:col-span-1 min-h-[44px] inline-flex items-center justify-center rounded-xl ring-1 ring-gray-200 text-sm font-medium text-gray-700 px-4 hover:bg-gray-50"
-                >
-                  Reviews
-                </Link>
+                <div className="flex gap-2">
+                  {sellerTelHref ? (
+                    <a
+                      href={sellerTelHref}
+                      className="min-h-[46px] min-w-[46px] inline-flex items-center justify-center rounded-xl ring-1 ring-gray-200 text-gray-800 hover:bg-gray-50 shrink-0"
+                      aria-label="Call seller"
+                    >
+                      <Phone className="w-4 h-4" />
+                    </a>
+                  ) : (
+                    <span
+                      className="min-h-[46px] min-w-[46px] inline-flex items-center justify-center rounded-xl ring-1 ring-gray-100 text-gray-300 shrink-0 cursor-not-allowed"
+                      title="Phone not available"
+                      aria-hidden
+                    >
+                      <Phone className="w-4 h-4" />
+                    </span>
+                  )}
+                  <Link
+                    to={`/seller/${product.seller.id}/reviews`}
+                    className="flex-1 min-h-[46px] inline-flex items-center justify-center rounded-xl ring-1 ring-gray-200 text-sm font-semibold text-gray-800 px-4 hover:bg-gray-50"
+                  >
+                    View profile
+                  </Link>
+                </div>
               </div>
             </section>
 
-            <section>
-              <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-3">Description</h2>
-              <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-line">{product.description}</p>
+            <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200/80">
+              <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">Description</h2>
+              <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">{product.description}</p>
             </section>
 
-            <section>
-              <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-3">Delivery</h2>
-              <ul className="space-y-3">
+            <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200/80">
+              <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3">Delivery options</h2>
+              <ul className="space-y-0 divide-y divide-gray-100">
                 {product.deliveryOptions.map((option, index) => (
-                  <li
-                    key={index}
-                    className="flex items-center justify-between gap-4 text-sm py-2 border-b border-gray-50 last:border-0"
-                  >
+                  <li key={index} className="flex items-center justify-between gap-4 text-sm py-3 first:pt-0">
                     <div>
                       <p className="font-medium text-gray-900">{option.name}</p>
                       <p className="text-gray-500 text-xs mt-0.5">{option.duration}</p>
@@ -743,22 +657,26 @@ export default function ProductDetail() {
               </ul>
             </section>
 
-            <section className="rounded-xl bg-amber-50/80 px-4 py-3 text-sm text-gray-700">
-              <p className="font-medium text-gray-900 mb-1">Safety</p>
-              <p className="text-xs text-gray-600 leading-relaxed">
-                Meet in public when possible. Inspect the item before paying. Never share OTPs or bank PINs.
+            <section className="rounded-2xl bg-amber-50/90 px-4 py-4 text-sm text-gray-800 ring-1 ring-amber-100/80">
+              <p className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                <Shield className="w-4 h-4 text-amber-700 shrink-0" aria-hidden />
+                Safety tips
               </p>
+              <ul className="text-xs text-gray-700 space-y-1.5 list-disc list-inside leading-relaxed">
+                <li>Meet in a safe public place when collecting items.</li>
+                <li>Inspect the product before you pay.</li>
+                <li>Don&apos;t share sensitive financial info or OTPs.</li>
+              </ul>
             </section>
           </div>
         </div>
 
-        {/* Full width below grid */}
-        <div className="mt-12 md:mt-16 space-y-12 border-t border-gray-100 pt-10">
+        <div className="mt-12 md:mt-16 space-y-12 border-t border-gray-200 pt-10 pb-4">
           {moreFromSeller.length > 0 ? (
             <div>
               <h2 className="text-lg font-semibold text-gray-900">More from this seller</h2>
               <p className="text-sm text-gray-500 mt-1 mb-4">Other listings by {product.seller.name}</p>
-              <MoreFromSellerGrid items={moreFromSeller} formatPrice={formatPrice} />
+              <RelatedProductsCarousel items={moreFromSeller} formatPrice={formatPrice} />
             </div>
           ) : null}
 
@@ -773,7 +691,7 @@ export default function ProductDetail() {
       </div>
 
       <div className="fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-sm border-t border-gray-100">
-        <div className="max-w-5xl mx-auto px-4 py-3 flex gap-2">
+        <div className="max-w-6xl mx-auto px-4 py-3 flex gap-2">
           <Link
             to={`/messages/${product.seller.id}`}
             className="hidden sm:inline-flex px-4 py-3 rounded-xl ring-1 ring-gray-200 text-sm font-semibold text-gray-800 items-center justify-center hover:bg-gray-50"

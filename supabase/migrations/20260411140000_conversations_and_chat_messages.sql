@@ -1,0 +1,97 @@
+-- Direct messaging: conversations + chat_messages (replaces mock Messages/Chat).
+
+create table if not exists public.conversations (
+  id uuid primary key default gen_random_uuid(),
+  participant_a uuid not null references auth.users (id) on delete cascade,
+  participant_b uuid not null references auth.users (id) on delete cascade,
+  last_message_preview text,
+  last_message_at timestamptz,
+  created_at timestamptz not null default now(),
+  constraint conversations_distinct_participants check (participant_a <> participant_b)
+);
+
+create unique index if not exists conversations_pair_idx
+  on public.conversations (least(participant_a, participant_b), greatest(participant_a, participant_b));
+
+create index if not exists conversations_participant_a_idx on public.conversations (participant_a);
+create index if not exists conversations_participant_b_idx on public.conversations (participant_b);
+
+create table if not exists public.chat_messages (
+  id uuid primary key default gen_random_uuid(),
+  conversation_id uuid not null references public.conversations (id) on delete cascade,
+  sender_id uuid not null references auth.users (id) on delete cascade,
+  body text not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists chat_messages_conversation_created_idx
+  on public.chat_messages (conversation_id, created_at desc);
+
+create or replace function public.touch_conversation_on_chat_message()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update public.conversations
+  set
+    last_message_preview = left(new.body, 200),
+    last_message_at = new.created_at
+  where id = new.conversation_id;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_touch_conversation_on_chat_message on public.chat_messages;
+create trigger trg_touch_conversation_on_chat_message
+  after insert on public.chat_messages
+  for each row
+  execute procedure public.touch_conversation_on_chat_message();
+
+alter table public.conversations enable row level security;
+alter table public.chat_messages enable row level security;
+
+drop policy if exists "conversations_select_participant" on public.conversations;
+create policy "conversations_select_participant"
+  on public.conversations for select
+  to authenticated
+  using (auth.uid() = participant_a or auth.uid() = participant_b);
+
+drop policy if exists "conversations_insert_participant" on public.conversations;
+create policy "conversations_insert_participant"
+  on public.conversations for insert
+  to authenticated
+  with check (auth.uid() = participant_a or auth.uid() = participant_b);
+
+drop policy if exists "conversations_update_participant" on public.conversations;
+create policy "conversations_update_participant"
+  on public.conversations for update
+  to authenticated
+  using (auth.uid() = participant_a or auth.uid() = participant_b)
+  with check (auth.uid() = participant_a or auth.uid() = participant_b);
+
+drop policy if exists "chat_messages_select_participant" on public.chat_messages;
+create policy "chat_messages_select_participant"
+  on public.chat_messages for select
+  to authenticated
+  using (
+    exists (
+      select 1 from public.conversations c
+      where c.id = chat_messages.conversation_id
+        and (auth.uid() = c.participant_a or auth.uid() = c.participant_b)
+    )
+  );
+
+drop policy if exists "chat_messages_insert_sender" on public.chat_messages;
+create policy "chat_messages_insert_sender"
+  on public.chat_messages for insert
+  to authenticated
+  with check (
+    sender_id = auth.uid()
+    and exists (
+      select 1 from public.conversations c
+      where c.id = conversation_id
+        and (auth.uid() = c.participant_a or auth.uid() = c.participant_b)
+    )
+  );

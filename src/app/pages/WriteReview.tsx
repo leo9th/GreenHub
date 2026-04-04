@@ -1,75 +1,185 @@
-import { useState } from "react";
-import { useNavigate, useSearchParams } from "react-router";
-import { ArrowLeft, Star, Upload, X } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { useNavigate, useSearchParams, useParams } from "react-router";
+import { ArrowLeft, Star } from "lucide-react";
+import { supabase } from "../../lib/supabase";
+import { useAuth } from "../context/AuthContext";
+import { toast } from "sonner";
+
+type ProductInfo = {
+  title: string;
+  image: string | null;
+  seller_id: string;
+  sellerName: string;
+};
 
 export default function WriteReview() {
   const navigate = useNavigate();
+  const { orderId } = useParams();
   const [searchParams] = useSearchParams();
-  const orderId = searchParams.get("orderId");
-  const productId = searchParams.get("productId");
+  const productIdParam = searchParams.get("productId");
+  const { user: authUser, loading: authLoading } = useAuth();
 
   const [rating, setRating] = useState(0);
   const [hoveredRating, setHoveredRating] = useState(0);
   const [review, setReview] = useState("");
-  const [images, setImages] = useState<string[]>([]);
+  const [product, setProduct] = useState<ProductInfo | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
 
-  const product = {
-    id: 1,
-    image: "https://images.unsplash.com/photo-1632661674596-df8be070a5c5?w=200",
-    title: "iPhone 13 Pro Max 256GB",
-    seller: "Chidi Okonkwo",
-  };
+  const load = useCallback(async () => {
+    if (!orderId?.trim() || !productIdParam?.trim() || !authUser?.id) {
+      setProduct(null);
+      setLoading(false);
+      return;
+    }
 
-  const handleImageUpload = () => {
-    // Simulate image upload
-    const mockImage = "https://images.unsplash.com/photo-1632661674596-df8be070a5c5?w=400";
-    if (images.length < 3) {
-      setImages([...images, mockImage]);
+    setLoading(true);
+    try {
+      const { data: ord, error: oErr } = await supabase.from("orders").select("buyer_id").eq("id", orderId.trim()).maybeSingle();
+
+      if (oErr) throw oErr;
+      if (!ord || String((ord as { buyer_id: string }).buyer_id) !== authUser.id) {
+        toast.error("This order was not found.");
+        navigate("/orders", { replace: true });
+        return;
+      }
+
+      const { data: line, error: lErr } = await supabase
+        .from("order_items")
+        .select("seller_id, product_title, product_image")
+        .eq("order_id", orderId.trim())
+        .eq("product_id", productIdParam.trim())
+        .maybeSingle();
+
+      if (lErr) throw lErr;
+
+      const { data: prow, error: pErr } = await supabase
+        .from("products")
+        .select("title, image, seller_id")
+        .eq("id", productIdParam.trim())
+        .maybeSingle();
+
+      if (pErr) throw pErr;
+
+      const sellerId = (line as { seller_id?: string } | null)?.seller_id || (prow as { seller_id?: string } | null)?.seller_id;
+      if (!sellerId) {
+        toast.error("Could not determine seller for this item.");
+        navigate(-1);
+        return;
+      }
+
+      const title =
+        (line as { product_title?: string } | null)?.product_title?.trim() ||
+        (prow as { title?: string } | null)?.title?.trim() ||
+        "Product";
+      const image =
+        (line as { product_image?: string } | null)?.product_image ||
+        (prow as { image?: string } | null)?.image ||
+        null;
+
+      const { data: prof } = await supabase.from("profiles").select("full_name").eq("id", sellerId).maybeSingle();
+
+      setProduct({
+        title,
+        image,
+        seller_id: sellerId,
+        sellerName: ((prof as { full_name?: string } | null)?.full_name || "Seller").trim(),
+      });
+    } catch (e: unknown) {
+      console.error(e);
+      toast.error(e instanceof Error ? e.message : "Could not load product");
+      setProduct(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [authUser?.id, orderId, productIdParam, navigate]);
+
+  useEffect(() => {
+    if (authLoading) return;
+    if (!authUser) {
+      navigate("/login", { replace: true });
+      return;
+    }
+    void load();
+  }, [authLoading, authUser, navigate, load]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!authUser || !product || !productIdParam?.trim()) return;
+    if (rating < 1 || review.trim().length < 20) {
+      toast.error("Add a star rating and at least 20 characters.");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const pidNum = Number(productIdParam.trim());
+      const row = {
+        seller_id: product.seller_id,
+        reviewer_id: authUser.id,
+        product_id: Number.isFinite(pidNum) ? pidNum : null,
+        rating,
+        comment: review.trim(),
+      };
+
+      const { error } = await supabase.from("seller_reviews").insert(row);
+      if (error) throw error;
+      toast.success("Thank you — your review was submitted.");
+      navigate(-1);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Could not submit review");
+    } finally {
+      setSubmitting(false);
     }
   };
 
-  const removeImage = (index: number) => {
-    setImages(images.filter((_, i) => i !== index));
-  };
+  if (authLoading || loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center text-sm text-gray-600">Loading…</div>
+    );
+  }
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    // Submit review logic
-    console.log({ rating, review, images });
-    navigate(-1);
-  };
+  if (!product) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center px-4">
+        <p className="text-gray-700 mb-4">Could not load this product for review.</p>
+        <button type="button" onClick={() => navigate(-1)} className="px-4 py-2 bg-[#22c55e] text-white rounded-lg text-sm">
+          Go back
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 pb-6">
-      {/* Header */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
         <div className="px-4 py-3 max-w-7xl mx-auto flex items-center gap-3">
-          <button onClick={() => navigate(-1)} className="p-2 -ml-2">
+          <button type="button" onClick={() => navigate(-1)} className="p-2 -ml-2">
             <ArrowLeft className="w-5 h-5 text-gray-700" />
           </button>
           <h1 className="text-lg font-semibold text-gray-800">Write Review</h1>
         </div>
       </header>
 
-      <form onSubmit={handleSubmit} className="px-4 py-4 max-w-7xl mx-auto space-y-4">
-        {/* Product Info */}
+      <form onSubmit={(e) => void handleSubmit(e)} className="px-4 py-4 max-w-7xl mx-auto space-y-4">
         <div className="bg-white rounded-lg p-4">
           <div className="flex gap-3">
             <div className="w-16 h-16 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0">
-              <img src={product.image} alt={product.title} className="w-full h-full object-cover" />
+              {product.image ? (
+                <img src={product.image} alt="" className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full bg-gray-200" />
+              )}
             </div>
             <div className="flex-1 min-w-0">
               <h3 className="font-medium text-gray-800 line-clamp-2 mb-1">{product.title}</h3>
-              <p className="text-sm text-gray-600">by {product.seller}</p>
+              <p className="text-sm text-gray-600">by {product.sellerName}</p>
             </div>
           </div>
         </div>
 
-        {/* Rating */}
         <div className="bg-white rounded-lg p-4">
-          <label className="block font-semibold text-gray-800 mb-3">
-            Rate your experience *
-          </label>
+          <label className="block font-semibold text-gray-800 mb-3">Rate your experience *</label>
           <div className="flex gap-2 justify-center mb-2">
             {[1, 2, 3, 4, 5].map((star) => (
               <button
@@ -82,9 +192,7 @@ export default function WriteReview() {
               >
                 <Star
                   className={`w-12 h-12 transition-colors ${
-                    star <= (hoveredRating || rating)
-                      ? "fill-[#eab308] text-[#eab308]"
-                      : "text-gray-300"
+                    star <= (hoveredRating || rating) ? "fill-[#eab308] text-[#eab308]" : "text-gray-300"
                   }`}
                 />
               </button>
@@ -100,11 +208,8 @@ export default function WriteReview() {
           </p>
         </div>
 
-        {/* Review Text */}
         <div className="bg-white rounded-lg p-4">
-          <label className="block font-semibold text-gray-800 mb-2">
-            Your Review *
-          </label>
+          <label className="block font-semibold text-gray-800 mb-2">Your Review *</label>
           <textarea
             value={review}
             onChange={(e) => setReview(e.target.value)}
@@ -118,58 +223,22 @@ export default function WriteReview() {
           </p>
         </div>
 
-        {/* Photos */}
-        <div className="bg-white rounded-lg p-4">
-          <label className="block font-semibold text-gray-800 mb-3">
-            Add Photos (Optional)
-          </label>
-          <div className="grid grid-cols-3 gap-3">
-            {images.map((image, index) => (
-              <div key={index} className="relative aspect-square bg-gray-100 rounded-lg overflow-hidden">
-                <img src={image} alt={`Review ${index + 1}`} className="w-full h-full object-cover" />
-                <button
-                  type="button"
-                  onClick={() => removeImage(index)}
-                  className="absolute top-1 right-1 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center text-white"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            ))}
-            {images.length < 3 && (
-              <button
-                type="button"
-                onClick={handleImageUpload}
-                className="aspect-square border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center text-gray-500 hover:border-[#22c55e] hover:text-[#22c55e] transition-colors"
-              >
-                <Upload className="w-6 h-6 mb-1" />
-                <span className="text-xs">Upload</span>
-              </button>
-            )}
-          </div>
-          <p className="text-xs text-gray-600 mt-2">
-            Add up to 3 photos to help others
-          </p>
-        </div>
-
-        {/* Review Guidelines */}
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
           <h3 className="font-semibold text-gray-800 mb-2">Review Guidelines</h3>
           <ul className="text-sm text-gray-700 space-y-1">
             <li>• Be honest and specific about your experience</li>
             <li>• Focus on the product quality and seller service</li>
-            <li>• Don't include personal information</li>
+            <li>• Don&apos;t include personal information</li>
             <li>• Keep it respectful and constructive</li>
           </ul>
         </div>
 
-        {/* Submit Button */}
         <button
           type="submit"
-          disabled={rating === 0 || review.length < 20}
+          disabled={rating === 0 || review.length < 20 || submitting}
           className="w-full py-3 bg-[#22c55e] text-white rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          Submit Review
+          {submitting ? "Submitting…" : "Submit Review"}
         </button>
       </form>
     </div>

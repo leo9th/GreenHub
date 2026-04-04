@@ -1,7 +1,6 @@
 import { Link, useNavigate } from "react-router";
 import { Search, ChevronDown, Star, Globe, Home as HomeIcon, PlusCircle, MessageCircle } from "lucide-react";
 import { categories } from "../data/mockData";
-import { getMockProductsForRegion } from "../data/mockData";
 import { useRegion, regions } from "../context/RegionContext";
 import { useCurrency } from "../hooks/useCurrency";
 import { useState, useEffect, useMemo } from "react";
@@ -23,11 +22,11 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [searchPreviewHits, setSearchPreviewHits] = useState<Array<Record<string, unknown>>>([]);
-  const baseProducts = getMockProductsForRegion(activeRegion.id as "NG" | "US" | "CN");
 
   // Custom Ad State
   const [customBanner, setCustomBanner] = useState<string | null>(null);
-  const [products, setProducts] = useState(baseProducts as Array<any>);
+  const [products, setProducts] = useState<Array<Record<string, unknown>>>([]);
+  const [categoryAdCounts, setCategoryAdCounts] = useState<Record<string, number>>({});
   const [isLoadingProducts, setIsLoadingProducts] = useState<boolean>(true);
   const [productLoadError, setProductLoadError] = useState<string | null>(null);
 
@@ -42,8 +41,6 @@ export default function Home() {
     const banner = localStorage.getItem("greenhub_custom_banner");
     if (banner) setCustomBanner(banner);
 
-    setProducts(baseProducts);
-
     const loadProducts = async () => {
       setIsLoadingProducts(true);
       setProductLoadError(null);
@@ -57,7 +54,17 @@ export default function Home() {
 
         if (error) throw error;
 
-        const serverProducts = data.map((product: any) => ({
+        const rows = data ?? [];
+        const counts: Record<string, number> = {};
+        for (const product of rows) {
+          const raw =
+            typeof product.category === "string" ? product.category.replace(/"/g, "").trim().toLowerCase() : "";
+          const key = raw || "other";
+          counts[key] = (counts[key] || 0) + 1;
+        }
+        setCategoryAdCounts(counts);
+
+        const serverProducts = rows.map((product: Record<string, unknown>) => ({
           ...product,
           price: getProductPrice(product),
           sellerId: product.seller_id,
@@ -68,17 +75,17 @@ export default function Home() {
         }));
 
         setProducts(serverProducts);
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error("Error loading products from Supabase:", error);
-        setProductLoadError(error?.message || "Unable to load server products");
-
-        setProducts(baseProducts);
+        setProductLoadError(error instanceof Error ? error.message : "Unable to load products");
+        setProducts([]);
+        setCategoryAdCounts({});
       } finally {
         setIsLoadingProducts(false);
       }
     };
 
-    loadProducts();
+    void loadProducts();
   }, [activeRegion.id]);
 
   useEffect(() => {
@@ -268,7 +275,9 @@ export default function Home() {
                 </div>
                 <div className="flex-1 text-center md:text-left">
                   <span className="text-xs md:text-sm text-gray-700 font-medium md:font-semibold block">{category.name}</span>
-                  <span className="hidden md:block text-xs text-gray-400 mt-0.5">{Math.floor(Math.random() * 500) + 120}k ads</span>
+                  <span className="hidden md:block text-xs text-gray-400 mt-0.5">
+                    {categoryAdCounts[category.id] ?? 0} live {categoryAdCounts[category.id] === 1 ? "ad" : "ads"}
+                  </span>
                 </div>
               </Link>
             ))}
@@ -318,48 +327,58 @@ export default function Home() {
               </Link>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {featuredItemsDisplay.map((product) => (
-                <Link key={product.id} to={`/products/${product.id}`}>
-                  <ProductCard
-                    image={product.image}
-                    condition={product.condition}
-                    title={product.title}
-                    price={product.price}
-                    priceDisplay={formatPrice(product.price)}
-                    location={product.location}
-                    rating={product.rating}
-                    topRightBadge={
-                      featuredIds.has(String(product.id)) ? (
-                        <span className="bg-amber-400 text-amber-950 text-[10px] md:text-xs font-bold px-2 py-1 rounded flex items-center gap-1 shadow-sm">
-                          <Star className="w-3 h-3 fill-current" />
-                          FEATURED
-                        </span>
-                      ) : undefined
-                    }
-                  />
-                </Link>
-              ))}
-            </div>
+            {isLoadingProducts ? (
+              <p className="text-sm text-gray-500 py-8 text-center">Loading listings…</p>
+            ) : featuredItemsDisplay.length === 0 ? (
+              <p className="text-sm text-gray-600 py-8 text-center rounded-xl border border-dashed border-gray-200 bg-white">
+                No products found yet. Listings with status &quot;active&quot; will appear here.
+              </p>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {featuredItemsDisplay.map((product) => (
+                  <Link key={String(product.id)} to={`/products/${product.id}`}>
+                    <ProductCard
+                      image={String((product as { image?: string }).image ?? "")}
+                      condition={String((product as { condition?: string }).condition ?? "Good")}
+                      title={String((product as { title?: string }).title ?? "")}
+                      price={Number((product as { price?: number }).price) || 0}
+                      priceDisplay={formatPrice(Number((product as { price?: number }).price) || 0)}
+                      location={String((product as { location?: string }).location ?? "")}
+                      rating={Number((product as { rating?: number }).rating) || 0}
+                      topRightBadge={
+                        featuredIds.has(String(product.id)) ? (
+                          <span className="bg-amber-400 text-amber-950 text-[10px] md:text-xs font-bold px-2 py-1 rounded flex items-center gap-1 shadow-sm">
+                            <Star className="w-3 h-3 fill-current" />
+                            FEATURED
+                          </span>
+                        ) : undefined
+                      }
+                    />
+                  </Link>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Recently Viewed */}
           <div className="mb-6">
             <h2 className="font-semibold text-gray-800 mb-3">Recently Viewed</h2>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {products.slice(0, 2).map((product) => (
-                <Link key={product.id} to={`/products/${product.id}`}>
+              {products.length > 0 ? products.slice(0, 2).map((product) => (
+                <Link key={String(product.id)} to={`/products/${product.id}`}>
                   <ProductCard
-                    image={product.image}
-                    condition={product.condition}
-                    title={product.title}
-                    price={product.price}
-                    priceDisplay={formatPrice(product.price)}
-                    location={product.location}
-                    rating={product.rating}
+                    image={String((product as { image?: string }).image ?? "")}
+                    condition={String((product as { condition?: string }).condition ?? "Good")}
+                    title={String((product as { title?: string }).title ?? "")}
+                    price={Number((product as { price?: number }).price) || 0}
+                    priceDisplay={formatPrice(Number((product as { price?: number }).price) || 0)}
+                    location={String((product as { location?: string }).location ?? "")}
+                    rating={Number((product as { rating?: number }).rating) || 0}
                   />
                 </Link>
-              ))}
+              )) : (
+                <p className="text-sm text-gray-500 col-span-full">Browse products to see recents here.</p>
+              )}
             </div>
           </div>
 

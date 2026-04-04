@@ -224,88 +224,7 @@ export default function Products() {
   const [totalCount, setTotalCount] = useState<number | null>(null);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
 
-  const defaultProducts = [
-    {
-      id: 1,
-      image: "https://images.unsplash.com/photo-1632661674596-df8be070a5c5?w=400",
-      title: "iPhone 13 Pro Max 256GB",
-      price: 450000,
-      location: "Ikeja, Lagos",
-      rating: 4.8,
-      reviews: 24,
-      condition: "Like New",
-      category: "electronics",
-      sellerTier: "crown",
-      status: "active",
-    },
-    {
-      id: 2,
-      image: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=400",
-      title: "Nike Air Max 270 Shoes",
-      price: 25000,
-      location: "Wuse, Abuja",
-      rating: 5.0,
-      reviews: 18,
-      condition: "New",
-      category: "fashion",
-      sellerTier: "blue",
-      status: "active",
-    },
-    {
-      id: 3,
-      image: "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400",
-      title: "Sony WH-1000XM4 Headphones",
-      price: 85000,
-      location: "Victoria Island, Lagos",
-      rating: 4.5,
-      reviews: 32,
-      condition: "Good",
-      category: "electronics",
-      sellerTier: "standard",
-      status: "active",
-    },
-    {
-      id: 4,
-      image: "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=400",
-      title: "Timex Classic Watch",
-      price: 15000,
-      location: "Enugu",
-      rating: 4.7,
-      reviews: 12,
-      condition: "Like New",
-      category: "fashion",
-      sellerTier: "crown",
-      status: "active",
-    },
-    {
-      id: 5,
-      image: "https://images.unsplash.com/photo-1585386959984-a4155224a1ad?w=400",
-      title: "Samsung Galaxy S21",
-      price: 220000,
-      location: "Lekki, Lagos",
-      rating: 4.9,
-      reviews: 45,
-      condition: "New",
-      category: "electronics",
-      sellerTier: "unverified",
-      status: "active",
-    },
-    {
-      id: 6,
-      image: "https://images.unsplash.com/photo-1606107557195-0e29a4b5b4aa?w=400",
-      title: "Adidas Sneakers",
-      price: 18000,
-      location: "Garki, Abuja",
-      rating: 4.6,
-      reviews: 20,
-      condition: "Good",
-      category: "fashion",
-      sellerTier: "blue",
-      status: "active",
-    },
-  ];
-
-  const [products, setProducts] = useState(defaultProducts as Array<Record<string, unknown>>);
+  const [products, setProducts] = useState<Array<Record<string, unknown>>>([]);
   const [isLoadingProducts, setIsLoadingProducts] = useState<boolean>(true);
   const [productLoadError, setProductLoadError] = useState<string | null>(null);
 
@@ -380,8 +299,8 @@ export default function Products() {
         if (!cancelled && listPage === 0) {
           console.error(err);
           setProductLoadError(err instanceof Error ? err.message : "Unable to load products");
-          setProducts(defaultProducts as Array<Record<string, unknown>>);
-          setTotalCount(defaultProducts.length);
+          setProducts([]);
+          setTotalCount(0);
         }
       } finally {
         if (!cancelled) {
@@ -574,7 +493,7 @@ export default function Products() {
                 ? `Showing ${Math.min(products.length, totalCount)} of ${totalCount} products`
                 : `${displayProducts.length} products`}
             {!isLoadingProducts && productLoadError && (
-              <span className="text-amber-700 ml-2 text-xs">(offline sample data)</span>
+              <span className="text-amber-700 ml-2 text-xs">({productLoadError})</span>
             )}
           </span>
           <div className="flex items-center gap-2 sm:ml-auto">

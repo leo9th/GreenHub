@@ -79,7 +79,8 @@ export const router = createBrowserRouter([
     children: [
       { index: true, Component: Home },
       { path: "about", Component: About },
-      { path: "apply", Component: ApplyJob },
+      { path: "apply-for-job", Component: ApplyJob },
+      { path: "apply", element: <Navigate to="/apply-for-job" replace /> },
       { path: "how-to-sell", Component: HowToSell },
       { path: "how-to-buy", Component: HowToBuy },
       { path: "terms", Component: Terms },

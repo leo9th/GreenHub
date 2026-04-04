@@ -181,6 +181,72 @@ function RelatedProductsCarousel({
   );
 }
 
+/** Same seller’s other listings — horizontal scroll, no autoplay */
+function MoreFromSellerStrip({
+  items,
+  formatPrice,
+}: {
+  items: RelatedCarouselItem[];
+  formatPrice: (amount: number | null | undefined) => string;
+}) {
+  const [emblaRef, emblaApi] = useEmblaCarousel({ loop: false, align: "start", dragFree: true, duration: 25 }, []);
+
+  useEffect(() => {
+    if (!emblaApi) return;
+    emblaApi.reInit();
+  }, [emblaApi, items]);
+
+  if (items.length === 0) return null;
+
+  return (
+    <div className="relative group/strip">
+      <div className="overflow-hidden" ref={emblaRef}>
+        <div className="flex -ml-3">
+          {items.map((item) => (
+            <div key={String(item.id)} className="min-w-0 shrink-0 grow-0 pl-3 w-[148px] sm:w-[160px]">
+              <Link
+                to={`/products/${item.id}`}
+                className="block bg-white rounded-lg overflow-hidden border border-gray-200 shadow-sm hover:border-[#22c55e]/50 transition-colors"
+              >
+                <div className="relative h-[150px] w-full overflow-hidden bg-gray-100">
+                  <img src={item.image} alt="" className="h-full w-full object-cover" />
+                  <span className="absolute top-2 left-2 bg-[#22c55e] text-white text-[10px] font-medium px-2 py-0.5 rounded-full">
+                    {item.condition || "—"}
+                  </span>
+                </div>
+                <div className="p-2">
+                  <p className="text-xs font-medium text-gray-800 line-clamp-2 leading-tight mb-1">{item.title}</p>
+                  <p className="text-sm font-bold text-gray-900">{formatPrice(item.price)}</p>
+                </div>
+              </Link>
+            </div>
+          ))}
+        </div>
+      </div>
+      {items.length > 1 ? (
+        <>
+          <button
+            type="button"
+            aria-label="Scroll seller listings left"
+            onClick={() => emblaApi?.scrollPrev()}
+            className="hidden sm:flex absolute left-0 top-[72px] z-10 -translate-x-1 w-8 h-8 rounded-full bg-white border border-gray-200 shadow items-center justify-center text-gray-700 opacity-0 group-hover/strip:opacity-100 transition-opacity"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            aria-label="Scroll seller listings right"
+            onClick={() => emblaApi?.scrollNext()}
+            className="hidden sm:flex absolute right-0 top-[72px] z-10 translate-x-1 w-8 h-8 rounded-full bg-white border border-gray-200 shadow items-center justify-center text-gray-700 opacity-0 group-hover/strip:opacity-100 transition-opacity"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 export default function ProductDetail() {
   const formatPrice = useCurrency();
   const { id } = useParams();
@@ -192,6 +258,7 @@ export default function ProductDetail() {
   const [serverProduct, setServerProduct] = useState<any>(null);
   const [isServerProductLoading, setIsServerProductLoading] = useState<boolean>(true);
   const [relatedProducts, setRelatedProducts] = useState<RelatedCarouselItem[]>([]);
+  const [moreFromSeller, setMoreFromSeller] = useState<RelatedCarouselItem[]>([]);
 
   const CUSTOM_PRODUCTS_KEY = "greenhub-custom-products";
   const customProductsRaw = localStorage.getItem(CUSTOM_PRODUCTS_KEY);
@@ -364,10 +431,12 @@ export default function ProductDetail() {
         return;
       }
 
-      const { data, error } = await activeProductsQuery(supabase)
-        .neq("id", serverProduct.id)
-        .ilike("category", raw)
-        .limit(12);
+      let q = activeProductsQuery(supabase).neq("id", serverProduct.id).ilike("category", raw);
+      const sellerId = serverProduct.seller_id ?? serverProduct.sellerId;
+      if (sellerId != null && String(sellerId) !== "") {
+        q = q.neq("seller_id", sellerId);
+      }
+      const { data, error } = await q.limit(12);
 
       if (cancelled) return;
       if (error) {
@@ -393,7 +462,57 @@ export default function ProductDetail() {
     return () => {
       cancelled = true;
     };
-  }, [serverProduct?.id, serverProduct?.category]);
+  }, [serverProduct?.id, serverProduct?.category, serverProduct?.seller_id, serverProduct?.sellerId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadSellerListings = async () => {
+      if (!serverProduct?.id) {
+        setMoreFromSeller([]);
+        return;
+      }
+      const sellerId = serverProduct.seller_id ?? serverProduct.sellerId;
+      if (sellerId == null || String(sellerId) === "") {
+        setMoreFromSeller([]);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("products")
+        .select("*")
+        .eq("status", "active")
+        .eq("seller_id", sellerId)
+        .neq("id", serverProduct.id)
+        .order("created_at", { ascending: false })
+        .limit(16);
+
+      if (cancelled) return;
+      if (error) {
+        console.warn("More from seller:", error.message);
+        setMoreFromSeller([]);
+        return;
+      }
+
+      const rows = (data ?? []).map((r) => mapProductRow(r as Record<string, unknown>));
+      const placeholder = "https://images.unsplash.com/photo-1632661674596-df8be070a5c5?w=400";
+      setMoreFromSeller(
+        rows.map((r) => ({
+          id: r.id as string | number,
+          title: String((r as { title?: string }).title ?? ""),
+          image: String((r as { image?: string }).image ?? "") || placeholder,
+          price: typeof r.price === "number" ? r.price : getProductPrice(r as { price?: unknown; price_local?: unknown }),
+          location: String((r as { location?: string }).location ?? ""),
+          condition: String((r as { condition?: string }).condition ?? "Like New"),
+        })),
+      );
+    };
+
+    void loadSellerListings();
+    return () => {
+      cancelled = true;
+    };
+  }, [serverProduct?.id, serverProduct?.seller_id, serverProduct?.sellerId]);
 
   useEffect(() => {
     if (foundProduct?.sellerId) {
@@ -657,10 +776,20 @@ export default function ProductDetail() {
           </div>
         </div>
 
-        {/* Related Products — same category + active only (fetched when listing is from Supabase) */}
+        {/* More from this seller */}
+        {moreFromSeller.length > 0 ? (
+          <div className="pb-2">
+            <h2 className="font-semibold text-gray-800 mb-1">More from this seller</h2>
+            <p className="text-xs text-gray-500 mb-3">Other active listings by {product.seller.name}</p>
+            <MoreFromSellerStrip items={moreFromSeller} formatPrice={formatPrice} />
+          </div>
+        ) : null}
+
+        {/* Related — same category, other sellers */}
         {relatedProducts.length > 0 ? (
           <div className="pb-2">
-            <h2 className="font-semibold text-gray-800 mb-3">Related Products</h2>
+            <h2 className="font-semibold text-gray-800 mb-1">Similar from other sellers</h2>
+            <p className="text-xs text-gray-500 mb-3">Same category, different sellers</p>
             <RelatedProductsCarousel items={relatedProducts} formatPrice={formatPrice} />
           </div>
         ) : null}

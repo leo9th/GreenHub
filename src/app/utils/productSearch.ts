@@ -38,3 +38,71 @@ export function mapProductRow(product: Record<string, unknown>) {
     updatedAt: product.updated_at,
   };
 }
+
+export const PRODUCTS_PAGE_SIZE = 20;
+
+export type ListingSort = "recent" | "price-low" | "price-high" | "rating";
+
+/**
+ * Base select for /products listing: active rows + total row count for pagination.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function listingBaseQuery(client: SupabaseClient): any {
+  return client.from("products").select("*", { count: "exact" }).eq("status", "active");
+}
+
+export type ListingFilterOpts = {
+  category: string;
+  condition: string;
+  state: string;
+  priceRange: string;
+};
+
+/**
+ * Apply sidebar / modal filters (category, condition, state, price band).
+ * Price uses OR across `price_local` and legacy `price` so either column can match.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function applyListingFilters(query: any, opts: ListingFilterOpts) {
+  let q = query;
+  if (opts.category && opts.category !== "all") {
+    q = q.ilike("category", opts.category.trim());
+  }
+  if (opts.condition && opts.condition !== "all") {
+    q = q.eq("condition", opts.condition);
+  }
+  if (opts.state && opts.state !== "all") {
+    const s = opts.state.replace(/[%_\\"]/g, "").trim();
+    if (s) q = q.ilike("location", `%${s}%`);
+  }
+  if (opts.priceRange && opts.priceRange !== "all") {
+    const parts = opts.priceRange.split("-");
+    const min = Number(parts[0]);
+    const max = Number(parts[1]);
+    if (Number.isFinite(min) && Number.isFinite(max)) {
+      q = q.or(
+        `and(price_local.gte.${min},price_local.lte.${max}),and(price.gte.${min},price.lte.${max})`,
+      );
+    }
+  }
+  return q;
+}
+
+/** Server-side sort for listings (secondary key keeps order stable). */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function applyListingSort(query: any, sortBy: ListingSort) {
+  switch (sortBy) {
+    case "price-low":
+      return query
+        .order("price_local", { ascending: true, nullsFirst: false })
+        .order("created_at", { ascending: false });
+    case "price-high":
+      return query
+        .order("price_local", { ascending: false, nullsFirst: false })
+        .order("created_at", { ascending: false });
+    case "rating":
+      return query.order("rating", { ascending: false, nullsFirst: false }).order("created_at", { ascending: false });
+    default:
+      return query.order("created_at", { ascending: false });
+  }
+}

@@ -7,11 +7,14 @@ import TopNav from "../components/TopNav";
 export default function Root() {
   const location = useLocation();
   const hideNavOnPaths = ["/login", "/register", "/verify-otp", "/design-system"];
-  const showBottomNav = !hideNavOnPaths.some(path => location.pathname.startsWith(path));
+  const isMessageThread =
+    /^\/messages\/[^/]+$/.test(location.pathname) && location.pathname !== "/messages";
+  const showBottomNav =
+    !hideNavOnPaths.some((path) => location.pathname.startsWith(path)) && !isMessageThread;
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      <main className="flex-1 pb-20 md:pb-0">
+      <main className={`flex-1 ${showBottomNav ? "pb-20 md:pb-0" : ""}`}>
         <TopNav />
         <Outlet />
         {showBottomNav && <Footer />}

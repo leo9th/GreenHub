@@ -1,29 +1,76 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { ArrowLeft, Upload, CheckCircle2, TrendingUp, ImageIcon } from "lucide-react";
-import { getMockProductsForRegion } from "../../data/mockData";
-import { useRegion } from "../../context/RegionContext";
+import { useAuth } from "../../context/AuthContext";
+import { supabase } from "../../../lib/supabase";
+import { getProductPrice } from "../../utils/getProductPrice";
+
+type SellerProductRow = {
+  id: string;
+  title: string;
+  image: string;
+  condition: string;
+  price: number;
+};
 
 export default function SetupAd() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const plan = searchParams.get("plan") || "";
-  const { activeRegion } = useRegion();
-  
+  const { user } = useAuth();
+
   const isBanner = plan.startsWith("b-");
   const isFeature = plan.startsWith("f-") || plan.startsWith("p-");
 
-  const [step, setStep] = useState(1);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [bannerImage, setBannerImage] = useState<string | null>(null);
   const initialProductId = searchParams.get("productId");
-  const [selectedProductId, setSelectedProductId] = useState<number | null>(initialProductId ? Number(initialProductId) : null);
-
-  const myProducts = getMockProductsForRegion(activeRegion.id as any).slice(0, 4); // simulate sellers products
+  const [selectedProductId, setSelectedProductId] = useState<string | null>(initialProductId?.trim() || null);
+  const [myProducts, setMyProducts] = useState<SellerProductRow[]>([]);
+  const [loadingProducts, setLoadingProducts] = useState(false);
 
   useEffect(() => {
-    // Check if they already have stuff in localStorage just to populate it, optional.
-  }, []);
+    if (!isFeature || !user?.id) {
+      setMyProducts([]);
+      setLoadingProducts(false);
+      return;
+    }
+
+    let cancelled = false;
+    setLoadingProducts(true);
+
+    void (async () => {
+      const { data, error } = await supabase
+        .from("products")
+        .select("id,title,image,condition,price_local,price")
+        .eq("seller_id", user.id)
+        .eq("status", "active")
+        .order("created_at", { ascending: false })
+        .limit(12);
+
+      if (cancelled) return;
+      setLoadingProducts(false);
+
+      if (error) {
+        console.error("SetupAd: load products", error.message);
+        setMyProducts([]);
+        return;
+      }
+
+      const rows = (data ?? []).map((p: Record<string, unknown>) => ({
+        id: String(p.id ?? ""),
+        title: String(p.title ?? ""),
+        image: String(p.image ?? ""),
+        condition: String(p.condition ?? ""),
+        price: getProductPrice(p),
+      }));
+      setMyProducts(rows.filter((r) => r.id));
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isFeature, user?.id]);
 
   const handleBannerUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -38,10 +85,9 @@ export default function SetupAd() {
       localStorage.setItem("greenhub_custom_banner", bannerImage);
     }
     if (isFeature && selectedProductId) {
-      localStorage.setItem("greenhub_featured_product", selectedProductId.toString());
+      localStorage.setItem("greenhub_featured_product", selectedProductId);
     }
-    
-    // Give time for localStorage to settle, then route to home
+
     alert("Setup Complete! Taking you to the homepage to see your Ad live!");
     navigate("/");
   };
@@ -63,7 +109,6 @@ export default function SetupAd() {
       </header>
 
       <div className="max-w-3xl mx-auto px-4 py-8">
-        
         <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm mb-6">
           <div className="flex items-center gap-4 mb-6">
             <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
@@ -86,8 +131,8 @@ export default function SetupAd() {
               <p className="text-sm text-gray-600 mb-4">
                 This banner will be displayed prominently on the main GreenHub homepage carousel.
               </p>
-              
-              <div 
+
+              <div
                 onClick={() => fileInputRef.current?.click()}
                 className="w-full h-48 sm:h-64 border-2 border-dashed border-gray-300 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:border-[#22c55e] hover:bg-green-50/50 transition-colors overflow-hidden group relative"
               >
@@ -107,13 +152,7 @@ export default function SetupAd() {
                     <p className="text-xs text-gray-500 mt-1">1200 x 400px recommended</p>
                   </>
                 )}
-                <input 
-                  type="file" 
-                  ref={fileInputRef} 
-                  onChange={handleBannerUpload} 
-                  accept="image/*" 
-                  className="hidden" 
-                />
+                <input type="file" ref={fileInputRef} onChange={handleBannerUpload} accept="image/*" className="hidden" />
               </div>
             </div>
           )}
@@ -128,32 +167,46 @@ export default function SetupAd() {
                 Choose which of your existing product listings you want to push to the top of buyer searches.
               </p>
 
-              <div className="grid sm:grid-cols-2 gap-4">
-                {myProducts.map((product) => (
-                  <div 
-                    key={product.id}
-                    onClick={() => setSelectedProductId(product.id)}
-                    className={`flex items-center gap-3 p-3 border-2 rounded-xl cursor-pointer transition-colors ${
-                      selectedProductId === product.id 
-                        ? "border-[#22c55e] bg-green-50 shadow-sm" 
-                        : "border-gray-200 hover:border-[#22c55e]/50"
-                    }`}
-                  >
-                    <div className="w-16 h-16 rounded-lg bg-gray-100 overflow-hidden shrink-0">
-                      <img src={product.image} alt={product.title} className="w-full h-full object-cover" />
+              {!user?.id ? (
+                <p className="text-sm text-gray-600">Sign in to load your active listings.</p>
+              ) : loadingProducts ? (
+                <p className="text-sm text-gray-500">Loading your products…</p>
+              ) : myProducts.length === 0 ? (
+                <p className="text-sm text-gray-600">You don&apos;t have any active listings yet.</p>
+              ) : (
+                <div className="grid sm:grid-cols-2 gap-4">
+                  {myProducts.map((product) => (
+                    <div
+                      key={product.id}
+                      onClick={() => setSelectedProductId(product.id)}
+                      className={`flex items-center gap-3 p-3 border-2 rounded-xl cursor-pointer transition-colors ${
+                        selectedProductId === product.id
+                          ? "border-[#22c55e] bg-green-50 shadow-sm"
+                          : "border-gray-200 hover:border-[#22c55e]/50"
+                      }`}
+                    >
+                      <div className="w-16 h-16 rounded-lg bg-gray-100 overflow-hidden shrink-0">
+                        {product.image ? (
+                          <img src={product.image} alt={product.title} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full bg-gray-200" aria-hidden />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-gray-800 line-clamp-2">{product.title}</p>
+                        <p className="text-xs text-gray-500 mt-1">{product.condition}</p>
+                      </div>
+                      <div
+                        className={`w-5 h-5 rounded-full border flex items-center justify-center mx-2 ${
+                          selectedProductId === product.id ? "border-[#22c55e] bg-[#22c55e]" : "border-gray-300"
+                        }`}
+                      >
+                        {selectedProductId === product.id && <div className="w-2 h-2 bg-white rounded-full" />}
+                      </div>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-gray-800 line-clamp-2">{product.title}</p>
-                      <p className="text-xs text-gray-500 mt-1">{product.condition}</p>
-                    </div>
-                    <div className={`w-5 h-5 rounded-full border flex items-center justify-center mx-2 ${
-                      selectedProductId === product.id ? "border-[#22c55e] bg-[#22c55e]" : "border-gray-300"
-                    }`}>
-                      {selectedProductId === product.id && <div className="w-2 h-2 bg-white rounded-full" />}
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -165,7 +218,6 @@ export default function SetupAd() {
         >
           Publish Ad & Go to Homepage
         </button>
-
       </div>
     </div>
   );

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
 import { ArrowLeft, CheckCircle, AlertCircle } from "lucide-react";
-import {  nigerianBanks  } from "../../data/mockData";
+import { nigerianBanks } from "../../data/catalogConstants";
 import { useCurrency } from "../../hooks/useCurrency";
 
 export default function BankDetails() {

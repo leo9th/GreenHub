@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router";
 import { ArrowLeft, Upload, X } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { supabase } from "../../../lib/supabase";
-import { categories, nigerianStates } from "../../data/mockData";
+import { categories, nigerianStates } from "../../data/catalogConstants";
 import { CAR_BRAND_SELECT_OTHER, NIGERIA_CAR_BRAND_OPTIONS } from "../../data/carBrands";
 
 const STORAGE_BUCKET = "products";

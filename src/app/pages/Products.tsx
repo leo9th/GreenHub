@@ -1,7 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useMemo, useCallback, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router";
 import { Search, Filter, ArrowLeft, X, BadgeCheck, Star } from "lucide-react";
-import { categories, nigerianStates } from "../data/mockData";
+import { categories, nigerianStates } from "../data/catalogConstants";
 import { labelForCarBrandValue, NIGERIA_CAR_BRAND_OPTIONS } from "../data/carBrands";
 import { useCurrency } from "../hooks/useCurrency";
 import { supabase } from "../../lib/supabase";

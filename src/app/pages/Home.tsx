@@ -1,6 +1,6 @@
 import { Link, useNavigate } from "react-router";
 import { Search, ChevronDown, Star, Globe, Home as HomeIcon, PlusCircle, MessageCircle } from "lucide-react";
-import { categories } from "../data/mockData";
+import { categories } from "../data/catalogConstants";
 import { useRegion, regions } from "../context/RegionContext";
 import { useCurrency } from "../hooks/useCurrency";
 import { useState, useEffect, useMemo } from "react";

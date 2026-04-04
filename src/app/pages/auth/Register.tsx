@@ -1,7 +1,8 @@
 import { Link, useNavigate } from "react-router";
 import { Eye, EyeOff, ArrowLeft, HelpCircle, Loader2 } from "lucide-react";
 import { useState } from "react";
-import { nigerianStates, getLGAsForState } from "../../data/mockData";
+import { nigerianStates } from "../../data/catalogConstants";
+import { getLGAsForState } from "../../data/mockData";
 import { supabase } from "../../../lib/supabase";
 
 export default function Register() {

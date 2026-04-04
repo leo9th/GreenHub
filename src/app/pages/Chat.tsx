@@ -5,12 +5,11 @@ import { getAvatarUrl } from "../utils/getAvatar";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../context/AuthContext";
 import { toast } from "sonner";
-
-type ConversationRow = {
-  id: string;
-  participant_a: string;
-  participant_b: string;
-};
+import {
+  findConversationByPair,
+  otherParticipantId,
+  type ConversationRow,
+} from "../utils/chatConversations";
 
 type ChatMessageRow = {
   id: string;
@@ -19,8 +18,10 @@ type ChatMessageRow = {
   created_at: string;
 };
 
-function otherParticipant(conv: ConversationRow, me: string): string {
-  return conv.participant_a === me ? conv.participant_b : conv.participant_a;
+function isDuplicateConversationError(err: { code?: string; message?: string }): boolean {
+  const c = String(err.code ?? "");
+  const m = String(err.message ?? "").toLowerCase();
+  return c === "23505" || m.includes("duplicate") || m.includes("unique") || m.includes("conversations_pair");
 }
 
 export default function Chat() {
@@ -38,6 +39,7 @@ export default function Chat() {
   const [messages, setMessages] = useState<ChatMessageRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [sendBusy, setSendBusy] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -50,65 +52,72 @@ export default function Chat() {
   const resolveConversation = useCallback(async () => {
     if (!authUser?.id || !routeId?.trim()) {
       setConversation(null);
+      setLoadError(null);
       setLoading(false);
       return;
     }
 
     setLoading(true);
+    setLoadError(null);
     try {
       const param = routeId.trim();
+      const me = authUser.id;
 
-      const { data: byId, error: errById } = await supabase
+      const { data: byConvId, error: errConv } = await supabase
         .from("conversations")
         .select("id, participant_a, participant_b")
         .eq("id", param)
         .maybeSingle();
 
-      if (errById) throw errById;
+      if (errConv) throw errConv;
 
-      let conv: ConversationRow | null = (byId as ConversationRow | null) ?? null;
+      let conv: ConversationRow | null = (byConvId as ConversationRow | null) ?? null;
       let peer: string | null = null;
 
       if (conv) {
-        const o = otherParticipant(conv, authUser.id);
-        if (o !== authUser.id) peer = o;
+        peer = otherParticipantId(conv, me);
+        if (!peer) {
+          toast.error("You don't have access to this conversation.");
+          conv = null;
+        }
       }
 
       if (!conv) {
         const peerCandidate = param;
-        if (peerCandidate === authUser.id) {
-          toast.error("Invalid chat link.");
+        if (peerCandidate === me) {
+          setLoadError("You can't start a chat with yourself.");
           setConversation(null);
           setLoading(false);
           return;
         }
 
-        const orFilter = `and(participant_a.eq.${authUser.id},participant_b.eq.${peerCandidate}),and(participant_a.eq.${peerCandidate},participant_b.eq.${authUser.id})`;
-        const { data: existing, error: exErr } = await supabase
-          .from("conversations")
-          .select("id, participant_a, participant_b")
-          .or(orFilter)
-          .maybeSingle();
-
-        if (exErr) throw exErr;
-
-        if (existing) {
-          conv = existing as ConversationRow;
-          peer = peerCandidate;
-        } else {
+        let found = await findConversationByPair(supabase, me, peerCandidate);
+        if (!found) {
           const { data: inserted, error: insErr } = await supabase
             .from("conversations")
-            .insert({ participant_a: authUser.id, participant_b: peerCandidate })
+            .insert({ participant_a: me, participant_b: peerCandidate })
             .select("id, participant_a, participant_b")
             .single();
 
-          if (insErr) throw insErr;
-          conv = inserted as ConversationRow;
-          peer = peerCandidate;
+          if (insErr) {
+            if (isDuplicateConversationError(insErr)) {
+              found = await findConversationByPair(supabase, me, peerCandidate);
+              if (!found) throw insErr;
+              conv = found;
+            } else {
+              throw insErr;
+            }
+          } else {
+            conv = inserted as ConversationRow;
+          }
+        } else {
+          conv = found;
         }
+        peer = peerCandidate;
       }
 
       if (!conv || !peer) {
+        setLoadError("Chat could not be opened. Check that messaging is enabled and try again.");
         setConversation(null);
         setLoading(false);
         return;
@@ -144,8 +153,15 @@ export default function Chat() {
       setMessages((msgs ?? []) as ChatMessageRow[]);
     } catch (e: unknown) {
       console.error(e);
-      toast.error(e instanceof Error ? e.message : "Could not open chat");
+      const msg = e instanceof Error ? e.message : "Could not open chat";
+      setLoadError(
+        msg.includes("relation") && msg.includes("does not exist")
+          ? "Messaging tables are not set up yet. Run the Supabase migration for conversations and chat_messages."
+          : msg,
+      );
+      toast.error(msg);
       setConversation(null);
+      setPeerId(null);
     } finally {
       setLoading(false);
     }
@@ -194,8 +210,9 @@ export default function Chat() {
 
   if (!authUser || !conversation || !peerId) {
     return (
-      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center px-4 text-center">
-        <p className="text-gray-700 mb-4">Chat could not be loaded.</p>
+      <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center px-4 text-center pb-8">
+        <p className="text-gray-800 font-medium mb-2">Chat could not be loaded.</p>
+        {loadError ? <p className="text-sm text-gray-600 max-w-md mb-4">{loadError}</p> : null}
         <button
           type="button"
           onClick={() => navigate("/messages")}
@@ -208,9 +225,9 @@ export default function Chat() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
-        <div className="px-4 py-3 max-w-7xl mx-auto">
+    <div className="min-h-screen bg-gray-100 flex flex-col pb-20">
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-40 shadow-sm">
+        <div className="px-4 py-3 max-w-6xl mx-auto">
           <div className="flex items-center gap-3 mb-1">
             <button type="button" onClick={() => navigate(-1)} className="p-2 -ml-2">
               <ArrowLeft className="w-5 h-5 text-gray-700" />
@@ -238,7 +255,7 @@ export default function Chat() {
         </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto px-4 py-4 max-w-7xl mx-auto w-full">
+      <div className="flex-1 overflow-y-auto px-4 py-4 max-w-6xl mx-auto w-full">
         <div className="space-y-4">
           {messages.map((msg) => {
             const mine = msg.sender_id === authUser.id;
@@ -261,8 +278,8 @@ export default function Chat() {
         </div>
       </div>
 
-      <div className="bg-white border-t border-gray-200 sticky bottom-0 z-40">
-        <div className="px-4 py-3 max-w-7xl mx-auto">
+      <div className="bg-white border-t border-gray-200 sticky bottom-0 z-40 shadow-[0_-2px_10px_rgba(0,0,0,0.06)]">
+        <div className="px-4 py-3 max-w-6xl mx-auto">
           <div className="flex items-end gap-2">
             <div className="flex-1 relative">
               <textarea

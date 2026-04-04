@@ -221,9 +221,9 @@ export default function Profile() {
   const phoneDisplay = profile?.phone || authUser.user_metadata?.phone || null;
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-28">
+    <div className="min-h-screen bg-gray-100 pb-28">
       <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
-        <div className="max-w-lg mx-auto px-4 py-3 flex items-center gap-3">
+        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-3">
           <button type="button" onClick={() => navigate(-1)} className="p-2 -ml-2 rounded-lg hover:bg-gray-100" aria-label="Back">
             <ArrowLeft className="w-5 h-5 text-gray-700" />
           </button>
@@ -231,12 +231,12 @@ export default function Profile() {
         </div>
       </header>
 
-      <div className="max-w-lg mx-auto px-4 pt-6">
-        <div className="text-center">
+      <div className="max-w-6xl mx-auto px-4 pt-6 pb-4 space-y-4">
+        <div className="rounded-2xl bg-white p-5 sm:p-6 shadow-sm ring-1 ring-gray-200/80 text-center">
           <img
             src={avatar}
             alt=""
-            className="w-24 h-24 rounded-full object-cover mx-auto ring-4 ring-white shadow-md border border-gray-100"
+            className="w-24 h-24 rounded-full object-cover mx-auto ring-4 ring-gray-50 shadow-md border border-gray-100"
           />
           <h2 className="mt-4 text-xl font-semibold text-gray-900">{displayName}</h2>
 
@@ -278,33 +278,34 @@ export default function Profile() {
 
           <Link
             to="/settings/profile/edit"
-            className="inline-flex items-center gap-1.5 mt-4 px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 shadow-sm"
+            className="inline-flex items-center gap-1.5 mt-4 px-3 py-1.5 text-sm font-medium text-gray-700 bg-gray-50 border border-gray-200 rounded-xl hover:bg-gray-100 shadow-sm"
           >
             <Edit className="w-3.5 h-3.5" />
             Edit profile
           </Link>
         </div>
 
-        <div className="mt-8 border-b border-gray-200 overflow-x-auto no-scrollbar -mx-4 px-4">
-          <div className="flex min-w-max gap-1 pb-px">
-            {tabs.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => setTabAndUrl(t.id)}
-                className={`px-4 py-2.5 text-sm font-medium rounded-t-lg whitespace-nowrap transition-colors ${
-                  tab === t.id
-                    ? "text-[#15803d] bg-white border border-b-0 border-gray-200 -mb-px z-10"
-                    : "text-gray-500 hover:text-gray-800"
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
+        <div className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-200/80 overflow-hidden">
+          <div className="border-b border-gray-100 overflow-x-auto no-scrollbar">
+            <div className="flex min-w-max gap-0.5 px-2 pt-2">
+              {tabs.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setTabAndUrl(t.id)}
+                  className={`px-4 py-2.5 text-sm font-medium rounded-t-xl whitespace-nowrap transition-colors ${
+                    tab === t.id
+                      ? "text-[#15803d] bg-gray-50 border border-b-0 border-gray-200 -mb-px z-10"
+                      : "text-gray-500 hover:text-gray-800"
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
 
-        <div className="mt-4 min-h-[200px]">
+          <div className="p-4 sm:p-5 min-h-[200px]">
           {loadError ? (
             <p className="text-sm text-red-600 text-center py-8 px-2">{loadError}</p>
           ) : null}
@@ -323,7 +324,7 @@ export default function Profile() {
                     <Link
                       key={String(p.id)}
                       to={`/products/${p.id}`}
-                      className="bg-white rounded-xl border border-gray-100 overflow-hidden hover:border-gray-200 hover:shadow-sm transition-shadow"
+                      className="bg-white rounded-xl ring-1 ring-gray-100 overflow-hidden hover:ring-gray-200 hover:shadow-sm transition-shadow"
                     >
                       <div className="aspect-[4/3] bg-gray-100">
                         <img
@@ -363,7 +364,7 @@ export default function Profile() {
                 <p className="text-center text-sm text-gray-500 py-12">No reviews yet.</p>
               ) : (
                 reviews.map((r) => (
-                  <article key={r.id} className="bg-white rounded-xl border border-gray-100 p-4">
+                  <article key={r.id} className="bg-gray-50/80 rounded-xl ring-1 ring-gray-100 p-4">
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-sm font-semibold text-gray-900">{r.reviewer_name}</p>
                       <StarRow value={r.rating} max={5} />
@@ -381,7 +382,7 @@ export default function Profile() {
           )}
 
           {tab === "about" && (
-            <div className="bg-white rounded-xl border border-gray-100 p-4 space-y-4 text-sm">
+            <div className="rounded-xl ring-1 ring-gray-100 bg-gray-50/50 p-4 space-y-4 text-sm">
               <div className="flex justify-between gap-4 py-2 border-b border-gray-50">
                 <span className="text-gray-500">Member since</span>
                 <span className="font-medium text-gray-900 text-right">{memberSince}</span>
@@ -409,7 +410,7 @@ export default function Profile() {
 
           {tab === "contact" && (
             <div className="space-y-4">
-              <div className="bg-white rounded-xl border border-gray-100 p-4">
+              <div className="rounded-xl ring-1 ring-gray-100 bg-white p-4 shadow-sm">
                 <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2">Phone</p>
                 {phoneDisplay ? (
                   <a href={`tel:${phoneDisplay}`} className="inline-flex items-center gap-2 text-[#15803d] font-medium text-sm">
@@ -440,11 +441,12 @@ export default function Profile() {
               </div>
             </div>
           )}
+          </div>
         </div>
       </div>
 
       <footer className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-30">
-        <div className="max-w-lg mx-auto px-4 py-3 flex items-center justify-center gap-6">
+        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-center gap-6">
           <Link
             to="/settings"
             className="flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-gray-900"

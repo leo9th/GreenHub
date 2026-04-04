@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { ArrowLeft, Search, AlertCircle, CheckCircle, XCircle, MoreVertical } from "lucide-react";
-import {  } from "../../data/mockData";
 import { useCurrency } from "../../hooks/useCurrency";
 
 export default function AdminProducts() {

@@ -23,6 +23,45 @@ import { getProductPrice } from "../utils/getProductPrice";
 import { activeProductsQuery, mapProductRow } from "../utils/productSearch";
 import { toast } from "sonner";
 
+type ParsedDeliveryOption = { name: string; fee: number; duration: string };
+
+function parseDeliveryOptionsFromDb(raw: unknown): ParsedDeliveryOption[] {
+  if (raw == null) return [];
+  let arr: unknown[] = [];
+  if (Array.isArray(raw)) arr = raw;
+  else if (typeof raw === "string") {
+    const t = raw.trim();
+    if (!t) return [];
+    try {
+      const p = JSON.parse(t);
+      if (Array.isArray(p)) arr = p;
+    } catch {
+      return [];
+    }
+  } else {
+    return [];
+  }
+  const out: ParsedDeliveryOption[] = [];
+  for (const item of arr) {
+    if (typeof item === "string") {
+      const name = item.trim();
+      if (name) out.push({ name, fee: 0, duration: "" });
+    } else if (item && typeof item === "object") {
+      const o = item as Record<string, unknown>;
+      const name = typeof o.name === "string" ? o.name.trim() : String(o.name ?? "").trim();
+      if (!name) continue;
+      const feeRaw = o.fee;
+      const feeNum = typeof feeRaw === "number" && Number.isFinite(feeRaw) ? feeRaw : Number(feeRaw);
+      out.push({
+        name,
+        fee: Number.isFinite(feeNum) ? feeNum : 0,
+        duration: typeof o.duration === "string" ? o.duration : String(o.duration ?? ""),
+      });
+    }
+  }
+  return out;
+}
+
 function shuffleRelatedProducts<T>(items: T[]): T[] {
   const next = [...items];
   for (let i = next.length - 1; i > 0; i--) {
@@ -181,6 +220,15 @@ export default function ProductDetail() {
   const foundProduct = serverProduct;
 
   useEffect(() => {
+    if (!foundProduct) return;
+    const img =
+      typeof foundProduct.image === "string" && foundProduct.image.trim() !== ""
+        ? [foundProduct.image.trim()]
+        : [];
+    setCurrentImageIndex((i) => (img.length === 0 ? 0 : i >= img.length ? 0 : i));
+  }, [foundProduct?.id, foundProduct?.image]);
+
+  useEffect(() => {
     if (!serverProduct?.id) return;
     const pid = serverProduct.id;
     const key = `gh_view_${pid}`;
@@ -279,7 +327,7 @@ export default function ProductDetail() {
       const mapped = rows.map((r) => ({
         id: r.id as string | number,
         title: String((r as { title?: string }).title ?? ""),
-        image: String((r as { image?: string }).image ?? ""),
+        image: typeof (r as { image?: string }).image === "string" ? String((r as { image?: string }).image) : "",
         price: typeof r.price === "number" ? r.price : getProductPrice(r as { price?: unknown; price_local?: unknown }),
         location: String((r as { location?: string }).location ?? ""),
         condition: String((r as { condition?: string }).condition ?? "Like New"),
@@ -328,7 +376,7 @@ export default function ProductDetail() {
         rows.map((r) => ({
           id: r.id as string | number,
           title: String((r as { title?: string }).title ?? ""),
-          image: String((r as { image?: string }).image ?? ""),
+          image: typeof (r as { image?: string }).image === "string" ? String((r as { image?: string }).image) : "",
           price: typeof r.price === "number" ? r.price : getProductPrice(r as { price?: unknown; price_local?: unknown }),
           location: String((r as { location?: string }).location ?? ""),
           condition: String((r as { condition?: string }).condition ?? "Like New"),
@@ -343,16 +391,22 @@ export default function ProductDetail() {
   }, [serverProduct?.id, serverProduct?.seller_id, serverProduct?.sellerId]);
 
   useEffect(() => {
-    if (foundProduct?.sellerId) {
-      if (typeof foundProduct.sellerId === 'string' && foundProduct.sellerId.length > 10) { // Supabase UUID lookup
-        supabase.from('profiles').select('*').eq('id', foundProduct.sellerId).single()
-          .then(({ data }) => {
-            if (data) setSellerProfile(data);
-          })
-          .catch(console.error);
-      }
-    }
-  }, [foundProduct?.sellerId]);
+    const sid = foundProduct?.seller_id ?? foundProduct?.sellerId;
+    if (sid == null || String(sid).trim() === "") return;
+    const idStr = String(sid).trim();
+    void supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", idStr)
+      .single()
+      .then(({ data, error }) => {
+        if (error) {
+          console.warn("ProductDetail profile:", error.message);
+          return;
+        }
+        if (data) setSellerProfile(data);
+      });
+  }, [foundProduct?.seller_id, foundProduct?.sellerId]);
 
   if (isServerProductLoading) {
     return (
@@ -380,49 +434,55 @@ export default function ProductDetail() {
     );
   }
 
+  const sellerPeerIdRaw = foundProduct.seller_id ?? foundProduct.sellerId;
+  const sellerPeerId =
+    sellerPeerIdRaw != null && String(sellerPeerIdRaw).trim() !== "" ? String(sellerPeerIdRaw).trim() : "";
+  const canMessageSeller = Boolean(sellerPeerId);
+
+  const primaryImage =
+    typeof foundProduct.image === "string" && foundProduct.image.trim() !== "" ? foundProduct.image.trim() : "";
+  const galleryImages = primaryImage ? [primaryImage] : [];
+
   const product = {
     id: foundProduct.id,
     title: foundProduct.title,
     price: foundProduct.price,
-    images: foundProduct.image ? [foundProduct.image] : ["https://images.unsplash.com/photo-1632661674596-df8be070a5c5?w=800"],
+    images: galleryImages,
     condition: foundProduct.condition || "Like New",
     category: foundProduct.category || "General",
-    description: foundProduct.description || `${foundProduct.title} in excellent condition. Great value for your money. Please contact me for more details.`,
+    description: typeof foundProduct.description === "string" ? foundProduct.description : "",
     location: foundProduct.location,
     postedDate: foundProduct.createdAt ? new Date(foundProduct.createdAt).toLocaleDateString() : "Just now",
     views: typeof foundProduct.views === "number" ? foundProduct.views : Number(foundProduct.views) || 0,
     seller: {
-      id: foundProduct.sellerId || 1,
+      id: sellerPeerId || "unknown",
       name: sellerProfile?.full_name || foundProduct.sellerName || "GreenHub Seller",
       avatar: getAvatarUrl(
-        sellerProfile?.avatar_url, 
-        sellerProfile?.gender, 
-        sellerProfile?.full_name || foundProduct.sellerName || "GreenHub Seller"
+        sellerProfile?.avatar_url,
+        sellerProfile?.gender,
+        sellerProfile?.full_name || foundProduct.sellerName || "GreenHub Seller",
       ),
       rating: foundProduct.rating || 4.8,
       reviews: foundProduct.reviews || 0,
-      verified: ['crown', 'blue', 'standard'].includes(foundProduct.sellerTier),
-      memberSince: sellerProfile?.created_at 
-        ? new Date(sellerProfile.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) 
+      verified: ["crown", "blue", "standard"].includes(foundProduct.sellerTier),
+      memberSince: sellerProfile?.created_at
+        ? new Date(sellerProfile.created_at).toLocaleDateString("en-US", { month: "short", year: "numeric" })
         : sellerProfile?.updated_at
-          ? new Date(sellerProfile.updated_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+          ? new Date(sellerProfile.updated_at).toLocaleDateString("en-US", { month: "short", year: "numeric" })
           : "Jan 2023",
       responseTime: "Within hours",
-      tier: foundProduct.sellerTier || "standard"
+      tier: foundProduct.sellerTier || "standard",
     },
-    deliveryOptions: Array.isArray(foundProduct.deliveryOptions) && foundProduct.deliveryOptions.length > 0
-      ? foundProduct.deliveryOptions.map((name: string) => ({ name, fee: 3000, duration: "2-3 days" }))
-      : [
-          { name: "GIGL", fee: 3000, duration: "2-3 days" },
-          { name: "Pickup", fee: 0, duration: "Arrange with seller" },
-        ],
+    deliveryOptions: parseDeliveryOptionsFromDb(foundProduct.deliveryOptions ?? foundProduct.delivery_options),
   };
 
   const handlePrevImage = () => {
+    if (product.images.length <= 1) return;
     setCurrentImageIndex((prev) => (prev === 0 ? product.images.length - 1 : prev - 1));
   };
 
   const handleNextImage = () => {
+    if (product.images.length <= 1) return;
     setCurrentImageIndex((prev) => (prev === product.images.length - 1 ? 0 : prev + 1));
   };
 
@@ -493,11 +553,20 @@ export default function ProductDetail() {
             <div className="relative w-full max-w-[520px] md:max-w-none mx-auto">
               <div className="relative rounded-2xl overflow-hidden bg-white shadow-sm ring-1 ring-gray-200/90">
                 <div className="relative aspect-[3/4] w-full bg-gray-100 md:min-h-[min(70vh,560px)] md:aspect-auto md:h-[min(70vh,560px)]">
-                  <img
-                    src={product.images[currentImageIndex]}
-                    alt={product.title}
-                    className="absolute inset-0 w-full h-full object-cover"
-                  />
+                  {product.images.length > 0 ? (
+                    <img
+                      src={product.images[currentImageIndex]}
+                      alt={product.title}
+                      className="absolute inset-0 w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div
+                      className="absolute inset-0 w-full h-full flex items-center justify-center text-gray-400 text-sm px-6 text-center"
+                      aria-hidden
+                    >
+                      No image
+                    </div>
+                  )}
                 {product.images.length > 1 && (
                   <>
                     <button
@@ -538,7 +607,11 @@ export default function ProductDetail() {
                         }`}
                         aria-label={`Show image ${index + 1}`}
                       >
-                        <img src={src} alt="" className="w-full h-full object-cover" />
+                        {src ? (
+                          <img src={src} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full bg-gray-200" aria-hidden />
+                        )}
                       </button>
                     ))}
                   </div>
@@ -600,13 +673,17 @@ export default function ProductDetail() {
                 </div>
               </div>
               <div className="mt-4 flex flex-col gap-2">
-                <Link
-                  to={`/messages/${product.seller.id}`}
-                  className="w-full min-h-[46px] inline-flex items-center justify-center gap-2 rounded-xl bg-[#16a34a] text-white text-sm font-semibold px-4 hover:bg-[#15803d] shadow-sm"
-                >
-                  <MessageCircle className="w-4 h-4 shrink-0" aria-hidden />
-                  Chat
-                </Link>
+                {canMessageSeller ? (
+                  <Link
+                    to={`/messages/${sellerPeerId}`}
+                    className="w-full min-h-[46px] inline-flex items-center justify-center gap-2 rounded-xl bg-[#16a34a] text-white text-sm font-semibold px-4 hover:bg-[#15803d] shadow-sm"
+                  >
+                    <MessageCircle className="w-4 h-4 shrink-0" aria-hidden />
+                    Chat
+                  </Link>
+                ) : (
+                  <p className="text-xs text-gray-500 text-center py-2">Seller account unavailable for chat.</p>
+                )}
                 <div className="flex gap-2">
                   {sellerTelHref ? (
                     <a
@@ -625,36 +702,52 @@ export default function ProductDetail() {
                       <Phone className="w-4 h-4" />
                     </span>
                   )}
-                  <Link
-                    to={`/seller/${product.seller.id}/reviews`}
-                    className="flex-1 min-h-[46px] inline-flex items-center justify-center rounded-xl ring-1 ring-gray-200 text-sm font-semibold text-gray-800 px-4 hover:bg-gray-50"
-                  >
-                    View profile
-                  </Link>
+                  {canMessageSeller ? (
+                    <Link
+                      to={`/seller/${sellerPeerId}/reviews`}
+                      className="flex-1 min-h-[46px] inline-flex items-center justify-center rounded-xl ring-1 ring-gray-200 text-sm font-semibold text-gray-800 px-4 hover:bg-gray-50"
+                    >
+                      View profile
+                    </Link>
+                  ) : (
+                    <span className="flex-1 min-h-[46px] inline-flex items-center justify-center rounded-xl ring-1 ring-gray-100 text-sm font-medium text-gray-400 px-4 cursor-not-allowed">
+                      View profile
+                    </span>
+                  )}
                 </div>
               </div>
             </section>
 
             <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200/80">
               <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">Description</h2>
-              <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">{product.description}</p>
+              {product.description ? (
+                <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">{product.description}</p>
+              ) : (
+                <p className="text-sm text-gray-500">No description provided.</p>
+              )}
             </section>
 
             <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200/80">
               <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3">Delivery options</h2>
-              <ul className="space-y-0 divide-y divide-gray-100">
-                {product.deliveryOptions.map((option, index) => (
-                  <li key={index} className="flex items-center justify-between gap-4 text-sm py-3 first:pt-0">
-                    <div>
-                      <p className="font-medium text-gray-900">{option.name}</p>
-                      <p className="text-gray-500 text-xs mt-0.5">{option.duration}</p>
-                    </div>
-                    <p className="font-semibold text-gray-900 tabular-nums shrink-0">
-                      {option.fee === 0 ? "Free" : formatPrice(option.fee)}
-                    </p>
-                  </li>
-                ))}
-              </ul>
+              {product.deliveryOptions.length === 0 ? (
+                <p className="text-sm text-gray-500">No delivery options listed for this item.</p>
+              ) : (
+                <ul className="space-y-0 divide-y divide-gray-100">
+                  {product.deliveryOptions.map((option, index) => (
+                    <li key={index} className="flex items-center justify-between gap-4 text-sm py-3 first:pt-0">
+                      <div>
+                        <p className="font-medium text-gray-900">{option.name}</p>
+                        {option.duration ? (
+                          <p className="text-gray-500 text-xs mt-0.5">{option.duration}</p>
+                        ) : null}
+                      </div>
+                      <p className="font-semibold text-gray-900 tabular-nums shrink-0">
+                        {option.fee === 0 ? "Free" : formatPrice(option.fee)}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </section>
 
             <section className="rounded-2xl bg-amber-50/90 px-4 py-4 text-sm text-gray-800 ring-1 ring-amber-100/80">
@@ -692,12 +785,14 @@ export default function ProductDetail() {
 
       <div className="fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-sm border-t border-gray-100">
         <div className="max-w-6xl mx-auto px-4 py-3 flex gap-2">
-          <Link
-            to={`/messages/${product.seller.id}`}
-            className="hidden sm:inline-flex px-4 py-3 rounded-xl ring-1 ring-gray-200 text-sm font-semibold text-gray-800 items-center justify-center hover:bg-gray-50"
-          >
-            Chat
-          </Link>
+          {canMessageSeller ? (
+            <Link
+              to={`/messages/${sellerPeerId}`}
+              className="hidden sm:inline-flex px-4 py-3 rounded-xl ring-1 ring-gray-200 text-sm font-semibold text-gray-800 items-center justify-center hover:bg-gray-50"
+            >
+              Chat
+            </Link>
+          ) : null}
           <button
             type="button"
             onClick={() => {
@@ -705,10 +800,10 @@ export default function ProductDetail() {
                 id: product.id.toString(),
                 title: product.title,
                 price: product.price,
-                image: product.images[0],
+                image: product.images[0] ?? "",
                 quantity: 1,
-                sellerId: product.seller.id.toString(),
-                deliveryFee: product.deliveryOptions[0].fee,
+                sellerId: sellerPeerId || product.seller.id.toString(),
+                deliveryFee: product.deliveryOptions[0]?.fee ?? 0,
               });
               toast.success("Added to cart");
             }}
@@ -726,10 +821,10 @@ export default function ProductDetail() {
                 id: product.id.toString(),
                 title: product.title,
                 price: product.price,
-                image: product.images[0],
+                image: product.images[0] ?? "",
                 quantity: 1,
-                sellerId: product.seller.id.toString(),
-                deliveryFee: product.deliveryOptions[0].fee,
+                sellerId: sellerPeerId || product.seller.id.toString(),
+                deliveryFee: product.deliveryOptions[0]?.fee ?? 0,
               });
               navigate("/checkout");
             }}

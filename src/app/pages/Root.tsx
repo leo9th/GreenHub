@@ -21,7 +21,14 @@ export default function Root() {
 
       {showBottomNav && (
         <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
-          <div className="flex items-center justify-center gap-2 sm:gap-4 px-2 sm:px-3 h-16 max-w-7xl mx-auto w-full">
+          <div className="flex items-center justify-center gap-1.5 sm:gap-3 px-1 sm:px-3 h-16 max-w-7xl mx-auto w-full">
+            <BottomActionCard
+              to="/apply-for-job"
+              icon={<span className="text-lg leading-none">💼</span>}
+              label="Jobs"
+              bg="bg-[#e8f5e9]"
+              border="border-[#a5d6a7]"
+            />
             <BottomActionCard to="/how-to-sell" icon={<Wallet className="w-5 h-5 text-[#2e7d32]" />} label="How to sell" bg="bg-[#e8f5e9]" border="border-[#a5d6a7]" />
             <BottomActionCard to="/how-to-buy" icon={<ShoppingBag className="w-5 h-5 text-[#512da8]" />} label="How to buy" bg="bg-[#ede7f6]" border="border-[#b39ddb]" />
             <BottomActionCard to="/seller/advertise" icon={<TrendingUp className="w-5 h-5 text-[#ea580c]" />} label="Boost Ads" bg="bg-[#ffedd5]" border="border-[#fdba74]" />

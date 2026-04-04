@@ -3,14 +3,9 @@ import { Link } from "react-router";
 import { ArrowLeft, ArrowRight, CheckCircle2, Loader2 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { toast } from "sonner";
-
-const ID_TYPES = [
-  { value: "national_id", label: "National ID" },
-  { value: "voters_card", label: "Voter's Card" },
-  { value: "drivers_license", label: "Driver's License" },
-  { value: "international_passport", label: "International Passport" },
-  { value: "nin", label: "NIN" },
-] as const;
+import { encryptJobIdNumber } from "../utils/jobIdCrypto";
+import { JOB_VERIFY_FAIL_MESSAGE, runJobIdVerification } from "../utils/jobIdVerification";
+import { NIGERIA_GOV_ID_OPTIONS, type NigeriaGovIdType } from "../utils/nigeriaGovId";
 
 const EDUCATION_LEVELS = ["SSCE", "OND", "HND", "Bachelor's", "Master's", "PhD"] as const;
 
@@ -43,6 +38,7 @@ function safeStorageFileName(name: string) {
 export default function ApplyJob() {
   const [step, setStep] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+  const [verifyingId, setVerifyingId] = useState(false);
 
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
@@ -52,7 +48,9 @@ export default function ApplyJob() {
 
   const [idType, setIdType] = useState<string>("");
   const [idNumber, setIdNumber] = useState("");
-  const [idFile, setIdFile] = useState<File | null>(null);
+  const [idFrontFile, setIdFrontFile] = useState<File | null>(null);
+  const [idBackFile, setIdBackFile] = useState<File | null>(null);
+  const [selfieFile, setSelfieFile] = useState<File | null>(null);
 
   const [educationLevel, setEducationLevel] = useState<string>("");
   const [yearsExperience, setYearsExperience] = useState<string>("");
@@ -74,6 +72,9 @@ export default function ApplyJob() {
 
   const progressPct = ((step + 1) / TOTAL_STEPS) * 100;
 
+  const imageOk = (f: File | null) =>
+    f !== null && (f.type.startsWith("image/") || f.type === "image/jpeg" || f.type === "image/png");
+
   const canGoNext = (() => {
     switch (step) {
       case 0:
@@ -85,7 +86,13 @@ export default function ApplyJob() {
           !!gender
         );
       case 1:
-        return !!idType && idNumber.trim().length > 2 && idFile !== null;
+        return (
+          !!idType &&
+          idNumber.trim().length > 2 &&
+          imageOk(idFrontFile) &&
+          imageOk(idBackFile) &&
+          imageOk(selfieFile)
+        );
       case 2:
         return (
           !!educationLevel &&
@@ -115,16 +122,41 @@ export default function ApplyJob() {
     }
   })();
 
-  const goNext = () => {
-    if (canGoNext && step < TOTAL_STEPS - 1) setStep((s) => s + 1);
+  const continueFromIdentification = async () => {
+    if (!canGoNext || !idFrontFile || !selfieFile || !idType) return;
+    setVerifyingId(true);
+    try {
+      await runJobIdVerification({
+        idType: idType as NigeriaGovIdType,
+        idNumber,
+        fullName,
+        idFrontFile,
+        selfieFile,
+      });
+      setStep(2);
+    } catch {
+      toast.error(JOB_VERIFY_FAIL_MESSAGE);
+    } finally {
+      setVerifyingId(false);
+    }
   };
+
+  const goNext = () => {
+    if (!canGoNext || submitting || verifyingId) return;
+    if (step === 1) {
+      void continueFromIdentification();
+      return;
+    }
+    if (step < TOTAL_STEPS - 1) setStep((s) => s + 1);
+  };
+
   const goBack = () => {
-    if (step > 0) setStep((s) => s - 1);
+    if (step > 0 && !submitting) setStep((s) => s - 1);
   };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!canGoNext || submitting) return;
+    if (!canGoNext || submitting || !idFrontFile || !idBackFile || !selfieFile || !idType) return;
 
     if (!import.meta.env.VITE_SUPABASE_URL) {
       toast.error("Application upload is not configured. Set Supabase environment variables.");
@@ -135,19 +167,32 @@ export default function ApplyJob() {
     const applicationId = crypto.randomUUID();
 
     try {
-      let idPath: string | null = null;
-      let cvPath: string | null = null;
+      await runJobIdVerification({
+        idType: idType as NigeriaGovIdType,
+        idNumber,
+        fullName,
+        idFrontFile,
+        selfieFile,
+      });
 
-      if (idFile) {
-        const idExt = idFile.name.includes(".") ? idFile.name.split(".").pop() : "bin";
-        idPath = `${applicationId}/id_document_${safeStorageFileName(idFile.name)}`;
-        const { error: idErr } = await supabase.storage.from("job-application-uploads").upload(idPath, idFile, {
+      const enc = await encryptJobIdNumber(idNumber.trim());
+      const idFrontPath = `${applicationId}/id_front_${safeStorageFileName(idFrontFile.name)}`;
+      const idBackPath = `${applicationId}/id_back_${safeStorageFileName(idBackFile.name)}`;
+      const selfiePath = `${applicationId}/selfie_${safeStorageFileName(selfieFile.name)}`;
+
+      const up = async (path: string, file: File) => {
+        const { error } = await supabase.storage.from("job-application-uploads").upload(path, file, {
           cacheControl: "3600",
           upsert: false,
         });
-        if (idErr) throw new Error(idErr.message);
-      }
+        if (error) throw new Error(error.message);
+      };
 
+      await up(idFrontPath, idFrontFile);
+      await up(idBackPath, idBackFile);
+      await up(selfiePath, selfieFile);
+
+      let cvPath: string | null = null;
       if (cvFile) {
         cvPath = `${applicationId}/cv_${safeStorageFileName(cvFile.name)}`;
         const { error: cvErr } = await supabase.storage.from("job-application-uploads").upload(cvPath, cvFile, {
@@ -157,7 +202,7 @@ export default function ApplyJob() {
         if (cvErr) throw new Error(cvErr.message);
       }
 
-      const row = {
+      const row: Record<string, unknown> = {
         id: applicationId,
         full_name: fullName.trim(),
         phone: phone.trim(),
@@ -165,8 +210,17 @@ export default function ApplyJob() {
         date_of_birth: dateOfBirth,
         gender,
         id_type: idType,
-        id_number: idNumber.trim(),
-        id_document_storage_path: idPath,
+        id_number: enc ? null : idNumber.trim(),
+        id_number_ciphertext: enc?.ciphertextB64 ?? null,
+        id_number_iv: enc?.ivB64 ?? null,
+        id_document_storage_path: null,
+        id_front_image: idFrontPath,
+        id_back_image: idBackPath,
+        selfie_image: selfiePath,
+        id_verified: false,
+        id_verification_status: "pending",
+        verification_notes: null,
+        client_auto_verification_passed: true,
         education_level: educationLevel,
         years_experience: Number(yearsExperience),
         skills: skills.trim(),
@@ -187,6 +241,10 @@ export default function ApplyJob() {
       const { error: insErr } = await supabase.from("job_applications").insert(row);
       if (insErr) throw new Error(insErr.message);
 
+      if (!import.meta.env.VITE_JOB_CRYPTO_KEY) {
+        toast("Tip: set VITE_JOB_CRYPTO_KEY so ID numbers are stored encrypted.", { duration: 6000 });
+      }
+
       toast.success("Application submitted successfully! We'll contact you if there's a match.");
       setStep(0);
       setFullName("");
@@ -196,7 +254,9 @@ export default function ApplyJob() {
       setGender("");
       setIdType("");
       setIdNumber("");
-      setIdFile(null);
+      setIdFrontFile(null);
+      setIdBackFile(null);
+      setSelfieFile(null);
       setEducationLevel("");
       setYearsExperience("");
       setSkills("");
@@ -213,8 +273,11 @@ export default function ApplyJob() {
       setConfirmAccurate(false);
       setAgreeTerms(false);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Something went wrong";
-      toast.error(msg);
+      if (err instanceof Error && err.message === JOB_VERIFY_FAIL_MESSAGE) {
+        toast.error(JOB_VERIFY_FAIL_MESSAGE);
+      } else {
+        toast.error(err instanceof Error ? err.message : "Something went wrong");
+      }
     } finally {
       setSubmitting(false);
     }
@@ -229,7 +292,7 @@ export default function ApplyJob() {
           </Link>
           <div>
             <h1 className="text-lg font-bold text-gray-900">Jobs / Employment</h1>
-            <p className="text-xs text-gray-500">Apply for opportunities with GreenHub & partners</p>
+            <p className="text-xs text-gray-500">Nigerian government ID verification required</p>
           </div>
         </div>
         <div className="max-w-2xl mx-auto px-4 pb-3">
@@ -247,13 +310,12 @@ export default function ApplyJob() {
 
       <form onSubmit={step === TOTAL_STEPS - 1 ? handleSubmit : (e) => e.preventDefault()} className="max-w-2xl mx-auto px-4 py-6">
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 md:p-8 space-y-5">
-
           {step === 0 && (
             <>
               <h2 className="text-base font-semibold text-gray-800 border-b border-gray-100 pb-2">Personal information</h2>
               <div className="space-y-4">
                 <label className="block">
-                  <span className="text-sm font-medium text-gray-700">Full name *</span>
+                  <span className="text-sm font-medium text-gray-700">Full name * (must match your ID)</span>
                   <input
                     required
                     value={fullName}
@@ -311,7 +373,14 @@ export default function ApplyJob() {
 
           {step === 1 && (
             <>
-              <h2 className="text-base font-semibold text-gray-800 border-b border-gray-100 pb-2">Means of identification</h2>
+              <h2 className="text-base font-semibold text-gray-800 border-b border-gray-100 pb-2">
+                Nigerian government ID (front, back &amp; selfie)
+              </h2>
+              <p className="text-xs text-gray-500">
+                Only National ID (NIN), Driver&apos;s License, Voter&apos;s Card, or International Passport. Photos must be
+                clear JPEG/PNG/WebP — no PDF for ID images. We compare your selfie to your ID photo and read your name from the
+                front of the ID.
+              </p>
               <label className="block">
                 <span className="text-sm font-medium text-gray-700">ID type *</span>
                 <select
@@ -320,7 +389,7 @@ export default function ApplyJob() {
                   className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#22c55e] focus:border-transparent"
                 >
                   <option value="">Select…</option>
-                  {ID_TYPES.map((o) => (
+                  {NIGERIA_GOV_ID_OPTIONS.map((o) => (
                     <option key={o.value} value={o.value}>
                       {o.label}
                     </option>
@@ -336,14 +405,31 @@ export default function ApplyJob() {
                 />
               </label>
               <label className="block">
-                <span className="text-sm font-medium text-gray-700">Upload ID document * (image or PDF)</span>
+                <span className="text-sm font-medium text-gray-700">ID front (photo) *</span>
                 <input
                   type="file"
-                  accept="image/jpeg,image/png,image/webp,application/pdf"
-                  onChange={(e) => setIdFile(e.target.files?.[0] ?? null)}
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={(e) => setIdFrontFile(e.target.files?.[0] ?? null)}
                   className="mt-1 w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-[#22c55e] file:text-white"
                 />
-                {idFile && <p className="text-xs text-gray-500 mt-1">Selected: {idFile.name}</p>}
+              </label>
+              <label className="block">
+                <span className="text-sm font-medium text-gray-700">ID back (photo) *</span>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={(e) => setIdBackFile(e.target.files?.[0] ?? null)}
+                  className="mt-1 w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-[#22c55e] file:text-white"
+                />
+              </label>
+              <label className="block">
+                <span className="text-sm font-medium text-gray-700">Selfie (face clearly visible) *</span>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={(e) => setSelfieFile(e.target.files?.[0] ?? null)}
+                  className="mt-1 w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-[#22c55e] file:text-white"
+                />
               </label>
             </>
           )}
@@ -524,14 +610,13 @@ export default function ApplyJob() {
               </label>
             </>
           )}
-
         </div>
 
         <div className="flex flex-col-reverse sm:flex-row gap-3 mt-6 justify-between">
           <button
             type="button"
             onClick={goBack}
-            disabled={step === 0 || submitting}
+            disabled={step === 0 || submitting || verifyingId}
             className="px-5 py-2.5 rounded-lg border border-gray-300 text-gray-700 font-medium disabled:opacity-40"
           >
             Back
@@ -540,11 +625,20 @@ export default function ApplyJob() {
             <button
               type="button"
               onClick={goNext}
-              disabled={!canGoNext}
+              disabled={!canGoNext || verifyingId || (step === 1 && submitting)}
               className="px-5 py-2.5 rounded-lg bg-[#22c55e] text-white font-semibold hover:bg-[#16a34a] disabled:opacity-40 flex items-center justify-center gap-2"
             >
-              Continue
-              <ArrowRight className="w-4 h-4" />
+              {verifyingId && step === 1 ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Verifying ID…
+                </>
+              ) : (
+                <>
+                  Continue
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
             </button>
           ) : (
             <button
@@ -568,7 +662,8 @@ export default function ApplyJob() {
         </div>
 
         <p className="text-xs text-gray-500 text-center mt-6">
-          This portal is only for employment interest. It does not create a seller account or list products.
+          This portal is only for employment interest. It does not create a seller account. Final approval is manual and may
+          take a few business days.
         </p>
       </form>
     </div>

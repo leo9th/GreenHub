@@ -1,5 +1,5 @@
 import { Link } from "react-router";
-import { Users, Package, ShoppingBag, DollarSign, TrendingUp, AlertCircle } from "lucide-react";
+import { Users, Package, ShoppingBag, DollarSign, TrendingUp, AlertCircle, Briefcase } from "lucide-react";
 import {  } from "../../data/mockData";
 import { useCurrency } from "../../hooks/useCurrency";
 
@@ -76,7 +76,14 @@ export default function AdminDashboard() {
         </div>
 
         {/* Quick Actions */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          <Link
+            to="/admin/job-applications"
+            className="bg-white rounded-lg p-4 text-center hover:shadow-md transition-shadow border border-[#22c55e]/30"
+          >
+            <Briefcase className="w-8 h-8 text-[#15803d] mx-auto mb-2" />
+            <p className="font-medium text-gray-800">Job applications</p>
+          </Link>
           <Link
             to="/admin/users"
             className="bg-white rounded-lg p-4 text-center hover:shadow-md transition-shadow"

@@ -1,11 +1,17 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Link, useSearchParams } from "react-router";
-import { Search, Filter, ArrowLeft, X, BadgeCheck } from "lucide-react";
+import { Search, Filter, ArrowLeft, X, BadgeCheck, Star } from "lucide-react";
 import {  categories, nigerianStates  } from "../data/mockData";
 import { useCurrency } from "../hooks/useCurrency";
 import { supabase } from "../../lib/supabase";
 import { ProductCard } from "../components/cards/ProductCard";
-import { getProductPrice } from "../utils/getProductPrice";
+import { getFeaturedProductIds, mixFeaturedProducts } from "../utils/featureProductMix";
+import {
+  activeProductsQuery,
+  mapProductRow,
+  sanitizeSearchTerm,
+  withSearchOr,
+} from "../utils/productSearch";
 
 export default function Products() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -15,25 +21,22 @@ export default function Products() {
 
   useEffect(() => {
     const cat = searchParams.get("category");
-    if (cat && cat !== selectedCategory) {
-      setSelectedCategory(cat);
-    }
+    setSelectedCategory(cat && cat !== "all" ? cat : "all");
   }, [searchParams]);
 
   const handleCategoryChange = (val: string) => {
     setSelectedCategory(val);
-    if (val === "all") {
-      searchParams.delete("category");
-    } else {
-      searchParams.set("category", val);
-    }
-    setSearchParams(searchParams);
+    const next = new URLSearchParams(searchParams);
+    if (val === "all") next.delete("category");
+    else next.set("category", val);
+    setSearchParams(next);
   };
   const [selectedCondition, setSelectedCondition] = useState<string>("all");
   const [selectedState, setSelectedState] = useState<string>("all");
   const [priceRange, setPriceRange] = useState<string>("all");
   const [sortBy, setSortBy] = useState<string>("recent");
-  const [searchQuery, setSearchQuery] = useState("");
+  const urlSearch = searchParams.get("search") ?? "";
+  const [searchInput, setSearchInput] = useState(urlSearch);
 
   const defaultProducts = [
     {
@@ -47,6 +50,7 @@ export default function Products() {
       condition: "Like New",
       category: "electronics",
       sellerTier: "crown",
+      status: "active",
     },
     {
       id: 2,
@@ -58,7 +62,8 @@ export default function Products() {
       reviews: 18,
       condition: "New",
       category: "fashion",
-      sellerTier: "blue"
+      sellerTier: "blue",
+      status: "active",
     },
     {
       id: 3,
@@ -70,7 +75,8 @@ export default function Products() {
       reviews: 32,
       condition: "Good",
       category: "electronics",
-      sellerTier: "standard"
+      sellerTier: "standard",
+      status: "active",
     },
     {
       id: 4,
@@ -82,7 +88,8 @@ export default function Products() {
       reviews: 12,
       condition: "Like New",
       category: "fashion",
-      sellerTier: "crown"
+      sellerTier: "crown",
+      status: "active",
     },
     {
       id: 5,
@@ -94,7 +101,8 @@ export default function Products() {
       reviews: 45,
       condition: "New",
       category: "electronics",
-      sellerTier: "unverified"
+      sellerTier: "unverified",
+      status: "active",
     },
     {
       id: 6,
@@ -106,7 +114,8 @@ export default function Products() {
       reviews: 20,
       condition: "Good",
       category: "fashion",
-      sellerTier: "blue"
+      sellerTier: "blue",
+      status: "active",
     },
   ];
 
@@ -115,43 +124,45 @@ export default function Products() {
   const [productLoadError, setProductLoadError] = useState<string | null>(null);
 
   useEffect(() => {
-    const loadProducts = async () => {
+    setSearchInput(urlSearch);
+  }, [urlSearch]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
       setIsLoadingProducts(true);
       setProductLoadError(null);
-
       try {
-        const { data, error } = await supabase
-          .from("products")
-          .select("*")
-          .order("created_at", { ascending: false });
-
+        const term = sanitizeSearchTerm(urlSearch);
+        let q = activeProductsQuery(supabase);
+        q = withSearchOr(q, term);
+        const { data, error } = await q;
+        if (cancelled) return;
         if (error) throw error;
-
-        if (data?.length) {
-          const serverProducts = data.map((product: any) => ({
-            ...product,
-            price: getProductPrice(product),
-            sellerId: product.seller_id,
-            sellerTier: product.seller_tier,
-            deliveryOptions: product.delivery_options,
-            createdAt: product.created_at,
-            updatedAt: product.updated_at,
-          }));
-          setProducts(serverProducts);
-        } else {
-          setProducts(defaultProducts);
+        const rows = data ?? [];
+        setProducts(rows.length ? rows.map((row) => mapProductRow(row as Record<string, unknown>)) : []);
+      } catch (err: unknown) {
+        if (!cancelled) {
+          console.error(err);
+          setProductLoadError(err instanceof Error ? err.message : "Unable to load products");
+          setProducts(defaultProducts as Array<any>);
         }
-      } catch (error: any) {
-        console.error("Error loading products from Supabase:", error);
-        setProductLoadError(error?.message || "Unable to load server products");
-        setProducts(defaultProducts);
       } finally {
-        setIsLoadingProducts(false);
+        if (!cancelled) setIsLoadingProducts(false);
       }
+    })();
+    return () => {
+      cancelled = true;
     };
+  }, [urlSearch]);
 
-    loadProducts();
-  }, []);
+  const commitSearch = () => {
+    const next = new URLSearchParams(searchParams);
+    const q = sanitizeSearchTerm(searchInput);
+    if (q) next.set("search", q);
+    else next.delete("search");
+    setSearchParams(next);
+  };
 
   const conditions = ["New", "Like New", "Good", "Fair"];
   const priceRanges = [
@@ -181,7 +192,6 @@ export default function Products() {
   const filteredProducts = products.filter((product) => {
     if (selectedCategory !== "all" && product.category?.toLowerCase() !== selectedCategory.toLowerCase()) return false;
     if (selectedCondition !== "all" && product.condition !== selectedCondition) return false;
-    if (searchQuery && !product.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
     return true;
   }).sort((a, b) => {
     // Primary sorting: verification tier ranking order
@@ -197,6 +207,13 @@ export default function Products() {
     return b.id - a.id;
   });
 
+  const featuredIds = useMemo(() => getFeaturedProductIds(), [filteredProducts]);
+
+  const displayProducts = useMemo(
+    () => mixFeaturedProducts(filteredProducts, featuredIds),
+    [filteredProducts, featuredIds]
+  );
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -209,24 +226,54 @@ export default function Products() {
             <div className="flex-1 relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
               <input
-                type="text"
+                type="search"
                 placeholder="Search products..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    commitSearch();
+                  }
+                }}
                 className="w-full pl-10 pr-4 py-2 bg-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#22c55e]"
               />
             </div>
             <button
+              type="button"
+              onClick={commitSearch}
+              className="hidden sm:inline-flex items-center px-3 py-2 bg-[#15803d] text-white text-sm font-medium rounded-lg hover:bg-[#166534]"
+            >
+              Search
+            </button>
+            <button
+              type="button"
               onClick={() => setShowFilters(true)}
-              className="p-2 bg-[#22c55e] rounded-lg text-white"
+              className="p-2 bg-[#22c55e] rounded-lg text-white shrink-0"
             >
               <Filter className="w-5 h-5" />
             </button>
           </div>
 
           {/* Active Filters */}
-          {(selectedCategory !== "all" || selectedCondition !== "all") && (
+          {(selectedCategory !== "all" || selectedCondition !== "all" || sanitizeSearchTerm(urlSearch)) && (
             <div className="flex gap-2 flex-wrap">
+              {sanitizeSearchTerm(urlSearch) && (
+                <div className="flex items-center gap-1 bg-amber-100 text-amber-900 px-2 py-1 rounded text-xs">
+                  <span>&quot;{sanitizeSearchTerm(urlSearch)}&quot;</span>
+                  <button
+                    type="button"
+                    aria-label="Clear search"
+                    onClick={() => {
+                      const next = new URLSearchParams(searchParams);
+                      next.delete("search");
+                      setSearchParams(next);
+                    }}
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              )}
               {selectedCategory !== "all" && (
                 <div className="flex items-center gap-1 bg-[#22c55e]/10 text-[#22c55e] px-2 py-1 rounded text-xs">
                   <span>{categories.find((c) => c.id === selectedCategory)?.name}</span>
@@ -251,7 +298,9 @@ export default function Products() {
       {/* Sort Options */}
       <div className="bg-white border-b border-gray-200 px-4 py-2">
         <div className="flex items-center justify-between max-w-7xl mx-auto">
-          <span className="text-sm text-gray-600">{filteredProducts.length} products</span>
+          <span className="text-sm text-gray-600">
+            {isLoadingProducts ? "Loading…" : `${displayProducts.length} products`}
+          </span>
           <div className="flex items-center gap-2">
             <span className="text-sm text-gray-600">Sort by:</span>
             <select
@@ -270,8 +319,11 @@ export default function Products() {
 
       {/* Products Grid */}
       <div className="px-4 py-4 max-w-7xl mx-auto">
+        {isLoadingProducts ? (
+          <div className="flex justify-center py-20 text-gray-600 text-sm">Loading products…</div>
+        ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-          {filteredProducts.map((product) => (
+          {displayProducts.map((product) => (
             <Link key={product.id} to={`/products/${product.id}`}>
               <ProductCard
                 image={product.image}
@@ -283,16 +335,46 @@ export default function Products() {
                 location={product.location}
                 rating={product.rating}
                 reviews={product.reviews}
+                topRightBadge={
+                  featuredIds.has(String(product.id)) ? (
+                    <span className="bg-amber-400 text-amber-950 text-[10px] md:text-xs font-bold px-2 py-1 rounded flex items-center gap-1 shadow-sm">
+                      <Star className="w-3 h-3 fill-current" />
+                      FEATURED
+                    </span>
+                  ) : undefined
+                }
               />
             </Link>
           ))}
         </div>
+        )}
 
-        {filteredProducts.length === 0 && (
-          <div className="text-center py-12">
+        {!isLoadingProducts && displayProducts.length === 0 && (
+          <div className="text-center py-12 max-w-md mx-auto">
             <div className="text-6xl mb-4">🔍</div>
             <h3 className="text-lg font-semibold text-gray-800 mb-2">No products found</h3>
-            <p className="text-gray-600 text-sm">Try adjusting your filters or search query</p>
+            {sanitizeSearchTerm(urlSearch) ? (
+              <>
+                <p className="text-gray-600 text-sm mb-4">
+                  No products found for &quot;{sanitizeSearchTerm(urlSearch)}&quot;.
+                </p>
+                <p className="text-gray-500 text-sm mb-4">Try different keywords or browse by category.</p>
+                <div className="flex flex-col sm:flex-row gap-2 justify-center">
+                  <Link
+                    to={selectedCategory !== "all" ? `/products?category=${selectedCategory}` : "/products"}
+                    className="text-sm text-[#22c55e] font-medium hover:underline"
+                  >
+                    Clear search
+                  </Link>
+                  <span className="hidden sm:inline text-gray-300">·</span>
+                  <Link to="/" className="text-sm text-[#22c55e] font-medium hover:underline">
+                    Back to home
+                  </Link>
+                </div>
+              </>
+            ) : (
+              <p className="text-gray-600 text-sm">Try adjusting your filters or search query.</p>
+            )}
           </div>
         )}
       </div>

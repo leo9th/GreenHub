@@ -1,51 +1,48 @@
-import { Link } from "react-router";
-import { Search, ChevronDown, Star, Globe, Home as HomeIcon, PlusCircle, MessageCircle, Zap } from "lucide-react";
+import { Link, useNavigate } from "react-router";
+import { Search, ChevronDown, Star, Globe, Home as HomeIcon, PlusCircle, MessageCircle } from "lucide-react";
 import { categories } from "../data/mockData";
 import { getMockProductsForRegion } from "../data/mockData";
 import { useRegion, regions } from "../context/RegionContext";
 import { useCurrency } from "../hooks/useCurrency";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { supabase } from "../../lib/supabase";
 import { ProductCard } from "../components/cards/ProductCard";
 import { getProductPrice } from "../utils/getProductPrice";
+import { getFeaturedProductIds, mixFeaturedProducts } from "../utils/featureProductMix";
+import {
+  activeProductsQuery,
+  mapProductRow,
+  sanitizeSearchTerm,
+  withSearchOr,
+} from "../utils/productSearch";
 
 export default function Home() {
+  const navigate = useNavigate();
   const { activeRegion, setRegion } = useRegion();
   const [showRegionDropdown, setShowRegionDropdown] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [searchPreviewHits, setSearchPreviewHits] = useState<Array<Record<string, unknown>>>([]);
   const baseProducts = getMockProductsForRegion(activeRegion.id as "NG" | "US" | "CN");
-
-  const applyFeaturedProduct = (products: any[]) => {
-    const featId = localStorage.getItem("greenhub_featured_product");
-    if (!featId) {
-      setFeaturedProduct(null);
-      return products;
-    }
-
-    const found = products.find((p: any) => p.id?.toString() === featId);
-    if (!found) {
-      setFeaturedProduct(null);
-      return products;
-    }
-
-    setFeaturedProduct(found);
-    return [found, ...products.filter((p: any) => p.id?.toString() !== featId)];
-  };
 
   // Custom Ad State
   const [customBanner, setCustomBanner] = useState<string | null>(null);
-  const [featuredProduct, setFeaturedProduct] = useState<any | null>(null);
   const [products, setProducts] = useState(baseProducts as Array<any>);
   const [isLoadingProducts, setIsLoadingProducts] = useState<boolean>(true);
   const [productLoadError, setProductLoadError] = useState<string | null>(null);
+
+  const featuredIds = useMemo(() => getFeaturedProductIds(), [products]);
+
+  const featuredItemsDisplay = useMemo(
+    () => mixFeaturedProducts(products, featuredIds),
+    [products, featuredIds]
+  );
 
   useEffect(() => {
     const banner = localStorage.getItem("greenhub_custom_banner");
     if (banner) setCustomBanner(banner);
 
-    const initialProducts = applyFeaturedProduct(baseProducts);
-    setProducts(initialProducts);
+    setProducts(baseProducts);
 
     const loadProducts = async () => {
       setIsLoadingProducts(true);
@@ -55,6 +52,7 @@ export default function Home() {
         const { data, error } = await supabase
           .from("products")
           .select("*")
+          .eq("status", "active")
           .order("created_at", { ascending: false });
 
         if (error) throw error;
@@ -69,14 +67,12 @@ export default function Home() {
           updatedAt: product.updated_at,
         }));
 
-        const nextProducts = applyFeaturedProduct(serverProducts);
-
-        setProducts(nextProducts);
+        setProducts(serverProducts);
       } catch (error: any) {
         console.error("Error loading products from Supabase:", error);
         setProductLoadError(error?.message || "Unable to load server products");
 
-        setProducts(applyFeaturedProduct(baseProducts));
+        setProducts(baseProducts);
       } finally {
         setIsLoadingProducts(false);
       }
@@ -85,18 +81,37 @@ export default function Home() {
     loadProducts();
   }, [activeRegion.id]);
 
-  const searchSuggestions = [
-    "Home & Garden",
-    "Home theater systems",
-    "Honda Accord",
-    "Honda Civic",
-    "House for rent",
-    "Hp Laptops",
-    "Generators",
-    "iPhone 13 Pro",
-    "Nike Air Force",
-    "Samsung Galaxy S22"
-  ];
+  useEffect(() => {
+    const cleaned = sanitizeSearchTerm(searchQuery);
+    if (cleaned.length < 2) {
+      setSearchPreviewHits([]);
+      return;
+    }
+    let cancelled = false;
+    const handle = window.setTimeout(async () => {
+      const term = sanitizeSearchTerm(searchQuery);
+      if (term.length < 2) return;
+      try {
+        let q = activeProductsQuery(supabase);
+        q = withSearchOr(q, term);
+        const { data, error } = await q.limit(5);
+        if (cancelled || error) return;
+        setSearchPreviewHits((data ?? []).map((row) => mapProductRow(row as Record<string, unknown>)));
+      } catch {
+        if (!cancelled) setSearchPreviewHits([]);
+      }
+    }, 280);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(handle);
+    };
+  }, [searchQuery]);
+
+  const submitSearch = () => {
+    const q = sanitizeSearchTerm(searchQuery);
+    navigate(q ? `/products?search=${encodeURIComponent(q)}` : "/products");
+    setIsSearchFocused(false);
+  };
 
   // Reusable format helper
   const formatPrice = useCurrency();
@@ -110,90 +125,131 @@ export default function Home() {
             What are you looking for?
           </h2>
 
-          <div className="flex items-center gap-2 md:gap-0 w-full max-w-3xl mx-auto">
-            {/* Desktop Location Dropdown */}
-            <div className="relative hidden md:flex">
-              <button 
-                onClick={() => setShowRegionDropdown(!showRegionDropdown)}
-                className="flex items-center gap-2 bg-white px-4 py-3 border-r border-gray-200 text-gray-700 min-w-[150px] hover:bg-gray-50 rounded-l-lg h-full"
-              >
-                <Globe className="w-4 h-4 text-[#22c55e]" />
-                <span className="text-sm font-medium">{activeRegion.defaultLocation}</span>
-                <ChevronDown className="w-4 h-4 ml-auto text-gray-500" />
-              </button>
-              
-              {showRegionDropdown && (
-                <div className="absolute top-full mt-2 left-0 w-48 bg-white border border-gray-200 rounded-lg shadow-xl z-50">
-                  {Object.values(regions).map((r) => (
-                    <button
-                      key={r.id}
-                      onClick={() => {
-                        setRegion(r.id);
-                        setShowRegionDropdown(false);
-                      }}
-                      className={`w-full text-left px-4 py-3 text-sm hover:bg-gray-50 first:rounded-t-lg last:rounded-b-lg border-b border-gray-100 last:border-0 ${activeRegion.id === r.id ? 'bg-green-50 text-green-700 font-semibold' : 'text-gray-700'}`}
-                    >
-                      {r.name} ({r.currencyCode})
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div className="relative flex-1 flex flex-col justify-center">
-              <div className="w-full relative h-full">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="I am looking for..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onFocus={() => setIsSearchFocused(true)}
-                  onBlur={() => setTimeout(() => setIsSearchFocused(false), 200)}
-                  className="w-full h-full pl-10 pr-4 py-3 focus:outline-none text-gray-900 rounded-lg md:rounded-none"
-                />
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              submitSearch();
+            }}
+            className="flex flex-col gap-2 w-full max-w-3xl mx-auto"
+          >
+            <div className="flex items-center gap-2 md:gap-0 w-full">
+              {/* Desktop Location Dropdown */}
+              <div className="relative hidden md:flex">
+                <button
+                  type="button"
+                  onClick={() => setShowRegionDropdown(!showRegionDropdown)}
+                  className="flex items-center gap-2 bg-white px-4 py-3 border-r border-gray-200 text-gray-700 min-w-[150px] hover:bg-gray-50 rounded-l-lg h-full"
+                >
+                  <Globe className="w-4 h-4 text-[#22c55e]" />
+                  <span className="text-sm font-medium">{activeRegion.defaultLocation}</span>
+                  <ChevronDown className="w-4 h-4 ml-auto text-gray-500" />
+                </button>
+
+                {showRegionDropdown && (
+                  <div className="absolute top-full mt-2 left-0 w-48 bg-white border border-gray-200 rounded-lg shadow-xl z-50">
+                    {Object.values(regions).map((r) => (
+                      <button
+                        key={r.id}
+                        type="button"
+                        onClick={() => {
+                          setRegion(r.id);
+                          setShowRegionDropdown(false);
+                        }}
+                        className={`w-full text-left px-4 py-3 text-sm hover:bg-gray-50 first:rounded-t-lg last:rounded-b-lg border-b border-gray-100 last:border-0 ${activeRegion.id === r.id ? "bg-green-50 text-green-700 font-semibold" : "text-gray-700"}`}
+                      >
+                        {r.name} ({r.currencyCode})
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
-
-              {/* Autocomplete Dropdown */}
-              {isSearchFocused && searchQuery.length > 0 && (
-                <div className="absolute top-[48px] left-0 md:-left-[150px] md:w-[calc(100%+150px)] w-full bg-white border border-gray-200 rounded-b-lg shadow-xl z-50 max-h-64 overflow-y-auto">
-                  {searchSuggestions
-                    .filter(s => s.toLowerCase().includes(searchQuery.toLowerCase()))
-                    .map((suggestion, index) => {
-                      const matchIndex = suggestion.toLowerCase().indexOf(searchQuery.toLowerCase());
-                      const beforeMatch = suggestion.substring(0, matchIndex);
-                      const matchText = suggestion.substring(matchIndex, matchIndex + searchQuery.length);
-                      const afterMatch = suggestion.substring(matchIndex + searchQuery.length);
-
-                      return (
-                        <div 
-                          key={index}
-                          className="px-4 py-3 cursor-pointer hover:bg-gray-50 text-sm border-b border-gray-100 last:border-0 flex items-center gap-2"
-                          onClick={() => {
-                            setSearchQuery(suggestion);
-                            setIsSearchFocused(false);
-                          }}
-                        >
-                          <Search className="w-4 h-4 text-gray-400 shrink-0" />
-                          <div>
-                            <span className="text-gray-800">{beforeMatch}</span>
-                            <span className="text-gray-400">{matchText}</span>
-                            <span className="font-semibold text-gray-900">{afterMatch}</span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  {searchSuggestions.filter(s => s.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 && (
-                    <div className="px-4 py-3 text-sm text-gray-500 text-center">No matching suggestions</div>
-                  )}
+              <div className="relative flex-1 flex flex-col justify-center min-w-0">
+                <div className="w-full relative h-full">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <input
+                    type="search"
+                    placeholder="I am looking for..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onFocus={() => setIsSearchFocused(true)}
+                    onBlur={() => setTimeout(() => setIsSearchFocused(false), 220)}
+                    className="w-full h-full pl-10 pr-4 py-3 focus:outline-none text-gray-900 rounded-lg md:rounded-none"
+                  />
                 </div>
-              )}
+
+                {isSearchFocused && sanitizeSearchTerm(searchQuery).length > 0 && (
+                  <div className="absolute top-[48px] left-0 md:-left-[150px] md:w-[calc(100%+150px)] w-full bg-white border border-gray-200 rounded-b-lg shadow-xl z-50 max-h-72 overflow-y-auto">
+                    {searchPreviewHits.length === 0 && sanitizeSearchTerm(searchQuery).length < 2 ? (
+                      <div className="px-4 py-3 text-sm text-gray-500">Type at least 2 characters for suggestions</div>
+                    ) : null}
+                    {searchPreviewHits.map((hit) => (
+                      <button
+                        key={String(hit.id)}
+                        type="button"
+                        className="w-full text-left px-4 py-3 text-sm border-b border-gray-100 last:border-0 flex items-center gap-2 hover:bg-gray-50"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          navigate(`/products/${hit.id}`);
+                          setIsSearchFocused(false);
+                        }}
+                      >
+                        <Search className="w-4 h-4 text-gray-400 shrink-0" />
+                        <span className="text-gray-900 line-clamp-1">{String(hit.title ?? "")}</span>
+                      </button>
+                    ))}
+                    {sanitizeSearchTerm(searchQuery).length >= 2 && (
+                      <button
+                        type="button"
+                        className="w-full text-left px-4 py-3 text-sm font-medium text-[#15803d] hover:bg-green-50 border-t border-gray-100"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          submitSearch();
+                        }}
+                      >
+                        Search all listings for &quot;{sanitizeSearchTerm(searchQuery)}&quot;
+                      </button>
+                    )}
+                    {sanitizeSearchTerm(searchQuery).length >= 2 && searchPreviewHits.length === 0 ? (
+                      <div className="px-4 py-3 text-xs text-gray-500">No title matches yet — try the button above to search descriptions &amp; categories too.</div>
+                    ) : null}
+                  </div>
+                )}
+              </div>
+              <button
+                type="submit"
+                className="flex md:hidden items-center justify-center bg-[#15803d] text-white p-3 rounded-lg font-semibold hover:bg-[#166534] shrink-0"
+                aria-label="Search"
+              >
+                <Search className="w-5 h-5" />
+              </button>
+              <button
+                type="submit"
+                className="hidden md:flex items-center justify-center bg-[#15803d] text-white px-8 py-3 rounded-r-lg font-semibold hover:bg-[#166534] transition-colors"
+              >
+                <Search className="w-5 h-5 mr-2" />
+                Search
+              </button>
             </div>
-            {/* Desktop Search Button */}
-            <button className="hidden md:flex items-center justify-center bg-[#15803d] text-white px-8 py-3 rounded-r-lg font-semibold hover:bg-[#166534] transition-colors">
-              <Search className="w-5 h-5 mr-2 hidden md:block" />
-              Search
-            </button>
-          </div>
+
+            {isSearchFocused && sanitizeSearchTerm(searchQuery).length >= 2 && searchPreviewHits.length > 0 && (
+              <div className="bg-white/95 rounded-lg border border-white/40 shadow-md p-2 overflow-x-auto no-scrollbar flex gap-2 md:ml-[150px]">
+                <span className="text-[10px] uppercase tracking-wide text-gray-500 shrink-0 py-2 pr-1">Quick</span>
+                {searchPreviewHits.slice(0, 5).map((hit) => (
+                  <Link
+                    key={String(hit.id)}
+                    to={`/products/${hit.id}`}
+                    onMouseDown={() => setIsSearchFocused(false)}
+                    className="flex items-center gap-2 shrink-0 max-w-[200px] rounded-lg border border-gray-200 bg-gray-50 px-2 py-1.5 hover:border-[#22c55e] hover:bg-white"
+                  >
+                    {hit.image ? (
+                      <img src={String(hit.image)} alt="" className="w-10 h-10 rounded object-cover bg-gray-200" />
+                    ) : null}
+                    <span className="text-xs text-gray-800 line-clamp-2">{String(hit.title ?? "")}</span>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </form>
         </div>
       </header>
 
@@ -263,7 +319,7 @@ export default function Home() {
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {products.map((product) => (
+              {featuredItemsDisplay.map((product) => (
                 <Link key={product.id} to={`/products/${product.id}`}>
                   <ProductCard
                     image={product.image}
@@ -274,10 +330,10 @@ export default function Home() {
                     location={product.location}
                     rating={product.rating}
                     topRightBadge={
-                      featuredProduct?.id === product.id ? (
-                        <span className="bg-yellow-400 text-yellow-900 text-[10px] md:text-xs font-bold px-2 py-1 rounded flex items-center gap-1 shadow-sm">
-                          <Zap className="w-3 h-3 fill-current" />
-                          Ad
+                      featuredIds.has(String(product.id)) ? (
+                        <span className="bg-amber-400 text-amber-950 text-[10px] md:text-xs font-bold px-2 py-1 rounded flex items-center gap-1 shadow-sm">
+                          <Star className="w-3 h-3 fill-current" />
+                          FEATURED
                         </span>
                       ) : undefined
                     }

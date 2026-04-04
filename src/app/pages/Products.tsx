@@ -2,6 +2,7 @@ import { useState, useEffect, useLayoutEffect, useMemo, useCallback, type ReactN
 import { Link, useSearchParams } from "react-router";
 import { Search, Filter, ArrowLeft, X, BadgeCheck, Star } from "lucide-react";
 import { categories, nigerianStates } from "../data/mockData";
+import { labelForCarBrandValue, NIGERIA_CAR_BRAND_OPTIONS } from "../data/carBrands";
 import { useCurrency } from "../hooks/useCurrency";
 import { supabase } from "../../lib/supabase";
 import { ProductCard } from "../components/cards/ProductCard";
@@ -30,6 +31,8 @@ const priceRanges = [
 function ProductsFilterFields({
   selectedCategory,
   handleCategoryChange,
+  selectedCarBrand,
+  handleCarBrandChange,
   selectedCondition,
   setSelectedCondition,
   priceRange,
@@ -39,6 +42,8 @@ function ProductsFilterFields({
 }: {
   selectedCategory: string;
   handleCategoryChange: (val: string) => void;
+  selectedCarBrand: string;
+  handleCarBrandChange: (val: string) => void;
   selectedCondition: string;
   setSelectedCondition: (v: string) => void;
   priceRange: string;
@@ -77,6 +82,27 @@ function ProductsFilterFields({
           ))}
         </div>
       </div>
+
+      {selectedCategory === "vehicles" && (
+        <div>
+          <h3 className="font-semibold text-gray-800 mb-3 text-sm uppercase tracking-wide">Car brand</h3>
+          <select
+            value={selectedCarBrand}
+            onChange={(e) => handleCarBrandChange(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#22c55e]"
+          >
+            <option value="all">All brands</option>
+            {NIGERIA_CAR_BRAND_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-gray-500 mt-2">
+            Custom brands (typed as “Other” on listings) won’t match a preset—use search by name.
+          </p>
+        </div>
+      )}
 
       <div>
         <h3 className="font-semibold text-gray-800 mb-3 text-sm uppercase tracking-wide">Condition</h3>
@@ -158,10 +184,13 @@ export default function Products() {
   const formatPrice = useCurrency();
   const [showFilters, setShowFilters] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>(searchParams.get("category") || "all");
+  const [selectedCarBrand, setSelectedCarBrand] = useState<string>(searchParams.get("carBrand") || "all");
 
   useEffect(() => {
     const cat = searchParams.get("category");
     setSelectedCategory(cat && cat !== "all" ? cat : "all");
+    const brand = searchParams.get("carBrand");
+    setSelectedCarBrand(brand && brand !== "all" ? brand : "all");
   }, [searchParams]);
 
   const handleCategoryChange = (val: string) => {
@@ -169,6 +198,18 @@ export default function Products() {
     const next = new URLSearchParams(searchParams);
     if (val === "all") next.delete("category");
     else next.set("category", val);
+    if (val !== "vehicles") {
+      next.delete("carBrand");
+      setSelectedCarBrand("all");
+    }
+    setSearchParams(next);
+  };
+
+  const handleCarBrandChange = (val: string) => {
+    setSelectedCarBrand(val);
+    const next = new URLSearchParams(searchParams);
+    if (val === "all") next.delete("carBrand");
+    else next.set("carBrand", val);
     setSearchParams(next);
   };
 
@@ -274,8 +315,9 @@ export default function Products() {
       condition: selectedCondition,
       state: selectedState,
       priceRange,
+      carBrand: selectedCategory === "vehicles" ? selectedCarBrand : "all",
     }),
-    [selectedCategory, selectedCondition, selectedState, priceRange],
+    [selectedCategory, selectedCondition, selectedState, priceRange, selectedCarBrand],
   );
 
   const filterSignal = useMemo(
@@ -283,12 +325,13 @@ export default function Products() {
       [
         sanitizeSearchTerm(urlSearch),
         selectedCategory,
+        selectedCarBrand,
         selectedCondition,
         selectedState,
         priceRange,
         sortBy,
       ].join("|"),
-    [urlSearch, selectedCategory, selectedCondition, selectedState, priceRange, sortBy],
+    [urlSearch, selectedCategory, selectedCarBrand, selectedCondition, selectedState, priceRange, sortBy],
   );
 
   useEffect(() => {
@@ -370,6 +413,7 @@ export default function Products() {
 
   const clearAllFilters = () => {
     handleCategoryChange("all");
+    setSelectedCarBrand("all");
     setSelectedCondition("all");
     setPriceRange("all");
     setSelectedState("all");
@@ -399,6 +443,7 @@ export default function Products() {
   const showChips =
     sanitizeSearchTerm(urlSearch) ||
     selectedCategory !== "all" ||
+    (selectedCategory === "vehicles" && selectedCarBrand !== "all") ||
     selectedCondition !== "all" ||
     priceRange !== "all" ||
     selectedState !== "all";
@@ -406,6 +451,8 @@ export default function Products() {
   const filterFieldsProps = {
     selectedCategory,
     handleCategoryChange,
+    selectedCarBrand,
+    handleCarBrandChange,
     selectedCondition,
     setSelectedCondition,
     priceRange,
@@ -481,6 +528,14 @@ export default function Products() {
                   </button>
                 </div>
               )}
+              {selectedCategory === "vehicles" && selectedCarBrand !== "all" && (
+                <div className="flex items-center gap-1 bg-[#22c55e]/10 text-[#22c55e] px-2 py-1 rounded text-xs">
+                  <span>{labelForCarBrandValue(selectedCarBrand)}</span>
+                  <button type="button" onClick={() => handleCarBrandChange("all")} aria-label="Clear car brand">
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              )}
               {selectedCondition !== "all" && (
                 <div className="flex items-center gap-1 bg-[#22c55e]/10 text-[#22c55e] px-2 py-1 rounded text-xs">
                   <span>{selectedCondition}</span>
@@ -501,7 +556,7 @@ export default function Products() {
                 <div className="flex items-center gap-1 bg-[#22c55e]/10 text-[#22c55e] px-2 py-1 rounded text-xs">
                   <span>{selectedState}</span>
                   <button type="button" onClick={() => setSelectedState("all")} aria-label="Clear location">
-                    <X className="x-3 h-3" />
+                    <X className="w-3 h-3" />
                   </button>
                 </div>
               )}

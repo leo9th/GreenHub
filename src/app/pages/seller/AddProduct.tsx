@@ -3,8 +3,12 @@ import { useNavigate, useParams } from "react-router";
 import { ArrowLeft, Upload, X } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { supabase } from "../../../lib/supabase";
+import { categories, nigerianStates } from "../../data/mockData";
+import { CAR_BRAND_SELECT_OTHER, NIGERIA_CAR_BRAND_OPTIONS } from "../../data/carBrands";
 
 const STORAGE_BUCKET = "products";
+
+const PRODUCT_CONDITIONS = ["New", "Like New", "Good Fair"] as const;
 
 export default function AddProduct() {
   const navigate = useNavigate();
@@ -20,6 +24,11 @@ export default function AddProduct() {
   const [price, setPrice] = useState("");
   const [existingImageUrl, setExistingImageUrl] = useState<string | null>(null);
   const [loadingProduct, setLoadingProduct] = useState(false);
+  const [category, setCategory] = useState("");
+  const [condition, setCondition] = useState<string>(PRODUCT_CONDITIONS[0]);
+  const [location, setLocation] = useState("");
+  const [carBrandSelect, setCarBrandSelect] = useState<string>(NIGERIA_CAR_BRAND_OPTIONS[0]?.value ?? "");
+  const [carBrandOther, setCarBrandOther] = useState("");
 
   useEffect(() => {
     if (authLoading) return;
@@ -50,6 +59,24 @@ export default function AddProduct() {
 
       setTitle(data.title ?? "");
       setDescription(data.description ?? "");
+      setCategory(typeof data.category === "string" ? data.category : "");
+      const cond = typeof data.condition === "string" ? data.condition : "";
+      setCondition(
+        PRODUCT_CONDITIONS.includes(cond as (typeof PRODUCT_CONDITIONS)[number]) ? cond : PRODUCT_CONDITIONS[0],
+      );
+      setLocation(typeof data.location === "string" ? data.location : "");
+      const existingBrand = typeof data.car_brand === "string" ? data.car_brand.trim() : "";
+      const presetValues = new Set(NIGERIA_CAR_BRAND_OPTIONS.map((o) => o.value));
+      if (existingBrand && presetValues.has(existingBrand)) {
+        setCarBrandSelect(existingBrand);
+        setCarBrandOther("");
+      } else if (existingBrand) {
+        setCarBrandSelect(CAR_BRAND_SELECT_OTHER);
+        setCarBrandOther(existingBrand);
+      } else {
+        setCarBrandSelect(NIGERIA_CAR_BRAND_OPTIONS[0]?.value ?? "");
+        setCarBrandOther("");
+      }
       const local = data.price_local;
       const legacy = data.price;
       const n =
@@ -140,6 +167,30 @@ export default function AddProduct() {
       return;
     }
 
+    if (!category.trim()) {
+      alert("Please select a category.");
+      return;
+    }
+
+    if (!location.trim()) {
+      alert("Please select or enter a location.");
+      return;
+    }
+
+    let carBrandValue: string | null = null;
+    if (category === "vehicles") {
+      if (carBrandSelect === CAR_BRAND_SELECT_OTHER) {
+        const t = carBrandOther.trim();
+        if (!t) {
+          alert("Enter the car brand, or pick one from the list.");
+          return;
+        }
+        carBrandValue = t;
+      } else {
+        carBrandValue = carBrandSelect;
+      }
+    }
+
     if (!isEdit && imageFiles.length === 0) {
       alert("Please upload at least one product image.");
       return;
@@ -167,6 +218,10 @@ export default function AddProduct() {
           description: description.trim(),
           price_local: priceLocalNum,
           image: mainImage,
+          category: category.trim(),
+          condition,
+          location: location.trim(),
+          car_brand: carBrandValue,
           updated_at: new Date().toISOString(),
         };
 
@@ -189,6 +244,10 @@ export default function AddProduct() {
         description: description.trim(),
         price_local: priceLocalNum,
         image: mainImage,
+        category: category.trim(),
+        condition,
+        location: location.trim(),
+        car_brand: carBrandValue,
         status: "active" as const,
         created_at: new Date().toISOString(),
       };
@@ -283,6 +342,95 @@ export default function AddProduct() {
               <p className="text-xs text-[#16a34a] p-2 bg-green-50">Current photo — upload new images above to replace.</p>
             </div>
           ) : null}
+        </div>
+
+        <div className="bg-white rounded-lg p-4 space-y-4">
+          <div>
+            <label className="block font-semibold text-gray-800 mb-2">Category *</label>
+            <select
+              value={category}
+              onChange={(e) => {
+                setCategory(e.target.value);
+                if (e.target.value !== "vehicles") {
+                  setCarBrandSelect(NIGERIA_CAR_BRAND_OPTIONS[0]?.value ?? "");
+                  setCarBrandOther("");
+                }
+              }}
+              required
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#22c55e]"
+            >
+              <option value="">Select category</option>
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.emoji} {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block font-semibold text-gray-800 mb-2">Condition *</label>
+            <select
+              value={condition}
+              onChange={(e) => setCondition(e.target.value)}
+              required
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#22c55e]"
+            >
+              {PRODUCT_CONDITIONS.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block font-semibold text-gray-800 mb-2">Location *</label>
+            <select
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              required
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#22c55e]"
+            >
+              <option value="">Select state</option>
+              {location && !nigerianStates.some((s) => s.name === location) ? (
+                <option value={location}>{location} (current)</option>
+              ) : null}
+              {nigerianStates.map((s) => (
+                <option key={s.code} value={s.name}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-gray-500 mt-1">Shows in listings and filters (Nigeria).</p>
+          </div>
+          {category === "vehicles" && (
+            <div className="rounded-lg border border-[#22c55e]/30 bg-[#f0fdf4] p-4 space-y-3">
+              <label className="block font-semibold text-gray-800">Car brand *</label>
+              <select
+                value={carBrandSelect}
+                onChange={(e) => setCarBrandSelect(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#22c55e] bg-white"
+              >
+                {NIGERIA_CAR_BRAND_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+                <option value={CAR_BRAND_SELECT_OTHER}>Others (type manually)</option>
+              </select>
+              {carBrandSelect === CAR_BRAND_SELECT_OTHER && (
+                <>
+                  <label className="block text-sm font-medium text-gray-700">Brand name *</label>
+                  <input
+                    type="text"
+                    value={carBrandOther}
+                    onChange={(e) => setCarBrandOther(e.target.value)}
+                    placeholder="e.g. Innoson"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#22c55e] bg-white"
+                  />
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="bg-white rounded-lg p-4">

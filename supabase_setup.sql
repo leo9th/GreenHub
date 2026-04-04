@@ -80,6 +80,7 @@ alter table public.products add column if not exists rating numeric default 0;
 alter table public.products add column if not exists reviews integer default 0;
 alter table public.products add column if not exists seller_tier text;
 alter table public.products add column if not exists delivery_options text[];
+alter table public.products add column if not exists car_brand text;
 
 alter table public.products enable row level security;
 

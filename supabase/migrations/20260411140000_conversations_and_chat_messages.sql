@@ -20,7 +20,7 @@ create table if not exists public.chat_messages (
   id uuid primary key default gen_random_uuid(),
   conversation_id uuid not null references public.conversations (id) on delete cascade,
   sender_id uuid not null references auth.users (id) on delete cascade,
-  body text not null,
+  message text not null,
   created_at timestamptz not null default now()
 );
 
@@ -36,8 +36,8 @@ as $$
 begin
   update public.conversations
   set
-    last_message = left(new.body, 200),
-    last_message_at = new.created_at
+    last_message = left(new.message, 200),
+    last_message_at = coalesce(new.created_at, now())
   where id = new.conversation_id;
   return new;
 end;

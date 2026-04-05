@@ -121,6 +121,7 @@ export const router = createBrowserRouter([
       { path: "seller/advertise/setup", Component: SetupAd },
       { path: "reviews/:orderId", Component: WriteReview },
       { path: "seller/:id/reviews", Component: SellerReviews },
+      { path: "profile/:id", Component: Profile },
       { path: "profile", Component: Profile },
       { path: "favorites", Component: LegacyFavoritesRedirect },
       { path: "reviews", Component: LegacyReviewsRedirect },

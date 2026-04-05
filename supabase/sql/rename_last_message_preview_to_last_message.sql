@@ -23,8 +23,8 @@ as $$
 begin
   update public.conversations
   set
-    last_message = left(new.body, 200),
-    last_message_at = new.created_at
+    last_message = left(new.message, 200),
+    last_message_at = coalesce(new.created_at, now())
   where id = new.conversation_id;
   return new;
 end;

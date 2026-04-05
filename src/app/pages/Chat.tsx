@@ -398,9 +398,9 @@ export default function Chat() {
         .insert({
           conversation_id: conversation.id,
           sender_id: authUser.id,
-          body: text,
+          message: text,
         })
-        .select("id, sender_id, body, created_at")
+        .select("id, sender_id, message, created_at")
         .single();
 
       if (error) throw error;
@@ -514,7 +514,7 @@ export default function Chat() {
                     mine ? "bg-[#22c55e] text-white rounded-br-sm" : "bg-white text-gray-800 rounded-bl-sm border border-gray-200"
                   }`}
                 >
-                  <p className="text-sm whitespace-pre-wrap break-words">{msg.body}</p>
+                  <p className="text-sm whitespace-pre-wrap break-words">{msg.message}</p>
                   <div className={`flex items-center gap-1.5 mt-1 ${mine ? "justify-end" : ""}`}>
                     <span className={`text-xs ${mine ? "text-white/80" : "text-gray-500"}`}>{timeLabel}</span>
                     {mine ? (

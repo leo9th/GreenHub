@@ -4,6 +4,9 @@ export type ConversationRow = {
   id: string;
   buyer_id: string;
   seller_id: string;
+  context_product_id: number | null;
+  buyer_last_read_at: string | null;
+  seller_last_read_at: string | null;
 };
 
 export type ConversationListRow = ConversationRow & {
@@ -19,11 +22,21 @@ function pickLastMessageText(raw: Record<string, unknown>): string | null {
   return s === "" ? null : s;
 }
 
+function parseNullableBigint(v: unknown): number | null {
+  if (v == null) return null;
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
 function normalizeListRow(raw: Record<string, unknown>): ConversationListRow {
   return {
     id: String(raw.id),
     buyer_id: String(raw.buyer_id),
     seller_id: String(raw.seller_id),
+    context_product_id: parseNullableBigint(raw.context_product_id),
+    buyer_last_read_at: (raw.buyer_last_read_at as string | null) ?? null,
+    seller_last_read_at: (raw.seller_last_read_at as string | null) ?? null,
     last_message: pickLastMessageText(raw),
     last_message_at: (raw.last_message_at as string | null) ?? null,
   };
@@ -43,7 +56,8 @@ export async function fetchConversationsForInbox(
   supabase: SupabaseClient,
   userId: string,
 ): Promise<{ data: ConversationListRow[]; error: { message: string } | null }> {
-  const fields = "id, buyer_id, seller_id, last_message, last_message_at";
+  const fields =
+    "id, buyer_id, seller_id, context_product_id, buyer_last_read_at, seller_last_read_at, last_message, last_message_at";
 
   const [asBuyer, asSeller] = await Promise.all([
     supabase.from("conversations").select(fields).eq("buyer_id", userId),
@@ -76,7 +90,7 @@ export async function fetchConversationById(
 ): Promise<{ data: ConversationRow | null; error: { message: string } | null }> {
   const { data, error } = await supabase
     .from("conversations")
-    .select("id, buyer_id, seller_id")
+    .select("id, buyer_id, seller_id, context_product_id, buyer_last_read_at, seller_last_read_at")
     .eq("id", conversationId)
     .maybeSingle();
 
@@ -84,28 +98,51 @@ export async function fetchConversationById(
   if (!data) return { data: null, error: null };
   const n = normalizeListRow({ ...(data as Record<string, unknown>), last_message: null, last_message_at: null });
   return {
-    data: { id: n.id, buyer_id: n.buyer_id, seller_id: n.seller_id },
+    data: {
+      id: n.id,
+      buyer_id: n.buyer_id,
+      seller_id: n.seller_id,
+      context_product_id: n.context_product_id,
+      buyer_last_read_at: n.buyer_last_read_at,
+      seller_last_read_at: n.seller_last_read_at,
+    },
     error: null,
   };
 }
+
+export type InsertConversationOpts = {
+  contextProductId?: number | null;
+};
 
 /** Start a DM: current user is buyer, peer is seller (typical “message seller” flow). */
 export async function insertConversationPair(
   supabase: SupabaseClient,
   buyerUserId: string,
   sellerUserId: string,
+  opts?: InsertConversationOpts,
 ): Promise<{ data: ConversationRow | null; error: { message: string; code?: string } | null }> {
+  const insertPayload: Record<string, unknown> = { buyer_id: buyerUserId, seller_id: sellerUserId };
+  const pid = opts?.contextProductId;
+  if (pid != null && Number.isFinite(pid)) insertPayload.context_product_id = pid;
+
   const { data, error } = await supabase
     .from("conversations")
-    .insert({ buyer_id: buyerUserId, seller_id: sellerUserId })
-    .select("id, buyer_id, seller_id")
+    .insert(insertPayload)
+    .select("id, buyer_id, seller_id, context_product_id, buyer_last_read_at, seller_last_read_at")
     .single();
 
   if (error) return { data: null, error: { message: error.message, code: error.code } };
   const raw = data as Record<string, unknown>;
   const n = normalizeListRow({ ...raw, last_message: null, last_message_at: null });
   return {
-    data: { id: n.id, buyer_id: n.buyer_id, seller_id: n.seller_id },
+    data: {
+      id: n.id,
+      buyer_id: n.buyer_id,
+      seller_id: n.seller_id,
+      context_product_id: n.context_product_id,
+      buyer_last_read_at: n.buyer_last_read_at,
+      seller_last_read_at: n.seller_last_read_at,
+    },
     error: null,
   };
 }
@@ -118,26 +155,40 @@ export async function findConversationByPair(
 ): Promise<ConversationRow | null> {
   const { data: row1, error: e1 } = await supabase
     .from("conversations")
-    .select("id, buyer_id, seller_id")
+    .select("id, buyer_id, seller_id, context_product_id, buyer_last_read_at, seller_last_read_at")
     .eq("buyer_id", userA)
     .eq("seller_id", userB)
     .maybeSingle();
   if (e1) throw e1;
   if (row1) {
     const n = normalizeListRow({ ...(row1 as Record<string, unknown>), last_message: null, last_message_at: null });
-    return { id: n.id, buyer_id: n.buyer_id, seller_id: n.seller_id };
+    return {
+      id: n.id,
+      buyer_id: n.buyer_id,
+      seller_id: n.seller_id,
+      context_product_id: n.context_product_id,
+      buyer_last_read_at: n.buyer_last_read_at,
+      seller_last_read_at: n.seller_last_read_at,
+    };
   }
 
   const { data: row2, error: e2 } = await supabase
     .from("conversations")
-    .select("id, buyer_id, seller_id")
+    .select("id, buyer_id, seller_id, context_product_id, buyer_last_read_at, seller_last_read_at")
     .eq("buyer_id", userB)
     .eq("seller_id", userA)
     .maybeSingle();
   if (e2) throw e2;
   if (!row2) return null;
   const n = normalizeListRow({ ...(row2 as Record<string, unknown>), last_message: null, last_message_at: null });
-  return { id: n.id, buyer_id: n.buyer_id, seller_id: n.seller_id };
+  return {
+    id: n.id,
+    buyer_id: n.buyer_id,
+    seller_id: n.seller_id,
+    context_product_id: n.context_product_id,
+    buyer_last_read_at: n.buyer_last_read_at,
+    seller_last_read_at: n.seller_last_read_at,
+  };
 }
 
 /**
@@ -152,3 +203,48 @@ export function otherParticipantId(conv: ConversationRow, me: string): string | 
 
 /** Alias for readability in UI code. */
 export const otherPartyUserId = otherParticipantId;
+
+/** When `me` is buyer, peer is seller → use `seller_last_read_at`; when `me` is seller, use `buyer_last_read_at`. */
+export function peerLastReadAt(conv: ConversationRow, me: string): string | null {
+  if (conv.buyer_id === me) return conv.seller_last_read_at;
+  if (conv.seller_id === me) return conv.buyer_last_read_at;
+  return null;
+}
+
+export function isOutgoingReadByPeer(conv: ConversationRow, me: string, messageCreatedAt: string): boolean {
+  const peerRead = peerLastReadAt(conv, me);
+  if (!peerRead) return false;
+  return new Date(peerRead).getTime() >= new Date(messageCreatedAt).getTime();
+}
+
+/** Mark this user’s “opened thread up to now” time (drives read receipts for the other party). */
+export async function updateConversationLastRead(
+  supabase: SupabaseClient,
+  conv: ConversationRow,
+  me: string,
+): Promise<{ error: { message: string } | null }> {
+  const now = new Date().toISOString();
+  const patch: Record<string, string> =
+    conv.buyer_id === me
+      ? { buyer_last_read_at: now }
+      : conv.seller_id === me
+        ? { seller_last_read_at: now }
+        : {};
+  if (Object.keys(patch).length === 0) return { error: { message: "Not a participant" } };
+  const { error } = await supabase.from("conversations").update(patch).eq("id", conv.id);
+  if (error) return { error: { message: error.message } };
+  return { error: null };
+}
+
+export async function setConversationContextProduct(
+  supabase: SupabaseClient,
+  conversationId: string,
+  productId: number,
+): Promise<{ error: { message: string } | null }> {
+  const { error } = await supabase
+    .from("conversations")
+    .update({ context_product_id: productId })
+    .eq("id", conversationId);
+  if (error) return { error: { message: error.message } };
+  return { error: null };
+}

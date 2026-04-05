@@ -1,18 +1,29 @@
-import { useState, useRef, useEffect, useCallback } from "react";
-import { useParams, useNavigate } from "react-router";
-import { ArrowLeft, Send, MoreVertical, Phone } from "lucide-react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useParams, useNavigate, useSearchParams, Link } from "react-router";
+import { ArrowLeft, Send, MoreVertical, Phone, Plus, Paperclip, Check, CheckCheck } from "lucide-react";
 import { getAvatarUrl } from "../utils/getAvatar";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../context/AuthContext";
 import { toast } from "sonner";
+import { useCurrency } from "../hooks/useCurrency";
+import { getProductPrice } from "../utils/getProductPrice";
 import {
   findConversationByPair,
   fetchConversationById,
   insertConversationPair,
   otherPartyUserId,
+  updateConversationLastRead,
+  setConversationContextProduct,
+  isOutgoingReadByPeer,
   type ConversationRow,
 } from "../utils/chatConversations";
 import { fetchChatMessagesForConversation, type ChatMessageRow } from "../utils/chatMessages";
+
+function parseConversationInt(v: unknown): number | null {
+  if (v == null) return null;
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? n : null;
+}
 
 function isDuplicateConversationError(err: { code?: string; message?: string }): boolean {
   const c = String(err.code ?? "");
@@ -25,16 +36,28 @@ function isDuplicateConversationError(err: { code?: string; message?: string }):
   );
 }
 
+type StripProduct = {
+  id: number;
+  title: string;
+  price: number;
+  image: string | null;
+};
+
 export default function Chat() {
   const { conversationId: threadIdParam, peerUserId: peerRouteParam, legacyThreadId } = useParams<{
     conversationId?: string;
     peerUserId?: string;
     legacyThreadId?: string;
   }>();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { user: authUser, loading: authLoading } = useAuth();
+  const formatPrice = useCurrency();
   const [message, setMessage] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const typingBroadcastRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const peerTypingClearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const typingChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
   const [conversation, setConversation] = useState<ConversationRow | null>(null);
   const [peerId, setPeerId] = useState<string | null>(null);
@@ -42,9 +65,20 @@ export default function Chat() {
   const [peerAvatar, setPeerAvatar] = useState<string>("");
   const [peerPhone, setPeerPhone] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessageRow[]>([]);
+  const [stripProduct, setStripProduct] = useState<StripProduct | null>(null);
+  const [peerTyping, setPeerTyping] = useState(false);
   const [loading, setLoading] = useState(true);
   const [sendBusy, setSendBusy] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  const productParam = searchParams.get("product");
+  const validProductId = useMemo(() => {
+    if (!productParam) return null;
+    const n = parseInt(productParam, 10);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }, [productParam]);
+
+  const peerFirstName = useMemo(() => peerName.split(/\s+/)[0] || "Member", [peerName]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -52,7 +86,7 @@ export default function Chat() {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [messages, peerTyping]);
 
   const resolveConversation = useCallback(async () => {
     const threadId = threadIdParam?.trim() ?? legacyThreadId?.trim();
@@ -99,6 +133,10 @@ export default function Chat() {
           setLoading(false);
           return;
         }
+        if (validProductId) {
+          const { error: uErr } = await setConversationContextProduct(supabase, conv.id, validProductId);
+          if (!uErr) conv = { ...conv, context_product_id: validProductId };
+        }
       } else if (peerFromUrl) {
         if (peerFromUrl === me) {
           setLoadError("You can't start a chat with yourself.");
@@ -109,12 +147,21 @@ export default function Chat() {
 
         let found = await findConversationByPair(supabase, me, peerFromUrl);
         if (!found) {
-          const { data: inserted, error: insErr } = await insertConversationPair(supabase, me, peerFromUrl);
+          const { data: inserted, error: insErr } = await insertConversationPair(
+            supabase,
+            me,
+            peerFromUrl,
+            validProductId ? { contextProductId: validProductId } : undefined,
+          );
           if (insErr) {
             if (isDuplicateConversationError(insErr)) {
               found = await findConversationByPair(supabase, me, peerFromUrl);
               if (!found) throw new Error(insErr.message);
               conv = found;
+              if (validProductId) {
+                const { error: uErr } = await setConversationContextProduct(supabase, conv.id, validProductId);
+                if (!uErr) conv = { ...conv, context_product_id: validProductId };
+              }
             } else {
               throw new Error(insErr.message);
             }
@@ -123,13 +170,21 @@ export default function Chat() {
           }
         } else {
           conv = found;
+          if (validProductId) {
+            const { error: uErr } = await setConversationContextProduct(supabase, found.id, validProductId);
+            if (!uErr) conv = { ...conv, context_product_id: validProductId };
+          }
         }
         peer = peerFromUrl;
+        if (conv && !threadIdParam && !legacyThreadId) {
+          navigate(`/messages/c/${conv.id}`, { replace: true });
+        }
       }
 
       if (!conv || !peer) {
         setLoadError("Chat could not be opened.");
         setConversation(null);
+        setPeerId(null);
         setLoading(false);
         return;
       }
@@ -173,7 +228,9 @@ export default function Chat() {
       setLoadError(
         msg.includes("relation") && msg.includes("does not exist")
           ? "Messaging tables are not set up yet. Run the Supabase migration for conversations and chat_messages."
-          : msg,
+          : msg.includes("context_product_id") || msg.includes("buyer_last_read_at")
+            ? "Run the latest messaging migration (context product + read receipts) on your Supabase project."
+            : msg,
       );
       toast.error(msg);
       setConversation(null);
@@ -181,7 +238,7 @@ export default function Chat() {
     } finally {
       setLoading(false);
     }
-  }, [authUser?.id, threadIdParam, peerRouteParam, legacyThreadId]);
+  }, [authUser?.id, threadIdParam, peerRouteParam, legacyThreadId, validProductId, navigate]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -191,6 +248,144 @@ export default function Chat() {
     }
     void resolveConversation();
   }, [authLoading, authUser, navigate, resolveConversation]);
+
+  useEffect(() => {
+    const pid = conversation?.context_product_id;
+    if (!pid) {
+      setStripProduct(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from("products")
+        .select("id, title, price, price_local, image")
+        .eq("id", pid)
+        .maybeSingle();
+      if (cancelled) return;
+      if (error || !data) {
+        setStripProduct(null);
+        return;
+      }
+      const row = data as Record<string, unknown>;
+      setStripProduct({
+        id: Number(row.id),
+        title: String(row.title ?? "Listing"),
+        price: getProductPrice(row as { price?: unknown; price_local?: unknown }),
+        image: typeof row.image === "string" ? row.image : null,
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [conversation?.context_product_id]);
+
+  useEffect(() => {
+    if (!conversation?.id || !authUser?.id) return;
+    const t = window.setTimeout(() => {
+      void (async () => {
+        const { error } = await updateConversationLastRead(supabase, conversation, authUser.id);
+        if (error) return;
+        const now = new Date().toISOString();
+        setConversation((c) =>
+          c
+            ? {
+                ...c,
+                buyer_last_read_at: c.buyer_id === authUser.id ? now : c.buyer_last_read_at,
+                seller_last_read_at: c.seller_id === authUser.id ? now : c.seller_last_read_at,
+              }
+            : c,
+        );
+      })();
+    }, 400);
+    return () => clearTimeout(t);
+  }, [conversation?.id, authUser?.id, messages.length]);
+
+  useEffect(() => {
+    if (!conversation?.id) return;
+    const mid = conversation.id;
+
+    const msgChannel = supabase
+      .channel(`chat-inserts:${mid}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "chat_messages",
+          filter: `conversation_id=eq.${mid}`,
+        },
+        (payload) => {
+          const row = payload.new as ChatMessageRow;
+          setMessages((prev) => (prev.some((m) => m.id === row.id) ? prev : [...prev, row]));
+        },
+      )
+      .subscribe();
+
+    const convChannel = supabase
+      .channel(`chat-conv:${mid}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "conversations",
+          filter: `id=eq.${mid}`,
+        },
+        (payload) => {
+          const next = payload.new as Record<string, unknown>;
+          setConversation((c) => {
+            if (!c) return c;
+            const pid = next.context_product_id;
+            return {
+              ...c,
+              context_product_id:
+                pid !== undefined && pid !== null ? parseConversationInt(pid) : c.context_product_id,
+              buyer_last_read_at: (next.buyer_last_read_at as string | null | undefined) ?? c.buyer_last_read_at,
+              seller_last_read_at: (next.seller_last_read_at as string | null | undefined) ?? c.seller_last_read_at,
+            };
+          });
+        },
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(msgChannel);
+      void supabase.removeChannel(convChannel);
+    };
+  }, [conversation?.id]);
+
+  useEffect(() => {
+    if (!conversation?.id || !authUser?.id) return;
+    const ch = supabase.channel(`chat-typing:${conversation.id}`, {
+      config: { broadcast: { self: false } },
+    });
+    ch.on("broadcast", { event: "typing" }, (p) => {
+      const payload = p.payload as { userId?: string };
+      if (payload?.userId === authUser.id) return;
+      setPeerTyping(true);
+      if (peerTypingClearRef.current) clearTimeout(peerTypingClearRef.current);
+      peerTypingClearRef.current = setTimeout(() => setPeerTyping(false), 2800);
+    });
+    typingChannelRef.current = null;
+    ch.subscribe((status) => {
+      if (status === "SUBSCRIBED") typingChannelRef.current = ch;
+    });
+    return () => {
+      typingChannelRef.current = null;
+      void supabase.removeChannel(ch);
+      if (peerTypingClearRef.current) clearTimeout(peerTypingClearRef.current);
+    };
+  }, [conversation?.id, authUser?.id]);
+
+  const broadcastTyping = useCallback(() => {
+    if (!typingChannelRef.current || !authUser?.id) return;
+    void typingChannelRef.current.send({
+      type: "broadcast",
+      event: "typing",
+      payload: { userId: authUser.id },
+    });
+  }, [authUser?.id]);
 
   const handleSend = async () => {
     const text = message.trim();
@@ -216,6 +411,14 @@ export default function Chat() {
     } finally {
       setSendBusy(false);
     }
+  };
+
+  const onComposerChange = (v: string) => {
+    setMessage(v);
+    if (typingBroadcastRef.current) clearTimeout(typingBroadcastRef.current);
+    typingBroadcastRef.current = setTimeout(() => {
+      if (v.trim()) broadcastTyping();
+    }, 600);
   };
 
   if (authLoading || loading) {
@@ -249,7 +452,11 @@ export default function Chat() {
               <ArrowLeft className="w-5 h-5 text-gray-700" />
             </button>
             <div className="relative flex-shrink-0">
-              <img src={peerAvatar || getAvatarUrl(null, null, peerName)} alt="" className="w-10 h-10 rounded-full object-cover bg-gray-100" />
+              <img
+                src={peerAvatar || getAvatarUrl(null, null, peerName)}
+                alt=""
+                className="w-10 h-10 rounded-full object-cover bg-gray-100"
+              />
             </div>
             <div className="flex-1 min-w-0">
               <h1 className="font-semibold text-gray-800">{peerName}</h1>
@@ -272,11 +479,34 @@ export default function Chat() {
       </header>
 
       <div className="flex-1 overflow-y-auto px-4 py-4 max-w-6xl mx-auto w-full">
+        {stripProduct ? (
+          <div className="mb-4 rounded-2xl bg-white border border-gray-200 shadow-sm p-3 flex gap-3 items-center">
+            <div className="w-16 h-16 rounded-xl bg-gray-100 overflow-hidden shrink-0">
+              {stripProduct.image ? (
+                <img src={stripProduct.image} alt="" className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-xs text-gray-400">No image</div>
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-gray-900 line-clamp-2">{stripProduct.title}</p>
+              <p className="text-sm font-bold text-[#16a34a] mt-0.5">{formatPrice(stripProduct.price)}</p>
+              <Link
+                to={`/products/${stripProduct.id}`}
+                className="inline-block mt-1 text-xs font-semibold text-[#16a34a] hover:underline"
+              >
+                View product
+              </Link>
+            </div>
+          </div>
+        ) : null}
+
         <div className="space-y-4">
           {messages.map((msg) => {
             const mine = msg.sender_id === authUser.id;
             const t = new Date(msg.created_at);
             const timeLabel = Number.isNaN(t.getTime()) ? "" : t.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+            const readByPeer = mine && isOutgoingReadByPeer(conversation, authUser.id, msg.created_at);
             return (
               <div key={msg.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
                 <div
@@ -285,22 +515,58 @@ export default function Chat() {
                   }`}
                 >
                   <p className="text-sm whitespace-pre-wrap break-words">{msg.body}</p>
-                  <span className={`text-xs mt-1 block ${mine ? "text-white/80" : "text-gray-500"}`}>{timeLabel}</span>
+                  <div className={`flex items-center gap-1.5 mt-1 ${mine ? "justify-end" : ""}`}>
+                    <span className={`text-xs ${mine ? "text-white/80" : "text-gray-500"}`}>{timeLabel}</span>
+                    {mine ? (
+                      <span className="text-white/90 inline-flex items-center" title={readByPeer ? "Read" : "Delivered"}>
+                        {readByPeer ? <CheckCheck className="w-3.5 h-3.5" strokeWidth={2.5} /> : <Check className="w-3.5 h-3.5" strokeWidth={2.5} />}
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
               </div>
             );
           })}
+
+          {peerTyping ? (
+            <div className="flex justify-start">
+              <div className="rounded-2xl rounded-bl-sm border border-gray-200 bg-white px-4 py-2.5 text-sm text-gray-600 inline-flex items-center gap-2">
+                <span className="typing-dots flex gap-1" aria-hidden>
+                  <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce [animation-delay:0ms]" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce [animation-delay:150ms]" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce [animation-delay:300ms]" />
+                </span>
+                <span className="text-xs">{peerFirstName} is typing…</span>
+              </div>
+            </div>
+          ) : null}
           <div ref={messagesEndRef} />
         </div>
       </div>
 
       <div className="bg-white border-t border-gray-200 sticky bottom-0 z-40 shadow-[0_-2px_10px_rgba(0,0,0,0.06)]">
-        <div className="px-4 py-3 max-w-6xl mx-auto">
+        <div className="px-3 py-3 max-w-6xl mx-auto">
           <div className="flex items-end gap-2">
+            <button
+              type="button"
+              className="p-2 rounded-full text-gray-500 hover:bg-gray-100 shrink-0"
+              aria-label="More"
+              disabled
+            >
+              <Plus className="w-5 h-5 opacity-50" />
+            </button>
+            <button
+              type="button"
+              className="p-2 rounded-full text-gray-500 hover:bg-gray-100 shrink-0"
+              aria-label="Attach"
+              disabled
+            >
+              <Paperclip className="w-5 h-5 opacity-50" />
+            </button>
             <div className="flex-1 relative">
               <textarea
                 value={message}
-                onChange={(e) => setMessage(e.target.value)}
+                onChange={(e) => onComposerChange(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
@@ -317,7 +583,7 @@ export default function Chat() {
               type="button"
               onClick={() => void handleSend()}
               disabled={!message.trim() || sendBusy}
-              className="p-2 bg-[#22c55e] rounded-full text-white disabled:opacity-50 disabled:cursor-not-allowed"
+              className="p-2.5 bg-[#22c55e] rounded-full text-white disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
             >
               <Send className="w-5 h-5" />
             </button>

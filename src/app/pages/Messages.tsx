@@ -40,6 +40,7 @@ export default function Messages() {
   const [search, setSearch] = useState("");
   const [rows, setRows] = useState<ConversationRow[]>([]);
   const [profiles, setProfiles] = useState<Map<string, ProfileLite>>(new Map());
+  const [productTitles, setProductTitles] = useState<Map<number, string>>(new Map());
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -95,6 +96,29 @@ export default function Messages() {
         if (p.id) map.set(p.id, p);
       }
       setProfiles(map);
+
+      const productIds = [
+        ...new Set(
+          list
+            .map((r) => r.context_product_id)
+            .filter((id): id is number => id != null && Number.isFinite(id)),
+        ),
+      ];
+      if (productIds.length === 0) {
+        setProductTitles(new Map());
+      } else {
+        const pq = await supabase.from("products").select("id, title").in("id", productIds);
+        if (!pq.error && pq.data) {
+          const pm = new Map<number, string>();
+          for (const row of pq.data as { id: number | string; title: string }[]) {
+            const id = typeof row.id === "number" ? row.id : Number(row.id);
+            if (Number.isFinite(id)) pm.set(id, row.title || "Listing");
+          }
+          setProductTitles(pm);
+        } else {
+          setProductTitles(new Map());
+        }
+      }
     } catch (e: unknown) {
       console.error(e);
       setLoadError(e instanceof Error ? e.message : "Could not load conversations");
@@ -122,9 +146,11 @@ export default function Messages() {
       const p = profiles.get(oid);
       const name = (p?.full_name || "").toLowerCase();
       const prev = (r.last_message || "").toLowerCase();
-      return name.includes(q) || prev.includes(q);
+      const pt =
+        r.context_product_id != null ? (productTitles.get(r.context_product_id) || "").toLowerCase() : "";
+      return name.includes(q) || prev.includes(q) || pt.includes(q);
     });
-  }, [rows, search, authUser?.id, profiles]);
+  }, [rows, search, authUser?.id, profiles, productTitles]);
 
   if (authLoading || (!authUser && !loadError)) {
     return (
@@ -183,6 +209,10 @@ export default function Messages() {
               const p = profiles.get(oid);
               const name = p?.full_name?.trim() || "Member";
               const avatar = getAvatarUrl(p?.avatar_url ?? null, p?.gender ?? null, name);
+              const aboutProduct =
+                conversation.context_product_id != null
+                  ? productTitles.get(conversation.context_product_id)
+                  : undefined;
               return (
                 <Link
                   key={conversation.id}
@@ -200,7 +230,9 @@ export default function Messages() {
                         {formatListTime(conversation.last_message_at)}
                       </span>
                     </div>
-
+                    {aboutProduct ? (
+                      <p className="text-xs text-[#16a34a] font-medium truncate mb-0.5">Re: {aboutProduct}</p>
+                    ) : null}
                     <p className={`text-sm line-clamp-2 ${conversation.last_message ? "text-gray-700" : "text-gray-400 italic"}`}>
                       {conversation.last_message || "No messages yet — say hello"}
                     </p>

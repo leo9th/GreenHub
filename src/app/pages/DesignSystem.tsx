@@ -36,7 +36,7 @@ export default function DesignSystem() {
           <NavLink to="/seller/products/new" label="➕ Add Product" />
           <NavLink to="/seller/bank-details" label="🏦 Bank Details" />
           <NavLink to="/reviews/1" label="⭐ Write Review" />
-          <NavLink to="/seller/1/reviews" label="📝 Seller Reviews" />
+          <NavLink to="/profile" label="📝 Profile (seller reviews live under ?tab=reviews)" />
           <NavLink to="/profile" label="👤 Profile" />
           <NavLink to="/settings" label="⚙️ Settings" />
           <NavLink to="/admin/dashboard" label="👨‍💼 Admin Dashboard" />

@@ -80,6 +80,26 @@ type RelatedCarouselItem = {
   condition: string;
 };
 
+type SellerProfileRow = {
+  id: string;
+  full_name: string | null;
+  avatar_url: string | null;
+  gender: string | null;
+  state: string | null;
+  lga: string | null;
+  created_at: string | null;
+  phone?: string | null;
+};
+
+type SellerReviewPreview = {
+  id: string;
+  rating: number;
+  comment: string;
+  created_at: string;
+  reviewer_id: string;
+  reviewer_name: string;
+};
+
 function RelatedProductsCarousel({
   items,
   formatPrice,
@@ -204,7 +224,11 @@ export default function ProductDetail() {
   const { addToCart } = useCart();
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [isFavorite, setIsFavorite] = useState(false);
-  const [sellerProfile, setSellerProfile] = useState<any>(null);
+  const [sellerProfile, setSellerProfile] = useState<SellerProfileRow | null>(null);
+  const [sellerReviewAvg, setSellerReviewAvg] = useState(0);
+  const [sellerReviewCount, setSellerReviewCount] = useState(0);
+  const [sellerReviewsPreview, setSellerReviewsPreview] = useState<SellerReviewPreview[]>([]);
+  const [sellerIdVerified, setSellerIdVerified] = useState(false);
   const [serverProduct, setServerProduct] = useState<any>(null);
   const [isServerProductLoading, setIsServerProductLoading] = useState<boolean>(true);
   const [relatedProducts, setRelatedProducts] = useState<RelatedCarouselItem[]>([]);
@@ -391,21 +415,99 @@ export default function ProductDetail() {
   }, [serverProduct?.id, serverProduct?.seller_id, serverProduct?.sellerId]);
 
   useEffect(() => {
+    let cancelled = false;
     const sid = foundProduct?.seller_id ?? foundProduct?.sellerId;
-    if (sid == null || String(sid).trim() === "") return;
+    if (sid == null || String(sid).trim() === "") {
+      setSellerProfile(null);
+      setSellerReviewAvg(0);
+      setSellerReviewCount(0);
+      setSellerReviewsPreview([]);
+      setSellerIdVerified(false);
+      return;
+    }
     const idStr = String(sid).trim();
-    void supabase
-      .from("profiles_public")
-      .select("id, full_name, avatar_url, gender, bio, role, state, lga, created_at, updated_at")
-      .eq("id", idStr)
-      .single()
-      .then(({ data, error }) => {
-        if (error) {
-          console.warn("ProductDetail profile:", error.message);
-          return;
+
+    const loadSellerContext = async () => {
+      setSellerProfile(null);
+      setSellerReviewAvg(0);
+      setSellerReviewCount(0);
+      setSellerReviewsPreview([]);
+      setSellerIdVerified(false);
+
+      const [pubRes, ratingsRes, previewRes, verRes] = await Promise.all([
+        supabase
+          .from("profiles_public")
+          .select("id, full_name, avatar_url, gender, state, lga, created_at")
+          .eq("id", idStr)
+          .maybeSingle(),
+        supabase.from("seller_reviews").select("rating").eq("seller_id", idStr),
+        supabase
+          .from("seller_reviews")
+          .select("id, rating, comment, created_at, reviewer_id")
+          .eq("seller_id", idStr)
+          .order("created_at", { ascending: false })
+          .limit(6),
+        supabase.from("seller_verification").select("id").eq("seller_id", idStr).eq("status", "approved").limit(1).maybeSingle(),
+      ]);
+
+      if (cancelled) return;
+
+      let prof: SellerProfileRow | null = (pubRes.data as SellerProfileRow) ?? null;
+      if (!prof) {
+        const fb = await supabase
+          .from("profiles")
+          .select("id, full_name, avatar_url, gender, state, lga, created_at, phone")
+          .eq("id", idStr)
+          .maybeSingle();
+        if (cancelled) return;
+        if (fb.data) prof = fb.data as SellerProfileRow;
+      }
+
+      if (cancelled) return;
+      setSellerProfile(prof);
+
+      const ratingRows = (ratingsRes.data ?? []) as { rating: number }[];
+      const rErr = ratingsRes.error;
+      if (rErr && !String(rErr.message).includes("permission") && rErr.code !== "42501") {
+        console.warn("ProductDetail seller reviews:", rErr.message);
+      }
+      const cnt = ratingRows.length;
+      const avg = cnt > 0 ? ratingRows.reduce((s, r) => s + Number(r.rating), 0) / cnt : 0;
+      setSellerReviewCount(cnt);
+      setSellerReviewAvg(avg);
+
+      const previewRows = (previewRes.data ?? []) as {
+        id: string;
+        rating: number;
+        comment: string;
+        created_at: string;
+        reviewer_id: string;
+      }[];
+      const reviewerIds = [...new Set(previewRows.map((r) => r.reviewer_id))];
+      const nameMap = new Map<string, string>();
+      if (reviewerIds.length > 0) {
+        const { data: nameRows } = await supabase.from("profiles_public").select("id, full_name").in("id", reviewerIds);
+        if (cancelled) return;
+        for (const p of nameRows ?? []) {
+          if (p.id) nameMap.set(String(p.id), String((p.full_name as string) || "").trim() || "Buyer");
         }
-        if (data) setSellerProfile(data);
-      });
+      }
+
+      if (cancelled) return;
+      setSellerReviewsPreview(
+        previewRows.map((r) => ({
+          ...r,
+          reviewer_name: nameMap.get(r.reviewer_id) || "Buyer",
+        })),
+      );
+
+      setSellerIdVerified(Boolean(verRes.data) && !verRes.error);
+    };
+
+    void loadSellerContext();
+    return () => {
+      cancelled = true;
+    };
   }, [foundProduct?.seller_id, foundProduct?.sellerId]);
 
   if (isServerProductLoading) {
@@ -443,6 +545,15 @@ export default function ProductDetail() {
     typeof foundProduct.image === "string" && foundProduct.image.trim() !== "" ? foundProduct.image.trim() : "";
   const galleryImages = primaryImage ? [primaryImage] : [];
 
+  const sellerDisplayName = sellerProfile?.full_name?.trim() || "Seller";
+  const sellerTierRaw =
+    typeof foundProduct.seller_tier === "string"
+      ? foundProduct.seller_tier
+      : typeof foundProduct.sellerTier === "string"
+        ? foundProduct.sellerTier
+        : "";
+  const sellerTierLower = sellerTierRaw.toLowerCase();
+
   const product = {
     id: foundProduct.id,
     title: foundProduct.title,
@@ -456,22 +567,15 @@ export default function ProductDetail() {
     views: typeof foundProduct.views === "number" ? foundProduct.views : Number(foundProduct.views) || 0,
     seller: {
       id: sellerPeerId || "unknown",
-      name: sellerProfile?.full_name || foundProduct.sellerName || "GreenHub Seller",
-      avatar: getAvatarUrl(
-        sellerProfile?.avatar_url,
-        sellerProfile?.gender,
-        sellerProfile?.full_name || foundProduct.sellerName || "GreenHub Seller",
-      ),
-      rating: foundProduct.rating || 4.8,
-      reviews: foundProduct.reviews || 0,
-      verified: ["crown", "blue", "standard"].includes(foundProduct.sellerTier),
+      name: sellerDisplayName,
+      avatar: getAvatarUrl(sellerProfile?.avatar_url, sellerProfile?.gender, sellerDisplayName),
+      rating: sellerReviewCount > 0 ? Math.round(sellerReviewAvg * 10) / 10 : 0,
+      reviews: sellerReviewCount,
+      verified: sellerIdVerified || sellerTierLower === "crown" || sellerTierLower === "blue",
       memberSince: sellerProfile?.created_at
         ? new Date(sellerProfile.created_at).toLocaleDateString("en-US", { month: "short", year: "numeric" })
-        : sellerProfile?.updated_at
-          ? new Date(sellerProfile.updated_at).toLocaleDateString("en-US", { month: "short", year: "numeric" })
-          : "Jan 2023",
-      responseTime: "Within hours",
-      tier: foundProduct.sellerTier || "standard",
+        : "—",
+      tier: sellerTierRaw || "standard",
     },
     deliveryOptions: parseDeliveryOptionsFromDb(foundProduct.deliveryOptions ?? foundProduct.delivery_options),
   };
@@ -652,24 +756,27 @@ export default function ProductDetail() {
                     <span className="font-semibold text-gray-900">{product.seller.name}</span>
                     {product.seller.verified ? (
                       <BadgeCheck className="w-4 h-4 text-[#16a34a] fill-emerald-100 shrink-0" title="Verified seller" />
-                    ) : product.seller.tier === "crown" ? (
+                    ) : sellerTierLower === "crown" ? (
                       <BadgeCheck className="w-4 h-4 text-amber-500 fill-amber-400 shrink-0" title="Crown verified" />
-                    ) : product.seller.tier === "blue" ? (
+                    ) : sellerTierLower === "blue" ? (
                       <BadgeCheck className="w-4 h-4 text-blue-500 fill-blue-400 shrink-0" title="Blue verified" />
                     ) : null}
                   </div>
                   <p className="text-sm text-gray-600 mt-1">
                     <Star className="w-3.5 h-3.5 inline text-amber-400 fill-amber-400 align-[-2px] mr-0.5" aria-hidden />
-                    {product.seller.rating}{" "}
-                    <span className="text-gray-500">
-                      ({product.seller.reviews} {product.seller.reviews === 1 ? "review" : "reviews"})
-                    </span>
+                    {product.seller.reviews > 0 ? (
+                      <>
+                        {product.seller.rating}
+                        <span className="text-gray-500">
+                          {" "}
+                          ({product.seller.reviews} {product.seller.reviews === 1 ? "review" : "reviews"})
+                        </span>
+                      </>
+                    ) : (
+                      <span className="text-gray-500">No reviews yet</span>
+                    )}
                   </p>
-                  <p className="text-xs text-gray-500 mt-1.5">
-                    Member since {product.seller.memberSince}
-                    <span className="text-gray-300 mx-1.5">·</span>
-                    Response: {product.seller.responseTime}
-                  </p>
+                  <p className="text-xs text-gray-500 mt-1.5">Member since {product.seller.memberSince}</p>
                 </div>
               </div>
               <div className="mt-4 flex flex-col gap-2">
@@ -704,7 +811,7 @@ export default function ProductDetail() {
                   )}
                   {canMessageSeller ? (
                     <Link
-                      to={`/seller/${sellerPeerId}/reviews`}
+                      to={`/profile/${sellerPeerId}`}
                       className="flex-1 min-h-[46px] inline-flex items-center justify-center rounded-xl ring-1 ring-gray-200 text-sm font-semibold text-gray-800 px-4 hover:bg-gray-50"
                     >
                       View profile
@@ -716,6 +823,47 @@ export default function ProductDetail() {
                   )}
                 </div>
               </div>
+            </section>
+
+            <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200/80">
+              <div className="flex items-center justify-between gap-2 mb-3">
+                <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Buyer reviews</h2>
+                {sellerPeerId && sellerReviewCount > 0 ? (
+                  <Link
+                    to={`/profile/${sellerPeerId}?tab=reviews`}
+                    className="text-xs font-semibold text-[#15803d] hover:underline shrink-0"
+                  >
+                    See all
+                  </Link>
+                ) : null}
+              </div>
+              {sellerReviewsPreview.length === 0 ? (
+                <p className="text-sm text-gray-500">No reviews for this seller yet.</p>
+              ) : (
+                <ul className="space-y-3">
+                  {sellerReviewsPreview.map((r) => (
+                    <li key={r.id} className="rounded-xl bg-gray-50/90 ring-1 ring-gray-100 p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-medium text-gray-900">{r.reviewer_name}</span>
+                        <span className="flex items-center gap-0.5 shrink-0" aria-hidden>
+                          {Array.from({ length: 5 }, (_, i) => (
+                            <Star
+                              key={i}
+                              className={`w-3.5 h-3.5 ${i < r.rating ? "fill-amber-400 text-amber-400" : "text-gray-200"}`}
+                            />
+                          ))}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-gray-400 mt-1">
+                        {new Date(r.created_at).toLocaleDateString(undefined, { dateStyle: "medium" })}
+                      </p>
+                      {r.comment?.trim() ? (
+                        <p className="text-sm text-gray-700 mt-2 leading-relaxed">{r.comment.trim()}</p>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </section>
 
             <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200/80">

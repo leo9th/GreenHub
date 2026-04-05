@@ -3,9 +3,13 @@ import { Search, ChevronDown, Star, Globe, Home as HomeIcon, PlusCircle, Message
 import { categories } from "../data/catalogConstants";
 import { useRegion, regions } from "../context/RegionContext";
 import { useCurrency } from "../hooks/useCurrency";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "../../lib/supabase";
 import { ProductCard } from "../components/cards/ProductCard";
+import { useAuth } from "../context/AuthContext";
+import { useInboxNotifications } from "../context/InboxNotificationsContext";
+import { fetchLikedProductIdsForUser, toggleProductLike } from "../utils/engagement";
+import { toast } from "sonner";
 import { getProductPrice } from "../utils/getProductPrice";
 import { getFeaturedProductIds, mixFeaturedProducts } from "../utils/featureProductMix";
 import {
@@ -17,6 +21,8 @@ import {
 
 export default function Home() {
   const navigate = useNavigate();
+  const { user: authUser } = useAuth();
+  const { messageUnread } = useInboxNotifications();
   const { activeRegion, setRegion } = useRegion();
   const [showRegionDropdown, setShowRegionDropdown] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -29,12 +35,69 @@ export default function Home() {
   const [categoryAdCounts, setCategoryAdCounts] = useState<Record<string, number>>({});
   const [isLoadingProducts, setIsLoadingProducts] = useState<boolean>(true);
   const [productLoadError, setProductLoadError] = useState<string | null>(null);
+  const [likedProductIds, setLikedProductIds] = useState<Set<number>>(new Set());
 
   const featuredIds = useMemo(() => getFeaturedProductIds(), [products]);
 
   const featuredItemsDisplay = useMemo(
     () => mixFeaturedProducts(products, featuredIds),
     [products, featuredIds]
+  );
+
+  const homeCardIds = useMemo(() => {
+    const fromFeatured = featuredItemsDisplay.map((p) => Number(p.id)).filter((n) => Number.isFinite(n));
+    const fromRecent = products.slice(0, 2).map((p) => Number(p.id)).filter((n) => Number.isFinite(n));
+    return [...new Set([...fromFeatured, ...fromRecent])];
+  }, [featuredItemsDisplay, products]);
+
+  useEffect(() => {
+    if (!authUser?.id || homeCardIds.length === 0) {
+      setLikedProductIds(new Set());
+      return;
+    }
+    let cancelled = false;
+    void fetchLikedProductIdsForUser(supabase, authUser.id, homeCardIds).then((set) => {
+      if (!cancelled) setLikedProductIds(set);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [authUser?.id, homeCardIds]);
+
+  const onProductLike = useCallback(
+    async (e: React.MouseEvent, row: Record<string, unknown>) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!authUser?.id) {
+        toast.message("Sign in to like listings");
+        return;
+      }
+      const id = Number(row.id);
+      if (!Number.isFinite(id)) return;
+      const liked = likedProductIds.has(id);
+      const prevCount = Number(row.like_count ?? 0);
+      const nextLiked = !liked;
+      const nextCount = nextLiked ? prevCount + 1 : Math.max(0, prevCount - 1);
+      setLikedProductIds((prev) => {
+        const n = new Set(prev);
+        if (nextLiked) n.add(id);
+        else n.delete(id);
+        return n;
+      });
+      setProducts((prev) => prev.map((p) => (Number(p.id) === id ? { ...p, like_count: nextCount } : p)));
+      const { error } = await toggleProductLike(supabase, id, authUser.id, liked);
+      if (error) {
+        toast.error(error);
+        setLikedProductIds((prev) => {
+          const n = new Set(prev);
+          if (liked) n.add(id);
+          else n.delete(id);
+          return n;
+        });
+        setProducts((prev) => prev.map((p) => (Number(p.id) === id ? { ...p, like_count: prevCount } : p)));
+      }
+    },
+    [authUser?.id, likedProductIds, supabase],
   );
 
   useEffect(() => {
@@ -301,8 +364,16 @@ export default function Home() {
               <PlusCircle className="w-6 h-6 md:w-8 md:h-8 transition-transform group-hover:scale-110" />
               <span className="font-medium text-xs md:text-sm">Sell</span>
             </Link>
-            <Link to="/messages" className="flex flex-col items-center justify-center gap-2 group cursor-pointer text-gray-600 hover:text-[#22c55e]">
+            <Link
+              to="/messages"
+              className="relative flex flex-col items-center justify-center gap-2 group cursor-pointer text-gray-600 hover:text-[#22c55e]"
+            >
               <MessageCircle className="w-6 h-6 md:w-8 md:h-8 transition-transform group-hover:scale-110" />
+              {messageUnread > 0 ? (
+                <span className="absolute top-0 right-1/4 translate-x-2 min-w-[1.1rem] h-4 px-0.5 rounded-full bg-[#ef4444] text-white text-[9px] font-bold flex items-center justify-center border border-white">
+                  {messageUnread > 99 ? "99+" : messageUnread}
+                </span>
+              ) : null}
               <span className="font-medium text-xs md:text-sm">Messages</span>
             </Link>
           </div>
@@ -335,27 +406,36 @@ export default function Home() {
               </p>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                {featuredItemsDisplay.map((product) => (
-                  <Link key={String(product.id)} to={`/products/${product.id}`}>
-                    <ProductCard
-                      image={String((product as { image?: string }).image ?? "")}
-                      condition={String((product as { condition?: string }).condition ?? "Good")}
-                      title={String((product as { title?: string }).title ?? "")}
-                      price={Number((product as { price?: number }).price) || 0}
-                      priceDisplay={formatPrice(Number((product as { price?: number }).price) || 0)}
-                      location={String((product as { location?: string }).location ?? "")}
-                      rating={Number((product as { rating?: number }).rating) || 0}
-                      topRightBadge={
-                        featuredIds.has(String(product.id)) ? (
-                          <span className="bg-amber-400 text-amber-950 text-[10px] md:text-xs font-bold px-2 py-1 rounded flex items-center gap-1 shadow-sm">
-                            <Star className="w-3 h-3 fill-current" />
-                            FEATURED
-                          </span>
-                        ) : undefined
-                      }
-                    />
-                  </Link>
-                ))}
+                {featuredItemsDisplay.map((product) => {
+                  const row = product as Record<string, unknown>;
+                  const pid = Number(row.id);
+                  return (
+                    <Link key={String(product.id)} to={`/products/${product.id}`} className="block h-full">
+                      <ProductCard
+                        image={String((product as { image?: string }).image ?? "")}
+                        condition={String((product as { condition?: string }).condition ?? "Good")}
+                        title={String((product as { title?: string }).title ?? "")}
+                        price={Number((product as { price?: number }).price) || 0}
+                        priceDisplay={formatPrice(Number((product as { price?: number }).price) || 0)}
+                        location={String((product as { location?: string }).location ?? "")}
+                        rating={Number((product as { rating?: number }).rating) || 0}
+                        productId={Number.isFinite(pid) ? pid : undefined}
+                        viewsCount={Number(row.views ?? 0)}
+                        likesCount={Number(row.like_count ?? 0)}
+                        liked={likedProductIds.has(pid)}
+                        onLikeClick={(ev) => void onProductLike(ev, row)}
+                        topRightBadge={
+                          featuredIds.has(String(product.id)) ? (
+                            <span className="bg-amber-400 text-amber-950 text-[10px] md:text-xs font-bold px-2 py-1 rounded flex items-center gap-1 shadow-sm">
+                              <Star className="w-3 h-3 fill-current" />
+                              FEATURED
+                            </span>
+                          ) : undefined
+                        }
+                      />
+                    </Link>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -364,19 +444,28 @@ export default function Home() {
           <div className="mb-6">
             <h2 className="font-semibold text-gray-800 mb-3">Recently Viewed</h2>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {products.length > 0 ? products.slice(0, 2).map((product) => (
-                <Link key={String(product.id)} to={`/products/${product.id}`}>
-                  <ProductCard
-                    image={String((product as { image?: string }).image ?? "")}
-                    condition={String((product as { condition?: string }).condition ?? "Good")}
-                    title={String((product as { title?: string }).title ?? "")}
-                    price={Number((product as { price?: number }).price) || 0}
-                    priceDisplay={formatPrice(Number((product as { price?: number }).price) || 0)}
-                    location={String((product as { location?: string }).location ?? "")}
-                    rating={Number((product as { rating?: number }).rating) || 0}
-                  />
-                </Link>
-              )) : (
+              {products.length > 0 ? products.slice(0, 2).map((product) => {
+                const row = product as Record<string, unknown>;
+                const pid = Number(row.id);
+                return (
+                  <Link key={String(product.id)} to={`/products/${product.id}`} className="block h-full">
+                    <ProductCard
+                      image={String((product as { image?: string }).image ?? "")}
+                      condition={String((product as { condition?: string }).condition ?? "Good")}
+                      title={String((product as { title?: string }).title ?? "")}
+                      price={Number((product as { price?: number }).price) || 0}
+                      priceDisplay={formatPrice(Number((product as { price?: number }).price) || 0)}
+                      location={String((product as { location?: string }).location ?? "")}
+                      rating={Number((product as { rating?: number }).rating) || 0}
+                      productId={Number.isFinite(pid) ? pid : undefined}
+                      viewsCount={Number(row.views ?? 0)}
+                      likesCount={Number(row.like_count ?? 0)}
+                      liked={likedProductIds.has(pid)}
+                      onLikeClick={(ev) => void onProductLike(ev, row)}
+                    />
+                  </Link>
+                );
+              }) : (
                 <p className="text-sm text-gray-500 col-span-full">Browse products to see recents here.</p>
               )}
             </div>

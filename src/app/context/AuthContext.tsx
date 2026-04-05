@@ -16,6 +16,9 @@ export interface UserProfile {
   bio?: string | null;
   updated_at?: string | null;
   created_at?: string | null;
+  last_active?: string | null;
+  show_phone_on_profile?: boolean | null;
+  show_email_on_profile?: boolean | null;
 }
 
 interface AuthContextType {
@@ -64,6 +67,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
+      void supabase.realtime.setAuth(session?.access_token ?? null);
       if (session?.user) {
         fetchProfile(session.user.id);
       } else {
@@ -75,6 +79,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       setUser(session?.user ?? null);
+      void supabase.realtime.setAuth(session?.access_token ?? null);
       if (session?.user) {
         setLoading(true);
         fetchProfile(session.user.id);

@@ -1,11 +1,22 @@
-import { useState, useEffect, useLayoutEffect, useMemo, useCallback, type ReactNode } from "react";
+import {
+  useState,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useCallback,
+  type ReactNode,
+  type MouseEvent,
+} from "react";
 import { Link, useSearchParams } from "react-router";
 import { Search, Filter, ArrowLeft, X, BadgeCheck, Star } from "lucide-react";
+import { toast } from "sonner";
 import { categories, nigerianStates } from "../data/catalogConstants";
 import { labelForCarBrandValue, NIGERIA_CAR_BRAND_OPTIONS } from "../data/carBrands";
 import { useCurrency } from "../hooks/useCurrency";
 import { supabase } from "../../lib/supabase";
+import { useAuth } from "../context/AuthContext";
 import { ProductCard } from "../components/cards/ProductCard";
+import { fetchLikedProductIdsForUser, toggleProductLike } from "../utils/engagement";
 import { getFeaturedProductIds, mixFeaturedProducts } from "../utils/featureProductMix";
 import {
   applyListingFilters,
@@ -180,6 +191,7 @@ function ProductsFilterFields({
 }
 
 export default function Products() {
+  const { user: authUser } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const formatPrice = useCurrency();
   const [showFilters, setShowFilters] = useState(false);
@@ -227,6 +239,7 @@ export default function Products() {
   const [products, setProducts] = useState<Array<Record<string, unknown>>>([]);
   const [isLoadingProducts, setIsLoadingProducts] = useState<boolean>(true);
   const [productLoadError, setProductLoadError] = useState<string | null>(null);
+  const [likedProductIds, setLikedProductIds] = useState<Set<number>>(new Set());
 
   const filterOpts: ListingFilterOpts = useMemo(
     () => ({
@@ -258,8 +271,59 @@ export default function Products() {
   }, [urlSearch]);
 
   useEffect(() => {
+    if (!authUser?.id || products.length === 0) {
+      setLikedProductIds(new Set());
+      return;
+    }
+    const ids = [...new Set(products.map((p) => Number(p.id)).filter((n) => Number.isFinite(n)))];
+    let cancelled = false;
+    void fetchLikedProductIdsForUser(supabase, authUser.id, ids).then((set) => {
+      if (!cancelled) setLikedProductIds(set);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [authUser?.id, products]);
+
+  useEffect(() => {
     setListPage(0);
   }, [filterSignal]);
+
+  const onProductLike = useCallback(
+    async (e: MouseEvent, row: Record<string, unknown>) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!authUser?.id) {
+        toast.message("Sign in to like listings");
+        return;
+      }
+      const id = Number(row.id);
+      if (!Number.isFinite(id)) return;
+      const liked = likedProductIds.has(id);
+      const prevCount = Number(row.like_count ?? 0);
+      const nextLiked = !liked;
+      const nextCount = nextLiked ? prevCount + 1 : Math.max(0, prevCount - 1);
+      setLikedProductIds((prev) => {
+        const n = new Set(prev);
+        if (nextLiked) n.add(id);
+        else n.delete(id);
+        return n;
+      });
+      setProducts((prev) => prev.map((p) => (Number(p.id) === id ? { ...p, like_count: nextCount } : p)));
+      const { error } = await toggleProductLike(supabase, id, authUser.id, liked);
+      if (error) {
+        toast.error(error);
+        setLikedProductIds((prev) => {
+          const n = new Set(prev);
+          if (liked) n.add(id);
+          else n.delete(id);
+          return n;
+        });
+        setProducts((prev) => prev.map((p) => (Number(p.id) === id ? { ...p, like_count: prevCount } : p)));
+      }
+    },
+    [authUser?.id, likedProductIds, supabase],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -531,29 +595,37 @@ export default function Products() {
           ) : (
             <>
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                {displayProducts.map((product) => (
-                  <Link key={String(product.id)} to={`/products/${product.id}`}>
-                    <ProductCard
-                      image={String(product.image ?? "")}
-                      condition={(product.condition as ProductCardPropsCondition) ?? "Good"}
-                      title={String(product.title ?? "")}
-                      titleAdornment={getTierIcon(String(product.sellerTier ?? ""))}
-                      price={Number(product.price) || 0}
-                      priceDisplay={formatPrice(Number(product.price) || 0)}
-                      location={String(product.location ?? "")}
-                      rating={Number(product.rating) || 0}
-                      reviews={product.reviews != null ? Number(product.reviews) : undefined}
-                      topRightBadge={
-                        featuredIds.has(String(product.id)) ? (
-                          <span className="bg-amber-400 text-amber-950 text-[10px] md:text-xs font-bold px-2 py-1 rounded flex items-center gap-1 shadow-sm">
-                            <Star className="w-3 h-3 fill-current" />
-                            FEATURED
-                          </span>
-                        ) : undefined
-                      }
-                    />
-                  </Link>
-                ))}
+                {displayProducts.map((product) => {
+                  const pid = Number(product.id);
+                  return (
+                    <Link key={String(product.id)} to={`/products/${product.id}`} className="block h-full">
+                      <ProductCard
+                        image={String(product.image ?? "")}
+                        condition={String(product.condition ?? "Good")}
+                        title={String(product.title ?? "")}
+                        titleAdornment={getTierIcon(String(product.sellerTier ?? ""))}
+                        price={Number(product.price) || 0}
+                        priceDisplay={formatPrice(Number(product.price) || 0)}
+                        location={String(product.location ?? "")}
+                        rating={Number(product.rating) || 0}
+                        reviews={product.reviews != null ? Number(product.reviews) : undefined}
+                        productId={Number.isFinite(pid) ? pid : undefined}
+                        viewsCount={Number(product.views ?? 0)}
+                        likesCount={Number(product.like_count ?? 0)}
+                        liked={likedProductIds.has(pid)}
+                        onLikeClick={(ev) => void onProductLike(ev, product)}
+                        topRightBadge={
+                          featuredIds.has(String(product.id)) ? (
+                            <span className="bg-amber-400 text-amber-950 text-[10px] md:text-xs font-bold px-2 py-1 rounded flex items-center gap-1 shadow-sm">
+                              <Star className="w-3 h-3 fill-current" />
+                              FEATURED
+                            </span>
+                          ) : undefined
+                        }
+                      />
+                    </Link>
+                  );
+                })}
               </div>
 
               {hasMore && !productLoadError && (
@@ -639,5 +711,3 @@ export default function Products() {
     </div>
   );
 }
-
-type ProductCardPropsCondition = "New" | "Like New" | "Good" | "Fair";

@@ -9,6 +9,8 @@ import {
   otherPartyUserId,
   type ConversationListRow,
 } from "../utils/chatConversations";
+import { fetchInboxUnreadByConversation } from "../utils/engagement";
+import { useInboxNotifications } from "../context/InboxNotificationsContext";
 
 /** Inbox row: `buyer_id` + `seller_id` (+ preview fields). */
 type ConversationRow = ConversationListRow;
@@ -37,12 +39,14 @@ function formatListTime(iso: string | null): string {
 export default function Messages() {
   const navigate = useNavigate();
   const { user: authUser, loading: authLoading } = useAuth();
+  const { refresh: refreshGlobalInbox } = useInboxNotifications();
   const [search, setSearch] = useState("");
   const [rows, setRows] = useState<ConversationRow[]>([]);
   const [profiles, setProfiles] = useState<Map<string, ProfileLite>>(new Map());
   const [productTitles, setProductTitles] = useState<Map<number, string>>(new Map());
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [unreadByConv, setUnreadByConv] = useState<Map<string, number>>(new Map());
 
   const load = useCallback(async () => {
     if (!authUser?.id) {
@@ -127,6 +131,49 @@ export default function Messages() {
       setLoading(false);
     }
   }, [authUser?.id]);
+
+  useEffect(() => {
+    if (!authUser?.id) {
+      setUnreadByConv(new Map());
+      return;
+    }
+    let cancelled = false;
+    void fetchInboxUnreadByConversation(supabase).then((map) => {
+      if (!cancelled) setUnreadByConv(map);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [authUser?.id, rows]);
+
+  useEffect(() => {
+    if (!authUser?.id) return;
+    const uid = authUser.id;
+    const bump = () => {
+      void load();
+      void refreshGlobalInbox();
+    };
+    const ch1 = supabase
+      .channel(`messages-list-buyer:${uid}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "conversations", filter: `buyer_id=eq.${uid}` },
+        bump,
+      )
+      .subscribe();
+    const ch2 = supabase
+      .channel(`messages-list-seller:${uid}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "conversations", filter: `seller_id=eq.${uid}` },
+        bump,
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(ch1);
+      void supabase.removeChannel(ch2);
+    };
+  }, [authUser?.id, load, refreshGlobalInbox]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -224,10 +271,17 @@ export default function Messages() {
                   </div>
 
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between mb-1">
+                    <div className="flex items-start justify-between mb-1 gap-2">
                       <h3 className="font-semibold text-gray-800">{name}</h3>
-                      <span className="text-xs text-gray-500 flex-shrink-0 ml-2">
-                        {formatListTime(conversation.last_message_at)}
+                      <span className="flex items-center gap-1.5 flex-shrink-0 ml-2">
+                        {(unreadByConv.get(conversation.id) ?? 0) > 0 ? (
+                          <span className="min-w-[1.25rem] h-5 px-1 rounded-full bg-[#22c55e] text-white text-[10px] font-bold flex items-center justify-center">
+                            {unreadByConv.get(conversation.id)! > 99 ? "99+" : unreadByConv.get(conversation.id)}
+                          </span>
+                        ) : null}
+                        <span className="text-xs text-gray-500">
+                          {formatListTime(conversation.last_message_at)}
+                        </span>
                       </span>
                     </div>
                     {aboutProduct ? (

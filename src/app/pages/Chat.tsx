@@ -286,6 +286,7 @@ export default function Chat() {
       void (async () => {
         const { error } = await updateConversationLastRead(supabase, conversation, authUser.id);
         if (error) return;
+        void supabase.rpc("mark_message_notifications_read", { p_conversation_id: conversation.id });
         const now = new Date().toISOString();
         setConversation((c) =>
           c

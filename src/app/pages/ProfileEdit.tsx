@@ -26,7 +26,9 @@ export default function ProfileEdit() {
     location: "",
     autoReply: "",
     bio: "",
-    gender: "Prefer not to say"
+    gender: "Prefer not to say",
+    showPhoneOnProfile: false,
+    showEmailOnProfile: false,
   });
 
   useEffect(() => {
@@ -38,7 +40,9 @@ export default function ProfileEdit() {
         location: profile?.address || authUser?.user_metadata?.address || "",
         autoReply: profile?.auto_reply || authUser?.user_metadata?.auto_reply || "",
         bio: profile?.bio || (authUser?.user_metadata as { bio?: string })?.bio || "",
-        gender: normalizeGender(profile?.gender || authUser?.user_metadata?.gender)
+        gender: normalizeGender(profile?.gender || authUser?.user_metadata?.gender),
+        showPhoneOnProfile: Boolean(profile?.show_phone_on_profile),
+        showEmailOnProfile: Boolean(profile?.show_email_on_profile),
       });
       if (profile?.avatar_url || authUser?.user_metadata?.avatar_url) {
         setProfileImage(profile?.avatar_url || authUser?.user_metadata?.avatar_url);
@@ -111,7 +115,9 @@ export default function ProfileEdit() {
         bio: formData.bio.trim() || null,
         gender: normalizedGender,
         avatar_url: finalAvatarUrl !== "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200" ? finalAvatarUrl : null,
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
+        show_phone_on_profile: formData.showPhoneOnProfile,
+        show_email_on_profile: formData.showEmailOnProfile,
       }, { onConflict: "id" });
 
       alert("Profile updated successfully!");
@@ -259,6 +265,31 @@ export default function ProfileEdit() {
                     rows={3}
                     className="w-full border border-gray-300 rounded p-3 text-sm focus:border-[#22c55e] focus:outline-none text-gray-800 resize-y"
                   />
+                </div>
+
+                <div className="flex flex-col gap-3 rounded-lg border border-gray-200 bg-gray-50/80 p-4">
+                  <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Public contact</p>
+                  <label className="flex items-center gap-3 cursor-pointer text-sm text-gray-800">
+                    <input
+                      type="checkbox"
+                      checked={formData.showPhoneOnProfile}
+                      onChange={(e) => setFormData({ ...formData, showPhoneOnProfile: e.target.checked })}
+                      className="rounded border-gray-300 text-[#22c55e] focus:ring-[#22c55e]"
+                    />
+                    Show phone on my public profile
+                  </label>
+                  <label className="flex items-center gap-3 cursor-pointer text-sm text-gray-800">
+                    <input
+                      type="checkbox"
+                      checked={formData.showEmailOnProfile}
+                      onChange={(e) => setFormData({ ...formData, showEmailOnProfile: e.target.checked })}
+                      className="rounded border-gray-300 text-[#22c55e] focus:ring-[#22c55e]"
+                    />
+                    Show email on my public profile
+                  </label>
+                  <p className="text-[11px] text-gray-500 leading-relaxed">
+                    Only enable these if you are comfortable sharing contact details with buyers who open your profile.
+                  </p>
                 </div>
 
                 {/* Auto Reply (Substituting for Birthday) */}

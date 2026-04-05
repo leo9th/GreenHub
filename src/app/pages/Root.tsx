@@ -1,11 +1,34 @@
 import { Outlet, useLocation, Link } from "react-router";
 import { Briefcase, Wallet, ShoppingBag, TrendingUp } from "lucide-react";
+import { useEffect } from "react";
 import Footer from "../components/Footer";
 import AIAssistant from "../components/AIAssistant";
 import TopNav from "../components/TopNav";
+import { useAuth } from "../context/AuthContext";
+import { supabase } from "../../lib/supabase";
+import { pingLastActiveThrottled } from "../utils/lastActiveHeartbeat";
 
 export default function Root() {
   const location = useLocation();
+  const { user } = useAuth();
+
+  useEffect(() => {
+    if (!user?.id) return;
+    pingLastActiveThrottled(supabase);
+  }, [location.pathname, user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    const onVis = () => {
+      if (document.visibilityState === "visible") pingLastActiveThrottled(supabase);
+    };
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("focus", onVis);
+    return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("focus", onVis);
+    };
+  }, [user?.id]);
   const hideNavOnPaths = ["/login", "/register", "/verify-otp", "/design-system"];
   const isMessageThread =
     location.pathname !== "/messages" &&
@@ -15,6 +38,9 @@ export default function Root() {
   const showBottomNav =
     !hideNavOnPaths.some((path) => location.pathname.startsWith(path)) && !isMessageThread;
 
+  /** Support chat FAB is fixed bottom-right; on wide screens it can cover the chat Send button. */
+  const showAIAssistant = !location.pathname.startsWith("/messages");
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <main className={`flex-1 ${showBottomNav ? "pb-20 md:pb-0" : ""}`}>
@@ -23,7 +49,7 @@ export default function Root() {
         {showBottomNav && <Footer />}
       </main>
 
-      <AIAssistant />
+      {showAIAssistant ? <AIAssistant /> : null}
 
       {showBottomNav && (
         <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">

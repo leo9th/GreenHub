@@ -17,7 +17,11 @@ import {
 } from "lucide-react";
 import { useCurrency } from "../hooks/useCurrency";
 import { useCart } from "../context/CartContext";
+import { useAuth } from "../context/AuthContext";
 import { supabase } from "../../lib/supabase";
+import { getOrCreateAnonViewSession } from "../utils/viewSession";
+import { toggleProductLike } from "../utils/engagement";
+import { isOnlineFromLastActive, formatLastSeen } from "../utils/presence";
 import { getAvatarUrl } from "../utils/getAvatar";
 import { getProductPrice } from "../utils/getProductPrice";
 import { activeProductsQuery, mapProductRow } from "../utils/productSearch";
@@ -89,6 +93,7 @@ type SellerProfileRow = {
   lga: string | null;
   created_at: string | null;
   phone?: string | null;
+  last_active?: string | null;
 };
 
 type SellerReviewPreview = {
@@ -222,8 +227,10 @@ export default function ProductDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { addToCart } = useCart();
+  const { user: authUser } = useAuth();
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
-  const [isFavorite, setIsFavorite] = useState(false);
+  const [liked, setLiked] = useState(false);
+  const [likeBusy, setLikeBusy] = useState(false);
   const [sellerProfile, setSellerProfile] = useState<SellerProfileRow | null>(null);
   const [sellerReviewAvg, setSellerReviewAvg] = useState(0);
   const [sellerReviewCount, setSellerReviewCount] = useState(0);
@@ -256,17 +263,53 @@ export default function ProductDetail() {
   useEffect(() => {
     if (!serverProduct?.id) return;
     const pid = serverProduct.id;
-    const key = `gh_view_${pid}`;
-    if (import.meta.env.DEV) {
-      if (sessionStorage.getItem(key)) return;
-      sessionStorage.setItem(key, "1");
-    }
     const asNum = typeof pid === "number" ? pid : Number(pid);
     if (!Number.isFinite(asNum)) return;
-    void supabase.rpc("increment_product_views", { p_product_id: asNum }).then(({ error }) => {
-      if (error) console.warn("increment_product_views:", error.message);
-    });
+    const anon = getOrCreateAnonViewSession();
+    void supabase
+      .rpc("record_product_view", { p_product_id: asNum, p_anon_session: anon || null })
+      .then(async ({ error }) => {
+        if (error) {
+          console.warn("record_product_view:", error.message);
+          return;
+        }
+        const { data } = await supabase.from("products").select("views, like_count").eq("id", asNum).maybeSingle();
+        if (data) {
+          setServerProduct((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  views: data.views as number,
+                  like_count: data.like_count as number,
+                }
+              : prev,
+          );
+        }
+      });
   }, [serverProduct?.id]);
+
+  useEffect(() => {
+    if (!authUser?.id || !serverProduct?.id) {
+      setLiked(false);
+      return;
+    }
+    const asNum = typeof serverProduct.id === "number" ? serverProduct.id : Number(serverProduct.id);
+    if (!Number.isFinite(asNum)) return;
+    let cancelled = false;
+    void supabase
+      .from("product_likes")
+      .select("product_id")
+      .eq("product_id", asNum)
+      .eq("user_id", authUser.id)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (cancelled || error) return;
+        setLiked(Boolean(data));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [authUser?.id, serverProduct?.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -443,7 +486,7 @@ export default function ProductDetail() {
       const [profRes, ratingsRes, previewRes, verRes] = await Promise.all([
         supabase
           .from("profiles")
-          .select("id, full_name, avatar_url, gender, state, lga, created_at, phone")
+          .select("id, full_name, avatar_url, gender, state, lga, created_at, phone, last_active")
           .eq("id", idStr)
           .maybeSingle(),
         supabase.from("seller_reviews").select("rating").eq("seller_id", idStr),
@@ -465,11 +508,11 @@ export default function ProductDetail() {
       if (!prof) {
         const pub = await supabase
           .from("profiles_public")
-          .select("id, full_name, avatar_url, gender, state, lga, created_at")
+          .select("id, full_name, avatar_url, gender, state, lga, created_at, last_active, phone")
           .eq("id", idStr)
           .maybeSingle();
         if (cancelled) return;
-        if (pub.data) prof = { ...(pub.data as SellerProfileRow), phone: null };
+        if (pub.data) prof = pub.data as SellerProfileRow;
       }
 
       if (cancelled) return;
@@ -581,6 +624,38 @@ export default function ProductDetail() {
         : "";
   const sellerTierLower = sellerTierRaw.toLowerCase();
 
+  const likeCount = Number(foundProduct.like_count ?? 0);
+  const sellerOnline = isOnlineFromLastActive(sellerProfile?.last_active);
+
+  const handleToggleLike = async () => {
+    if (!authUser?.id) {
+      toast.message("Sign in to like this listing");
+      navigate("/login");
+      return;
+    }
+    const asNum = typeof foundProduct.id === "number" ? foundProduct.id : Number(foundProduct.id);
+    if (!Number.isFinite(asNum)) return;
+    setLikeBusy(true);
+    const wasLiked = liked;
+    const prevCount = likeCount;
+    setLiked(!wasLiked);
+    setServerProduct((p) =>
+      p
+        ? {
+            ...p,
+            like_count: wasLiked ? Math.max(0, prevCount - 1) : prevCount + 1,
+          }
+        : p,
+    );
+    const { error } = await toggleProductLike(supabase, asNum, authUser.id, wasLiked);
+    setLikeBusy(false);
+    if (error) {
+      toast.error(error);
+      setLiked(wasLiked);
+      setServerProduct((p) => (p ? { ...p, like_count: prevCount } : p));
+    }
+  };
+
   const product = {
     id: foundProduct.id,
     title: foundProduct.title,
@@ -592,6 +667,7 @@ export default function ProductDetail() {
     location: foundProduct.location,
     postedDate: foundProduct.createdAt ? new Date(foundProduct.createdAt).toLocaleDateString() : "Just now",
     views: typeof foundProduct.views === "number" ? foundProduct.views : Number(foundProduct.views) || 0,
+    likes: likeCount,
     seller: {
       id: sellerPeerId || "unknown",
       name: sellerDisplayName,
@@ -669,12 +745,13 @@ export default function ProductDetail() {
             </button>
             <button
               type="button"
-              onClick={() => setIsFavorite(!isFavorite)}
-              className="p-2 rounded-lg hover:bg-gray-50 text-gray-600"
-              aria-label="Save"
+              disabled={likeBusy}
+              onClick={() => void handleToggleLike()}
+              className="p-2 rounded-lg hover:bg-gray-50 text-gray-600 disabled:opacity-50"
+              aria-label={liked ? "Unlike" : "Like"}
             >
               <Heart
-                className={`w-[18px] h-[18px] ${isFavorite ? "fill-red-500 text-red-500" : ""}`}
+                className={`w-[18px] h-[18px] ${liked ? "fill-red-500 text-red-500" : ""}`}
               />
             </button>
           </div>
@@ -772,6 +849,11 @@ export default function ProductDetail() {
                 <span>{product.postedDate}</span>
                 <span className="text-gray-300">·</span>
                 <span>{product.views} views</span>
+                <span className="text-gray-300">·</span>
+                <span className="inline-flex items-center gap-1">
+                  <Heart className={`w-3.5 h-3.5 ${liked ? "fill-red-500 text-red-500" : ""}`} aria-hidden />
+                  {product.likes} likes
+                </span>
               </div>
             </div>
 
@@ -784,7 +866,15 @@ export default function ProductDetail() {
                 />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1 flex-wrap">
-                    <span className="font-semibold text-gray-900">{product.seller.name}</span>
+                    <span className="relative font-semibold text-gray-900 inline-flex items-center gap-1.5">
+                      {sellerOnline ? (
+                        <span className="relative flex h-2 w-2 shrink-0" title="Online now">
+                          <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60 animate-ping" />
+                          <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500 ring-2 ring-white" />
+                        </span>
+                      ) : null}
+                      {product.seller.name}
+                    </span>
                     {product.seller.verified ? (
                       <BadgeCheck className="w-4 h-4 text-[#16a34a] fill-emerald-100 shrink-0" title="Verified seller" />
                     ) : sellerTierLower === "crown" ? (
@@ -808,6 +898,9 @@ export default function ProductDetail() {
                     )}
                   </p>
                   <p className="text-xs text-gray-500 mt-1.5">Member since {product.seller.memberSince}</p>
+                  {!sellerOnline && sellerProfile?.last_active ? (
+                    <p className="text-[11px] text-gray-400 mt-1">{formatLastSeen(sellerProfile.last_active)}</p>
+                  ) : null}
                 </div>
               </div>
               <div className="mt-4 flex flex-col gap-2">

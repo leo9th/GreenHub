@@ -20,6 +20,7 @@ import { getAvatarUrl } from "../utils/getAvatar";
 import { supabase } from "../../lib/supabase";
 import { useCurrency } from "../hooks/useCurrency";
 import { getProductPrice } from "../utils/getProductPrice";
+import { isOnlineFromLastActive, formatLastSeen } from "../utils/presence";
 
 type TabId = "products" | "reviews" | "about" | "contact";
 
@@ -175,7 +176,7 @@ export default function Profile() {
         const { data, error } = await supabase
           .from("profiles")
           .select(
-            "id, full_name, phone, avatar_url, gender, state, lga, address, bio, auto_reply, email, created_at, updated_at",
+            "id, full_name, phone, avatar_url, gender, state, lga, address, bio, auto_reply, email, created_at, updated_at, last_active, show_phone_on_profile, show_email_on_profile",
           )
           .eq("id", targetUserId)
           .maybeSingle();
@@ -200,14 +201,15 @@ export default function Profile() {
       } else {
         const { data: pub, error: pubErr } = await supabase
           .from("profiles_public")
-          .select("id, full_name, avatar_url, gender, bio, state, lga, created_at, updated_at")
+          .select("id, full_name, avatar_url, gender, bio, state, lga, created_at, updated_at, last_active, phone, public_email")
           .eq("id", targetUserId)
           .maybeSingle();
 
         if (!pubErr && pub) {
+          const pubRow = pub as UserProfile & { public_email?: string | null };
           profRow = {
-            ...(pub as UserProfile),
-            phone: null,
+            ...pubRow,
+            email: pubRow.public_email ?? null,
             address: null,
           };
         } else {
@@ -335,6 +337,28 @@ export default function Profile() {
       ? String(viewProfile?.phone || authUser.user_metadata?.phone || "")
       : null;
 
+  const contactPhoneOthers =
+    !isOwnProfile && viewProfile?.phone != null && String(viewProfile.phone).trim() !== ""
+      ? String(viewProfile.phone).trim()
+      : null;
+
+  const contactEmailOthers =
+    !isOwnProfile && viewProfile?.email != null && String(viewProfile.email).trim() !== ""
+      ? String(viewProfile.email).trim()
+      : null;
+
+  const contactEmailOwn =
+    isOwnProfile &&
+    viewProfile?.show_email_on_profile &&
+    viewProfile?.email != null &&
+    String(viewProfile.email).trim() !== ""
+      ? String(viewProfile.email).trim()
+      : authUser?.email && viewProfile?.show_email_on_profile
+        ? authUser.email
+        : null;
+
+  const profileOnline = isOnlineFromLastActive(viewProfile?.last_active);
+
   return (
     <div className="min-h-screen bg-gray-100 pb-28">
       <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
@@ -360,6 +384,23 @@ export default function Profile() {
             className="w-24 h-24 rounded-full object-cover mx-auto ring-4 ring-gray-50 shadow-md border border-gray-100"
           />
           <h2 className="mt-4 text-xl font-semibold text-gray-900">{displayName}</h2>
+
+          <div className="mt-1.5 flex items-center justify-center gap-2 text-xs text-gray-500">
+            {profileOnline ? (
+              <span className="inline-flex items-center gap-1.5 font-medium text-emerald-600">
+                <span className="relative flex h-2 w-2">
+                  <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-50 animate-ping" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+                </span>
+                Online now
+              </span>
+            ) : viewProfile?.last_active ? (
+              <span className="inline-flex items-center gap-1 text-gray-500">
+                <Clock className="w-3.5 h-3.5 shrink-0 opacity-70" aria-hidden />
+                {formatLastSeen(viewProfile.last_active)}
+              </span>
+            ) : null}
+          </div>
 
           <div className="mt-2 flex flex-col items-center gap-1">
             <StarRow value={avgRating} />
@@ -554,12 +595,38 @@ export default function Profile() {
                     <div className="rounded-xl ring-1 ring-gray-100 bg-white p-4 shadow-sm">
                       <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2">Phone</p>
                       {phoneDisplay ? (
-                        <a href={`tel:${phoneDisplay}`} className="inline-flex items-center gap-2 text-[#15803d] font-medium text-sm">
+                        <a
+                          href={`tel:${phoneDisplay.replace(/\s/g, "")}`}
+                          className="inline-flex items-center gap-2 text-[#15803d] font-medium text-sm"
+                        >
                           <Phone className="w-4 h-4 shrink-0" />
                           {phoneDisplay}
                         </a>
                       ) : (
                         <p className="text-sm text-gray-500">Add a phone number in Edit profile.</p>
+                      )}
+                      {phoneDisplay && viewProfile?.show_phone_on_profile === false ? (
+                        <p className="text-[11px] text-amber-700 mt-2">
+                          Your number is hidden on your public profile. Enable “Show phone on profile” in Edit profile to let buyers call you from your page.
+                        </p>
+                      ) : null}
+                    </div>
+
+                    <div className="rounded-xl ring-1 ring-gray-100 bg-white p-4 shadow-sm">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2">Email</p>
+                      {contactEmailOwn ? (
+                        <a
+                          href={`mailto:${contactEmailOwn}`}
+                          className="inline-flex items-center gap-2 text-[#15803d] font-medium text-sm break-all"
+                        >
+                          {contactEmailOwn}
+                        </a>
+                      ) : (
+                        <p className="text-sm text-gray-500">
+                          {viewProfile?.show_email_on_profile
+                            ? "Add an email on your profile in Edit profile."
+                            : "Enable “Show email on profile” in Edit profile to display your contact email to others."}
+                        </p>
                       )}
                     </div>
 
@@ -581,6 +648,23 @@ export default function Profile() {
                       <MessageCircle className="w-5 h-5" />
                       Chat with {displayName.split(/\s+/)[0] || "seller"}
                     </Link>
+                    {contactPhoneOthers ? (
+                      <a
+                        href={`tel:${contactPhoneOthers.replace(/\s/g, "")}`}
+                        className="flex items-center justify-center gap-2 w-full py-3 rounded-xl ring-1 ring-gray-200 text-gray-800 font-semibold text-sm hover:bg-gray-50"
+                      >
+                        <Phone className="w-5 h-5 text-[#15803d]" />
+                        {contactPhoneOthers}
+                      </a>
+                    ) : null}
+                    {contactEmailOthers ? (
+                      <a
+                        href={`mailto:${contactEmailOthers}`}
+                        className="flex items-center justify-center gap-2 w-full py-3 rounded-xl ring-1 ring-gray-200 text-gray-800 font-semibold text-sm hover:bg-gray-50"
+                      >
+                        Email
+                      </a>
+                    ) : null}
                     <p className="text-xs text-center text-gray-500">Start a conversation about a listing.</p>
                   </>
                 )}

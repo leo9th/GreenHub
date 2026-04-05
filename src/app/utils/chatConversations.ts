@@ -21,20 +21,44 @@ function normalizeListRow(raw: Record<string, unknown>): ConversationListRow {
   };
 }
 
-/** Load all conversations where the user is the buyer or the seller. */
+function parseIso(a: string | null | undefined): number {
+  if (a == null || String(a).trim() === "") return 0;
+  const t = new Date(a).getTime();
+  return Number.isNaN(t) ? 0 : t;
+}
+
+/**
+ * Inbox: rows where the user is buyer_id OR seller_id.
+ * Uses two `.eq` queries instead of `.or(...)` — PostgREST often returns 400 on combined UUID filters.
+ */
 export async function fetchConversationsForInbox(
   supabase: SupabaseClient,
   userId: string,
 ): Promise<{ data: ConversationListRow[]; error: { message: string } | null }> {
-  const { data, error } = await supabase
-    .from("conversations")
-    .select("id, buyer_id, seller_id, last_message_preview, last_message_at")
-    .or(`buyer_id.eq.${userId},seller_id.eq.${userId}`)
-    .order("last_message_at", { ascending: false, nullsFirst: false });
+  const fields = "id, buyer_id, seller_id, last_message_preview, last_message_at";
 
-  if (error) return { data: [], error: { message: error.message } };
-  const rows = (data ?? []) as Record<string, unknown>[];
-  return { data: rows.map((r) => normalizeListRow(r)), error: null };
+  const [asBuyer, asSeller] = await Promise.all([
+    supabase.from("conversations").select(fields).eq("buyer_id", userId),
+    supabase.from("conversations").select(fields).eq("seller_id", userId),
+  ]);
+
+  const err = asBuyer.error ?? asSeller.error;
+  if (err) return { data: [], error: { message: err.message } };
+
+  const byId = new Map<string, ConversationListRow>();
+  const addRows = (rows: Record<string, unknown>[] | null) => {
+    for (const r of rows ?? []) {
+      const row = normalizeListRow(r);
+      byId.set(row.id, row);
+    }
+  };
+  addRows((asBuyer.data ?? []) as Record<string, unknown>[]);
+  addRows((asSeller.data ?? []) as Record<string, unknown>[]);
+
+  const list = [...byId.values()].sort(
+    (x, y) => parseIso(y.last_message_at) - parseIso(x.last_message_at),
+  );
+  return { data: list, error: null };
 }
 
 /** Fetch one conversation by id (Chat thread). */
@@ -108,9 +132,15 @@ export async function findConversationByPair(
   return { id: n.id, buyer_id: n.buyer_id, seller_id: n.seller_id };
 }
 
-/** The other person in the thread (given the current user id). */
+/**
+ * The other user in the thread (peer), given the current user id.
+ * Uses buyer_id / seller_id only (not participant_a/b).
+ */
 export function otherParticipantId(conv: ConversationRow, me: string): string | null {
   if (conv.buyer_id === me) return conv.seller_id;
   if (conv.seller_id === me) return conv.buyer_id;
   return null;
 }
+
+/** Alias for readability in UI code. */
+export const otherPartyUserId = otherParticipantId;

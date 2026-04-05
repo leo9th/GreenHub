@@ -9,7 +9,7 @@ import {
   findConversationByPair,
   fetchConversationById,
   insertConversationPair,
-  otherParticipantId,
+  otherPartyUserId,
   type ConversationRow,
 } from "../utils/chatConversations";
 
@@ -77,7 +77,7 @@ export default function Chat() {
       let peer: string | null = null;
 
       if (conv) {
-        peer = otherParticipantId(conv, me);
+        peer = otherPartyUserId(conv, me);
         if (!peer) {
           toast.error("You don't have access to this conversation.");
           conv = null;
@@ -123,13 +123,23 @@ export default function Chat() {
       setConversation(conv);
       setPeerId(peer);
 
-      const { data: prof, error: pErr } = await supabase
+      let prof: Record<string, unknown> | null = null;
+      const pub = await supabase
         .from("profiles_public")
         .select("full_name, avatar_url, gender")
         .eq("id", peer)
         .maybeSingle();
+      if (!pub.error && pub.data) prof = pub.data as Record<string, unknown>;
+      else {
+        const fb = await supabase
+          .from("profiles")
+          .select("full_name, avatar_url, gender")
+          .eq("id", peer)
+          .maybeSingle();
+        if (!fb.error && fb.data) prof = fb.data as Record<string, unknown>;
+      }
 
-      if (!pErr && prof) {
+      if (prof) {
         const name = (prof.full_name as string)?.trim() || "Member";
         setPeerName(name);
         setPeerAvatar(getAvatarUrl(prof.avatar_url as string | null, prof.gender as string | null, name));

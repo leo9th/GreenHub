@@ -4,8 +4,13 @@ import { ArrowLeft, Search, MessageCircle } from "lucide-react";
 import { getAvatarUrl } from "../utils/getAvatar";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../context/AuthContext";
-import { fetchConversationsForInbox, otherParticipantId, type ConversationListRow } from "../utils/chatConversations";
+import {
+  fetchConversationsForInbox,
+  otherPartyUserId,
+  type ConversationListRow,
+} from "../utils/chatConversations";
 
+/** Inbox row: `buyer_id` + `seller_id` (+ preview fields). */
 type ConversationRow = ConversationListRow;
 
 type ProfileLite = {
@@ -55,7 +60,7 @@ export default function Messages() {
       const otherIds = [
         ...new Set(
           list
-            .map((r) => otherParticipantId(r, authUser.id))
+            .map((r) => otherPartyUserId(r, authUser.id))
             .filter((id): id is string => Boolean(id)),
         ),
       ];
@@ -112,7 +117,7 @@ export default function Messages() {
     const q = search.trim().toLowerCase();
     if (!q || !authUser?.id) return rows;
     return rows.filter((r) => {
-      const oid = otherParticipantId(r, authUser.id);
+      const oid = otherPartyUserId(r, authUser.id);
       if (!oid) return false;
       const p = profiles.get(oid);
       const name = (p?.full_name || "").toLowerCase();
@@ -173,7 +178,7 @@ export default function Messages() {
           <div className="divide-y divide-gray-200">
             {filtered.map((conversation) => {
               if (!authUser) return null;
-              const oid = otherParticipantId(conversation, authUser.id);
+              const oid = otherPartyUserId(conversation, authUser.id);
               if (!oid) return null;
               const p = profiles.get(oid);
               const name = p?.full_name?.trim() || "Member";

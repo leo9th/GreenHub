@@ -23,7 +23,12 @@ type ChatMessageRow = {
 function isDuplicateConversationError(err: { code?: string; message?: string }): boolean {
   const c = String(err.code ?? "");
   const m = String(err.message ?? "").toLowerCase();
-  return c === "23505" || m.includes("duplicate") || m.includes("unique") || m.includes("conversations_pair");
+  return (
+    c === "23505" ||
+    m.includes("duplicate") ||
+    m.includes("unique") ||
+    m.includes("conversations_pair")
+  );
 }
 
 export default function Chat() {

@@ -1,6 +1,5 @@
 -- GreenHub messaging: run this in Supabase → SQL Editor (Production DB).
--- App expects: table "conversations" + table "chat_messages" (not "messages").
--- Client: logged-in users only (JWT role "authenticated").
+-- App expects: conversations (buyer_id, seller_id) + chat_messages.
 
 -- ---------------------------------------------------------------------------
 -- Tables
@@ -8,24 +7,19 @@
 
 create table if not exists public.conversations (
   id uuid primary key default gen_random_uuid(),
-  participant_a uuid not null references auth.users (id) on delete cascade,
-  participant_b uuid not null references auth.users (id) on delete cascade,
+  buyer_id uuid not null references auth.users (id) on delete cascade,
+  seller_id uuid not null references auth.users (id) on delete cascade,
   last_message_preview text,
   last_message_at timestamptz,
   created_at timestamptz not null default now(),
-  constraint conversations_distinct_participants check (participant_a <> participant_b)
+  constraint conversations_distinct_roles check (buyer_id <> seller_id)
 );
 
 create unique index if not exists conversations_pair_idx
-  on public.conversations (
-    least(participant_a, participant_b),
-    greatest(participant_a, participant_b)
-  );
+  on public.conversations (least(buyer_id, seller_id), greatest(buyer_id, seller_id));
 
-create index if not exists conversations_participant_a_idx
-  on public.conversations (participant_a);
-create index if not exists conversations_participant_b_idx
-  on public.conversations (participant_b);
+create index if not exists conversations_buyer_id_idx on public.conversations (buyer_id);
+create index if not exists conversations_seller_id_idx on public.conversations (seller_id);
 
 create table if not exists public.chat_messages (
   id uuid primary key default gen_random_uuid(),
@@ -72,38 +66,45 @@ alter table public.conversations enable row level security;
 alter table public.chat_messages enable row level security;
 
 drop policy if exists "conversations_select_participant" on public.conversations;
-create policy "conversations_select_participant"
+drop policy if exists "conversations_insert_participant" on public.conversations;
+drop policy if exists "conversations_update_participant" on public.conversations;
+drop policy if exists "conversations_select_buyer_or_seller" on public.conversations;
+drop policy if exists "conversations_insert_buyer_or_seller" on public.conversations;
+drop policy if exists "conversations_update_buyer_or_seller" on public.conversations;
+
+create policy "conversations_select_buyer_or_seller"
   on public.conversations for select
   to authenticated
-  using (auth.uid() = participant_a or auth.uid() = participant_b);
+  using (auth.uid() = buyer_id or auth.uid() = seller_id);
 
-drop policy if exists "conversations_insert_participant" on public.conversations;
-create policy "conversations_insert_participant"
+create policy "conversations_insert_buyer_or_seller"
   on public.conversations for insert
   to authenticated
-  with check (auth.uid() = participant_a or auth.uid() = participant_b);
+  with check (auth.uid() = buyer_id or auth.uid() = seller_id);
 
-drop policy if exists "conversations_update_participant" on public.conversations;
-create policy "conversations_update_participant"
+create policy "conversations_update_buyer_or_seller"
   on public.conversations for update
   to authenticated
-  using (auth.uid() = participant_a or auth.uid() = participant_b)
-  with check (auth.uid() = participant_a or auth.uid() = participant_b);
+  using (auth.uid() = buyer_id or auth.uid() = seller_id)
+  with check (auth.uid() = buyer_id or auth.uid() = seller_id);
 
 drop policy if exists "chat_messages_select_participant" on public.chat_messages;
-create policy "chat_messages_select_participant"
+drop policy if exists "chat_messages_insert_sender" on public.chat_messages;
+drop policy if exists "chat_messages_select_buyer_seller" on public.chat_messages;
+drop policy if exists "chat_messages_insert_sender_buyer_seller" on public.chat_messages;
+
+create policy "chat_messages_select_buyer_seller"
   on public.chat_messages for select
   to authenticated
   using (
     exists (
       select 1 from public.conversations c
       where c.id = chat_messages.conversation_id
-        and (auth.uid() = c.participant_a or auth.uid() = c.participant_b)
+        and (auth.uid() = c.buyer_id or auth.uid() = c.seller_id)
     )
   );
 
-drop policy if exists "chat_messages_insert_sender" on public.chat_messages;
-create policy "chat_messages_insert_sender"
+create policy "chat_messages_insert_sender_buyer_seller"
   on public.chat_messages for insert
   to authenticated
   with check (
@@ -111,13 +112,9 @@ create policy "chat_messages_insert_sender"
     and exists (
       select 1 from public.conversations c
       where c.id = conversation_id
-        and (auth.uid() = c.participant_a or auth.uid() = c.participant_b)
+        and (auth.uid() = c.buyer_id or auth.uid() = c.seller_id)
     )
   );
-
--- ---------------------------------------------------------------------------
--- Table privileges (avoid "permission denied" for authenticated API role)
--- ---------------------------------------------------------------------------
 
 grant select, insert, update, delete on table public.conversations to authenticated;
 grant select, insert on table public.chat_messages to authenticated;

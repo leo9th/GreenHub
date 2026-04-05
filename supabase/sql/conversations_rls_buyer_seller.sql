@@ -1,55 +1,6 @@
--- Use this ONLY if public.conversations has buyer_id + seller_id (not participant_a/b).
--- Run in Supabase SQL Editor after your table exists.
-
-alter table public.conversations enable row level security;
-alter table public.chat_messages enable row level security;
-
-drop policy if exists "conversations_select_participant" on public.conversations;
-drop policy if exists "conversations_insert_participant" on public.conversations;
-drop policy if exists "conversations_update_participant" on public.conversations;
-
-create policy "conversations_select_buyer_or_seller"
-  on public.conversations for select
-  to authenticated
-  using (auth.uid() = buyer_id or auth.uid() = seller_id);
-
-create policy "conversations_insert_buyer_or_seller"
-  on public.conversations for insert
-  to authenticated
-  with check (auth.uid() = buyer_id or auth.uid() = seller_id);
-
-create policy "conversations_update_buyer_or_seller"
-  on public.conversations for update
-  to authenticated
-  using (auth.uid() = buyer_id or auth.uid() = seller_id)
-  with check (auth.uid() = buyer_id or auth.uid() = seller_id);
-
--- chat_messages: subquery must use buyer_id/seller_id
-drop policy if exists "chat_messages_select_participant" on public.chat_messages;
-drop policy if exists "chat_messages_insert_sender" on public.chat_messages;
-
-create policy "chat_messages_select_buyer_seller"
-  on public.chat_messages for select
-  to authenticated
-  using (
-    exists (
-      select 1 from public.conversations c
-      where c.id = chat_messages.conversation_id
-        and (auth.uid() = c.buyer_id or auth.uid() = c.seller_id)
-    )
-  );
-
-create policy "chat_messages_insert_sender_buyer_seller"
-  on public.chat_messages for insert
-  to authenticated
-  with check (
-    sender_id = auth.uid()
-    and exists (
-      select 1 from public.conversations c
-      where c.id = conversation_id
-        and (auth.uid() = c.buyer_id or auth.uid() = c.seller_id)
-    )
-  );
-
-grant select, insert, update, delete on table public.conversations to authenticated;
-grant select, insert on table public.chat_messages to authenticated;
+-- Superseded by:
+--   supabase/migrations/20260411140000_conversations_and_chat_messages.sql
+--   supabase/sql/conversations_and_chat_messages_complete.sql
+--
+-- If you created policies manually earlier, run the “drop policy / create policy”
+-- block from conversations_and_chat_messages_complete.sql so names align.

@@ -5,6 +5,7 @@ import { useAuth } from "../../context/AuthContext";
 import { supabase } from "../../../lib/supabase";
 import { categories, nigerianStates } from "../../data/catalogConstants";
 import { CAR_BRAND_SELECT_OTHER, NIGERIA_CAR_BRAND_OPTIONS } from "../../data/carBrands";
+import { supabaseErrorMessage } from "../../utils/supabaseErrorMessage";
 
 const STORAGE_BUCKET = "products";
 
@@ -122,6 +123,7 @@ export default function AddProduct() {
   const uploadNewImages = async (): Promise<string[]> => {
     if (!authUser?.id) return [];
     const urls: string[] = [];
+    let firstUploadError: unknown = null;
 
     for (const item of imageFiles) {
       const fileExt = item.file.name.split(".").pop() || "jpg";
@@ -132,12 +134,22 @@ export default function AddProduct() {
       });
 
       if (uploadError) {
+        if (firstUploadError == null) firstUploadError = uploadError;
         console.warn("Image upload failed:", fileName, uploadError);
         continue;
       }
 
       const { data } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(fileName);
       if (data?.publicUrl) urls.push(data.publicUrl);
+    }
+
+    if (imageFiles.length > 0 && urls.length === 0 && firstUploadError != null) {
+      throw new Error(
+        `Image upload failed: ${supabaseErrorMessage(
+          firstUploadError,
+          `Check that Storage bucket "${STORAGE_BUCKET}" exists and policies allow authenticated uploads.`,
+        )}`,
+      );
     }
 
     return urls;
@@ -260,7 +272,7 @@ export default function AddProduct() {
       navigate("/seller/products");
     } catch (error: unknown) {
       console.error("Save failed:", error);
-      const msg = error instanceof Error ? error.message : "Product could not be saved.";
+      const msg = supabaseErrorMessage(error, "Product could not be saved.");
       alert(msg);
     } finally {
       setIsSaving(false);

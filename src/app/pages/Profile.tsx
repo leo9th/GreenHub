@@ -172,7 +172,7 @@ export default function Profile() {
         const ids = [...new Set(rows.map((r) => r.reviewer_id))];
         let nameMap = new Map<string, string>();
         if (ids.length > 0) {
-          const { data: profs } = await supabase.from("profiles").select("id, full_name").in("id", ids);
+          const { data: profs } = await supabase.from("profiles_public").select("id, full_name").in("id", ids);
           for (const p of profs ?? []) {
             if (p.id) nameMap.set(String(p.id), (p.full_name as string) || "Buyer");
           }

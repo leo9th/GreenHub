@@ -395,8 +395,8 @@ export default function ProductDetail() {
     if (sid == null || String(sid).trim() === "") return;
     const idStr = String(sid).trim();
     void supabase
-      .from("profiles")
-      .select("*")
+      .from("profiles_public")
+      .select("id, full_name, avatar_url, gender, bio, role, state, lga, created_at, updated_at")
       .eq("id", idStr)
       .single()
       .then(({ data, error }) => {

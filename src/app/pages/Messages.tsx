@@ -4,14 +4,9 @@ import { ArrowLeft, Search, MessageCircle } from "lucide-react";
 import { getAvatarUrl } from "../utils/getAvatar";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../context/AuthContext";
+import { fetchConversationsForInbox, otherParticipantId, type ConversationListRow } from "../utils/chatConversations";
 
-type ConversationRow = {
-  id: string;
-  participant_a: string;
-  participant_b: string;
-  last_message_preview: string | null;
-  last_message_at: string | null;
-};
+type ConversationRow = ConversationListRow;
 
 type ProfileLite = {
   id: string;
@@ -19,10 +14,6 @@ type ProfileLite = {
   avatar_url: string | null;
   gender: string | null;
 };
-
-function otherParticipantId(row: ConversationRow, me: string): string {
-  return row.participant_a === me ? row.participant_b : row.participant_a;
-}
 
 function formatListTime(iso: string | null): string {
   if (!iso) return "";
@@ -56,31 +47,46 @@ export default function Messages() {
     setLoading(true);
     setLoadError(null);
     try {
-      const { data, error } = await supabase
-        .from("conversations")
-        .select("id, participant_a, participant_b, last_message_preview, last_message_at")
-        .or(`participant_a.eq.${authUser.id},participant_b.eq.${authUser.id}`)
-        .order("last_message_at", { ascending: false, nullsFirst: false });
+      const { data: list, error: convErr } = await fetchConversationsForInbox(supabase, authUser.id);
+      if (convErr) throw new Error(convErr.message);
 
-      if (error) throw error;
-
-      const list = (data ?? []) as ConversationRow[];
       setRows(list);
 
-      const otherIds = [...new Set(list.map((r) => otherParticipantId(r, authUser.id)))];
+      const otherIds = [
+        ...new Set(
+          list
+            .map((r) => otherParticipantId(r, authUser.id))
+            .filter((id): id is string => Boolean(id)),
+        ),
+      ];
       if (otherIds.length === 0) {
         setProfiles(new Map());
         return;
       }
-      const { data: profs, error: pErr } = await supabase
-        .from("profiles")
+
+      let profs: ProfileLite[] | null = null;
+      let pErr: { message: string } | null = null;
+
+      const pub = await supabase
+        .from("profiles_public")
         .select("id, full_name, avatar_url, gender")
         .in("id", otherIds);
 
-      if (pErr) throw pErr;
+      if (!pub.error && pub.data) {
+        profs = pub.data as ProfileLite[];
+      } else {
+        const fallback = await supabase
+          .from("profiles")
+          .select("id, full_name, avatar_url, gender")
+          .in("id", otherIds);
+        if (fallback.error) pErr = { message: fallback.error.message };
+        else profs = (fallback.data ?? []) as ProfileLite[];
+      }
+
+      if (pErr) throw new Error(pErr.message);
 
       const map = new Map<string, ProfileLite>();
-      for (const p of (profs ?? []) as ProfileLite[]) {
+      for (const p of profs ?? []) {
         if (p.id) map.set(p.id, p);
       }
       setProfiles(map);
@@ -107,6 +113,7 @@ export default function Messages() {
     if (!q || !authUser?.id) return rows;
     return rows.filter((r) => {
       const oid = otherParticipantId(r, authUser.id);
+      if (!oid) return false;
       const p = profiles.get(oid);
       const name = (p?.full_name || "").toLowerCase();
       const prev = (r.last_message_preview || "").toLowerCase();
@@ -167,6 +174,7 @@ export default function Messages() {
             {filtered.map((conversation) => {
               if (!authUser) return null;
               const oid = otherParticipantId(conversation, authUser.id);
+              if (!oid) return null;
               const p = profiles.get(oid);
               const name = p?.full_name?.trim() || "Member";
               const avatar = getAvatarUrl(p?.avatar_url ?? null, p?.gender ?? null, name);

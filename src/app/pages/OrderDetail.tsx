@@ -133,8 +133,8 @@ export default function OrderDetail() {
       const sellerIds = [...new Set(itemList.map((i) => i.seller_id).filter(Boolean))] as string[];
       if (sellerIds.length > 0) {
         const { data: profs, error: pErr } = await supabase
-          .from("profiles")
-          .select("id, full_name, avatar_url, gender, phone")
+          .from("profiles_public")
+          .select("id, full_name, avatar_url, gender")
           .in("id", sellerIds);
 
         if (!pErr && profs) {

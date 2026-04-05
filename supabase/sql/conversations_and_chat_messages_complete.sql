@@ -1,4 +1,10 @@
--- Direct messaging: conversations + chat_messages (replaces mock Messages/Chat).
+-- GreenHub messaging: run this in Supabase → SQL Editor (Production DB).
+-- App expects: table "conversations" + table "chat_messages" (not "messages").
+-- Client: logged-in users only (JWT role "authenticated").
+
+-- ---------------------------------------------------------------------------
+-- Tables
+-- ---------------------------------------------------------------------------
 
 create table if not exists public.conversations (
   id uuid primary key default gen_random_uuid(),
@@ -11,10 +17,15 @@ create table if not exists public.conversations (
 );
 
 create unique index if not exists conversations_pair_idx
-  on public.conversations (least(participant_a, participant_b), greatest(participant_a, participant_b));
+  on public.conversations (
+    least(participant_a, participant_b),
+    greatest(participant_a, participant_b)
+  );
 
-create index if not exists conversations_participant_a_idx on public.conversations (participant_a);
-create index if not exists conversations_participant_b_idx on public.conversations (participant_b);
+create index if not exists conversations_participant_a_idx
+  on public.conversations (participant_a);
+create index if not exists conversations_participant_b_idx
+  on public.conversations (participant_b);
 
 create table if not exists public.chat_messages (
   id uuid primary key default gen_random_uuid(),
@@ -26,6 +37,10 @@ create table if not exists public.chat_messages (
 
 create index if not exists chat_messages_conversation_created_idx
   on public.chat_messages (conversation_id, created_at desc);
+
+-- ---------------------------------------------------------------------------
+-- Keep conversations.last_message_* in sync (runs as definer; bypasses RLS)
+-- ---------------------------------------------------------------------------
 
 create or replace function public.touch_conversation_on_chat_message()
 returns trigger
@@ -48,6 +63,10 @@ create trigger trg_touch_conversation_on_chat_message
   after insert on public.chat_messages
   for each row
   execute function public.touch_conversation_on_chat_message();
+
+-- ---------------------------------------------------------------------------
+-- RLS
+-- ---------------------------------------------------------------------------
 
 alter table public.conversations enable row level security;
 alter table public.chat_messages enable row level security;
@@ -95,3 +114,13 @@ create policy "chat_messages_insert_sender"
         and (auth.uid() = c.participant_a or auth.uid() = c.participant_b)
     )
   );
+
+-- ---------------------------------------------------------------------------
+-- Table privileges (avoid "permission denied" for authenticated API role)
+-- ---------------------------------------------------------------------------
+
+grant select, insert, update, delete on table public.conversations to authenticated;
+grant select, insert on table public.chat_messages to authenticated;
+
+-- If the inbox loads but then errors on the second request, apply profiles RLS:
+--   supabase/sql/profiles_public_select_rls.sql

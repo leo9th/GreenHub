@@ -7,6 +7,8 @@ import { useAuth } from "../context/AuthContext";
 import { toast } from "sonner";
 import {
   findConversationByPair,
+  fetchConversationById,
+  insertConversationPair,
   otherParticipantId,
   type ConversationRow,
 } from "../utils/chatConversations";
@@ -63,15 +65,10 @@ export default function Chat() {
       const param = routeId.trim();
       const me = authUser.id;
 
-      const { data: byConvId, error: errConv } = await supabase
-        .from("conversations")
-        .select("id, participant_a, participant_b")
-        .eq("id", param)
-        .maybeSingle();
+      const { data: byConvId, error: errConv } = await fetchConversationById(supabase, param);
+      if (errConv) throw new Error(errConv.message);
 
-      if (errConv) throw errConv;
-
-      let conv: ConversationRow | null = (byConvId as ConversationRow | null) ?? null;
+      let conv: ConversationRow | null = byConvId;
       let peer: string | null = null;
 
       if (conv) {
@@ -93,22 +90,17 @@ export default function Chat() {
 
         let found = await findConversationByPair(supabase, me, peerCandidate);
         if (!found) {
-          const { data: inserted, error: insErr } = await supabase
-            .from("conversations")
-            .insert({ participant_a: me, participant_b: peerCandidate })
-            .select("id, participant_a, participant_b")
-            .single();
-
+          const { data: inserted, error: insErr } = await insertConversationPair(supabase, me, peerCandidate);
           if (insErr) {
             if (isDuplicateConversationError(insErr)) {
               found = await findConversationByPair(supabase, me, peerCandidate);
-              if (!found) throw insErr;
+              if (!found) throw new Error(insErr.message);
               conv = found;
             } else {
-              throw insErr;
+              throw new Error(insErr.message);
             }
           } else {
-            conv = inserted as ConversationRow;
+            conv = inserted;
           }
         } else {
           conv = found;
@@ -127,8 +119,8 @@ export default function Chat() {
       setPeerId(peer);
 
       const { data: prof, error: pErr } = await supabase
-        .from("profiles")
-        .select("full_name, avatar_url, gender, phone")
+        .from("profiles_public")
+        .select("full_name, avatar_url, gender")
         .eq("id", peer)
         .maybeSingle();
 
@@ -136,7 +128,7 @@ export default function Chat() {
         const name = (prof.full_name as string)?.trim() || "Member";
         setPeerName(name);
         setPeerAvatar(getAvatarUrl(prof.avatar_url as string | null, prof.gender as string | null, name));
-        setPeerPhone(prof.phone != null ? String(prof.phone).trim() || null : null);
+        setPeerPhone(null);
       } else {
         setPeerName("Member");
         setPeerAvatar(getAvatarUrl(null, null, "Member"));

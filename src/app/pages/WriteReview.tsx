@@ -77,7 +77,11 @@ export default function WriteReview() {
         (prow as { image?: string } | null)?.image ||
         null;
 
-      const { data: prof } = await supabase.from("profiles").select("full_name").eq("id", sellerId).maybeSingle();
+      const { data: prof } = await supabase
+        .from("profiles_public")
+        .select("full_name")
+        .eq("id", sellerId)
+        .maybeSingle();
 
       setProduct({
         title,

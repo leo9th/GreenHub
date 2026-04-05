@@ -106,7 +106,7 @@ export default function SellerDashboard() {
       const buyerIds = [...new Set(orders.map((o) => o.buyer_id).filter(Boolean))] as string[];
       const buyerNames = new Map<string, string>();
       if (buyerIds.length > 0) {
-        const { data: profs } = await supabase.from("profiles").select("id, full_name").in("id", buyerIds);
+        const { data: profs } = await supabase.from("profiles_public").select("id, full_name").in("id", buyerIds);
         for (const p of profs ?? []) {
           if (p.id && p.full_name) buyerNames.set(p.id, p.full_name as string);
         }

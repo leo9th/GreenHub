@@ -308,7 +308,7 @@ export default function OrderDetail() {
                         <p className="text-sm font-medium text-gray-800">{sName}</p>
                         <p className="text-xs text-gray-600">Seller</p>
                       </div>
-                      <Link to={`/messages/${sid}`} className="p-2 bg-[#22c55e] rounded-lg shrink-0">
+                      <Link to={`/messages/u/${sid}`} className="p-2 bg-[#22c55e] rounded-lg shrink-0">
                         <MessageCircle className="w-4 h-4 text-white" />
                       </Link>
                       {sPhone ? (

@@ -30,7 +30,7 @@ export default function DesignSystem() {
           <NavLink to="/orders" label="📋 Orders" />
           <NavLink to="/orders/1" label="📄 Order Detail" />
           <NavLink to="/messages" label="💬 Messages" />
-          <NavLink to="/messages/1" label="💭 Chat" />
+          <NavLink to="/messages/u/00000000-0000-0000-0000-000000000001" label="💭 Chat (demo)" />
           <NavLink to="/seller/dashboard" label="📊 Seller Dashboard" />
           <NavLink to="/seller/products" label="🏪 Seller Products" />
           <NavLink to="/seller/products/new" label="➕ Add Product" />

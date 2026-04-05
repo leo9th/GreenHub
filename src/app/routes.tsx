@@ -105,7 +105,11 @@ export const router = createBrowserRouter([
       { path: "orders", Component: Orders },
       { path: "orders/:id", Component: OrderDetail },
       { path: "messages", Component: Messages },
-      { path: "messages/:id", Component: Chat },
+      /* c = thread by conversation id; u = DM by other user’s auth id. Do not use one path for both UUID types. */
+      { path: "messages/c/:conversationId", Component: Chat },
+      { path: "messages/u/:peerUserId", Component: Chat },
+      /* Back-compat: old inbox links /messages/:conversationId (thread id only — not a peer user id). */
+      { path: "messages/:legacyThreadId", Component: Chat },
       { path: "seller/dashboard", Component: SellerDashboard },
       { path: "seller/products", Component: SellerProducts },
       { path: "seller/products/new", Component: AddProduct },

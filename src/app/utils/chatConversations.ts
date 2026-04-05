@@ -136,7 +136,7 @@ export async function findConversationByPair(
     .maybeSingle();
   if (e2) throw e2;
   if (!row2) return null;
-    const n = normalizeListRow({ ...(row2 as Record<string, unknown>), last_message: null, last_message_at: null });
+  const n = normalizeListRow({ ...(row2 as Record<string, unknown>), last_message: null, last_message_at: null });
   return { id: n.id, buyer_id: n.buyer_id, seller_id: n.seller_id };
 }
 

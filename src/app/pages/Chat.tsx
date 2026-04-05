@@ -12,13 +12,7 @@ import {
   otherPartyUserId,
   type ConversationRow,
 } from "../utils/chatConversations";
-
-type ChatMessageRow = {
-  id: string;
-  sender_id: string;
-  body: string;
-  created_at: string;
-};
+import { fetchChatMessagesForConversation, type ChatMessageRow } from "../utils/chatMessages";
 
 function isDuplicateConversationError(err: { code?: string; message?: string }): boolean {
   const c = String(err.code ?? "");
@@ -32,7 +26,11 @@ function isDuplicateConversationError(err: { code?: string; message?: string }):
 }
 
 export default function Chat() {
-  const { id: routeId } = useParams();
+  const { conversationId: threadIdParam, peerUserId: peerRouteParam, legacyThreadId } = useParams<{
+    conversationId?: string;
+    peerUserId?: string;
+    legacyThreadId?: string;
+  }>();
   const navigate = useNavigate();
   const { user: authUser, loading: authLoading } = useAuth();
   const [message, setMessage] = useState("");
@@ -57,9 +55,18 @@ export default function Chat() {
   }, [messages]);
 
   const resolveConversation = useCallback(async () => {
-    if (!authUser?.id || !routeId?.trim()) {
+    const threadId = threadIdParam?.trim() ?? legacyThreadId?.trim();
+    const peerFromUrl = peerRouteParam?.trim();
+
+    if (!authUser?.id || (!threadId && !peerFromUrl)) {
       setConversation(null);
-      setLoadError(null);
+      setLoadError(threadId || peerFromUrl ? null : "Invalid chat link. Open a thread from Messages or Message seller.");
+      setLoading(false);
+      return;
+    }
+
+    if (threadId && peerFromUrl) {
+      setLoadError("Invalid chat URL.");
       setLoading(false);
       return;
     }
@@ -67,38 +74,45 @@ export default function Chat() {
     setLoading(true);
     setLoadError(null);
     try {
-      const param = routeId.trim();
       const me = authUser.id;
-
-      const { data: byConvId, error: errConv } = await fetchConversationById(supabase, param);
-      if (errConv) throw new Error(errConv.message);
-
-      let conv: ConversationRow | null = byConvId;
+      let conv: ConversationRow | null = null;
       let peer: string | null = null;
 
-      if (conv) {
+      if (threadId) {
+        const { data: byId, error: errConv } = await fetchConversationById(supabase, threadId);
+        if (errConv) throw new Error(errConv.message);
+        if (!byId) {
+          setLoadError(
+            "This conversation was not found or you don’t have access. Sign in as the buyer or seller on this thread and check Supabase RLS on `conversations` (select allowed when auth.uid() is buyer_id or seller_id).",
+          );
+          setConversation(null);
+          setPeerId(null);
+          setLoading(false);
+          return;
+        }
+        conv = byId;
         peer = otherPartyUserId(conv, me);
         if (!peer) {
-          toast.error("You don't have access to this conversation.");
-          conv = null;
+          setLoadError("Your account is not the buyer or seller on this conversation.");
+          setConversation(null);
+          setPeerId(null);
+          setLoading(false);
+          return;
         }
-      }
-
-      if (!conv) {
-        const peerCandidate = param;
-        if (peerCandidate === me) {
+      } else if (peerFromUrl) {
+        if (peerFromUrl === me) {
           setLoadError("You can't start a chat with yourself.");
           setConversation(null);
           setLoading(false);
           return;
         }
 
-        let found = await findConversationByPair(supabase, me, peerCandidate);
+        let found = await findConversationByPair(supabase, me, peerFromUrl);
         if (!found) {
-          const { data: inserted, error: insErr } = await insertConversationPair(supabase, me, peerCandidate);
+          const { data: inserted, error: insErr } = await insertConversationPair(supabase, me, peerFromUrl);
           if (insErr) {
             if (isDuplicateConversationError(insErr)) {
-              found = await findConversationByPair(supabase, me, peerCandidate);
+              found = await findConversationByPair(supabase, me, peerFromUrl);
               if (!found) throw new Error(insErr.message);
               conv = found;
             } else {
@@ -110,11 +124,11 @@ export default function Chat() {
         } else {
           conv = found;
         }
-        peer = peerCandidate;
+        peer = peerFromUrl;
       }
 
       if (!conv || !peer) {
-        setLoadError("Chat could not be opened. Check that messaging is enabled and try again.");
+        setLoadError("Chat could not be opened.");
         setConversation(null);
         setLoading(false);
         return;
@@ -150,14 +164,9 @@ export default function Chat() {
         setPeerPhone(null);
       }
 
-      const { data: msgs, error: mErr } = await supabase
-        .from("chat_messages")
-        .select("id, sender_id, body, created_at")
-        .eq("conversation_id", conv.id)
-        .order("created_at", { ascending: true });
-
-      if (mErr) throw mErr;
-      setMessages((msgs ?? []) as ChatMessageRow[]);
+      const { data: msgs, error: mErr } = await fetchChatMessagesForConversation(supabase, conv.id);
+      if (mErr) throw new Error(mErr.message);
+      setMessages(msgs);
     } catch (e: unknown) {
       console.error(e);
       const msg = e instanceof Error ? e.message : "Could not open chat";
@@ -172,7 +181,7 @@ export default function Chat() {
     } finally {
       setLoading(false);
     }
-  }, [authUser?.id, routeId]);
+  }, [authUser?.id, threadIdParam, peerRouteParam, legacyThreadId]);
 
   useEffect(() => {
     if (authLoading) return;

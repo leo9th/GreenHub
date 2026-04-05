@@ -675,7 +675,7 @@ export default function ProductDetail() {
               <div className="mt-4 flex flex-col gap-2">
                 {canMessageSeller ? (
                   <Link
-                    to={`/messages/${sellerPeerId}`}
+                    to={`/messages/u/${sellerPeerId}`}
                     className="w-full min-h-[46px] inline-flex items-center justify-center gap-2 rounded-xl bg-[#16a34a] text-white text-sm font-semibold px-4 hover:bg-[#15803d] shadow-sm"
                   >
                     <MessageCircle className="w-4 h-4 shrink-0" aria-hidden />
@@ -787,7 +787,7 @@ export default function ProductDetail() {
         <div className="max-w-6xl mx-auto px-4 py-3 flex gap-2">
           {canMessageSeller ? (
             <Link
-              to={`/messages/${sellerPeerId}`}
+              to={`/messages/u/${sellerPeerId}`}
               className="hidden sm:inline-flex px-4 py-3 rounded-xl ring-1 ring-gray-200 text-sm font-semibold text-gray-800 items-center justify-center hover:bg-gray-50"
             >
               Chat

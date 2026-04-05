@@ -8,7 +8,10 @@ export default function Root() {
   const location = useLocation();
   const hideNavOnPaths = ["/login", "/register", "/verify-otp", "/design-system"];
   const isMessageThread =
-    /^\/messages\/[^/]+$/.test(location.pathname) && location.pathname !== "/messages";
+    location.pathname !== "/messages" &&
+    (/^\/messages\/c\//.test(location.pathname) ||
+      /^\/messages\/u\//.test(location.pathname) ||
+      /^\/messages\/[^/]+$/.test(location.pathname));
   const showBottomNav =
     !hideNavOnPaths.some((path) => location.pathname.startsWith(path)) && !isMessageThread;
 

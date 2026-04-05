@@ -186,7 +186,7 @@ export default function Messages() {
               return (
                 <Link
                   key={conversation.id}
-                  to={`/messages/${conversation.id}`}
+                  to={`/messages/c/${conversation.id}`}
                   className="flex items-center gap-3 p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors"
                 >
                   <div className="relative flex-shrink-0">

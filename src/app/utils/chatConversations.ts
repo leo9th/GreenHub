@@ -7,16 +7,24 @@ export type ConversationRow = {
 };
 
 export type ConversationListRow = ConversationRow & {
-  last_message_preview: string | null;
+  /** Matches DB column `last_message` (legacy `last_message_preview` still read if present). */
+  last_message: string | null;
   last_message_at: string | null;
 };
+
+function pickLastMessageText(raw: Record<string, unknown>): string | null {
+  const v = raw.last_message ?? raw.last_message_preview;
+  if (v == null) return null;
+  const s = String(v).trim();
+  return s === "" ? null : s;
+}
 
 function normalizeListRow(raw: Record<string, unknown>): ConversationListRow {
   return {
     id: String(raw.id),
     buyer_id: String(raw.buyer_id),
     seller_id: String(raw.seller_id),
-    last_message_preview: (raw.last_message_preview as string | null) ?? null,
+    last_message: pickLastMessageText(raw),
     last_message_at: (raw.last_message_at as string | null) ?? null,
   };
 }
@@ -35,7 +43,7 @@ export async function fetchConversationsForInbox(
   supabase: SupabaseClient,
   userId: string,
 ): Promise<{ data: ConversationListRow[]; error: { message: string } | null }> {
-  const fields = "id, buyer_id, seller_id, last_message_preview, last_message_at";
+  const fields = "id, buyer_id, seller_id, last_message, last_message_at";
 
   const [asBuyer, asSeller] = await Promise.all([
     supabase.from("conversations").select(fields).eq("buyer_id", userId),
@@ -74,7 +82,7 @@ export async function fetchConversationById(
 
   if (error) return { data: null, error: { message: error.message } };
   if (!data) return { data: null, error: null };
-  const n = normalizeListRow({ ...(data as Record<string, unknown>), last_message_preview: null, last_message_at: null });
+  const n = normalizeListRow({ ...(data as Record<string, unknown>), last_message: null, last_message_at: null });
   return {
     data: { id: n.id, buyer_id: n.buyer_id, seller_id: n.seller_id },
     error: null,
@@ -95,7 +103,7 @@ export async function insertConversationPair(
 
   if (error) return { data: null, error: { message: error.message, code: error.code } };
   const raw = data as Record<string, unknown>;
-  const n = normalizeListRow({ ...raw, last_message_preview: null, last_message_at: null });
+  const n = normalizeListRow({ ...raw, last_message: null, last_message_at: null });
   return {
     data: { id: n.id, buyer_id: n.buyer_id, seller_id: n.seller_id },
     error: null,
@@ -116,7 +124,7 @@ export async function findConversationByPair(
     .maybeSingle();
   if (e1) throw e1;
   if (row1) {
-    const n = normalizeListRow({ ...(row1 as Record<string, unknown>), last_message_preview: null, last_message_at: null });
+    const n = normalizeListRow({ ...(row1 as Record<string, unknown>), last_message: null, last_message_at: null });
     return { id: n.id, buyer_id: n.buyer_id, seller_id: n.seller_id };
   }
 
@@ -128,7 +136,7 @@ export async function findConversationByPair(
     .maybeSingle();
   if (e2) throw e2;
   if (!row2) return null;
-  const n = normalizeListRow({ ...(row2 as Record<string, unknown>), last_message_preview: null, last_message_at: null });
+    const n = normalizeListRow({ ...(row2 as Record<string, unknown>), last_message: null, last_message_at: null });
   return { id: n.id, buyer_id: n.buyer_id, seller_id: n.seller_id };
 }
 

@@ -121,7 +121,7 @@ export default function Messages() {
       if (!oid) return false;
       const p = profiles.get(oid);
       const name = (p?.full_name || "").toLowerCase();
-      const prev = (r.last_message_preview || "").toLowerCase();
+      const prev = (r.last_message || "").toLowerCase();
       return name.includes(q) || prev.includes(q);
     });
   }, [rows, search, authUser?.id, profiles]);
@@ -201,8 +201,8 @@ export default function Messages() {
                       </span>
                     </div>
 
-                    <p className={`text-sm line-clamp-2 ${conversation.last_message_preview ? "text-gray-700" : "text-gray-400 italic"}`}>
-                      {conversation.last_message_preview || "No messages yet — say hello"}
+                    <p className={`text-sm line-clamp-2 ${conversation.last_message ? "text-gray-700" : "text-gray-400 italic"}`}>
+                      {conversation.last_message || "No messages yet — say hello"}
                     </p>
                   </div>
                 </Link>

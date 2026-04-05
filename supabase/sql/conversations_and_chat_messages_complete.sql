@@ -9,7 +9,7 @@ create table if not exists public.conversations (
   id uuid primary key default gen_random_uuid(),
   buyer_id uuid not null references auth.users (id) on delete cascade,
   seller_id uuid not null references auth.users (id) on delete cascade,
-  last_message_preview text,
+  last_message text,
   last_message_at timestamptz,
   created_at timestamptz not null default now(),
   constraint conversations_distinct_roles check (buyer_id <> seller_id)
@@ -45,7 +45,7 @@ as $$
 begin
   update public.conversations
   set
-    last_message_preview = left(new.body, 200),
+    last_message = left(new.body, 200),
     last_message_at = new.created_at
   where id = new.conversation_id;
   return new;

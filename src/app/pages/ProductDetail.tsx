@@ -229,6 +229,7 @@ export default function ProductDetail() {
   const [sellerReviewCount, setSellerReviewCount] = useState(0);
   const [sellerReviewsPreview, setSellerReviewsPreview] = useState<SellerReviewPreview[]>([]);
   const [sellerIdVerified, setSellerIdVerified] = useState(false);
+  const [sellerInfoReady, setSellerInfoReady] = useState(false);
   const [serverProduct, setServerProduct] = useState<any>(null);
   const [isServerProductLoading, setIsServerProductLoading] = useState<boolean>(true);
   const [relatedProducts, setRelatedProducts] = useState<RelatedCarouselItem[]>([]);
@@ -275,11 +276,18 @@ export default function ProductDetail() {
       if (idForQuery == null) {
         setServerProduct(null);
         setIsServerProductLoading(false);
+        setSellerInfoReady(true);
         return;
       }
 
       setIsServerProductLoading(true);
       setServerProduct(null);
+      setSellerProfile(null);
+      setSellerReviewAvg(0);
+      setSellerReviewCount(0);
+      setSellerReviewsPreview([]);
+      setSellerIdVerified(false);
+      setSellerInfoReady(false);
 
       const { data, error } = await supabase.from("products").select("*").eq("id", idForQuery).maybeSingle();
 
@@ -289,6 +297,7 @@ export default function ProductDetail() {
         console.warn("ProductDetail:", error.message);
         setServerProduct(null);
         setIsServerProductLoading(false);
+        setSellerInfoReady(true);
         return;
       }
 
@@ -416,28 +425,25 @@ export default function ProductDetail() {
 
   useEffect(() => {
     let cancelled = false;
-    const sid = foundProduct?.seller_id ?? foundProduct?.sellerId;
-    if (sid == null || String(sid).trim() === "") {
+    const rawSid = serverProduct?.seller_id ?? serverProduct?.sellerId;
+    if (rawSid == null || String(rawSid).trim() === "") {
       setSellerProfile(null);
       setSellerReviewAvg(0);
       setSellerReviewCount(0);
       setSellerReviewsPreview([]);
       setSellerIdVerified(false);
+      setSellerInfoReady(true);
       return;
     }
-    const idStr = String(sid).trim();
+    const idStr = String(rawSid).trim();
 
     const loadSellerContext = async () => {
-      setSellerProfile(null);
-      setSellerReviewAvg(0);
-      setSellerReviewCount(0);
-      setSellerReviewsPreview([]);
-      setSellerIdVerified(false);
+      setSellerInfoReady(false);
 
-      const [pubRes, ratingsRes, previewRes, verRes] = await Promise.all([
+      const [profRes, ratingsRes, previewRes, verRes] = await Promise.all([
         supabase
-          .from("profiles_public")
-          .select("id, full_name, avatar_url, gender, state, lga, created_at")
+          .from("profiles")
+          .select("id, full_name, avatar_url, gender, state, lga, created_at, phone")
           .eq("id", idStr)
           .maybeSingle(),
         supabase.from("seller_reviews").select("rating").eq("seller_id", idStr),
@@ -452,15 +458,18 @@ export default function ProductDetail() {
 
       if (cancelled) return;
 
-      let prof: SellerProfileRow | null = (pubRes.data as SellerProfileRow) ?? null;
+      let prof: SellerProfileRow | null = profRes.data ? (profRes.data as SellerProfileRow) : null;
+      if (profRes.error && !String(profRes.error.message || "").toLowerCase().includes("row")) {
+        console.warn("ProductDetail profiles:", profRes.error.message);
+      }
       if (!prof) {
-        const fb = await supabase
-          .from("profiles")
-          .select("id, full_name, avatar_url, gender, state, lga, created_at, phone")
+        const pub = await supabase
+          .from("profiles_public")
+          .select("id, full_name, avatar_url, gender, state, lga, created_at")
           .eq("id", idStr)
           .maybeSingle();
         if (cancelled) return;
-        if (fb.data) prof = fb.data as SellerProfileRow;
+        if (pub.data) prof = { ...(pub.data as SellerProfileRow), phone: null };
       }
 
       if (cancelled) return;
@@ -502,13 +511,14 @@ export default function ProductDetail() {
       );
 
       setSellerIdVerified(Boolean(verRes.data) && !verRes.error);
+      setSellerInfoReady(true);
     };
 
     void loadSellerContext();
     return () => {
       cancelled = true;
     };
-  }, [foundProduct?.seller_id, foundProduct?.sellerId]);
+  }, [serverProduct?.seller_id, serverProduct?.sellerId]);
 
   if (isServerProductLoading) {
     return (
@@ -536,6 +546,7 @@ export default function ProductDetail() {
     );
   }
 
+  /** Always use DB `seller_id` (uuid) for chat, profile, and lookups. */
   const sellerPeerIdRaw = foundProduct.seller_id ?? foundProduct.sellerId;
   const sellerPeerId =
     sellerPeerIdRaw != null && String(sellerPeerIdRaw).trim() !== "" ? String(sellerPeerIdRaw).trim() : "";
@@ -545,7 +556,23 @@ export default function ProductDetail() {
     typeof foundProduct.image === "string" && foundProduct.image.trim() !== "" ? foundProduct.image.trim() : "";
   const galleryImages = primaryImage ? [primaryImage] : [];
 
-  const sellerDisplayName = sellerProfile?.full_name?.trim() || "Seller";
+  const sellerDisplayName =
+    sellerProfile?.full_name?.trim() ||
+    (sellerInfoReady ? "Seller" : "…");
+  const listingRatingRaw = Number(foundProduct.rating);
+  const listingReviewsRaw = Number(foundProduct.reviews);
+  const hasAggregateReviews = sellerReviewCount > 0;
+  const displaySellerRating = hasAggregateReviews
+    ? Math.round(sellerReviewAvg * 10) / 10
+    : Number.isFinite(listingRatingRaw) && listingReviewsRaw > 0
+      ? Math.round(listingRatingRaw * 10) / 10
+      : 0;
+  const displaySellerReviewCount = hasAggregateReviews
+    ? sellerReviewCount
+    : Number.isFinite(listingReviewsRaw)
+      ? Math.max(0, Math.floor(listingReviewsRaw))
+      : 0;
+
   const sellerTierRaw =
     typeof foundProduct.seller_tier === "string"
       ? foundProduct.seller_tier
@@ -568,9 +595,13 @@ export default function ProductDetail() {
     seller: {
       id: sellerPeerId || "unknown",
       name: sellerDisplayName,
-      avatar: getAvatarUrl(sellerProfile?.avatar_url, sellerProfile?.gender, sellerDisplayName),
-      rating: sellerReviewCount > 0 ? Math.round(sellerReviewAvg * 10) / 10 : 0,
-      reviews: sellerReviewCount,
+      avatar: getAvatarUrl(
+        sellerProfile?.avatar_url,
+        sellerProfile?.gender,
+        sellerProfile?.full_name?.trim() || sellerDisplayName || "Member",
+      ),
+      rating: displaySellerRating,
+      reviews: displaySellerReviewCount,
       verified: sellerIdVerified || sellerTierLower === "crown" || sellerTierLower === "blue",
       memberSince: sellerProfile?.created_at
         ? new Date(sellerProfile.created_at).toLocaleDateString("en-US", { month: "short", year: "numeric" })

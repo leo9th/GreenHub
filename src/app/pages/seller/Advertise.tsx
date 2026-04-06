@@ -30,6 +30,10 @@ export default function Advertise() {
   const [selectedTier, setSelectedTier] = useState<BoostTier | null>(null);
   const [paymentRef, setPaymentRef] = useState<string | null>(null);
   const [verifying, setVerifying] = useState(false);
+  /** From DB runtime_settings.testing_free_ads — complimentary boosts for any seller (testing). */
+  const [testingFreeAds, setTestingFreeAds] = useState(false);
+  const [testingFreeAdsDays, setTestingFreeAdsDays] = useState(7);
+  const [runtimeFlagsLoaded, setRuntimeFlagsLoaded] = useState(false);
 
   const loadProducts = useCallback(async () => {
     if (!user?.id) {
@@ -67,6 +71,30 @@ export default function Advertise() {
   }, [loadProducts]);
 
   useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const { data, error } = await supabase
+        .from("runtime_settings")
+        .select("testing_free_ads, testing_free_ads_days")
+        .eq("id", 1)
+        .maybeSingle();
+      if (cancelled) return;
+      if (error || !data) {
+        setTestingFreeAds(false);
+        setRuntimeFlagsLoaded(true);
+        return;
+      }
+      setTestingFreeAds(data.testing_free_ads === true);
+      const d = Number((data as { testing_free_ads_days?: unknown }).testing_free_ads_days);
+      setTestingFreeAdsDays(Number.isFinite(d) && d > 0 ? d : 7);
+      setRuntimeFlagsLoaded(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     const raw = preProductId?.trim();
     if (!raw) return;
     const n = parseInt(raw, 10);
@@ -91,7 +119,8 @@ export default function Advertise() {
   };
 
   const publicKey = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY ?? "";
-  const complimentaryAds = isAutoAdsSubscriberEmail(user?.email ?? null);
+  const allowlistedAds = isAutoAdsSubscriberEmail(user?.email ?? null);
+  const complimentaryAds = (runtimeFlagsLoaded && testingFreeAds) || allowlistedAds;
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
@@ -115,10 +144,23 @@ export default function Advertise() {
 
         {complimentaryAds ? (
           <div className="rounded-xl border border-emerald-200 bg-emerald-50/90 px-4 py-3 text-sm text-emerald-950">
-            <p className="font-semibold text-emerald-900">Complimentary ads on your account</p>
+            <p className="font-semibold text-emerald-900">
+              {testingFreeAds ? "Testing: free listing boost" : "Complimentary ads on your account"}
+            </p>
             <p className="mt-1 text-emerald-900/90">
-              Choose a listing and tier below, then activate — no Paystack payment. Access is tied to your signed-in
-              email.
+              {testingFreeAds ? (
+                <>
+                  All sellers can activate a boost without Paystack for{" "}
+                  <span className="font-semibold">{testingFreeAdsDays} days</span> (runtime flag in Supabase). Turn off{" "}
+                  <code className="rounded bg-emerald-100/80 px-1 text-[11px]">runtime_settings.testing_free_ads</code>{" "}
+                  when you go live.
+                </>
+              ) : (
+                <>
+                  Choose a listing and tier below, then activate — no Paystack payment. Access is tied to your
+                  allowlisted account email.
+                </>
+              )}
             </p>
           </div>
         ) : null}

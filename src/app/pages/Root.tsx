@@ -30,12 +30,14 @@ export default function Root() {
     };
   }, [user?.id]);
   const hideNavOnPaths = ["/login", "/register", "/verify-otp", "/design-system"];
-  const hideFloatingChatbot = hideNavOnPaths.some((path) => location.pathname.startsWith(path));
   const isMessageThread =
     location.pathname !== "/messages" &&
     (/^\/messages\/c\//.test(location.pathname) ||
       /^\/messages\/u\//.test(location.pathname) ||
       /^\/messages\/[^/]+$/.test(location.pathname));
+  /** Hide site assistant on DM screens so it does not cover the message composer. */
+  const hideFloatingChatbot =
+    hideNavOnPaths.some((path) => location.pathname.startsWith(path)) || isMessageThread;
   const showBottomNav =
     !hideNavOnPaths.some((path) => location.pathname.startsWith(path)) && !isMessageThread;
 

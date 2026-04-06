@@ -5,7 +5,6 @@ import {
   Send,
   MoreVertical,
   Phone,
-  Plus,
   Paperclip,
   Check,
   CheckCheck,
@@ -14,6 +13,7 @@ import {
   User,
   Settings,
   Link2,
+  Smile,
 } from "lucide-react";
 import { getAvatarUrl } from "../utils/getAvatar";
 import { supabase } from "../../lib/supabase";
@@ -41,6 +41,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "../components/ui/dropdown-menu";
+import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popover";
 
 function parseConversationInt(v: unknown): number | null {
   if (v == null) return null;
@@ -76,6 +77,87 @@ function phoneLinkTargets(raw: string | null): { telHref: string; waHref: string
   return { telHref, waHref };
 }
 
+const CHAT_EMOJI_GROUPS: { id: string; label: string; emojis: string[] }[] = [
+  {
+    id: "smileys",
+    label: "Smileys",
+    emojis: [
+      "😀", "😃", "😄", "😁", "😅", "😂", "🤣", "🥲", "☺️", "😊", "😇", "🙂", "😉", "😌", "😍", "🥰", "😘", "😗", "😙", "😚", "😋", "😛", "😜", "🤪", "🤔", "🫤", "😴", "😮", "😢", "😭", "😤", "🥹", "😎", "🤓", "🥳", "🤗", "🫡", "🫠",
+    ],
+  },
+  {
+    id: "hearts",
+    label: "Love",
+    emojis: [
+      "❤️", "🧡", "💛", "💚", "💙", "💜", "🤎", "🖤", "🤍", "💕", "💞", "💓", "💗", "💖", "💘", "💝", "💋", "💌", "♥️", "😻", "💑", "💐", "🌹", "🌷",
+    ],
+  },
+  {
+    id: "hands",
+    label: "Hands",
+    emojis: [
+      "👍", "👎", "👌", "🤌", "✌️", "🤞", "🫰", "🤝", "🙏", "👏", "🫶", "👋", "🤚", "✋", "💪", "🤙", "👆", "👇", "☝️", "✊", "👊", "🤛", "🤜",
+    ],
+  },
+  {
+    id: "celebrate",
+    label: "Party",
+    emojis: [
+      "🎉", "🎊", "✨", "🌟", "⭐", "💫", "🔥", "💯", "🏆", "🥇", "🎯", "✅", "☑️", "👀", "🙌", "💥", "🎁", "🍾", "🥂", "🎂",
+    ],
+  },
+  {
+    id: "food",
+    label: "Food",
+    emojis: [
+      "🍎", "🍊", "🍋", "🍌", "🍉", "🍇", "🍓", "🫐", "🥭", "🍑", "🥑", "🥕", "🌽", "🥦", "🍞", "🧀", "🍳", "🍔", "🍟", "🍕", "🌮", "🍣", "🍩", "☕", "🧃", "🍷",
+    ],
+  },
+  {
+    id: "misc",
+    label: "More",
+    emojis: [
+      "💬", "❓", "❗", "💡", "📌", "📎", "📦", "🛒", "🏠", "🌍", "☀️", "🌧️", "⚡", "🕐", "📱", "💻", "🐶", "🐱", "🌿", "🍀", "🎵", "⚽", "🚗", "✈️", "⛺",
+    ],
+  },
+];
+
+function ChatEmojiPickerContent({ onPick }: { onPick: (emoji: string) => void }) {
+  const [tab, setTab] = useState(0);
+  const group = CHAT_EMOJI_GROUPS[tab] ?? CHAT_EMOJI_GROUPS[0];
+  return (
+    <div className="w-[min(17.5rem,calc(100vw-2.5rem))] select-none">
+      <div className="mb-1.5 flex gap-0.5 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {CHAT_EMOJI_GROUPS.map((g, i) => (
+          <button
+            key={g.id}
+            type="button"
+            onClick={() => setTab(i)}
+            className={`shrink-0 rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide transition-colors ${
+              i === tab ? "bg-[#22c55e]/15 text-[#15803d]" : "text-gray-500 hover:bg-gray-100"
+            }`}
+          >
+            {g.label}
+          </button>
+        ))}
+      </div>
+      <div className="grid max-h-[9.5rem] grid-cols-8 gap-0.5 overflow-y-auto overscroll-contain pr-0.5">
+        {group.emojis.map((em, idx) => (
+          <button
+            key={`${group.id}-${idx}-${em}`}
+            type="button"
+            onClick={() => onPick(em)}
+            className="flex h-8 w-8 items-center justify-center rounded-md text-[1.05rem] leading-none hover:bg-gray-100 active:scale-95"
+            aria-label={`Insert emoji ${em}`}
+          >
+            {em}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /** PostgREST / Supabase errors are plain objects with `message`, not always `Error` instances. */
 function errorMessage(e: unknown, fallback: string): string {
   if (e instanceof Error) return e.message;
@@ -104,7 +186,9 @@ export default function Chat() {
   const { user: authUser, loading: authLoading } = useAuth();
   const formatPrice = useCurrency();
   const [message, setMessage] = useState("");
+  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
   const typingBroadcastRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const peerTypingClearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typingChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
@@ -491,6 +575,23 @@ export default function Chat() {
     }, 600);
   };
 
+  const insertEmoji = useCallback((emoji: string) => {
+    const el = composerRef.current;
+    if (!el) {
+      setMessage((m) => m + emoji);
+      return;
+    }
+    const start = el.selectionStart ?? el.value.length;
+    const end = el.selectionEnd ?? start;
+    const next = el.value.slice(0, start) + emoji + el.value.slice(end);
+    setMessage(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = start + emoji.length;
+      el.setSelectionRange(pos, pos);
+    });
+  }, []);
+
   if (authLoading || loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center text-sm text-gray-600">Loading…</div>
@@ -663,27 +764,44 @@ export default function Chat() {
         </div>
       </div>
 
-      <div className="shrink-0 border-t border-gray-200 bg-white shadow-[0_-2px_10px_rgba(0,0,0,0.06)]">
+      <div className="relative z-30 shrink-0 border-t border-gray-200 bg-white shadow-[0_-2px_10px_rgba(0,0,0,0.06)] pb-[max(0.5rem,env(safe-area-inset-bottom))]">
         <div className="px-3 py-3">
           <div className="flex items-end gap-2">
+            <Popover open={emojiPickerOpen} onOpenChange={setEmojiPickerOpen}>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className="shrink-0 rounded-full p-2 text-gray-600 hover:bg-gray-100"
+                  aria-label="Emoji"
+                >
+                  <Smile className="h-5 w-5" />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent
+                side="top"
+                align="start"
+                sideOffset={10}
+                className="z-[70] w-auto border-gray-200 p-2 shadow-lg"
+              >
+                <ChatEmojiPickerContent
+                  onPick={(em) => {
+                    insertEmoji(em);
+                    setEmojiPickerOpen(false);
+                  }}
+                />
+              </PopoverContent>
+            </Popover>
             <button
               type="button"
-              className="shrink-0 rounded-full p-2 text-gray-500 hover:bg-gray-100"
-              aria-label="More"
-              disabled
-            >
-              <Plus className="h-5 w-5 opacity-50" />
-            </button>
-            <button
-              type="button"
-              className="shrink-0 rounded-full p-2 text-gray-500 hover:bg-gray-100"
+              className="shrink-0 rounded-full p-2 text-gray-500 hover:bg-gray-100 disabled:opacity-50"
               aria-label="Attach"
               disabled
             >
               <Paperclip className="h-5 w-5 opacity-50" />
             </button>
-            <div className="relative flex-1">
+            <div className="relative min-w-0 flex-1">
               <textarea
+                ref={composerRef}
                 value={message}
                 onChange={(e) => onComposerChange(e.target.value)}
                 onKeyDown={(e) => {
@@ -712,7 +830,8 @@ export default function Chat() {
     </div>
   );
 
-  const shellHeight = "md:h-[calc(100dvh-4rem)] md:max-h-[calc(100dvh-4rem)]";
+  const shellHeight =
+    "max-md:h-[calc(100dvh-4rem-0.75rem)] max-md:max-h-[calc(100dvh-4rem-0.75rem)] md:h-[calc(100dvh-4rem)] md:max-h-[calc(100dvh-4rem)]";
 
   const conversationList = (
     <>
@@ -832,7 +951,7 @@ export default function Chat() {
   return (
     <div className="min-h-[calc(100dvh-4rem)] bg-gray-50 max-md:pt-3">
       <div
-        className={`mx-auto grid w-full max-w-[1280px] min-h-[calc(100dvh-4rem)] max-md:min-h-[calc(100dvh-4rem-0.75rem)] grid-cols-1 md:grid-cols-[1fr_2fr] lg:grid-cols-[1fr_2fr_1fr] ${shellHeight}`}
+        className={`mx-auto grid w-full max-w-[1280px] grid-cols-1 md:grid-cols-[1fr_2fr] lg:grid-cols-[1fr_2fr_1fr] ${shellHeight}`}
       >
         <aside
           className={`hidden min-h-0 flex-col border-r border-gray-200 bg-white md:flex ${shellHeight}`}

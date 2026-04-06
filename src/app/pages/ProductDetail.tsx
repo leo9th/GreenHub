@@ -105,6 +105,16 @@ type SellerReviewPreview = {
   reviewer_name: string;
 };
 
+type ProductReviewDisplay = {
+  id: string;
+  rating: number;
+  comment: string;
+  created_at: string;
+  user_id: string;
+  reviewer_name: string;
+  reviewer_avatar: string;
+};
+
 function RelatedProductsCarousel({
   items,
   formatPrice,
@@ -241,6 +251,8 @@ export default function ProductDetail() {
   const [isServerProductLoading, setIsServerProductLoading] = useState<boolean>(true);
   const [relatedProducts, setRelatedProducts] = useState<RelatedCarouselItem[]>([]);
   const [moreFromSeller, setMoreFromSeller] = useState<RelatedCarouselItem[]>([]);
+  const [productReviews, setProductReviews] = useState<ProductReviewDisplay[]>([]);
+  const [productReviewsReady, setProductReviewsReady] = useState(false);
 
   /** URL `products/:id` — pass through trimmed string so PostgREST matches int/bigint/uuid PKs without Number() precision loss */
   const normalizeRouteProductId = (raw: string | undefined): string | null => {
@@ -310,6 +322,86 @@ export default function ProductDetail() {
       cancelled = true;
     };
   }, [authUser?.id, serverProduct?.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadProductReviews = async () => {
+      const pid = serverProduct?.id;
+      if (pid == null) {
+        setProductReviews([]);
+        setProductReviewsReady(true);
+        return;
+      }
+      const pidNum = typeof pid === "number" ? pid : Number(pid);
+      if (!Number.isFinite(pidNum)) {
+        setProductReviews([]);
+        setProductReviewsReady(true);
+        return;
+      }
+
+      setProductReviewsReady(false);
+      const { data, error } = await supabase
+        .from("product_reviews")
+        .select("id, rating, comment, created_at, user_id")
+        .eq("product_id", pidNum)
+        .order("created_at", { ascending: false });
+
+      if (cancelled) return;
+
+      if (error) {
+        const msg = String(error.message || "").toLowerCase();
+        if (!(msg.includes("product_reviews") && msg.includes("does not exist"))) {
+          console.warn("ProductDetail product_reviews:", error.message);
+        }
+        setProductReviews([]);
+        setProductReviewsReady(true);
+        return;
+      }
+
+      const rows = (data ?? []) as {
+        id: string;
+        rating: number;
+        comment: string;
+        created_at: string;
+        user_id: string;
+      }[];
+      const uids = [...new Set(rows.map((r) => r.user_id).filter(Boolean))];
+      type ProfLite = { id: string; full_name: string | null; avatar_url: string | null; gender: string | null };
+      let profMap = new Map<string, ProfLite>();
+      if (uids.length > 0) {
+        const { data: pubs } = await supabase
+          .from("profiles_public")
+          .select("id, full_name, avatar_url, gender")
+          .in("id", uids);
+        for (const p of (pubs ?? []) as ProfLite[]) {
+          if (p.id) profMap.set(String(p.id), p);
+        }
+      }
+
+      setProductReviews(
+        rows.map((r) => {
+          const pr = profMap.get(String(r.user_id));
+          const name = pr?.full_name?.trim() || "Member";
+          return {
+            id: r.id,
+            rating: Number(r.rating),
+            comment: String(r.comment ?? ""),
+            created_at: r.created_at,
+            user_id: r.user_id,
+            reviewer_name: name,
+            reviewer_avatar: getAvatarUrl(pr?.avatar_url ?? null, pr?.gender ?? null, name),
+          };
+        }),
+      );
+      setProductReviewsReady(true);
+    };
+
+    void loadProductReviews();
+    return () => {
+      cancelled = true;
+    };
+  }, [serverProduct?.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -722,10 +814,22 @@ export default function ProductDetail() {
   const sellerPhoneRaw = sellerProfile?.phone != null ? String(sellerProfile.phone).trim() : "";
   const sellerTelHref = sellerPhoneRaw ? `tel:${sellerPhoneRaw.replace(/\s/g, "")}` : "";
 
+  const dbProductAvg = foundProduct?.average_rating != null ? Number(foundProduct.average_rating) : NaN;
+  const dbProductTotal = Number(foundProduct?.total_reviews ?? 0);
+  const productRatingAvg =
+    Number.isFinite(dbProductAvg) && dbProductTotal > 0
+      ? Math.round(dbProductAvg * 10) / 10
+      : productReviews.length > 0
+        ? Math.round((productReviews.reduce((s, r) => s + r.rating, 0) / productReviews.length) * 10) / 10
+        : 0;
+  const productRatingTotal = dbProductTotal > 0 ? dbProductTotal : productReviews.length;
+  const userHasProductReview = Boolean(authUser && productReviews.some((r) => r.user_id === authUser.id));
+  const productIdForReviewLink = normalizeRouteProductId(id) ?? String(foundProduct?.id ?? "");
+
   return (
     <div className="min-h-screen bg-gray-100 text-gray-900 pb-28 md:pb-8">
       <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-sm border-b border-gray-100">
-        <div className="max-w-6xl mx-auto px-4 h-12 flex items-center justify-between">
+        <div className="mx-auto flex h-12 max-w-6xl items-center justify-between px-3 sm:px-4">
           <button
             type="button"
             onClick={() => navigate(-1)}
@@ -758,10 +862,10 @@ export default function ProductDetail() {
         </div>
       </header>
 
-      <div className="max-w-6xl mx-auto px-4 pt-6 md:pt-8">
+      <div className="mx-auto max-w-6xl px-3 pt-6 sm:px-4 md:px-4 md:pt-6 lg:pt-8">
         {/* Image column first = left on desktop (matches marketplace listing layout) */}
-        <div className="grid grid-cols-1 md:grid-cols-12 md:gap-8 lg:gap-12 xl:gap-14 md:items-start">
-          <div className="md:col-span-5 lg:col-span-5 flex justify-center md:justify-start md:sticky md:top-14 shrink-0">
+        <div className="grid grid-cols-1 md:grid-cols-12 md:items-start md:gap-5 lg:gap-8 xl:gap-12 2xl:gap-14">
+          <div className="flex shrink-0 justify-center md:col-span-5 md:justify-start md:sticky md:top-14 lg:col-span-5">
             <div className="relative w-full max-w-[520px] md:max-w-none mx-auto">
               <div className="relative rounded-2xl overflow-hidden bg-white shadow-sm ring-1 ring-gray-200/90">
                 <div className="relative aspect-[3/4] w-full bg-gray-100 md:min-h-[min(70vh,560px)] md:aspect-auto md:h-[min(70vh,560px)]">
@@ -832,12 +936,34 @@ export default function ProductDetail() {
             </div>
           </div>
 
-          <div className="md:col-span-7 lg:col-span-7 space-y-4 pt-8 md:pt-0">
-            <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200/80">
+          <div className="space-y-4 pt-6 md:col-span-7 md:pt-0 lg:col-span-7">
+            <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200/80 sm:p-5">
               <h1 className="text-xl md:text-2xl font-semibold text-gray-900 leading-snug tracking-tight">
                 {product.title}
               </h1>
               <p className="text-2xl md:text-3xl font-bold text-[#15803d] mt-3 tabular-nums">{priceDisplay}</p>
+              {!productReviewsReady ? (
+                <p className="mt-3 text-sm text-gray-400">Loading reviews…</p>
+              ) : productRatingTotal > 0 ? (
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <span className="flex items-center gap-0.5" aria-label={`${productRatingAvg} out of 5 average`}>
+                    {Array.from({ length: 5 }, (_, i) => (
+                      <Star
+                        key={i}
+                        className={`h-4 w-4 ${
+                          i < Math.round(productRatingAvg) ? "fill-amber-400 text-amber-400" : "text-gray-200"
+                        }`}
+                      />
+                    ))}
+                  </span>
+                  <span className="text-sm font-semibold text-gray-900 tabular-nums">{productRatingAvg.toFixed(1)}</span>
+                  <span className="text-sm text-gray-500">
+                    ({productRatingTotal} {productRatingTotal === 1 ? "review" : "reviews"})
+                  </span>
+                </div>
+              ) : (
+                <p className="mt-3 text-sm text-gray-500">No product reviews yet.</p>
+              )}
               <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-500">
                 {product.location ? (
                   <span className="inline-flex items-center gap-1">
@@ -857,7 +983,7 @@ export default function ProductDetail() {
               </div>
             </div>
 
-            <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200/80">
+            <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200/80 sm:p-5">
               <div className="flex items-start gap-3">
                 <img
                   src={product.seller.avatar}
@@ -949,7 +1075,60 @@ export default function ProductDetail() {
               </div>
             </section>
 
-            <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200/80">
+            <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200/80 sm:p-5">
+              <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Product reviews</h2>
+                {authUser &&
+                String(foundProduct.seller_id ?? foundProduct.sellerId ?? "").trim() !== authUser.id ? (
+                  <Link
+                    to={`/products/${encodeURIComponent(productIdForReviewLink)}/write-review`}
+                    className="inline-flex shrink-0 items-center justify-center rounded-xl bg-[#22c55e] px-4 py-2.5 text-center text-sm font-semibold text-white hover:bg-[#15803d]"
+                  >
+                    {userHasProductReview ? "Edit your review" : "Write a review"}
+                  </Link>
+                ) : null}
+              </div>
+              {!productReviewsReady ? (
+                <p className="text-sm text-gray-500">Loading…</p>
+              ) : productReviews.length === 0 ? (
+                <p className="text-sm text-gray-500">No written reviews yet. Be the first to review this item.</p>
+              ) : (
+                <ul className="space-y-4">
+                  {productReviews.map((r) => (
+                    <li key={r.id} className="rounded-xl bg-gray-50/90 p-3 ring-1 ring-gray-100">
+                      <div className="flex items-start gap-3">
+                        <img
+                          src={r.reviewer_avatar}
+                          alt=""
+                          className="h-10 w-10 shrink-0 rounded-full bg-gray-100 object-cover ring-1 ring-gray-100"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-sm font-medium text-gray-900">{r.reviewer_name}</span>
+                            <span className="flex shrink-0 items-center gap-0.5" aria-hidden>
+                              {Array.from({ length: 5 }, (_, i) => (
+                                <Star
+                                  key={i}
+                                  className={`h-3.5 w-3.5 ${i < r.rating ? "fill-amber-400 text-amber-400" : "text-gray-200"}`}
+                                />
+                              ))}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-[11px] text-gray-400">
+                            {new Date(r.created_at).toLocaleDateString(undefined, { dateStyle: "medium" })}
+                          </p>
+                          {r.comment.trim() ? (
+                            <p className="mt-2 text-sm leading-relaxed text-gray-700">{r.comment.trim()}</p>
+                          ) : null}
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200/80 sm:p-5">
               <div className="flex items-center justify-between gap-2 mb-3">
                 <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Buyer reviews</h2>
                 {sellerPeerId && sellerReviewCount > 0 ? (
@@ -990,7 +1169,7 @@ export default function ProductDetail() {
               )}
             </section>
 
-            <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200/80">
+            <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200/80 sm:p-5">
               <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">Description</h2>
               {product.description ? (
                 <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">{product.description}</p>
@@ -999,7 +1178,7 @@ export default function ProductDetail() {
               )}
             </section>
 
-            <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200/80">
+            <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200/80 sm:p-5">
               <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3">Delivery options</h2>
               {product.deliveryOptions.length === 0 ? (
                 <p className="text-sm text-gray-500">No delivery options listed for this item.</p>
@@ -1055,8 +1234,8 @@ export default function ProductDetail() {
         </div>
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-sm border-t border-gray-100">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex gap-2">
+      <div className="fixed bottom-0 left-0 right-0 z-30 border-t border-gray-100 bg-white/95 backdrop-blur-sm">
+        <div className="mx-auto flex max-w-6xl gap-2 px-3 py-3 sm:px-4">
           {canMessageSeller ? (
             <Link
               to={`/messages/u/${sellerPeerId}?product=${product.id}`}

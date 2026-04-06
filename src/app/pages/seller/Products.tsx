@@ -111,7 +111,7 @@ export default function SellerProducts() {
   const displayAmount = (p: SellerProductRow) => formatPrice(getProductPrice(p));
 
   const handleDelete = async (product: SellerProductRow) => {
-    if (!confirm("Delete this listing permanently?") || !user?.id) {
+    if (!confirm("Are you sure you want to delete this product?") || !user?.id) {
       setOpenMenuId(null);
       return;
     }
@@ -264,7 +264,7 @@ export default function SellerProducts() {
                     />
                   </Link>
 
-                  <div className="flex-1 min-w-0 pr-10">
+                  <div className="flex-1 min-w-0 pr-10 sm:pr-12">
                     <Link to={`/products/${product.id}`} className="block">
                       <h3 className="font-medium text-gray-800 mb-1 line-clamp-2">{product.title}</h3>
                     </Link>
@@ -285,53 +285,55 @@ export default function SellerProducts() {
                         <span>Listed {formatListedDate(product.created_at)}</span>
                       ) : null}
                     </div>
-                  </div>
 
-                  <div
-                    className={`absolute top-3 right-3 transition-opacity duration-150 ${
-                      openMenuId === product.id
-                        ? "opacity-100 z-20"
-                        : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 z-10"
-                    }`}
-                  >
-                    <div className="relative">
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Link
+                        to={`/seller/products/edit/${product.id}`}
+                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-300 bg-white text-sm font-medium text-gray-800 hover:bg-gray-50"
+                      >
+                        <Edit className="w-4 h-4 shrink-0" />
+                        Edit
+                      </Link>
                       <button
                         type="button"
-                        aria-label="Listing actions"
                         disabled={actionProductId === product.id}
-                        onClick={() => setOpenMenuId(openMenuId === product.id ? null : product.id)}
-                        className="p-2 rounded-lg border border-gray-200 bg-white shadow-sm hover:bg-gray-50 disabled:opacity-50"
+                        onClick={() => void handleDelete(product)}
+                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-red-200 bg-white text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
                       >
-                        <MoreVertical className="w-5 h-5 text-gray-700" />
+                        <Trash2 className="w-4 h-4 shrink-0" />
+                        Delete
                       </button>
+                    </div>
+                  </div>
 
-                      {openMenuId === product.id && (
-                        <>
-                          <button
-                            type="button"
-                            className="fixed inset-0 z-40 cursor-default bg-black/0"
-                            aria-label="Close menu"
-                            onClick={() => setOpenMenuId(null)}
-                          />
-                          <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1 w-44">
-                            <Link
-                              to={`/seller/products/${product.id}/edit`}
-                              className="flex items-center gap-2 px-4 py-2.5 hover:bg-gray-50 text-gray-800 text-sm"
-                              onClick={() => setOpenMenuId(null)}
-                            >
-                              <Edit className="w-4 h-4 shrink-0" />
-                              Edit
-                            </Link>
+                  {statusLower !== "sold" ? (
+                    <div
+                      className={`absolute top-3 right-3 transition-opacity duration-150 ${
+                        openMenuId === product.id
+                          ? "opacity-100 z-20"
+                          : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 z-10"
+                      }`}
+                    >
+                      <div className="relative">
+                        <button
+                          type="button"
+                          aria-label="More listing actions"
+                          disabled={actionProductId === product.id}
+                          onClick={() => setOpenMenuId(openMenuId === product.id ? null : product.id)}
+                          className="p-2 rounded-lg border border-gray-200 bg-white shadow-sm hover:bg-gray-50 disabled:opacity-50"
+                        >
+                          <MoreVertical className="w-5 h-5 text-gray-700" />
+                        </button>
+
+                        {openMenuId === product.id && (
+                          <>
                             <button
                               type="button"
-                              disabled={actionProductId === product.id}
-                              onClick={() => void handleDelete(product)}
-                              className="flex items-center gap-2 px-4 py-2.5 hover:bg-red-50 text-red-600 text-sm w-full text-left disabled:opacity-50"
-                            >
-                              <Trash2 className="w-4 h-4 shrink-0" />
-                              Delete
-                            </button>
-                            {statusLower !== "sold" ? (
+                              className="fixed inset-0 z-40 cursor-default bg-black/0"
+                              aria-label="Close menu"
+                              onClick={() => setOpenMenuId(null)}
+                            />
+                            <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1 w-44">
                               <button
                                 type="button"
                                 disabled={actionProductId === product.id}
@@ -341,12 +343,12 @@ export default function SellerProducts() {
                                 <Package className="w-4 h-4 shrink-0" />
                                 Mark as sold
                               </button>
-                            ) : null}
-                          </div>
-                        </>
-                      )}
+                            </div>
+                          </>
+                        )}
+                      </div>
                     </div>
-                  </div>
+                  ) : null}
                 </div>
               </div>
             );

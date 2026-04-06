@@ -4,7 +4,19 @@ import { getProductPrice } from "./getProductPrice";
 export const MAX_SEARCH_TERM_LENGTH = 120;
 export const PRODUCTS_PAGE_SIZE = 24;
 
-export type ListingSort = "recent" | "price-low" | "price-high" | "rating";
+export type ListingSort = "recent" | "price-low" | "price-high";
+
+export const LISTING_SORT_OPTIONS: { value: ListingSort; label: string }[] = [
+  { value: "recent", label: "Newest first" },
+  { value: "price-low", label: "Price: Low to High" },
+  { value: "price-high", label: "Price: High to Low" },
+];
+
+export function parseListingSort(raw: string | null | undefined): ListingSort {
+  const allowed: ListingSort[] = ["recent", "price-low", "price-high"];
+  const s = String(raw || "").trim();
+  return allowed.includes(s as ListingSort) ? (s as ListingSort) : "recent";
+}
 
 export type ListingFilterOpts = {
   category: string;
@@ -28,16 +40,14 @@ export function activeProductsQuery(client: SupabaseClient, columns = "*") {
 }
 
 /**
- * Case-insensitive match on title, description, or category (OR).
+ * Case-insensitive partial match on listing title only (returns all active products that match).
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function withSearchOr(query: any, sanitizedTerm: string) {
   const t = sanitizedTerm.trim();
   if (!t) return query;
   const p = `%${t}%`;
-  return query.or(
-    `title.ilike."${p}",description.ilike."${p}",category.ilike."${p}",car_brand.ilike."${p}"`,
-  );
+  return query.ilike("title", p);
 }
 
 /**
@@ -74,14 +84,40 @@ export function applyListingFilters(query: any, opts: ListingFilterOpts) {
 export function applyListingSort(query: any, sortBy: ListingSort) {
   switch (sortBy) {
     case "price-low":
-      return query.order("price_local", { ascending: true, nullsFirst: false });
+      return query
+        .order("price_local", { ascending: true, nullsFirst: false })
+        .order("created_at", { ascending: false });
     case "price-high":
-      return query.order("price_local", { ascending: false, nullsFirst: false });
-    case "rating":
-      return query.order("rating", { ascending: false, nullsFirst: false });
+      return query
+        .order("price_local", { ascending: false, nullsFirst: false })
+        .order("created_at", { ascending: false });
     case "recent":
     default:
       return query.order("created_at", { ascending: false });
+  }
+}
+
+/** Client-side sort for cached lists (e.g. Home). Uses same semantics as `applyListingSort`. */
+export function sortProductsClientSide(
+  rows: Array<Record<string, unknown>>,
+  sortBy: ListingSort,
+): Array<Record<string, unknown>> {
+  const arr = [...rows];
+  const price = (r: Record<string, unknown>) => Number(r.price) || 0;
+  const created = (r: Record<string, unknown>) => {
+    const raw = r.created_at ?? r.createdAt;
+    const t = raw != null ? new Date(String(raw)).getTime() : 0;
+    return Number.isFinite(t) ? t : 0;
+  };
+
+  switch (sortBy) {
+    case "price-low":
+      return arr.sort((a, b) => price(a) - price(b) || created(b) - created(a));
+    case "price-high":
+      return arr.sort((a, b) => price(b) - price(a) || created(b) - created(a));
+    case "recent":
+    default:
+      return arr.sort((a, b) => created(b) - created(a));
   }
 }
 

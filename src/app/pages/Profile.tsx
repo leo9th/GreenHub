@@ -43,8 +43,48 @@ type ReviewRow = {
   reviewer_name: string;
 };
 
+type ListingProductReviewRow = {
+  id: string;
+  rating: number;
+  comment: string;
+  created_at: string;
+  user_id: string;
+  product_id: number;
+  reviewer_name: string;
+  reviewer_avatar: string;
+  product_title: string;
+};
+
 function isUuid(s: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s.trim());
+}
+
+function isBenignReadError(err: { code?: string; message?: string } | null | undefined): boolean {
+  if (!err) return false;
+  const code = String(err.code ?? "");
+  const msg = String(err.message ?? "").toLowerCase();
+  return (
+    code === "PGRST116" ||
+    code === "42501" ||
+    msg.includes("permission denied") ||
+    msg.includes("permission") ||
+    msg.includes("rls") ||
+    msg.includes("row-level security")
+  );
+}
+
+function isSchemaOrMissingRelationError(err: { code?: string; message?: string } | null | undefined): boolean {
+  if (!err) return false;
+  const code = String(err.code ?? "");
+  const msg = String(err.message ?? "").toLowerCase();
+  return (
+    code === "42P01" ||
+    code === "42703" ||
+    msg.includes("does not exist") ||
+    msg.includes("schema cache") ||
+    msg.includes("could not find") ||
+    msg.includes("column")
+  );
 }
 
 function isActiveListing(status: string | null | undefined): boolean {
@@ -99,6 +139,7 @@ export default function Profile() {
   const [viewProfile, setViewProfile] = useState<UserProfile | null>(null);
   const [listings, setListings] = useState<Listing[]>([]);
   const [reviews, setReviews] = useState<ReviewRow[]>([]);
+  const [listingProductReviews, setListingProductReviews] = useState<ListingProductReviewRow[]>([]);
   const [soldCount, setSoldCount] = useState(0);
   const [verificationLabel, setVerificationLabel] = useState<"none" | "pending" | "approved" | "rejected">("none");
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -142,6 +183,18 @@ export default function Profile() {
   const reviewCount = reviews.length;
   const avgRating =
     reviewCount > 0 ? reviews.reduce((s, r) => s + r.rating, 0) / reviewCount : 0;
+  const listingReviewCount = listingProductReviews.length;
+  const listingAvgRating =
+    listingReviewCount > 0
+      ? listingProductReviews.reduce((s, r) => s + r.rating, 0) / listingReviewCount
+      : 0;
+  const profileRatingNum =
+    viewProfile?.rating != null && Number.isFinite(Number(viewProfile.rating))
+      ? Number(viewProfile.rating)
+      : null;
+  const starDisplayValue =
+    listingReviewCount > 0 ? listingAvgRating : reviewCount > 0 ? avgRating : (profileRatingNum ?? 0);
+  const headerReviewCount = listingReviewCount > 0 ? listingReviewCount : reviewCount;
 
   const activeListings = listings.filter((p) => isActiveListing(p.status));
 
@@ -150,6 +203,7 @@ export default function Profile() {
       setViewProfile(null);
       setListings([]);
       setReviews([]);
+      setListingProductReviews([]);
       setSoldCount(0);
       setDataLoading(false);
       return;
@@ -161,6 +215,7 @@ export default function Profile() {
       setViewProfile(null);
       setListings([]);
       setReviews([]);
+      setListingProductReviews([]);
       setDataLoading(false);
       return;
     }
@@ -173,14 +228,8 @@ export default function Profile() {
       let profRow: UserProfile | null = null;
 
       if (isOwnProfile && authUser) {
-        const { data, error } = await supabase
-          .from("profiles")
-          .select(
-            "id, full_name, phone, avatar_url, gender, state, lga, address, bio, auto_reply, email, created_at, updated_at, last_active, show_phone_on_profile, show_email_on_profile",
-          )
-          .eq("id", targetUserId)
-          .maybeSingle();
-        if (error && error.code !== "PGRST116") throw error;
+        const { data, error } = await supabase.from("profiles").select("*").eq("id", targetUserId).maybeSingle();
+        if (error && error.code !== "PGRST116" && !isBenignReadError(error)) throw error;
         profRow = (data as UserProfile) ?? null;
 
         if (!profRow) {
@@ -199,14 +248,20 @@ export default function Profile() {
           setProfileMissing(false);
         }
       } else {
-        const { data: pub, error: pubErr } = await supabase
-          .from("profiles_public")
-          .select("id, full_name, avatar_url, gender, bio, state, lga, created_at, updated_at, last_active, phone, public_email")
-          .eq("id", targetUserId)
-          .maybeSingle();
+        const fullSel =
+          "id, full_name, avatar_url, gender, bio, state, lga, created_at, updated_at, last_active, phone, public_email";
+        let pub = await supabase.from("profiles_public").select(fullSel).eq("id", targetUserId).maybeSingle();
 
-        if (!pubErr && pub) {
-          const pubRow = pub as UserProfile & { public_email?: string | null };
+        if (pub.error && isSchemaOrMissingRelationError(pub.error)) {
+          pub = await supabase
+            .from("profiles_public")
+            .select("id, full_name, avatar_url, gender, bio, state, lga, created_at, updated_at")
+            .eq("id", targetUserId)
+            .maybeSingle();
+        }
+
+        if (!pub.error && pub.data) {
+          const pubRow = pub.data as UserProfile & { public_email?: string | null };
           profRow = {
             ...pubRow,
             email: pubRow.public_email ?? null,
@@ -215,11 +270,11 @@ export default function Profile() {
         } else {
           const { data: fb, error: fbErr } = await supabase
             .from("profiles")
-            .select("id, full_name, avatar_url, gender, bio, state, lga, created_at, updated_at")
+            .select("id, full_name, avatar_url, gender, bio, state, lga, created_at, updated_at, last_active")
             .eq("id", targetUserId)
             .maybeSingle();
-          if (fbErr && fbErr.code !== "PGRST116" && !String(fbErr.message).includes("permission")) {
-            throw fbErr;
+          if (fbErr && fbErr.code !== "PGRST116" && !isBenignReadError(fbErr)) {
+            console.warn("Profile fallback profiles:", fbErr);
           }
           profRow = fb ? ({ ...(fb as UserProfile), phone: null, address: null } as UserProfile) : null;
         }
@@ -233,22 +288,27 @@ export default function Profile() {
 
       const { data: productRows, error: pErr } = await supabase
         .from("products")
-        .select("id, title, image, condition, price_local, price, status")
+        .select("id, title, image, condition, price_local, price, status, created_at")
         .eq("seller_id", targetUserId)
         .order("created_at", { ascending: false });
 
-      if (pErr) throw pErr;
-      setListings((productRows ?? []) as Listing[]);
-      setSoldCount(
-        (productRows ?? []).filter((r: { status?: string | null }) => (r.status ?? "").toLowerCase() === "sold").length,
-      );
+      if (pErr) {
+        console.warn("Profile products:", pErr);
+        setListings([]);
+        setSoldCount(0);
+      } else {
+        setListings((productRows ?? []) as Listing[]);
+        setSoldCount(
+          (productRows ?? []).filter((r: { status?: string | null }) => (r.status ?? "").toLowerCase() === "sold").length,
+        );
+      }
 
       const { data: verRows, error: vErr } = await supabase
         .from("seller_verification")
         .select("status")
         .eq("seller_id", targetUserId);
 
-      if (vErr && vErr.code !== "PGRST116" && !vErr.message.includes("does not exist")) {
+      if (vErr && vErr.code !== "PGRST116" && !String(vErr.message).includes("does not exist") && !isBenignReadError(vErr)) {
         console.warn(vErr);
       }
       const statuses = (verRows ?? []).map((r: { status: string }) => String(r.status).toLowerCase());
@@ -264,9 +324,12 @@ export default function Profile() {
         .order("created_at", { ascending: false });
 
       if (rErr) {
-        if (rErr.code === "42P01" || rErr.message.includes("does not exist") || rErr.message.includes("schema cache")) {
+        if (isSchemaOrMissingRelationError(rErr) || isBenignReadError(rErr)) {
           setReviews([]);
-        } else throw rErr;
+        } else {
+          console.warn("Profile seller_reviews:", rErr);
+          setReviews([]);
+        }
       } else {
         const rows = (revRows ?? []) as {
           id: string;
@@ -278,9 +341,11 @@ export default function Profile() {
         const ids = [...new Set(rows.map((r) => r.reviewer_id))];
         let nameMap = new Map<string, string>();
         if (ids.length > 0) {
-          const { data: profs } = await supabase.from("profiles_public").select("id, full_name").in("id", ids);
-          for (const p of profs ?? []) {
-            if (p.id) nameMap.set(String(p.id), (p.full_name as string) || "Buyer");
+          const { data: profs, error: nameErr } = await supabase.from("profiles_public").select("id, full_name").in("id", ids);
+          if (!nameErr) {
+            for (const p of profs ?? []) {
+              if (p.id) nameMap.set(String(p.id), (p.full_name as string) || "Buyer");
+            }
           }
         }
         setReviews(
@@ -290,11 +355,80 @@ export default function Profile() {
           })),
         );
       }
+
+      const sellerListingRows = pErr ? [] : (productRows ?? []);
+      const listingIds = sellerListingRows
+        .map((r: { id: unknown }) => {
+          const n = typeof r.id === "number" ? r.id : Number(r.id);
+          return Number.isFinite(n) ? n : null;
+        })
+        .filter((x): x is number => x != null);
+
+      if (listingIds.length === 0) {
+        setListingProductReviews([]);
+      } else {
+        const { data: prData, error: prErr } = await supabase
+          .from("product_reviews")
+          .select("id, rating, comment, created_at, user_id, product_id")
+          .in("product_id", listingIds)
+          .order("created_at", { ascending: false });
+
+        if (prErr) {
+          if (!isSchemaOrMissingRelationError(prErr)) console.warn("Profile product_reviews:", prErr);
+          setListingProductReviews([]);
+        } else {
+          const prRows = (prData ?? []) as {
+            id: string;
+            rating: number;
+            comment: string;
+            created_at: string;
+            user_id: string;
+            product_id: number;
+          }[];
+          const rIds = [...new Set(prRows.map((r) => r.user_id))];
+          type Pub = { id: string; full_name: string | null; avatar_url: string | null; gender: string | null };
+          let profById = new Map<string, Pub>();
+          if (rIds.length > 0) {
+            const { data: profs2, error: p2Err } = await supabase
+              .from("profiles_public")
+              .select("id, full_name, avatar_url, gender")
+              .in("id", rIds);
+            if (!p2Err) {
+              for (const p of (profs2 ?? []) as Pub[]) {
+                if (p.id) profById.set(String(p.id), p);
+              }
+            }
+          }
+          const titleByPid = new Map<number, string>();
+          for (const row of sellerListingRows) {
+            const n = typeof row.id === "number" ? row.id : Number((row as { id: unknown }).id);
+            if (Number.isFinite(n)) titleByPid.set(n, String((row as { title?: string }).title ?? "Listing"));
+          }
+          setListingProductReviews(
+            prRows.map((r) => {
+              const pr = profById.get(r.user_id);
+              const name = pr?.full_name?.trim() || "Buyer";
+              return {
+                id: r.id,
+                rating: Number(r.rating),
+                comment: String(r.comment ?? ""),
+                created_at: r.created_at,
+                user_id: r.user_id,
+                product_id: r.product_id,
+                reviewer_name: name,
+                reviewer_avatar: getAvatarUrl(pr?.avatar_url ?? null, pr?.gender ?? null, name),
+                product_title: titleByPid.get(Number(r.product_id)) ?? "Listing",
+              };
+            }),
+          );
+        }
+      }
     } catch (e: unknown) {
       console.error(e);
       setLoadError(e instanceof Error ? e.message : "Could not load profile data");
       setListings([]);
       setReviews([]);
+      setListingProductReviews([]);
     } finally {
       setDataLoading(false);
     }
@@ -361,8 +495,8 @@ export default function Profile() {
 
   return (
     <div className="min-h-screen bg-gray-100 pb-28">
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-3">
+      <header className="sticky top-0 z-40 border-b border-gray-200 bg-white">
+        <div className="mx-auto flex max-w-6xl items-center gap-3 px-3 py-3 sm:px-4">
           <button type="button" onClick={() => navigate(-1)} className="p-2 -ml-2 rounded-lg hover:bg-gray-100" aria-label="Back">
             <ArrowLeft className="w-5 h-5 text-gray-700" />
           </button>
@@ -370,98 +504,105 @@ export default function Profile() {
         </div>
       </header>
 
-      <div className="max-w-6xl mx-auto px-4 pt-6 pb-4 space-y-4">
+      <div className="mx-auto max-w-6xl space-y-4 px-3 pb-4 pt-6 sm:px-4">
         {profileMissing && !dataLoading ? (
-          <div className="rounded-2xl bg-amber-50 border border-amber-100 p-4 text-sm text-amber-900">
+          <div className="rounded-2xl border border-amber-100 bg-amber-50 p-4 text-sm text-amber-900">
             No public profile was found for this account. The user may not have completed their profile yet.
           </div>
         ) : null}
 
-        <div className="rounded-2xl bg-white p-5 sm:p-6 shadow-sm ring-1 ring-gray-200/80 text-center">
-          <img
-            src={avatar}
-            alt=""
-            className="w-24 h-24 rounded-full object-cover mx-auto ring-4 ring-gray-50 shadow-md border border-gray-100"
-          />
-          <h2 className="mt-4 text-xl font-semibold text-gray-900">{displayName}</h2>
+        <div className="lg:flex lg:items-start lg:gap-8">
+          <div className="rounded-2xl bg-white p-5 text-center shadow-sm ring-1 ring-gray-200/80 sm:p-6 lg:sticky lg:top-20 lg:w-80 lg:shrink-0 lg:text-left">
+            <img
+              src={avatar}
+              alt=""
+              className="mx-auto h-24 w-24 rounded-full border border-gray-100 object-cover shadow-md ring-4 ring-gray-50 lg:mx-0"
+            />
+            <h2 className="mt-4 text-xl font-semibold text-gray-900 lg:text-2xl">{displayName}</h2>
 
-          <div className="mt-1.5 flex items-center justify-center gap-2 text-xs text-gray-500">
-            {profileOnline ? (
-              <span className="inline-flex items-center gap-1.5 font-medium text-emerald-600">
-                <span className="relative flex h-2 w-2">
-                  <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-50 animate-ping" />
-                  <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+            <div className="mt-1.5 flex items-center justify-center gap-2 text-xs text-gray-500 lg:justify-start">
+              {profileOnline ? (
+                <span className="inline-flex items-center gap-1.5 font-medium text-emerald-600">
+                  <span className="relative flex h-2 w-2">
+                    <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-50 animate-ping" />
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+                  </span>
+                  Online now
                 </span>
-                Online now
-              </span>
-            ) : viewProfile?.last_active ? (
-              <span className="inline-flex items-center gap-1 text-gray-500">
-                <Clock className="w-3.5 h-3.5 shrink-0 opacity-70" aria-hidden />
-                {formatLastSeen(viewProfile.last_active)}
-              </span>
-            ) : null}
-          </div>
+              ) : viewProfile?.last_active ? (
+                <span className="inline-flex items-center gap-1 text-gray-500">
+                  <Clock className="w-3.5 h-3.5 shrink-0 opacity-70" aria-hidden />
+                  {formatLastSeen(viewProfile.last_active)}
+                </span>
+              ) : null}
+            </div>
 
-          <div className="mt-2 flex flex-col items-center gap-1">
-            <StarRow value={avgRating} />
-            <p className="text-sm text-gray-600">
-              {avgRating > 0 ? avgRating.toFixed(1) : "—"} · {reviewCount} review{reviewCount !== 1 ? "s" : ""}
+            <div className="mt-2 flex flex-col items-center gap-1 lg:items-start">
+              <div className="flex justify-center lg:justify-start">
+                <StarRow value={starDisplayValue} />
+              </div>
+              <p className="text-sm text-gray-600 lg:text-left">
+                {starDisplayValue > 0 ? starDisplayValue.toFixed(1) : "—"} · {headerReviewCount} review
+                {headerReviewCount !== 1 ? "s" : ""}
+                {listingReviewCount > 0 && isOwnProfile ? (
+                  <span className="block text-[11px] font-normal text-gray-400">From your listings</span>
+                ) : null}
+              </p>
+            </div>
+
+            <p className="mt-2 flex items-center justify-center gap-1 text-sm text-gray-500 lg:justify-start">
+              <MapPin className="w-3.5 h-3.5 shrink-0" />
+              {locationLabel}
             </p>
+
+            <p className="mt-1 text-xs text-gray-400 lg:text-left">Member since {memberSince}</p>
+
+            <div className="mt-3 flex flex-wrap items-center justify-center gap-2 lg:justify-start">
+              {verificationLabel === "approved" ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-[#dcfce7] px-2.5 py-1 text-xs font-semibold text-[#15803d]">
+                  <BadgeCheck className="w-3.5 h-3.5" />
+                  Verified
+                </span>
+              ) : verificationLabel === "pending" ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800">
+                  <Clock className="w-3.5 h-3.5" />
+                  Verification pending
+                </span>
+              ) : verificationLabel === "rejected" ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-1 text-xs font-semibold text-red-800">
+                  <ShieldAlert className="w-3.5 h-3.5" />
+                  Verification needs update
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-600">
+                  <Shield className="w-3.5 h-3.5" />
+                  Not verified
+                </span>
+              )}
+            </div>
+
+            <div className="mt-4 flex flex-col items-stretch justify-center gap-2 sm:flex-row sm:items-center lg:flex-col lg:items-stretch">
+              {isOwnProfile ? (
+                <Link
+                  to="/settings/profile/edit"
+                  className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-gray-50 px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-100"
+                >
+                  <Edit className="w-3.5 h-3.5" />
+                  Edit profile
+                </Link>
+              ) : (
+                <Link
+                  to={`/messages/u/${targetUserId}`}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-[#22c55e] px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-[#16a34a]"
+                >
+                  <MessageCircle className="w-3.5 h-3.5" />
+                  Chat
+                </Link>
+              )}
+            </div>
           </div>
 
-          <p className="mt-2 text-sm text-gray-500 flex items-center justify-center gap-1">
-            <MapPin className="w-3.5 h-3.5 shrink-0" />
-            {locationLabel}
-          </p>
-
-          <p className="mt-1 text-xs text-gray-400">Member since {memberSince}</p>
-
-          <div className="mt-3 flex items-center justify-center gap-2 flex-wrap">
-            {verificationLabel === "approved" ? (
-              <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#15803d] bg-[#dcfce7] px-2.5 py-1 rounded-full">
-                <BadgeCheck className="w-3.5 h-3.5" />
-                Verified
-              </span>
-            ) : verificationLabel === "pending" ? (
-              <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-800 bg-amber-100 px-2.5 py-1 rounded-full">
-                <Clock className="w-3.5 h-3.5" />
-                Verification pending
-              </span>
-            ) : verificationLabel === "rejected" ? (
-              <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-800 bg-red-100 px-2.5 py-1 rounded-full">
-                <ShieldAlert className="w-3.5 h-3.5" />
-                Verification needs update
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1 text-xs font-semibold text-gray-600 bg-gray-100 px-2.5 py-1 rounded-full">
-                <Shield className="w-3.5 h-3.5" />
-                Not verified
-              </span>
-            )}
-          </div>
-
-          <div className="mt-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-2">
-            {isOwnProfile ? (
-              <Link
-                to="/settings/profile/edit"
-                className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 bg-gray-50 border border-gray-200 rounded-xl hover:bg-gray-100 shadow-sm"
-              >
-                <Edit className="w-3.5 h-3.5" />
-                Edit profile
-              </Link>
-            ) : (
-              <Link
-                to={`/messages/u/${targetUserId}`}
-                className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm font-semibold text-white bg-[#22c55e] rounded-xl hover:bg-[#16a34a] shadow-sm"
-              >
-                <MessageCircle className="w-3.5 h-3.5" />
-                Chat
-              </Link>
-            )}
-          </div>
-        </div>
-
-        <div className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-200/80 overflow-hidden">
+          <div className="mt-4 min-w-0 flex-1 overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-200/80 lg:mt-0">
           <div className="border-b border-gray-100 overflow-x-auto no-scrollbar">
             <div className="flex min-w-max gap-0.5 px-2 pt-2">
               {tabs.map((t) => (
@@ -495,7 +636,7 @@ export default function Profile() {
                 ) : activeListings.length === 0 ? (
                   <p className="text-center text-sm text-gray-500 py-12">No active listings yet.</p>
                 ) : (
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
+                  <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3">
                     {activeListings.map((p) => (
                       <Link
                         key={String(p.id)}
@@ -531,28 +672,84 @@ export default function Profile() {
             )}
 
             {tab === "reviews" && (
-              <div className="space-y-3">
+              <div className="space-y-8">
                 {dataLoading ? (
                   <div className="flex justify-center py-16">
                     <Loader2 className="w-8 h-8 animate-spin text-[#22c55e]" />
                   </div>
-                ) : reviews.length === 0 ? (
-                  <p className="text-center text-sm text-gray-500 py-12">No reviews yet.</p>
                 ) : (
-                  reviews.map((r) => (
-                    <article key={r.id} className="bg-gray-50/80 rounded-xl ring-1 ring-gray-100 p-4">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-sm font-semibold text-gray-900">{r.reviewer_name}</p>
-                        <StarRow value={r.rating} max={5} />
-                      </div>
-                      <p className="text-xs text-gray-400 mt-1">
-                        {new Date(r.created_at).toLocaleDateString(undefined, {
-                          dateStyle: "medium",
-                        })}
-                      </p>
-                      {r.comment ? <p className="text-sm text-gray-700 mt-3 leading-relaxed">{r.comment}</p> : null}
-                    </article>
-                  ))
+                  <>
+                    <div>
+                      <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                        {isOwnProfile ? "Reviews on your listings" : "Product reviews"}
+                      </h3>
+                      {listingProductReviews.length === 0 ? (
+                        <p className="text-sm text-gray-500">
+                          {isOwnProfile
+                            ? "No product reviews on your listings yet."
+                            : "No product reviews on their listings yet."}
+                        </p>
+                      ) : (
+                        <ul className="space-y-3">
+                          {listingProductReviews.map((r) => (
+                            <li key={r.id} className="rounded-xl bg-gray-50/80 p-4 ring-1 ring-gray-100">
+                              <div className="flex items-start gap-3">
+                                <img
+                                  src={r.reviewer_avatar}
+                                  alt=""
+                                  className="h-10 w-10 shrink-0 rounded-full object-cover ring-1 ring-gray-100"
+                                />
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <span className="text-sm font-medium text-gray-900">{r.reviewer_name}</span>
+                                    <StarRow value={r.rating} max={5} />
+                                  </div>
+                                  <Link
+                                    to={`/products/${r.product_id}`}
+                                    className="mt-1 inline-block text-xs font-medium text-[#15803d] hover:underline"
+                                  >
+                                    {r.product_title}
+                                  </Link>
+                                  <p className="mt-1 text-xs text-gray-400">
+                                    {new Date(r.created_at).toLocaleDateString(undefined, { dateStyle: "medium" })}
+                                  </p>
+                                  {r.comment.trim() ? (
+                                    <p className="mt-2 text-sm leading-relaxed text-gray-700">{r.comment.trim()}</p>
+                                  ) : null}
+                                </div>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+
+                    <div>
+                      <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                        Seller feedback
+                      </h3>
+                      {reviews.length === 0 ? (
+                        <p className="text-sm text-gray-500">No seller feedback yet.</p>
+                      ) : (
+                        <div className="space-y-3">
+                          {reviews.map((r) => (
+                            <article key={r.id} className="rounded-xl bg-gray-50/80 p-4 ring-1 ring-gray-100">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-sm font-semibold text-gray-900">{r.reviewer_name}</p>
+                                <StarRow value={r.rating} max={5} />
+                              </div>
+                              <p className="mt-1 text-xs text-gray-400">
+                                {new Date(r.created_at).toLocaleDateString(undefined, {
+                                  dateStyle: "medium",
+                                })}
+                              </p>
+                              {r.comment ? <p className="mt-3 text-sm leading-relaxed text-gray-700">{r.comment}</p> : null}
+                            </article>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </>
                 )}
               </div>
             )}
@@ -680,6 +877,7 @@ export default function Profile() {
               </div>
             )}
           </div>
+        </div>
         </div>
       </div>
 

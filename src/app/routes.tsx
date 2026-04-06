@@ -1,4 +1,4 @@
-import { createBrowserRouter, Navigate } from "react-router";
+import { createBrowserRouter, Navigate, useParams } from "react-router";
 import Root from "./pages/Root";
 import Home from "./pages/Home";
 import About from "./pages/About";
@@ -25,11 +25,13 @@ import Chat from "./pages/Chat";
 import SellerDashboard from "./pages/seller/Dashboard";
 import SellerProducts from "./pages/seller/Products";
 import AddProduct from "./pages/seller/AddProduct";
+import EditProduct from "./pages/seller/EditProduct";
 import BankDetails from "./pages/seller/BankDetails";
 import Advertise from "./pages/seller/Advertise";
 import SetupAd from "./pages/seller/SetupAd";
 import SellerVerification from "./pages/seller/Verification";
 import WriteReview from "./pages/WriteReview";
+import WriteProductReview from "./pages/WriteProductReview";
 import SellerReviews from "./pages/SellerReviews";
 import Profile from "./pages/Profile";
 import ProfileEdit from "./pages/ProfileEdit";
@@ -43,6 +45,8 @@ import NotFound from "./pages/NotFound";
 import WorkersBrowse from "./pages/workers/WorkersBrowse";
 import WorkerProfileDetail from "./pages/workers/WorkerProfileDetail";
 import WorkerProfileRegister from "./pages/workers/WorkerProfileRegister";
+import Chatbot from "./pages/Chatbot";
+import Chatbot from "./pages/Chatbot";
 
 function LegacySellRouteRedirect() {
   return <Navigate to="/seller/products/new" replace />;
@@ -76,6 +80,12 @@ function LegacyAdminRedirect() {
   return <Navigate to="/admin/dashboard" replace />;
 }
 
+function LegacySellerProductEditRedirect() {
+  const { id } = useParams();
+  if (!id?.trim()) return <Navigate to="/seller/products" replace />;
+  return <Navigate to={`/seller/products/edit/${encodeURIComponent(id.trim())}`} replace />;
+}
+
 export const router = createBrowserRouter([
   {
     path: "/",
@@ -92,6 +102,7 @@ export const router = createBrowserRouter([
       { path: "terms", Component: Terms },
       { path: "privacy", Component: Privacy },
       { path: "faq", Component: FAQ },
+      { path: "chatbot", Component: Chatbot },
       { path: "design-system", Component: DesignSystem },
       { path: "login", Component: Login },
       { path: "register", Component: Register },
@@ -99,6 +110,7 @@ export const router = createBrowserRouter([
       { path: "reset-password", Component: ResetPassword },
       { path: "verify-otp", Component: VerifyOTP },
       { path: "products", Component: Products },
+      { path: "products/:productId/write-review", Component: WriteProductReview },
       { path: "products/:id", Component: ProductDetail },
       { path: "cart", Component: Cart },
       { path: "checkout", Component: Checkout },
@@ -110,11 +122,13 @@ export const router = createBrowserRouter([
       { path: "messages/u/:peerUserId", Component: Chat },
       /* Back-compat: old inbox links /messages/:conversationId (thread id only — not a peer user id). */
       { path: "messages/:legacyThreadId", Component: Chat },
+      { path: "chatbot", Component: Chatbot },
       { path: "seller/dashboard", Component: SellerDashboard },
       { path: "seller/products", Component: SellerProducts },
       { path: "seller/products/new", Component: AddProduct },
       { path: "seller/products/add", Component: LegacySellRouteRedirect },
-      { path: "seller/products/:id/edit", Component: AddProduct },
+      { path: "seller/products/edit/:id", Component: EditProduct },
+      { path: "seller/products/:id/edit", Component: LegacySellerProductEditRedirect },
       { path: "seller/bank-details", Component: BankDetails },
       { path: "seller/verification", Component: SellerVerification },
       { path: "seller/advertise", Component: Advertise },

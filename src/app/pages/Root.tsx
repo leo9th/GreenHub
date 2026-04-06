@@ -39,7 +39,8 @@ export default function Root() {
     !hideNavOnPaths.some((path) => location.pathname.startsWith(path)) && !isMessageThread;
 
   /** Support chat FAB is fixed bottom-right; on wide screens it can cover the chat Send button. */
-  const showAIAssistant = !location.pathname.startsWith("/messages");
+  const showAIAssistant =
+    !location.pathname.startsWith("/messages") && !location.pathname.startsWith("/chatbot");
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">

@@ -18,6 +18,8 @@ import {
   type ConversationRow,
 } from "../utils/chatConversations";
 import { fetchChatMessagesForConversation, type ChatMessageRow } from "../utils/chatMessages";
+import { useInboxConversationList } from "../hooks/useInboxConversationList";
+import { InboxSplitLayout } from "../components/messaging/InboxSplitLayout";
 
 function parseConversationInt(v: unknown): number | null {
   if (v == null) return null;
@@ -70,6 +72,19 @@ export default function Chat() {
   const [loading, setLoading] = useState(true);
   const [sendBusy, setSendBusy] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  const {
+    search: inboxSearch,
+    setSearch: setInboxSearch,
+    loadError: inboxLoadError,
+    loading: inboxLoading,
+    filtered: inboxFiltered,
+    profiles: inboxProfiles,
+    productTitles: inboxProductTitles,
+    unreadByConv: inboxUnreadByConv,
+    load: loadInboxList,
+    otherPartyUserId: inboxOtherPartyUserId,
+  } = useInboxConversationList(authUser?.id);
 
   const productParam = searchParams.get("product");
   const validProductId = useMemo(() => {
@@ -248,6 +263,11 @@ export default function Chat() {
     }
     void resolveConversation();
   }, [authLoading, authUser, navigate, resolveConversation]);
+
+  useEffect(() => {
+    if (authLoading || !authUser?.id) return;
+    void loadInboxList();
+  }, [authLoading, authUser?.id, loadInboxList]);
 
   useEffect(() => {
     const pid = conversation?.context_product_id;
@@ -444,57 +464,62 @@ export default function Chat() {
     );
   }
 
-  return (
-    <div className="min-h-screen bg-gray-100 flex flex-col pb-20">
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-40 shadow-sm">
-        <div className="px-4 py-3 max-w-6xl mx-auto">
-          <div className="flex items-center gap-3 mb-1">
-            <button type="button" onClick={() => navigate(-1)} className="p-2 -ml-2">
-              <ArrowLeft className="w-5 h-5 text-gray-700" />
+  const chatPanel = (
+    <div className="flex min-h-0 flex-1 flex-col bg-gray-100">
+      <header className="sticky top-0 z-40 shrink-0 border-b border-gray-200 bg-white shadow-sm">
+        <div className="px-4 py-3">
+          <div className="mb-1 flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => navigate("/messages")}
+              className="-ml-2 rounded-lg p-2 hover:bg-gray-100 md:hidden"
+              aria-label="Back to conversations"
+            >
+              <ArrowLeft className="h-5 w-5 text-gray-700" />
             </button>
-            <div className="relative flex-shrink-0">
+            <div className="relative shrink-0">
               <img
                 src={peerAvatar || getAvatarUrl(null, null, peerName)}
                 alt=""
-                className="w-10 h-10 rounded-full object-cover bg-gray-100"
+                className="h-10 w-10 rounded-full bg-gray-100 object-cover"
               />
             </div>
-            <div className="flex-1 min-w-0">
+            <div className="min-w-0 flex-1">
               <h1 className="font-semibold text-gray-800">{peerName}</h1>
               <p className="text-xs text-gray-600">Direct message</p>
             </div>
             {peerPhone ? (
               <a href={`tel:${peerPhone.replace(/\s/g, "")}`} className="p-2" aria-label="Call">
-                <Phone className="w-5 h-5 text-gray-600" />
+                <Phone className="h-5 w-5 text-gray-600" />
               </a>
             ) : (
-              <button type="button" className="p-2 opacity-40 cursor-not-allowed" aria-hidden>
-                <Phone className="w-5 h-5 text-gray-600" />
+              <button type="button" className="cursor-not-allowed p-2 opacity-40" aria-hidden>
+                <Phone className="h-5 w-5 text-gray-600" />
               </button>
             )}
-            <button type="button" className="p-2 opacity-50 cursor-not-allowed" aria-hidden>
-              <MoreVertical className="w-5 h-5 text-gray-600" />
+            <button type="button" className="cursor-not-allowed p-2 opacity-50" aria-hidden>
+              <MoreVertical className="h-5 w-5 text-gray-600" />
             </button>
           </div>
         </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto px-4 py-4 max-w-6xl mx-auto w-full">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4">
         {stripProduct ? (
-          <div className="mb-4 rounded-2xl bg-white border border-gray-200 shadow-sm p-3 flex gap-3 items-center">
-            <div className="w-16 h-16 rounded-xl bg-gray-100 overflow-hidden shrink-0">
+          <div className="mb-4 flex items-center gap-3 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm">
+            <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-gray-100">
               {stripProduct.image ? (
-                <img src={stripProduct.image} alt="" className="w-full h-full object-cover" />
+                <img src={stripProduct.image} alt="" className="h-full w-full object-cover" />
               ) : (
-                <div className="w-full h-full flex items-center justify-center text-xs text-gray-400">No image</div>
+                <div className="flex h-full w-full items-center justify-center text-xs text-gray-400">No image</div>
               )}
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-gray-900 line-clamp-2">{stripProduct.title}</p>
-              <p className="text-sm font-bold text-[#16a34a] mt-0.5">{formatPrice(stripProduct.price)}</p>
+            <div className="min-w-0 flex-1">
+              <p className="line-clamp-2 text-sm font-semibold text-gray-900">{stripProduct.title}</p>
+              <p className="mt-0.5 text-sm font-bold text-[#16a34a]">{formatPrice(stripProduct.price)}</p>
               <Link
                 to={`/products/${stripProduct.id}`}
-                className="inline-block mt-1 text-xs font-semibold text-[#16a34a] hover:underline"
+                className="mt-1 inline-block text-xs font-semibold text-[#16a34a] hover:underline"
               >
                 View product
               </Link>
@@ -512,15 +537,15 @@ export default function Chat() {
               <div key={msg.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
                 <div
                   className={`max-w-[75%] rounded-2xl px-4 py-2 ${
-                    mine ? "bg-[#22c55e] text-white rounded-br-sm" : "bg-white text-gray-800 rounded-bl-sm border border-gray-200"
+                    mine ? "rounded-br-sm bg-[#22c55e] text-white" : "rounded-bl-sm border border-gray-200 bg-white text-gray-800"
                   }`}
                 >
-                  <p className="text-sm whitespace-pre-wrap break-words">{msg.message}</p>
-                  <div className={`flex items-center gap-1.5 mt-1 ${mine ? "justify-end" : ""}`}>
+                  <p className="whitespace-pre-wrap break-words text-sm">{msg.message}</p>
+                  <div className={`mt-1 flex items-center gap-1.5 ${mine ? "justify-end" : ""}`}>
                     <span className={`text-xs ${mine ? "text-white/80" : "text-gray-500"}`}>{timeLabel}</span>
                     {mine ? (
-                      <span className="text-white/90 inline-flex items-center" title={readByPeer ? "Read" : "Delivered"}>
-                        {readByPeer ? <CheckCheck className="w-3.5 h-3.5" strokeWidth={2.5} /> : <Check className="w-3.5 h-3.5" strokeWidth={2.5} />}
+                      <span className="inline-flex items-center text-white/90" title={readByPeer ? "Read" : "Delivered"}>
+                        {readByPeer ? <CheckCheck className="h-3.5 w-3.5" strokeWidth={2.5} /> : <Check className="h-3.5 w-3.5" strokeWidth={2.5} />}
                       </span>
                     ) : null}
                   </div>
@@ -531,11 +556,11 @@ export default function Chat() {
 
           {peerTyping ? (
             <div className="flex justify-start">
-              <div className="rounded-2xl rounded-bl-sm border border-gray-200 bg-white px-4 py-2.5 text-sm text-gray-600 inline-flex items-center gap-2">
+              <div className="inline-flex items-center gap-2 rounded-2xl rounded-bl-sm border border-gray-200 bg-white px-4 py-2.5 text-sm text-gray-600">
                 <span className="typing-dots flex gap-1" aria-hidden>
-                  <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce [animation-delay:0ms]" />
-                  <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce [animation-delay:150ms]" />
-                  <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce [animation-delay:300ms]" />
+                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400 [animation-delay:0ms]" />
+                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400 [animation-delay:150ms]" />
+                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400 [animation-delay:300ms]" />
                 </span>
                 <span className="text-xs">{peerFirstName} is typing…</span>
               </div>
@@ -545,26 +570,26 @@ export default function Chat() {
         </div>
       </div>
 
-      <div className="bg-white border-t border-gray-200 sticky bottom-0 z-40 shadow-[0_-2px_10px_rgba(0,0,0,0.06)]">
-        <div className="px-3 py-3 max-w-6xl mx-auto">
+      <div className="shrink-0 border-t border-gray-200 bg-white shadow-[0_-2px_10px_rgba(0,0,0,0.06)]">
+        <div className="px-3 py-3">
           <div className="flex items-end gap-2">
             <button
               type="button"
-              className="p-2 rounded-full text-gray-500 hover:bg-gray-100 shrink-0"
+              className="shrink-0 rounded-full p-2 text-gray-500 hover:bg-gray-100"
               aria-label="More"
               disabled
             >
-              <Plus className="w-5 h-5 opacity-50" />
+              <Plus className="h-5 w-5 opacity-50" />
             </button>
             <button
               type="button"
-              className="p-2 rounded-full text-gray-500 hover:bg-gray-100 shrink-0"
+              className="shrink-0 rounded-full p-2 text-gray-500 hover:bg-gray-100"
               aria-label="Attach"
               disabled
             >
-              <Paperclip className="w-5 h-5 opacity-50" />
+              <Paperclip className="h-5 w-5 opacity-50" />
             </button>
-            <div className="flex-1 relative">
+            <div className="relative flex-1">
               <textarea
                 value={message}
                 onChange={(e) => onComposerChange(e.target.value)}
@@ -576,7 +601,7 @@ export default function Chat() {
                 }}
                 placeholder="Type a message..."
                 rows={1}
-                className="w-full px-4 py-2 bg-gray-100 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-[#22c55e] resize-none"
+                className="w-full resize-none rounded-full bg-gray-100 px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#22c55e]"
                 style={{ minHeight: "40px", maxHeight: "120px" }}
               />
             </div>
@@ -584,13 +609,32 @@ export default function Chat() {
               type="button"
               onClick={() => void handleSend()}
               disabled={!message.trim() || sendBusy}
-              className="p-2.5 bg-[#22c55e] rounded-full text-white disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+              className="shrink-0 rounded-full bg-[#22c55e] p-2.5 text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <Send className="w-5 h-5" />
+              <Send className="h-5 w-5" />
             </button>
           </div>
         </div>
       </div>
+    </div>
+  );
+
+  return (
+    <div className="min-h-[calc(100dvh-4rem)] bg-gray-50">
+      <InboxSplitLayout
+        listVariant="sidebar"
+        activeConversationId={conversation.id}
+        search={inboxSearch}
+        onSearchChange={setInboxSearch}
+        loadError={inboxLoadError}
+        loading={inboxLoading}
+        filtered={inboxFiltered}
+        profiles={inboxProfiles}
+        productTitles={inboxProductTitles}
+        unreadByConv={inboxUnreadByConv}
+        otherPartyUserId={inboxOtherPartyUserId}
+        rightPanel={chatPanel}
+      />
     </div>
   );
 }

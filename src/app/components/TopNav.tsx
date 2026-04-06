@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "react-router";
-import { Bell, ShoppingCart, LogOut, Settings, Store, MessageSquare, BarChart2 } from "lucide-react";
+import { Bell, ShoppingCart, LogOut, Settings, Store, MessageSquare, BarChart2, Bot } from "lucide-react";
 import { useCart } from "../context/CartContext";
 import { useAuth } from "../context/AuthContext";
 import { useInboxNotifications } from "../context/InboxNotificationsContext";
@@ -193,6 +193,10 @@ export default function TopNav() {
                 {cartCount}
               </span>
             )}
+          </Link>
+
+          <Link to="/chatbot" className="hidden sm:block p-1" title="Chatbot" aria-label="Help chatbot">
+            <Bot className={`w-6 h-6 transition-colors ${iconClass}`} />
           </Link>
 
           {session ? (

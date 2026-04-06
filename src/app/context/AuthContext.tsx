@@ -14,6 +14,8 @@ export interface UserProfile {
   address?: string | null;
   auto_reply?: string | null;
   bio?: string | null;
+  /** Optional denormalized seller rating on profiles; falls back to aggregates from seller_reviews in UI. */
+  rating?: number | null;
   updated_at?: string | null;
   created_at?: string | null;
   last_active?: string | null;

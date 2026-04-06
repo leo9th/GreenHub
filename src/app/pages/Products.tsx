@@ -1,12 +1,4 @@
-import {
-  useState,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useCallback,
-  type ReactNode,
-  type MouseEvent,
-} from "react";
+import { useState, useEffect, useMemo, useCallback, type ReactNode, type MouseEvent } from "react";
 import { Link, useSearchParams } from "react-router";
 import { Search, Filter, ArrowLeft, X, BadgeCheck, Star } from "lucide-react";
 import { toast } from "sonner";
@@ -16,6 +8,7 @@ import { useCurrency } from "../hooks/useCurrency";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../context/AuthContext";
 import { ProductCard } from "../components/cards/ProductCard";
+import { SortBar } from "../components/SortBar";
 import { fetchLikedProductIdsForUser, toggleProductLike } from "../utils/engagement";
 import { getFeaturedProductIds, mixFeaturedProducts } from "../utils/featureProductMix";
 import {
@@ -23,12 +16,14 @@ import {
   applyListingSort,
   listingBaseQuery,
   mapProductRow,
+  parseListingSort,
   PRODUCTS_PAGE_SIZE,
   sanitizeSearchTerm,
   type ListingFilterOpts,
   type ListingSort,
   withSearchOr,
 } from "../utils/productSearch";
+import { getRelatedSearchSuggestions } from "../utils/searchSuggestions";
 
 const conditions = ["New", "Like New", "Good Fair"];
 const priceRanges = [
@@ -225,12 +220,91 @@ export default function Products() {
     setSearchParams(next);
   };
 
-  const [selectedCondition, setSelectedCondition] = useState<string>("all");
-  const [selectedState, setSelectedState] = useState<string>("all");
-  const [priceRange, setPriceRange] = useState<string>("all");
-  const [sortBy, setSortBy] = useState<ListingSort>("recent");
+  const [selectedCondition, setSelectedCondition] = useState<string>(() => searchParams.get("condition") || "all");
+  const [selectedState, setSelectedState] = useState<string>(() => searchParams.get("state") || "all");
+  const [priceRange, setPriceRange] = useState<string>(() => searchParams.get("price") || "all");
+  const [sortBy, setSortBy] = useState<ListingSort>(() => parseListingSort(searchParams.get("sort")));
   const urlSearch = searchParams.get("search") ?? "";
   const [searchInput, setSearchInput] = useState(urlSearch);
+
+  useEffect(() => {
+    setSortBy(parseListingSort(searchParams.get("sort")));
+    setSelectedCondition(searchParams.get("condition") || "all");
+    setSelectedState(searchParams.get("state") || "all");
+    setPriceRange(searchParams.get("price") || "all");
+  }, [searchParams]);
+
+  const setSearchParamsSoft = useCallback(
+    (mutate: (p: URLSearchParams) => void, replace = true) => {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        mutate(next);
+        return next;
+      }, { replace });
+    },
+    [setSearchParams],
+  );
+
+  const commitCondition = useCallback(
+    (v: string) => {
+      setSelectedCondition(v);
+      setSearchParamsSoft((p) => {
+        if (v === "all") p.delete("condition");
+        else p.set("condition", v);
+      });
+    },
+    [setSearchParamsSoft],
+  );
+
+  const commitStateFilter = useCallback(
+    (v: string) => {
+      setSelectedState(v);
+      setSearchParamsSoft((p) => {
+        if (v === "all") p.delete("state");
+        else p.set("state", v);
+      });
+    },
+    [setSearchParamsSoft],
+  );
+
+  const commitPriceRange = useCallback(
+    (v: string) => {
+      setPriceRange(v);
+      setSearchParamsSoft((p) => {
+        if (v === "all") p.delete("price");
+        else p.set("price", v);
+      });
+    },
+    [setSearchParamsSoft],
+  );
+
+  const commitSort = useCallback(
+    (next: ListingSort) => {
+      setSortBy(next);
+      setSearchParamsSoft((p) => {
+        if (next === "recent") p.delete("sort");
+        else p.set("sort", next);
+      });
+    },
+    [setSearchParamsSoft],
+  );
+
+  const relatedSearches = useMemo(() => getRelatedSearchSuggestions(urlSearch), [urlSearch]);
+
+  const buildFilteredHref = useCallback(
+    (patch: Record<string, string | null | undefined>) => {
+      const p = new URLSearchParams(searchParams);
+      for (const [k, v] of Object.entries(patch)) {
+        if (v == null || v === "" || v === "all") p.delete(k);
+        else p.set(k, v);
+      }
+      const cat = p.get("category");
+      if (cat && cat !== "vehicles") p.delete("carBrand");
+      const qs = p.toString();
+      return qs ? `/products?${qs}` : "/products";
+    },
+    [searchParams],
+  );
 
   const [listPage, setListPage] = useState(0);
   const [totalCount, setTotalCount] = useState<number | null>(null);
@@ -395,11 +469,20 @@ export default function Products() {
   }, [isLoadingProducts, isLoadingMore, totalCount, products.length]);
 
   const clearAllFilters = () => {
-    handleCategoryChange("all");
+    setSelectedCategory("all");
     setSelectedCarBrand("all");
     setSelectedCondition("all");
     setPriceRange("all");
     setSelectedState("all");
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete("category");
+      next.delete("carBrand");
+      next.delete("condition");
+      next.delete("state");
+      next.delete("price");
+      return next;
+    });
   };
 
   const getTierIcon = (tier: string) => {
@@ -437,11 +520,11 @@ export default function Products() {
     selectedCarBrand,
     handleCarBrandChange,
     selectedCondition,
-    setSelectedCondition,
+    setSelectedCondition: commitCondition,
     priceRange,
-    setPriceRange,
+    setPriceRange: commitPriceRange,
     selectedState,
-    setSelectedState,
+    setSelectedState: commitStateFilter,
   };
 
   return (
@@ -522,7 +605,7 @@ export default function Products() {
               {selectedCondition !== "all" && (
                 <div className="flex items-center gap-1 bg-[#22c55e]/10 text-[#22c55e] px-2 py-1 rounded text-xs">
                   <span>{selectedCondition}</span>
-                  <button type="button" onClick={() => setSelectedCondition("all")} aria-label="Clear condition">
+                  <button type="button" onClick={() => commitCondition("all")} aria-label="Clear condition">
                     <X className="w-3 h-3" />
                   </button>
                 </div>
@@ -530,7 +613,7 @@ export default function Products() {
               {priceRange !== "all" && (
                 <div className="flex items-center gap-1 bg-[#22c55e]/10 text-[#22c55e] px-2 py-1 rounded text-xs">
                   <span>{priceRanges.find((r) => r.value === priceRange)?.label ?? "Price"}</span>
-                  <button type="button" onClick={() => setPriceRange("all")} aria-label="Clear price filter">
+                  <button type="button" onClick={() => commitPriceRange("all")} aria-label="Clear price filter">
                     <X className="w-3 h-3" />
                   </button>
                 </div>
@@ -538,7 +621,7 @@ export default function Products() {
               {selectedState !== "all" && (
                 <div className="flex items-center gap-1 bg-[#22c55e]/10 text-[#22c55e] px-2 py-1 rounded text-xs">
                   <span>{selectedState}</span>
-                  <button type="button" onClick={() => setSelectedState("all")} aria-label="Clear location">
+                  <button type="button" onClick={() => commitStateFilter("all")} aria-label="Clear location">
                     <X className="w-3 h-3" />
                   </button>
                 </div>
@@ -548,31 +631,111 @@ export default function Products() {
         </div>
       </header>
 
-      <div className="bg-white border-b border-gray-200 px-4 py-2">
-        <div className="flex flex-wrap items-center justify_gap gap-3 max-w-7xl mx-auto">
-          <span className="text-sm text-gray-600">
-            {isLoadingProducts && listPage === 0
-              ? "Loading…"
-              : totalCount != null
-                ? `Showing ${Math.min(products.length, totalCount)} of ${totalCount} products`
-                : `${displayProducts.length} products`}
-            {!isLoadingProducts && productLoadError && (
-              <span className="text-amber-700 ml-2 text-xs">({productLoadError})</span>
-            )}
-          </span>
-          <div className="flex items-center gap-2 sm:ml-auto">
-            <span className="text-sm text-gray-600">Sort:</span>
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as ListingSort)}
-              className="text-sm font-medium text-[#22c55e] bg-transparent border border-[#22c55e]/30 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-[#22c55e]"
-            >
-              <option value="recent">Newest first</option>
-              <option value="price-low">Price: Low to High</option>
-              <option value="price-high">Price: High to Low</option>
-              <option value="rating">Highest rated</option>
-            </select>
+      {relatedSearches.length > 0 ? (
+        <div className="border-b border-gray-100 bg-gray-50/80 px-4 py-3">
+          <div className="mx-auto max-w-7xl">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Related searches</p>
+            <div className="flex flex-wrap gap-2">
+              {relatedSearches.map((s) => (
+                <Link
+                  key={s}
+                  to={buildFilteredHref({ search: sanitizeSearchTerm(s) })}
+                  className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-800 shadow-sm hover:border-[#22c55e] hover:text-[#15803d]"
+                >
+                  {s}
+                </Link>
+              ))}
+            </div>
           </div>
+        </div>
+      ) : null}
+
+      {!isLoadingProducts && sanitizeSearchTerm(urlSearch).length >= 2 && displayProducts.length === 0 ? (
+        <div className="border-b border-amber-100 bg-amber-50/50 px-4 py-3">
+          <div className="mx-auto max-w-7xl text-sm text-amber-950">
+            <span className="font-semibold">Did you mean? </span>
+            <span className="text-amber-900/90">Try a related search above, or broaden your filters.</span>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="border-b border-gray-200 bg-white px-4 py-3">
+        <div className="mx-auto max-w-7xl space-y-3">
+          <div>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Quick filters</p>
+            <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+              {categories.map((c) => (
+                <Link
+                  key={c.id}
+                  to={buildFilteredHref({ category: c.id })}
+                  className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium ${
+                    selectedCategory === c.id
+                      ? "border-[#22c55e] bg-[#22c55e]/10 text-[#15803d]"
+                      : "border-gray-200 bg-white text-gray-700 hover:border-[#22c55e]/50"
+                  }`}
+                >
+                  <span className="mr-1">{c.emoji}</span>
+                  {c.name}
+                </Link>
+              ))}
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {conditions.map((cond) => (
+              <Link
+                key={cond}
+                to={buildFilteredHref({ condition: cond === selectedCondition ? "all" : cond })}
+                className={`rounded-full border px-3 py-1.5 text-xs font-medium ${
+                  selectedCondition === cond
+                    ? "border-[#22c55e] bg-[#22c55e]/10 text-[#15803d]"
+                    : "border-gray-200 bg-white text-gray-700 hover:border-[#22c55e]/50"
+                }`}
+              >
+                {cond}
+              </Link>
+            ))}
+            <Link
+              to={buildFilteredHref({ price: "0-50000" })}
+              className={`rounded-full border px-3 py-1.5 text-xs font-medium ${
+                priceRange === "0-50000"
+                  ? "border-[#22c55e] bg-[#22c55e]/10 text-[#15803d]"
+                  : "border-gray-200 bg-white text-gray-700 hover:border-[#22c55e]/50"
+              }`}
+            >
+              Under ₦50k
+            </Link>
+            <Link
+              to={buildFilteredHref({ price: "50000-100000" })}
+              className={`rounded-full border px-3 py-1.5 text-xs font-medium ${
+                priceRange === "50000-100000"
+                  ? "border-[#22c55e] bg-[#22c55e]/10 text-[#15803d]"
+                  : "border-gray-200 bg-white text-gray-700 hover:border-[#22c55e]/50"
+              }`}
+            >
+              ₦50k–100k
+            </Link>
+          </div>
+          <SortBar
+            id="products-sort"
+            value={sortBy}
+            onChange={commitSort}
+            leading={
+              <>
+                {isLoadingProducts && listPage === 0 ? (
+                  <span>Loading…</span>
+                ) : totalCount != null ? (
+                  <span>
+                    Showing {Math.min(products.length, totalCount)} of {totalCount} products
+                  </span>
+                ) : (
+                  <span>{displayProducts.length} products</span>
+                )}
+                {!isLoadingProducts && productLoadError ? (
+                  <span className="ml-2 text-xs text-amber-700">({productLoadError})</span>
+                ) : null}
+              </>
+            }
+          />
         </div>
       </div>
 
@@ -594,7 +757,7 @@ export default function Products() {
             <div className="flex justify-center py-20 text-gray-600 text-sm">Loading products…</div>
           ) : (
             <>
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4">
                 {displayProducts.map((product) => {
                   const pid = Number(product.id);
                   return (

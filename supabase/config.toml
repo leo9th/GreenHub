@@ -1,0 +1,13 @@
+# GreenHub — Supabase CLI config
+# Run `supabase link` to bind project_id, or set env when deploying functions.
+
+[api]
+
+[functions.chat]
+verify_jwt = false
+
+[functions.feedback]
+verify_jwt = false
+
+[functions.teach]
+verify_jwt = false

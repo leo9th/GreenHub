@@ -12,12 +12,16 @@ import { fetchLikedProductIdsForUser, toggleProductLike } from "../utils/engagem
 import { toast } from "sonner";
 import { getProductPrice } from "../utils/getProductPrice";
 import { getFeaturedProductIds, mixFeaturedProducts } from "../utils/featureProductMix";
+import { SortBar } from "../components/SortBar";
 import {
   activeProductsQuery,
   mapProductRow,
   sanitizeSearchTerm,
+  sortProductsClientSide,
   withSearchOr,
+  type ListingSort,
 } from "../utils/productSearch";
+import { getRelatedSearchSuggestions } from "../utils/searchSuggestions";
 
 export default function Home() {
   const navigate = useNavigate();
@@ -36,19 +40,27 @@ export default function Home() {
   const [isLoadingProducts, setIsLoadingProducts] = useState<boolean>(true);
   const [productLoadError, setProductLoadError] = useState<string | null>(null);
   const [likedProductIds, setLikedProductIds] = useState<Set<number>>(new Set());
+  const [homeSort, setHomeSort] = useState<ListingSort>("recent");
 
   const featuredIds = useMemo(() => getFeaturedProductIds(), [products]);
 
+  const sortedProducts = useMemo(() => sortProductsClientSide(products, homeSort), [products, homeSort]);
+
   const featuredItemsDisplay = useMemo(
-    () => mixFeaturedProducts(products, featuredIds),
-    [products, featuredIds]
+    () => mixFeaturedProducts(sortedProducts, featuredIds),
+    [sortedProducts, featuredIds],
   );
 
   const homeCardIds = useMemo(() => {
     const fromFeatured = featuredItemsDisplay.map((p) => Number(p.id)).filter((n) => Number.isFinite(n));
-    const fromRecent = products.slice(0, 2).map((p) => Number(p.id)).filter((n) => Number.isFinite(n));
+    const fromRecent = sortedProducts.slice(0, 2).map((p) => Number(p.id)).filter((n) => Number.isFinite(n));
     return [...new Set([...fromFeatured, ...fromRecent])];
-  }, [featuredItemsDisplay, products]);
+  }, [featuredItemsDisplay, sortedProducts]);
+
+  const homeRelatedSearches = useMemo(
+    () => getRelatedSearchSuggestions(searchQuery),
+    [searchQuery],
+  );
 
   useEffect(() => {
     if (!authUser?.id || homeCardIds.length === 0) {
@@ -164,7 +176,7 @@ export default function Home() {
       try {
         let q = activeProductsQuery(supabase);
         q = withSearchOr(q, term);
-        const { data, error } = await q.limit(5);
+        const { data, error } = await q.limit(15);
         if (cancelled || error) return;
         setSearchPreviewHits((data ?? []).map((row) => mapProductRow(row as Record<string, unknown>)));
       } catch {
@@ -248,39 +260,64 @@ export default function Home() {
                 </div>
 
                 {isSearchFocused && sanitizeSearchTerm(searchQuery).length > 0 && (
-                  <div className="absolute top-[48px] left-0 md:-left-[150px] md:w-[calc(100%+150px)] w-full bg-white border border-gray-200 rounded-b-lg shadow-xl z-50 max-h-72 overflow-y-auto">
+                  <div className="absolute top-[48px] left-0 z-50 max-h-[min(28rem,70vh)] w-full overflow-y-auto rounded-b-lg border border-gray-200 bg-white shadow-xl md:-left-[150px] md:w-[calc(100%+150px)]">
                     {searchPreviewHits.length === 0 && sanitizeSearchTerm(searchQuery).length < 2 ? (
                       <div className="px-4 py-3 text-sm text-gray-500">Type at least 2 characters for suggestions</div>
+                    ) : null}
+                    {sanitizeSearchTerm(searchQuery).length >= 2 && homeRelatedSearches.length > 0 ? (
+                      <div className="border-b border-gray-100 px-4 py-3">
+                        <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                          Related searches
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {homeRelatedSearches.map((s) => (
+                            <button
+                              key={s}
+                              type="button"
+                              className="rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-800 hover:border-[#22c55e] hover:text-[#15803d]"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                navigate(`/products?search=${encodeURIComponent(sanitizeSearchTerm(s))}`);
+                                setIsSearchFocused(false);
+                              }}
+                            >
+                              {s}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     ) : null}
                     {searchPreviewHits.map((hit) => (
                       <button
                         key={String(hit.id)}
                         type="button"
-                        className="w-full text-left px-4 py-3 text-sm border-b border-gray-100 last:border-0 flex items-center gap-2 hover:bg-gray-50"
+                        className="flex w-full items-center gap-2 border-b border-gray-100 px-4 py-3 text-left text-sm last:border-0 hover:bg-gray-50"
                         onMouseDown={(e) => {
                           e.preventDefault();
                           navigate(`/products/${hit.id}`);
                           setIsSearchFocused(false);
                         }}
                       >
-                        <Search className="w-4 h-4 text-gray-400 shrink-0" />
-                        <span className="text-gray-900 line-clamp-1">{String(hit.title ?? "")}</span>
+                        <Search className="h-4 w-4 shrink-0 text-gray-400" />
+                        <span className="line-clamp-1 text-gray-900">{String(hit.title ?? "")}</span>
                       </button>
                     ))}
                     {sanitizeSearchTerm(searchQuery).length >= 2 && (
                       <button
                         type="button"
-                        className="w-full text-left px-4 py-3 text-sm font-medium text-[#15803d] hover:bg-green-50 border-t border-gray-100"
+                        className="w-full border-t border-gray-100 px-4 py-3 text-left text-sm font-medium text-[#15803d] hover:bg-green-50"
                         onMouseDown={(e) => {
                           e.preventDefault();
                           submitSearch();
                         }}
                       >
-                        Search all listings for &quot;{sanitizeSearchTerm(searchQuery)}&quot;
+                        See all results for &quot;{sanitizeSearchTerm(searchQuery)}&quot; (matches in title)
                       </button>
                     )}
                     {sanitizeSearchTerm(searchQuery).length >= 2 && searchPreviewHits.length === 0 ? (
-                      <div className="px-4 py-3 text-xs text-gray-500">No title matches yet — try the button above to search descriptions &amp; categories too.</div>
+                      <div className="px-4 py-3 text-xs text-gray-500">
+                        No quick title matches — try &quot;See all results&quot; or a different keyword.
+                      </div>
                     ) : null}
                   </div>
                 )}
@@ -391,11 +428,28 @@ export default function Home() {
 
           {/* Featured Items */}
           <div className="mb-6">
-            <div className="flex items-center justify-between mb-3">
+            <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <h2 className="font-semibold text-gray-800">Featured Items</h2>
-              <Link to="/products" className="text-sm text-[#22c55e]">
+              <Link to="/products" className="text-sm text-[#22c55e] sm:shrink-0">
                 View All →
               </Link>
+            </div>
+
+            <div className="mb-4 rounded-xl border border-gray-200 bg-white p-3 shadow-sm md:p-4">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Quick filters</p>
+              <div className="mb-3 flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+                {categories.map((c) => (
+                  <Link
+                    key={c.id}
+                    to={`/products?category=${encodeURIComponent(c.id)}`}
+                    className="shrink-0 rounded-full border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-800 hover:border-[#22c55e] hover:text-[#15803d]"
+                  >
+                    <span className="mr-1">{c.emoji}</span>
+                    {c.name}
+                  </Link>
+                ))}
+              </div>
+              <SortBar id="home-sort" value={homeSort} onChange={setHomeSort} />
             </div>
 
             {isLoadingProducts ? (
@@ -405,7 +459,7 @@ export default function Home() {
                 No products found yet. Listings with status &quot;active&quot; will appear here.
               </p>
             ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4">
                 {featuredItemsDisplay.map((product) => {
                   const row = product as Record<string, unknown>;
                   const pid = Number(row.id);
@@ -443,8 +497,8 @@ export default function Home() {
           {/* Recently Viewed */}
           <div className="mb-6">
             <h2 className="font-semibold text-gray-800 mb-3">Recently Viewed</h2>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {products.length > 0 ? products.slice(0, 2).map((product) => {
+            <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4">
+              {sortedProducts.length > 0 ? sortedProducts.slice(0, 2).map((product) => {
                 const row = product as Record<string, unknown>;
                 const pid = Number(row.id);
                 return (

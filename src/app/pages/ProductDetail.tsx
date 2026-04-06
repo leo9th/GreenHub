@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, type TouchEvent } from "react";
 import useEmblaCarousel from "embla-carousel-react";
 import { Link, useParams, useNavigate } from "react-router";
 import {
@@ -25,6 +25,7 @@ import { isOnlineFromLastActive, formatLastSeen } from "../utils/presence";
 import { getAvatarUrl } from "../utils/getAvatar";
 import { getProductPrice } from "../utils/getProductPrice";
 import { activeProductsQuery, mapProductRow } from "../utils/productSearch";
+import { getProductThumbnailUrl, parseProductImagesFromRow } from "../utils/productImages";
 import { toast } from "sonner";
 
 type ParsedDeliveryOption = { name: string; fee: number; duration: string };
@@ -239,6 +240,7 @@ export default function ProductDetail() {
   const { addToCart } = useCart();
   const { user: authUser } = useAuth();
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const galleryTouchStartX = useRef<number | null>(null);
   const [liked, setLiked] = useState(false);
   const [likeBusy, setLikeBusy] = useState(false);
   const [sellerProfile, setSellerProfile] = useState<SellerProfileRow | null>(null);
@@ -267,12 +269,9 @@ export default function ProductDetail() {
 
   useEffect(() => {
     if (!foundProduct) return;
-    const img =
-      typeof foundProduct.image === "string" && foundProduct.image.trim() !== ""
-        ? [foundProduct.image.trim()]
-        : [];
-    setCurrentImageIndex((i) => (img.length === 0 ? 0 : i >= img.length ? 0 : i));
-  }, [foundProduct?.id, foundProduct?.image]);
+    const imgs = parseProductImagesFromRow(foundProduct as { image?: unknown; images?: unknown });
+    setCurrentImageIndex((i) => (imgs.length === 0 ? 0 : Math.min(Math.max(0, i), imgs.length - 1)));
+  }, [foundProduct?.id, foundProduct?.image, foundProduct?.images]);
 
   useEffect(() => {
     if (!serverProduct?.id) return;
@@ -497,7 +496,7 @@ export default function ProductDetail() {
       const mapped = rows.map((r) => ({
         id: r.id as string | number,
         title: String((r as { title?: string }).title ?? ""),
-        image: typeof (r as { image?: string }).image === "string" ? String((r as { image?: string }).image) : "",
+        image: getProductThumbnailUrl(r as Record<string, unknown>),
         price: typeof r.price === "number" ? r.price : getProductPrice(r as { price?: unknown; price_local?: unknown }),
         location: String((r as { location?: string }).location ?? ""),
         condition: String((r as { condition?: string }).condition ?? "Like New"),
@@ -546,7 +545,7 @@ export default function ProductDetail() {
         rows.map((r) => ({
           id: r.id as string | number,
           title: String((r as { title?: string }).title ?? ""),
-          image: typeof (r as { image?: string }).image === "string" ? String((r as { image?: string }).image) : "",
+          image: getProductThumbnailUrl(r as Record<string, unknown>),
           price: typeof r.price === "number" ? r.price : getProductPrice(r as { price?: unknown; price_local?: unknown }),
           location: String((r as { location?: string }).location ?? ""),
           condition: String((r as { condition?: string }).condition ?? "Like New"),
@@ -700,9 +699,7 @@ export default function ProductDetail() {
     sellerPeerIdRaw != null && String(sellerPeerIdRaw).trim() !== "" ? String(sellerPeerIdRaw).trim() : "";
   const canMessageSeller = Boolean(sellerPeerId);
 
-  const primaryImage =
-    typeof foundProduct.image === "string" && foundProduct.image.trim() !== "" ? foundProduct.image.trim() : "";
-  const galleryImages = primaryImage ? [primaryImage] : [];
+  const galleryImages = parseProductImagesFromRow(foundProduct as { image?: unknown; images?: unknown });
 
   const sellerDisplayName =
     sellerProfile?.full_name?.trim() ||
@@ -802,6 +799,22 @@ export default function ProductDetail() {
     setCurrentImageIndex((prev) => (prev === product.images.length - 1 ? 0 : prev + 1));
   };
 
+  const onGalleryTouchStart = (e: TouchEvent) => {
+    galleryTouchStartX.current = e.touches[0]?.clientX ?? null;
+  };
+
+  const onGalleryTouchEnd = (e: TouchEvent) => {
+    const start = galleryTouchStartX.current;
+    galleryTouchStartX.current = null;
+    if (start == null || product.images.length <= 1) return;
+    const end = e.changedTouches[0]?.clientX;
+    if (end == null) return;
+    const dx = end - start;
+    if (Math.abs(dx) < 48) return;
+    if (dx > 0) handlePrevImage();
+    else handleNextImage();
+  };
+
   const handleShare = async () => {
     const url = window.location.href;
     const title = product.title;
@@ -883,12 +896,20 @@ export default function ProductDetail() {
           <div className="flex shrink-0 justify-center md:col-span-5 md:justify-start md:sticky md:top-14 lg:col-span-5">
             <div className="relative w-full max-w-[520px] md:max-w-none mx-auto">
               <div className="relative rounded-2xl overflow-hidden bg-white shadow-sm ring-1 ring-gray-200/90">
-                <div className="relative aspect-[3/4] w-full bg-gray-100 md:min-h-[min(70vh,560px)] md:aspect-auto md:h-[min(70vh,560px)]">
+                <div
+                  className="relative aspect-[3/4] w-full bg-gray-100 md:min-h-[min(70vh,560px)] md:aspect-auto md:h-[min(70vh,560px)] touch-pan-y"
+                  role="region"
+                  aria-label="Product gallery"
+                  aria-roledescription="carousel"
+                  onTouchStart={onGalleryTouchStart}
+                  onTouchEnd={onGalleryTouchEnd}
+                >
                   {product.images.length > 0 ? (
                     <img
                       src={product.images[currentImageIndex]}
                       alt={product.title}
-                      className="absolute inset-0 w-full h-full object-cover"
+                      className="absolute inset-0 w-full h-full object-cover select-none"
+                      draggable={false}
                     />
                   ) : (
                     <div
@@ -921,6 +942,11 @@ export default function ProductDetail() {
                   <span className="absolute top-3 left-3 z-[1] bg-[#15803d] text-white text-[11px] font-semibold px-2 py-1 rounded-lg shadow-sm">
                     {product.condition}
                   </span>
+                  {product.images.length > 1 ? (
+                    <span className="absolute bottom-3 right-3 z-[2] rounded-full bg-black/55 px-2.5 py-1 text-[11px] font-medium tabular-nums text-white shadow-sm">
+                      {currentImageIndex + 1}/{product.images.length}
+                    </span>
+                  ) : null}
                 </div>
               </div>
               {product.images.length > 1 && (
@@ -928,20 +954,21 @@ export default function ProductDetail() {
                   <div className="flex gap-2 overflow-x-auto pb-1 justify-center md:justify-start snap-x snap-mandatory">
                     {product.images.map((src, index) => (
                       <button
-                        key={index}
+                        key={`${src}-${index}`}
                         type="button"
                         onClick={() => setCurrentImageIndex(index)}
-                        className={`relative shrink-0 snap-start rounded-lg overflow-hidden ring-2 transition-shadow w-24 sm:w-28 aspect-[16/9] ${
+                        className={`relative shrink-0 snap-start rounded-lg overflow-hidden ring-2 transition-all w-16 h-16 sm:w-[4.5rem] sm:h-[4.5rem] ${
                           index === currentImageIndex
-                            ? "ring-[#16a34a] shadow-md"
-                            : "ring-transparent opacity-85 hover:opacity-100"
+                            ? "ring-[#16a34a] shadow-md scale-[1.02]"
+                            : "ring-transparent opacity-85 hover:opacity-100 hover:ring-gray-200"
                         }`}
-                        aria-label={`Show image ${index + 1}`}
+                        aria-label={`Show image ${index + 1} of ${product.images.length}`}
+                        aria-current={index === currentImageIndex ? "true" : undefined}
                       >
                         {src ? (
-                          <img src={src} alt="" className="w-full h-full object-cover" />
+                          <img src={src} alt="" className="h-full w-full object-cover" />
                         ) : (
-                          <div className="w-full h-full bg-gray-200" aria-hidden />
+                          <div className="h-full w-full bg-gray-200" aria-hidden />
                         )}
                       </button>
                     ))}

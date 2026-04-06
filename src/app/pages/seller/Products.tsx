@@ -5,6 +5,7 @@ import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../context/AuthContext";
 import { useCurrency } from "../../hooks/useCurrency";
 import { getProductPrice } from "../../utils/getProductPrice";
+import { collectStoragePathsForProduct } from "../../utils/productImages";
 
 const PRODUCTS_BUCKET = "products";
 
@@ -12,33 +13,12 @@ type SellerProductRow = {
   id: string | number;
   title: string;
   image: string | null;
+  images: unknown;
   price_local: number | null;
   price: number | null;
   status: string | null;
   created_at: string | null;
 };
-
-/** Extract storage object paths from public URLs for this Supabase project bucket. */
-function pathsFromImageField(imageField: string | null | undefined, bucket: string): string[] {
-  if (!imageField?.trim()) return [];
-  const urls = imageField
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-  const marker = `/object/public/${bucket}/`;
-  const paths: string[] = [];
-  for (const raw of urls) {
-    const url = raw.split("?")[0];
-    const idx = url.indexOf(marker);
-    if (idx === -1) continue;
-    try {
-      paths.push(decodeURIComponent(url.slice(idx + marker.length)));
-    } catch {
-      continue;
-    }
-  }
-  return paths;
-}
 
 function formatListedDate(iso: string | null): string {
   if (!iso) return "";
@@ -70,7 +50,7 @@ export default function SellerProducts() {
 
     const { data, error } = await supabase
       .from("products")
-      .select("id, title, image, price, price_local, status, created_at")
+      .select("id, title, image, images, price, price_local, status, created_at")
       .eq("seller_id", user.id)
       .order("created_at", { ascending: false });
 
@@ -83,6 +63,7 @@ export default function SellerProducts() {
           id: row.id as string | number,
           title: (row.title as string) ?? "",
           image: (row.image as string | null) ?? null,
+          images: row.images,
           price: row.price != null ? Number(row.price) : null,
           price_local: row.price_local != null ? Number(row.price_local) : null,
           status: (row.status as string | null) ?? null,
@@ -120,7 +101,10 @@ export default function SellerProducts() {
     setOpenMenuId(null);
 
     try {
-      const paths = pathsFromImageField(product.image, PRODUCTS_BUCKET);
+      const paths = collectStoragePathsForProduct(
+        { image: product.image, images: product.images },
+        PRODUCTS_BUCKET,
+      );
       if (paths.length > 0) {
         const { error: storageError } = await supabase.storage.from(PRODUCTS_BUCKET).remove(paths);
         if (storageError) {

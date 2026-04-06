@@ -6,6 +6,7 @@ import { supabase } from "../../../lib/supabase";
 import { categories, nigerianStates } from "../../data/catalogConstants";
 import { CAR_BRAND_SELECT_OTHER, NIGERIA_CAR_BRAND_OPTIONS } from "../../data/carBrands";
 import { supabaseErrorMessage } from "../../utils/supabaseErrorMessage";
+import { MAX_PRODUCT_IMAGES, parseProductImagesFromRow } from "../../utils/productImages";
 
 const STORAGE_BUCKET = "products";
 
@@ -23,7 +24,8 @@ export default function AddProduct() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
-  const [existingImageUrl, setExistingImageUrl] = useState<string | null>(null);
+  /** Existing remote URLs kept for this listing (edit mode); order = main first. */
+  const [existingImageUrls, setExistingImageUrls] = useState<string[]>([]);
   const [loadingProduct, setLoadingProduct] = useState(false);
   const [category, setCategory] = useState("");
   const [condition, setCondition] = useState<string>(PRODUCT_CONDITIONS[0]);
@@ -87,7 +89,7 @@ export default function AddProduct() {
             ? Number(legacy)
             : null;
       setPrice(n != null ? String(n) : "");
-      setExistingImageUrl(typeof data.image === "string" && data.image.trim() ? data.image : null);
+      setExistingImageUrls(parseProductImagesFromRow(data as { image?: unknown; images?: unknown }));
     })();
 
     return () => {
@@ -99,8 +101,8 @@ export default function AddProduct() {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
     
-    const availableSlots = 5 - imageFiles.length;
-    const filesToAdd = files.slice(0, availableSlots);
+    const availableSlots = MAX_PRODUCT_IMAGES - existingImageUrls.length - imageFiles.length;
+    const filesToAdd = files.slice(0, Math.max(0, availableSlots));
     
     const newImageFiles = filesToAdd.map((file) => ({
       file,
@@ -118,6 +120,10 @@ export default function AddProduct() {
 
   const removeImage = (index: number) => {
     setImageFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const removeExistingUrl = (index: number) => {
+    setExistingImageUrls((prev) => prev.filter((_, i) => i !== index));
   };
 
   const uploadNewImages = async (): Promise<string[]> => {
@@ -203,13 +209,8 @@ export default function AddProduct() {
       }
     }
 
-    if (!isEdit && imageFiles.length === 0) {
-      alert("Please upload at least one product image.");
-      return;
-    }
-
-    if (isEdit && imageFiles.length === 0 && !existingImageUrl) {
-      alert("Please keep an existing image or upload a new one.");
+    if (existingImageUrls.length + imageFiles.length === 0) {
+      alert(isEdit ? "Please keep at least one image or upload a new one." : "Please upload at least one product image.");
       return;
     }
 
@@ -217,8 +218,8 @@ export default function AddProduct() {
 
     try {
       const uploadedUrls = await uploadNewImages();
-      const mainImage =
-        uploadedUrls[0] ?? (isEdit ? existingImageUrl : null);
+      const imageUrls = [...existingImageUrls, ...uploadedUrls].slice(0, MAX_PRODUCT_IMAGES);
+      const mainImage = imageUrls[0];
 
       if (!mainImage?.trim()) {
         throw new Error("Could not determine product image URL. Check storage permissions or try again.");
@@ -230,6 +231,7 @@ export default function AddProduct() {
           description: description.trim(),
         price_local: priceLocalNum,
         image: mainImage,
+          images: imageUrls,
           category: category.trim(),
           condition,
           location: location.trim(),
@@ -256,6 +258,7 @@ export default function AddProduct() {
         description: description.trim(),
         price_local: priceLocalNum,
         image: mainImage,
+        images: imageUrls,
         category: category.trim(),
         condition,
         location: location.trim(),
@@ -308,14 +311,16 @@ export default function AddProduct() {
 
       <form onSubmit={handleSubmit} className="px-4 py-4 max-w-7xl mx-auto space-y-4">
         <div className="bg-white rounded-lg p-4">
-          <label className="block font-semibold text-gray-800 mb-3">Product images * (max 5, first is the main image)</label>
+          <label className="block font-semibold text-gray-800 mb-3">
+            Product images * (max {MAX_PRODUCT_IMAGES}, first is the main image)
+          </label>
           <div className="grid grid-cols-3 gap-3 mb-3">
-            {imageFiles.map((img, index) => (
-              <div key={img.preview} className="relative aspect-square bg-gray-100 rounded-lg overflow-hidden">
-                <img src={img.preview} alt="" className="w-full h-full object-cover" />
+            {existingImageUrls.map((url, index) => (
+              <div key={`existing-${url}-${index}`} className="relative aspect-square bg-gray-100 rounded-lg overflow-hidden">
+                <img src={url} alt="" className="w-full h-full object-cover" />
                 <button
                   type="button"
-                  onClick={() => removeImage(index)}
+                  onClick={() => removeExistingUrl(index)}
                   className="absolute top-1 right-1 w-6 h-6 bg-[#ef4444] rounded-full flex items-center justify-center text-white shadow-sm"
                 >
                   <X className="w-4 h-4" />
@@ -327,7 +332,24 @@ export default function AddProduct() {
                 )}
               </div>
             ))}
-            {imageFiles.length < 5 && (
+            {imageFiles.map((img, index) => (
+              <div key={img.preview} className="relative aspect-square bg-gray-100 rounded-lg overflow-hidden">
+                <img src={img.preview} alt="" className="w-full h-full object-cover" />
+                <button
+                  type="button"
+                  onClick={() => removeImage(index)}
+                  className="absolute top-1 right-1 w-6 h-6 bg-[#ef4444] rounded-full flex items-center justify-center text-white shadow-sm"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+                {existingImageUrls.length + index === 0 && (
+                  <span className="absolute bottom-1 left-1 bg-[#22c55e] text-white text-xs px-2 py-0.5 rounded shadow-sm">
+                    Main
+                  </span>
+                )}
+              </div>
+            ))}
+            {existingImageUrls.length + imageFiles.length < MAX_PRODUCT_IMAGES && (
               <>
                 <button
                   type="button"
@@ -348,11 +370,8 @@ export default function AddProduct() {
               </>
             )}
           </div>
-          {isEdit && existingImageUrl && imageFiles.length === 0 ? (
-            <div className="rounded-lg border border-gray-200 overflow-hidden max-w-xs">
-              <img src={existingImageUrl} alt="Current listing" className="w-full h-40 object-cover" />
-              <p className="text-xs text-[#16a34a] p-2 bg-green-50">Current photo — upload new images above to replace.</p>
-            </div>
+          {isEdit && existingImageUrls.length === 0 && imageFiles.length === 0 ? (
+            <p className="text-xs text-amber-700 p-2 bg-amber-50 rounded-lg">Add at least one image to publish this listing.</p>
           ) : null}
         </div>
 

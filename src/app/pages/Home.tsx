@@ -22,6 +22,7 @@ import {
   type ListingSort,
 } from "../utils/productSearch";
 import { getRelatedSearchSuggestions } from "../utils/searchSuggestions";
+import { getProductThumbnailUrl } from "../utils/productImages";
 
 export default function Home() {
   const navigate = useNavigate();
@@ -466,7 +467,7 @@ export default function Home() {
                   return (
                     <Link key={String(product.id)} to={`/products/${product.id}`} className="block h-full">
                       <ProductCard
-                        image={String((product as { image?: string }).image ?? "")}
+                        image={getProductThumbnailUrl(row)}
                         condition={String((product as { condition?: string }).condition ?? "Good")}
                         title={String((product as { title?: string }).title ?? "")}
                         price={Number((product as { price?: number }).price) || 0}
@@ -504,7 +505,7 @@ export default function Home() {
                 return (
                   <Link key={String(product.id)} to={`/products/${product.id}`} className="block h-full">
                     <ProductCard
-                      image={String((product as { image?: string }).image ?? "")}
+                      image={getProductThumbnailUrl(row)}
                       condition={String((product as { condition?: string }).condition ?? "Good")}
                       title={String((product as { title?: string }).title ?? "")}
                       price={Number((product as { price?: number }).price) || 0}

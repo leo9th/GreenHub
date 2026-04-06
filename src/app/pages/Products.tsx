@@ -24,6 +24,7 @@ import {
   withSearchOr,
 } from "../utils/productSearch";
 import { getRelatedSearchSuggestions } from "../utils/searchSuggestions";
+import { getProductThumbnailUrl } from "../utils/productImages";
 
 const conditions = ["New", "Like New", "Good Fair"];
 const priceRanges = [
@@ -763,7 +764,7 @@ export default function Products() {
                   return (
                     <Link key={String(product.id)} to={`/products/${product.id}`} className="block h-full">
                       <ProductCard
-                        image={String(product.image ?? "")}
+                        image={getProductThumbnailUrl(product as Record<string, unknown>)}
                         condition={String(product.condition ?? "Good")}
                         title={String(product.title ?? "")}
                         titleAdornment={getTierIcon(String(product.sellerTier ?? ""))}

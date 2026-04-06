@@ -29,7 +29,16 @@ export default function Root() {
       window.removeEventListener("focus", onVis);
     };
   }, [user?.id]);
-  const hideNavOnPaths = ["/login", "/register", "/verify-otp", "/design-system"];
+  const hideNavOnPaths = [
+    "/login",
+    "/register",
+    "/verify-otp",
+    "/check-email",
+    "/complete-profile",
+    "/forgot-password",
+    "/reset-password",
+    "/design-system",
+  ];
   const isMessageThread =
     location.pathname !== "/messages" &&
     (/^\/messages\/c\//.test(location.pathname) ||

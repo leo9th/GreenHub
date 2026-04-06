@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import { Session, User } from '@supabase/supabase-js';
+import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js';
 import { supabase } from '../../lib/supabase';
+import { ensureOAuthProfile, isOAuthUser } from '../utils/ensureOAuthProfile';
 
 export interface UserProfile {
   id: string;
@@ -65,30 +66,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    const afterAuthSession = async (session: Session | null, event: AuthChangeEvent | 'INITIAL_LOAD') => {
       setSession(session);
       setUser(session?.user ?? null);
       void supabase.realtime.setAuth(session?.access_token ?? null);
-      if (session?.user) {
-        fetchProfile(session.user.id);
-      } else {
-        setLoading(false);
-      }
-    });
-
-    // Listen to changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      void supabase.realtime.setAuth(session?.access_token ?? null);
-      if (session?.user) {
-        setLoading(true);
-        fetchProfile(session.user.id);
-      } else {
+      if (!session?.user) {
         setProfile(null);
         setLoading(false);
+        return;
       }
+      setLoading(true);
+      try {
+        if (
+          isOAuthUser(session.user) &&
+          (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'INITIAL_LOAD')
+        ) {
+          await ensureOAuthProfile(session.user);
+        }
+        await fetchProfile(session.user.id);
+      } catch (e) {
+        console.warn('Auth session hydrate:', e);
+        await fetchProfile(session.user.id);
+      }
+    };
+
+    void supabase.auth.getSession().then(({ data: { session } }) => {
+      void afterAuthSession(session, 'INITIAL_LOAD');
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      void afterAuthSession(session, event);
     });
 
     return () => subscription.unsubscribe();

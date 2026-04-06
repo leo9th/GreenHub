@@ -1,9 +1,20 @@
 import { Link, useNavigate, useSearchParams } from "react-router";
-import { Eye, EyeOff, Loader2 } from "lucide-react";
+import { Eye, EyeOff, Loader2, Smartphone } from "lucide-react";
 import { useState, useEffect } from "react";
 import { supabase } from "../../../lib/supabase";
 import { toast } from "sonner";
 import { useAuth } from "../../context/AuthContext";
+import { AuthSocialButtons } from "../../components/auth/AuthSocialButtons";
+import { toE164Ng } from "../../utils/phoneE164";
+
+const REDIRECT = typeof window !== "undefined" ? window.location.origin : "";
+
+function stripOAuthCodeFromUrl() {
+  if (window.location.pathname !== "/login") return;
+  const url = new URL(window.location.href);
+  url.searchParams.delete("code");
+  window.history.replaceState(null, "", url.pathname + url.search);
+}
 
 export default function Login() {
   const navigate = useNavigate();
@@ -14,62 +25,69 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [showPhoneLogin, setShowPhoneLogin] = useState(false);
+  const [phone, setPhone] = useState("");
+  const [phoneBusy, setPhoneBusy] = useState(false);
+
+  const [oauthBusy, setOauthBusy] = useState<"google" | "facebook" | null>(null);
+
   const { session } = useAuth();
 
-  // If already logged in (e.g. from clicking an implicit grant confirmation link)
   useEffect(() => {
-    if (session) {
-      navigate("/");
+    if (session?.user) {
+      navigate("/", { replace: true });
     }
   }, [session, navigate]);
 
-  // Handle PKCE Email Confirmation Flow
   useEffect(() => {
     const code = searchParams.get("code");
     if (code) {
       setLoading(true);
-      supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
+      void supabase.auth.exchangeCodeForSession(code).then(({ error: exErr }) => {
         setLoading(false);
-        if (!error) {
-          toast.success("Email confirmed successfully! You are now logged in.");
-          navigate("/");
+        if (!exErr) {
+          toast.success("You’re signed in.");
+          stripOAuthCodeFromUrl();
         } else {
-          toast.error("Verification link expired or invalid.");
-          setError("Verification failed. Please try logging in or requesting a new link.");
-          // Clear code from URL to prevent infinite loop
-          navigate("/login", { replace: true });
+          toast.error("This sign-in link is invalid or expired.");
+          setError("Verification failed. Try signing in again.");
+          stripOAuthCodeFromUrl();
         }
       });
-    } else {
-      // Check for implicit grant error pattern in URL hash
-      const hash = window.location.hash;
-      if (hash && hash.includes("error_description")) {
-        const params = new URLSearchParams(hash.substring(1));
-        const errorDesc = params.get("error_description");
-        if (errorDesc) {
-           setError(errorDesc.replace(/\+/g, " "));
-           // Clear hash from URL
-           window.history.replaceState(null, "", window.location.pathname + window.location.search);
-        }
-      } else if (hash && hash.includes("access_token")) {
-        // Implicit grant successful. The AuthContext automatically grabs the session,
-        // so the `session` effect above will handle the redirect.
-        toast.success("Email confirmed successfully! You are now logged in.");
-      }
+      return;
     }
-  }, [searchParams, navigate]);
 
-  const handleSocialLogin = async (provider: 'google' | 'facebook') => {
+    const hash = window.location.hash;
+    if (hash && hash.includes("error_description")) {
+      const params = new URLSearchParams(hash.slice(1));
+      const errorDesc = params.get("error_description");
+      if (errorDesc) {
+        setError(errorDesc.replace(/\+/g, " "));
+        window.history.replaceState(null, "", window.location.pathname + window.location.search);
+      }
+    } else if (hash && hash.includes("access_token")) {
+      toast.success("You’re signed in.");
+    }
+  }, [searchParams]);
+
+  const oauthRedirect = `${REDIRECT}/login`;
+
+  const handleSocialLogin = async (provider: "google" | "facebook") => {
     setError(null);
-    const { error: signInError } = await supabase.auth.signInWithOAuth({
-      provider,
-      options: {
-        redirectTo: `${window.location.origin}/`,
-      },
-    });
-    if (signInError) {
-      toast.error(`Failed to sign in securely: ${signInError.message}`);
-      setError(signInError.message);
+    setOauthBusy(provider);
+    try {
+      const { error: signInError } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo: oauthRedirect,
+        },
+      });
+      if (signInError) {
+        toast.error(signInError.message);
+        setError(signInError.message);
+      }
+    } finally {
+      setOauthBusy(null);
     }
   };
 
@@ -78,118 +96,181 @@ export default function Login() {
     setLoading(true);
     setError(null);
 
-    const { error } = await supabase.auth.signInWithPassword({
+    const { error: pwErr } = await supabase.auth.signInWithPassword({
       email: email.trim().toLowerCase(),
       password,
     });
 
-    if (error) {
-      setError(error.message);
+    if (pwErr) {
+      setError(pwErr.message);
       setLoading(false);
     } else {
       navigate("/");
     }
   };
 
+  const sendPhoneLoginCode = async () => {
+    setError(null);
+    const parsed = toE164Ng(phone);
+    if ("error" in parsed) {
+      setError(parsed.error);
+      return;
+    }
+    setPhoneBusy(true);
+    try {
+      const { error: otpErr } = await supabase.auth.signInWithOtp({
+        phone: parsed.e164,
+        options: {
+          shouldCreateUser: false,
+        },
+      });
+      if (otpErr) {
+        setError(otpErr.message);
+        toast.error(otpErr.message);
+        return;
+      }
+      toast.success("Code sent. Enter it below on the next screen.");
+      navigate("/verify-otp", {
+        state: { phone: parsed.e164, flow: "login" as const },
+      });
+    } finally {
+      setPhoneBusy(false);
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-white flex flex-col pt-12">
-      <div className="px-4 py-6 max-w-7xl mx-auto w-full">
-        <div className="text-center mb-8">
-          <Link to="/" className="text-4xl font-bold text-[#22c55e] flex items-center justify-center gap-2 mb-2 hover:opacity-80 transition-opacity">
-            🌿 GreenHub
+    <div className="min-h-screen bg-gradient-to-b from-[#ecfdf5] via-white to-gray-50 flex flex-col items-center justify-center p-4 py-12">
+      <div className="w-full max-w-[460px] overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-xl shadow-gray-200/50">
+        <div className="border-b border-gray-100 bg-[#15803d] px-6 py-6 text-center">
+          <Link to="/" className="inline-flex items-center gap-2 text-xl font-bold tracking-tight text-white">
+            <span className="text-2xl" aria-hidden>
+              🌿
+            </span>
+            GreenHub
           </Link>
-          <h1 className="text-2xl font-bold text-gray-800 mb-1">Welcome Back</h1>
-          <p className="text-gray-600">Sign in to continue</p>
+          <h1 className="mt-2 text-lg font-semibold text-emerald-50">Welcome back</h1>
+          <p className="text-sm text-emerald-100/90">Sign in to continue shopping and selling</p>
         </div>
 
-        <form onSubmit={handleLogin} className="space-y-4 max-w-md mx-auto">
-          {error && (
-            <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm text-center">
+        <div className="p-6 md:p-8">
+          {error ? (
+            <div className="mb-4 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-center text-sm text-red-700">
               {error}
             </div>
-          )}
-          
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="Email address"
-              required
-              className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#22c55e] focus:border-transparent"
-            />
-          </div>
+          ) : null}
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
-            <div className="relative">
-              <input
-                type={showPassword ? "text" : "password"}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Password"
-                required
-                className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#22c55e] focus:border-transparent pr-12"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
-              >
-                {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-              </button>
+          <AuthSocialButtons
+            onGoogle={() => void handleSocialLogin("google")}
+            onFacebook={() => void handleSocialLogin("facebook")}
+            busy={oauthBusy}
+            disabled={loading}
+          />
+
+          <div className="relative my-8">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-gray-200" />
+            </div>
+            <div className="relative flex justify-center text-xs font-semibold uppercase tracking-wider">
+              <span className="bg-white px-3 text-gray-400">Or email</span>
             </div>
           </div>
 
-          <div className="flex items-center justify-between mt-6">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" className="w-4 h-4 text-[#22c55e] rounded focus:ring-[#22c55e]" />
-              <span className="text-sm text-gray-600">Remember me</span>
-            </label>
-            <Link to="/forgot-password" className="text-sm text-[#22c55e] hover:underline">
-              Forgot Password?
-            </Link>
+          <form onSubmit={(e) => void handleLogin(e)} className="space-y-4">
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-gray-700">Email</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+                required
+                autoComplete="email"
+                className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-[#22c55e] focus:outline-none focus:ring-2 focus:ring-[#22c55e]/20"
+              />
+            </div>
+
+            <div>
+              <div className="mb-1.5 flex items-center justify-between">
+                <label className="text-sm font-medium text-gray-700">Password</label>
+                <Link to="/forgot-password" className="text-xs font-semibold text-[#15803d] hover:underline">
+                  Forgot?
+                </Link>
+              </div>
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  required
+                  autoComplete="current-password"
+                  className="w-full rounded-xl border border-gray-200 px-4 py-3 pr-12 text-sm focus:border-[#22c55e] focus:outline-none focus:ring-2 focus:ring-[#22c55e]/20"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                </button>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#15803d] py-3.5 text-sm font-bold text-white shadow-sm hover:bg-[#166534] disabled:opacity-60"
+            >
+              {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : null}
+              Sign in
+            </button>
+          </form>
+
+          <div className="mt-6 rounded-xl border border-gray-100 bg-gray-50/80 p-4">
+            <button
+              type="button"
+              onClick={() => {
+                setShowPhoneLogin((v) => !v);
+                setError(null);
+              }}
+              className="flex w-full items-center justify-center gap-2 text-sm font-bold text-gray-800"
+            >
+              <Smartphone className="h-4 w-4 text-[#15803d]" />
+              Sign in with phone
+            </button>
+
+            {showPhoneLogin ? (
+              <div className="mt-4 space-y-3 border-t border-gray-200 pt-4">
+                <input
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="0803 123 4567"
+                  autoComplete="tel"
+                  className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-[#22c55e] focus:outline-none focus:ring-2 focus:ring-[#22c55e]/20"
+                />
+                <button
+                  type="button"
+                  onClick={() => void sendPhoneLoginCode()}
+                  disabled={phoneBusy}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-[#22c55e] py-3 text-sm font-bold text-[#15803d] hover:bg-[#f0fdf4] disabled:opacity-50"
+                >
+                  {phoneBusy ? <Loader2 className="h-5 w-5 animate-spin" /> : null}
+                  Send code
+                </button>
+                <p className="text-center text-[11px] text-gray-500">We’ll open the code entry screen next.</p>
+              </div>
+            ) : null}
           </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-[#22c55e] text-white py-3 rounded-lg font-medium hover:bg-[#16a34a] transition-colors flex justify-center items-center gap-2 disabled:opacity-70 mt-4"
-          >
-            {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Sign In"}
-          </button>
-        </form>
-
-        <div className="flex items-center gap-4 my-8 max-w-md mx-auto">
-          <div className="flex-1 border-t border-gray-200"></div>
-          <span className="text-sm text-gray-500">Or continue with</span>
-          <div className="flex-1 border-t border-gray-200"></div>
+          <p className="mt-8 text-center text-sm text-gray-600">
+            New to GreenHub?{" "}
+            <Link to="/register" className="font-bold text-[#15803d] hover:underline">
+              Create account
+            </Link>
+          </p>
         </div>
-
-        <div className="grid grid-cols-2 gap-3 mb-8 max-w-md mx-auto">
-          <button 
-            type="button"
-            onClick={() => handleSocialLogin('google')}
-            className="flex items-center justify-center gap-2 border border-gray-200 py-3 rounded-lg hover:bg-gray-50 transition-colors font-semibold text-gray-700"
-          >
-            <span className="text-xl">G</span> Google
-          </button>
-          <button 
-            type="button"
-            onClick={() => handleSocialLogin('facebook')}
-            className="flex items-center justify-center gap-2 border border-gray-200 py-3 rounded-lg hover:bg-[#1877F2] hover:text-white transition-colors hover:border-[#1877F2] font-semibold text-gray-700"
-          >
-            <span className="text-xl">f</span> Facebook
-          </button>
-        </div>
-
-        <p className="text-center text-gray-600">
-          New to GreenHub?{" "}
-          <Link to="/register" className="text-[#22c55e] font-medium hover:underline">
-            Create Account
-          </Link>
-        </p>
       </div>
     </div>
   );

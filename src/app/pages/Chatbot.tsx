@@ -203,7 +203,7 @@ export default function Chatbot() {
         </div>
       </div>
 
-      <div className="sticky bottom-0 border-t border-gray-200 bg-white pb-safe">
+      <div className="sticky bottom-0 border-t border-gray-200 bg-white pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]">
         <form
           className="mx-auto flex max-w-3xl gap-2 px-3 py-3 sm:px-4"
           onSubmit={(e) => {

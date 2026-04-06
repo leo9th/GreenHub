@@ -104,7 +104,7 @@ const BUILTIN: Record<string, TrainingRow[]> = {
       language: "yo",
       patterns: ["help", "irànlowọ́", "kí ni mo le ṣe"],
       responses: [
-        "Mo lè sọ ọ̀rọ̀ nípa rírá, títà, owó, àti gbigbe lórí GreenHub. Gbìyànjí lọ́wọ́ boti ti **Kọ́ bọ́tì** tí mo bá yàn jẹ.",
+        "Mo lè sọ ọ̀rọ̀ nípa rírá, títà, owó, àti gbigbe lórí GreenHub. Lo bọ́tì “Teach bot” tí mo bá yàn jẹ.",
       ],
     },
     {
@@ -151,7 +151,7 @@ const BUILTIN: Record<string, TrainingRow[]> = {
       language: "ig",
       patterns: ["help", "enyemaka", "ọrụ"],
       responses: [
-        "A pụrụ m ịkọwara ịzụ, ire, ọnụahịa, na mbupụ na GreenHub. Jụọ ma ọ bụ jiri **Kọ́ bọ́tì** ma ọ bụrụ na azịza adịghị mma.",
+        "A pụrụ m ịkọwara ịzụ, ire, ọnụahịa, na mbupụ na GreenHub. Jiri “Teach bot” ma ọ bụrụ na azịza adịghị mma.",
       ],
     },
     {
@@ -173,7 +173,7 @@ const BUILTIN: Record<string, TrainingRow[]> = {
       language: "ig",
       patterns: ["mbupụ", "shipping", "delivery", "ozi"],
       responses: [
-        "Ụzọ nbudata dịgasị iche dabere na onye na-ere. Lelee ngalaba **Delivery** na Ndetu.",
+        "Ụzọ nbudata dịgasị iche dabere na onye na-ere. Lelee ngalaba Delivery na Ndetu.",
       ],
     },
   ],
@@ -197,14 +197,14 @@ const BUILTIN: Record<string, TrainingRow[]> = {
       language: "ha",
       patterns: ["help", "taimako", "me zan iya"],
       responses: [
-        "Zan iya bayani akan sayen kayayyaki, farashi, da jigilar kaya. Yi amfani da **Kọ́ bọ́tì** idan amsa ta ba daidai ba.",
+        "Zan iya bayani akan sayen kayayyaki, farashi, da jigilar kaya. Yi amfani da “Teach bot” idan amsa ta ba daidai ba.",
       ],
     },
     {
       intent: "product_inquiry",
       language: "ha",
       patterns: ["kayayyaki", "product", "nema"],
-      responses: ["Bincika a shafin farko ko **Products**. Buɗe bayanin kayan don tattaunawa da mai sayarwa."],
+      responses: ["Bincika a shafin farko ko Products. Buɗe bayanin kayan don tattaunawa da mai sayarwa."],
     },
     {
       intent: "pricing",
@@ -217,7 +217,7 @@ const BUILTIN: Record<string, TrainingRow[]> = {
       language: "ha",
       patterns: ["jigilar", "shipping", "delivery", "isa"],
       responses: [
-        "Hanyar jigilar kaya daban ne bisa mai sayarwa. Duba sashin **Delivery** a cikin bayani.",
+        "Hanyar jigilar kaya daban ne bisa mai sayarwa. Duba sashin Delivery a cikin bayani.",
       ],
     },
   ],

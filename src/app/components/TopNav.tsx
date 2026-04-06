@@ -195,7 +195,7 @@ export default function TopNav() {
             )}
           </Link>
 
-          <Link to="/chatbot" className="hidden sm:block p-1" title="Chatbot" aria-label="Help chatbot">
+          <Link to="/chatbot" className="p-1" title="Chatbot" aria-label="Help chatbot">
             <Bot className={`w-6 h-6 transition-colors ${iconClass}`} />
           </Link>
 
@@ -245,6 +245,15 @@ export default function TopNav() {
                     >
                       <Store className="w-[18px] h-[18px] text-gray-500" />
                       <span className="text-[14px] font-medium">My shop</span>
+                    </Link>
+
+                    <Link
+                      to="/chatbot"
+                      onClick={() => setShowDropdown(false)}
+                      className="flex items-center gap-3 px-4 py-2 hover:bg-gray-100 text-gray-700 transition-colors"
+                    >
+                      <Bot className="w-[18px] h-[18px] text-gray-500" />
+                      <span className="text-[14px] font-medium">Assistant</span>
                     </Link>
 
                     <Link

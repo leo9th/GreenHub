@@ -2,7 +2,6 @@ import { Outlet, useLocation, Link } from "react-router";
 import { Briefcase, Wallet, ShoppingBag, TrendingUp } from "lucide-react";
 import { useEffect } from "react";
 import Footer from "../components/Footer";
-import AIAssistant from "../components/AIAssistant";
 import TopNav from "../components/TopNav";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../../lib/supabase";
@@ -38,10 +37,6 @@ export default function Root() {
   const showBottomNav =
     !hideNavOnPaths.some((path) => location.pathname.startsWith(path)) && !isMessageThread;
 
-  /** Support chat FAB is fixed bottom-right; on wide screens it can cover the chat Send button. */
-  const showAIAssistant =
-    !location.pathname.startsWith("/messages") && !location.pathname.startsWith("/chatbot");
-
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <main className={`flex-1 ${showBottomNav ? "pb-20 md:pb-0" : ""}`}>
@@ -49,8 +44,6 @@ export default function Root() {
         <Outlet />
         {showBottomNav && <Footer />}
       </main>
-
-      {showAIAssistant ? <AIAssistant /> : null}
 
       {showBottomNav && (
         <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">

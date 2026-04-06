@@ -247,6 +247,8 @@ export default function ProductDetail() {
   const [sellerReviewsPreview, setSellerReviewsPreview] = useState<SellerReviewPreview[]>([]);
   const [sellerIdVerified, setSellerIdVerified] = useState(false);
   const [sellerInfoReady, setSellerInfoReady] = useState(false);
+  const [phoneMenuOpen, setPhoneMenuOpen] = useState(false);
+  const phoneMenuRef = useRef<HTMLDivElement>(null);
   const [serverProduct, setServerProduct] = useState<any>(null);
   const [isServerProductLoading, setIsServerProductLoading] = useState<boolean>(true);
   const [relatedProducts, setRelatedProducts] = useState<RelatedCarouselItem[]>([]);
@@ -813,6 +815,19 @@ export default function ProductDetail() {
 
   const sellerPhoneRaw = sellerProfile?.phone != null ? String(sellerProfile.phone).trim() : "";
   const sellerTelHref = sellerPhoneRaw ? `tel:${sellerPhoneRaw.replace(/\s/g, "")}` : "";
+  const whatsappDigits = sellerPhoneRaw.replace(/\D/g, "");
+  const whatsappHref = whatsappDigits ? `https://wa.me/${whatsappDigits}` : "";
+
+  useEffect(() => {
+    if (!phoneMenuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (phoneMenuRef.current && !phoneMenuRef.current.contains(e.target as Node)) {
+        setPhoneMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [phoneMenuOpen]);
 
   const dbProductAvg = foundProduct?.average_rating != null ? Number(foundProduct.average_rating) : NaN;
   const dbProductTotal = Number(foundProduct?.total_reviews ?? 0);
@@ -1030,48 +1045,80 @@ export default function ProductDetail() {
                 </div>
               </div>
               <div className="mt-4 flex flex-col gap-2">
-                {canMessageSeller ? (
-                  <Link
-                    to={`/messages/u/${sellerPeerId}?product=${product.id}`}
-                    className="w-full min-h-[46px] inline-flex items-center justify-center gap-2 rounded-xl bg-[#16a34a] text-white text-sm font-semibold px-4 hover:bg-[#15803d] shadow-sm"
-                  >
-                    <MessageCircle className="w-4 h-4 shrink-0" aria-hidden />
-                    Chat
-                  </Link>
-                ) : (
-                  <p className="text-xs text-gray-500 text-center py-2">Seller account unavailable for chat.</p>
-                )}
-                <div className="flex gap-2">
-                  {sellerTelHref ? (
-                    <a
-                      href={sellerTelHref}
-                      className="min-h-[46px] min-w-[46px] inline-flex items-center justify-center rounded-xl ring-1 ring-gray-200 text-gray-800 hover:bg-gray-50 shrink-0"
-                      aria-label="Call seller"
-                    >
-                      <Phone className="w-4 h-4" />
-                    </a>
-                  ) : (
-                    <span
-                      className="min-h-[46px] min-w-[46px] inline-flex items-center justify-center rounded-xl ring-1 ring-gray-100 text-gray-300 shrink-0 cursor-not-allowed"
-                      title="Phone not available"
-                      aria-hidden
-                    >
-                      <Phone className="w-4 h-4" />
-                    </span>
-                  )}
+                <div className="flex gap-2 items-stretch">
                   {canMessageSeller ? (
                     <Link
-                      to={`/profile/${sellerPeerId}`}
-                      className="flex-1 min-h-[46px] inline-flex items-center justify-center rounded-xl ring-1 ring-gray-200 text-sm font-semibold text-gray-800 px-4 hover:bg-gray-50"
+                      to={`/messages/u/${sellerPeerId}?product=${product.id}`}
+                      className="flex-1 min-h-[46px] inline-flex items-center justify-center gap-2 rounded-xl bg-[#16a34a] text-white text-sm font-semibold px-4 hover:bg-[#15803d] shadow-sm"
                     >
-                      View profile
+                      <MessageCircle className="w-4 h-4 shrink-0" aria-hidden />
+                      Chat
                     </Link>
                   ) : (
-                    <span className="flex-1 min-h-[46px] inline-flex items-center justify-center rounded-xl ring-1 ring-gray-100 text-sm font-medium text-gray-400 px-4 cursor-not-allowed">
-                      View profile
-                    </span>
+                    <p className="flex-1 min-h-[46px] flex items-center justify-center rounded-xl bg-gray-50 px-3 text-center text-xs text-gray-500 ring-1 ring-gray-100">
+                      Seller account unavailable for chat.
+                    </p>
                   )}
+                  <div className="relative shrink-0" ref={phoneMenuRef}>
+                    <button
+                      type="button"
+                      disabled={!sellerTelHref}
+                      onClick={() => {
+                        if (sellerTelHref) setPhoneMenuOpen((o) => !o);
+                      }}
+                      className={`min-h-[46px] min-w-[46px] inline-flex items-center justify-center rounded-xl ring-1 shrink-0 ${
+                        sellerTelHref
+                          ? "ring-gray-200 text-gray-800 hover:bg-gray-50"
+                          : "ring-gray-100 text-gray-300 cursor-not-allowed"
+                      }`}
+                      title={sellerTelHref ? "Call or WhatsApp" : "No phone number available"}
+                      aria-label={sellerTelHref ? "Phone options" : "No phone number available"}
+                      aria-expanded={phoneMenuOpen}
+                      aria-haspopup="menu"
+                    >
+                      <Phone className="w-4 h-4" aria-hidden />
+                    </button>
+                    {phoneMenuOpen && sellerTelHref ? (
+                      <div
+                        className="absolute right-0 top-full z-50 mt-1 min-w-[10.5rem] overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-lg"
+                        role="menu"
+                      >
+                        <a
+                          href={sellerTelHref}
+                          role="menuitem"
+                          className="block px-3 py-2.5 text-sm font-medium text-gray-900 hover:bg-gray-50"
+                          onClick={() => setPhoneMenuOpen(false)}
+                        >
+                          Call
+                        </a>
+                        {whatsappHref ? (
+                          <a
+                            href={whatsappHref}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            role="menuitem"
+                            className="block px-3 py-2.5 text-sm font-medium text-gray-900 hover:bg-gray-50"
+                            onClick={() => setPhoneMenuOpen(false)}
+                          >
+                            WhatsApp
+                          </a>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
+                {canMessageSeller ? (
+                  <Link
+                    to={`/profile/${sellerPeerId}`}
+                    className="w-full min-h-[46px] inline-flex items-center justify-center rounded-xl ring-1 ring-gray-200 text-sm font-semibold text-gray-800 px-4 hover:bg-gray-50"
+                  >
+                    View profile
+                  </Link>
+                ) : (
+                  <span className="w-full min-h-[46px] inline-flex items-center justify-center rounded-xl ring-1 ring-gray-100 text-sm font-medium text-gray-400 px-4 cursor-not-allowed">
+                    View profile
+                  </span>
+                )}
               </div>
             </section>
 

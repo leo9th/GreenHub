@@ -122,7 +122,6 @@ export const router = createBrowserRouter([
       { path: "messages/u/:peerUserId", Component: Chat },
       /* Back-compat: old inbox links /messages/:conversationId (thread id only — not a peer user id). */
       { path: "messages/:legacyThreadId", Component: Chat },
-      { path: "chatbot", Component: Chatbot },
       { path: "seller/dashboard", Component: SellerDashboard },
       { path: "seller/products", Component: SellerProducts },
       { path: "seller/products/new", Component: AddProduct },

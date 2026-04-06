@@ -14,7 +14,10 @@ import {
   Shield,
   ShieldAlert,
   Clock,
+  UserPlus,
+  UserCheck,
 } from "lucide-react";
+import { toast } from "sonner";
 import { useAuth, type UserProfile } from "../context/AuthContext";
 import { getAvatarUrl } from "../utils/getAvatar";
 import { supabase } from "../../lib/supabase";
@@ -145,6 +148,10 @@ export default function Profile() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [dataLoading, setDataLoading] = useState(true);
   const [profileMissing, setProfileMissing] = useState(false);
+  const [followerCount, setFollowerCount] = useState(0);
+  const [followingCount, setFollowingCount] = useState(0);
+  const [isFollowing, setIsFollowing] = useState(false);
+  const [followBusy, setFollowBusy] = useState(false);
 
   const displayName =
     viewProfile?.full_name?.trim() ||
@@ -223,6 +230,9 @@ export default function Profile() {
     setDataLoading(true);
     setLoadError(null);
     setProfileMissing(false);
+    setFollowerCount(0);
+    setFollowingCount(0);
+    setIsFollowing(false);
 
     try {
       let profRow: UserProfile | null = null;
@@ -423,6 +433,32 @@ export default function Profile() {
           );
         }
       }
+
+      const { data: fc, error: fcErr } = await supabase.rpc("profile_follower_count", { p_user_id: targetUserId });
+      const { data: fow, error: fowErr } = await supabase.rpc("profile_following_count", { p_user_id: targetUserId });
+      if (!fcErr && fc != null) setFollowerCount(Number(fc));
+      else {
+        if (fcErr && !isSchemaOrMissingRelationError(fcErr) && !isBenignReadError(fcErr)) console.warn("profile_follower_count:", fcErr);
+        setFollowerCount(0);
+      }
+      if (!fowErr && fow != null) setFollowingCount(Number(fow));
+      else {
+        if (fowErr && !isSchemaOrMissingRelationError(fowErr) && !isBenignReadError(fowErr))
+          console.warn("profile_following_count:", fowErr);
+        setFollowingCount(0);
+      }
+
+      if (!isOwnProfile && authUser?.id) {
+        const { data: edge } = await supabase
+          .from("profile_follows")
+          .select("follower_id")
+          .eq("follower_id", authUser.id)
+          .eq("following_id", targetUserId)
+          .maybeSingle();
+        setIsFollowing(!!edge);
+      } else {
+        setIsFollowing(false);
+      }
     } catch (e: unknown) {
       console.error(e);
       setLoadError(e instanceof Error ? e.message : "Could not load profile data");
@@ -433,6 +469,35 @@ export default function Profile() {
       setDataLoading(false);
     }
   }, [targetUserId, isOwnProfile, authUser, routeUserId]);
+
+  const toggleFollow = useCallback(async () => {
+    if (!authUser?.id || !targetUserId || isOwnProfile || profileMissing) return;
+    setFollowBusy(true);
+    try {
+      if (isFollowing) {
+        const { error } = await supabase
+          .from("profile_follows")
+          .delete()
+          .eq("follower_id", authUser.id)
+          .eq("following_id", targetUserId);
+        if (error) throw error;
+        setIsFollowing(false);
+        setFollowerCount((n) => Math.max(0, n - 1));
+      } else {
+        const { error } = await supabase.from("profile_follows").insert({
+          follower_id: authUser.id,
+          following_id: targetUserId,
+        });
+        if (error) throw error;
+        setIsFollowing(true);
+        setFollowerCount((n) => n + 1);
+      }
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Could not update follow");
+    } finally {
+      setFollowBusy(false);
+    }
+  }, [authUser?.id, targetUserId, isOwnProfile, profileMissing, isFollowing]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -557,6 +622,19 @@ export default function Profile() {
 
             <p className="mt-1 text-xs text-gray-400 lg:text-left">Member since {memberSince}</p>
 
+            {!dataLoading && !profileMissing ? (
+              <div className="mt-3 flex justify-center gap-6 border-t border-gray-100 pt-3 lg:justify-start">
+                <div className="text-center lg:text-left">
+                  <p className="text-base font-semibold tabular-nums text-gray-900">{followerCount}</p>
+                  <p className="text-[11px] font-medium text-gray-500">Followers</p>
+                </div>
+                <div className="text-center lg:text-left">
+                  <p className="text-base font-semibold tabular-nums text-gray-900">{followingCount}</p>
+                  <p className="text-[11px] font-medium text-gray-500">Following</p>
+                </div>
+              </div>
+            ) : null}
+
             <div className="mt-3 flex flex-wrap items-center justify-center gap-2 lg:justify-start">
               {verificationLabel === "approved" ? (
                 <span className="inline-flex items-center gap-1 rounded-full bg-[#dcfce7] px-2.5 py-1 text-xs font-semibold text-[#15803d]">
@@ -591,13 +669,34 @@ export default function Profile() {
                   Edit profile
                 </Link>
               ) : (
-                <Link
-                  to={`/messages/u/${targetUserId}`}
-                  className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-[#22c55e] px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-[#16a34a]"
-                >
-                  <MessageCircle className="w-3.5 h-3.5" />
-                  Chat
-                </Link>
+                <div className="flex flex-col gap-2 sm:flex-row sm:w-full">
+                  <button
+                    type="button"
+                    onClick={() => void toggleFollow()}
+                    disabled={followBusy || dataLoading || profileMissing}
+                    className={`inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-1.5 text-sm font-semibold shadow-sm transition-colors disabled:opacity-50 ${
+                      isFollowing
+                        ? "border border-gray-200 bg-gray-50 text-gray-800 hover:bg-gray-100"
+                        : "border border-[#22c55e]/40 bg-white text-[#15803d] hover:bg-[#f0fdf4]"
+                    }`}
+                  >
+                    {followBusy ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : isFollowing ? (
+                      <UserCheck className="w-3.5 h-3.5" />
+                    ) : (
+                      <UserPlus className="w-3.5 h-3.5" />
+                    )}
+                    {isFollowing ? "Following" : "Follow"}
+                  </button>
+                  <Link
+                    to={`/messages/u/${targetUserId}`}
+                    className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#22c55e] px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-[#16a34a]"
+                  >
+                    <MessageCircle className="w-3.5 h-3.5" />
+                    Chat
+                  </Link>
+                </div>
               )}
             </div>
           </div>

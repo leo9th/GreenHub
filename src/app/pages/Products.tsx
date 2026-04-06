@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, type ReactNode, type MouseEvent } from "react";
 import { Link, useSearchParams } from "react-router";
-import { Search, Filter, ArrowLeft, X, BadgeCheck, Star } from "lucide-react";
+import { Search, Filter, ArrowLeft, X, BadgeCheck, ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { categories, nigerianStates } from "../data/catalogConstants";
 import { labelForCarBrandValue, NIGERIA_CAR_BRAND_OPTIONS } from "../data/carBrands";
@@ -8,20 +8,20 @@ import { useCurrency } from "../hooks/useCurrency";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../context/AuthContext";
 import { ProductCard } from "../components/cards/ProductCard";
+import { ProductCardSkeletonGrid } from "../components/cards/ProductCardSkeleton";
 import { SortBar } from "../components/SortBar";
 import { fetchLikedProductIdsForUser, toggleProductLike } from "../utils/engagement";
-import { getFeaturedProductIds, mixFeaturedProducts } from "../utils/featureProductMix";
+import { BoostCardBadge } from "../components/BoostBadge";
 import {
-  applyListingFilters,
-  applyListingSort,
-  listingBaseQuery,
+  fetchProductsListingRpc,
   mapProductRow,
+  listingPaginationItems,
+  parseListingPageParam,
   parseListingSort,
   PRODUCTS_PAGE_SIZE,
   sanitizeSearchTerm,
   type ListingFilterOpts,
   type ListingSort,
-  withSearchOr,
 } from "../utils/productSearch";
 import { getRelatedSearchSuggestions } from "../utils/searchSuggestions";
 import { getProductThumbnailUrl } from "../utils/productImages";
@@ -204,6 +204,7 @@ export default function Products() {
   const handleCategoryChange = (val: string) => {
     setSelectedCategory(val);
     const next = new URLSearchParams(searchParams);
+    next.delete("page");
     if (val === "all") next.delete("category");
     else next.set("category", val);
     if (val !== "vehicles") {
@@ -216,6 +217,7 @@ export default function Products() {
   const handleCarBrandChange = (val: string) => {
     setSelectedCarBrand(val);
     const next = new URLSearchParams(searchParams);
+    next.delete("page");
     if (val === "all") next.delete("carBrand");
     else next.set("carBrand", val);
     setSearchParams(next);
@@ -250,6 +252,7 @@ export default function Products() {
     (v: string) => {
       setSelectedCondition(v);
       setSearchParamsSoft((p) => {
+        p.delete("page");
         if (v === "all") p.delete("condition");
         else p.set("condition", v);
       });
@@ -261,6 +264,7 @@ export default function Products() {
     (v: string) => {
       setSelectedState(v);
       setSearchParamsSoft((p) => {
+        p.delete("page");
         if (v === "all") p.delete("state");
         else p.set("state", v);
       });
@@ -272,6 +276,7 @@ export default function Products() {
     (v: string) => {
       setPriceRange(v);
       setSearchParamsSoft((p) => {
+        p.delete("page");
         if (v === "all") p.delete("price");
         else p.set("price", v);
       });
@@ -283,6 +288,7 @@ export default function Products() {
     (next: ListingSort) => {
       setSortBy(next);
       setSearchParamsSoft((p) => {
+        p.delete("page");
         if (next === "recent") p.delete("sort");
         else p.set("sort", next);
       });
@@ -295,6 +301,7 @@ export default function Products() {
   const buildFilteredHref = useCallback(
     (patch: Record<string, string | null | undefined>) => {
       const p = new URLSearchParams(searchParams);
+      p.delete("page");
       for (const [k, v] of Object.entries(patch)) {
         if (v == null || v === "" || v === "all") p.delete(k);
         else p.set(k, v);
@@ -307,9 +314,7 @@ export default function Products() {
     [searchParams],
   );
 
-  const [listPage, setListPage] = useState(0);
   const [totalCount, setTotalCount] = useState<number | null>(null);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
 
   const [products, setProducts] = useState<Array<Record<string, unknown>>>([]);
   const [isLoadingProducts, setIsLoadingProducts] = useState<boolean>(true);
@@ -360,9 +365,7 @@ export default function Products() {
     };
   }, [authUser?.id, products]);
 
-  useEffect(() => {
-    setListPage(0);
-  }, [filterSignal]);
+  const currentPage = parseListingPageParam(searchParams.get("page"));
 
   const onProductLike = useCallback(
     async (e: MouseEvent, row: Record<string, unknown>) => {
@@ -404,38 +407,28 @@ export default function Products() {
     let cancelled = false;
 
     const run = async () => {
-      if (listPage === 0) {
-        setIsLoadingProducts(true);
-        setProductLoadError(null);
-      } else {
-        setIsLoadingMore(true);
-      }
+      setIsLoadingProducts(true);
+      setProductLoadError(null);
 
       try {
         const term = sanitizeSearchTerm(urlSearch);
-        let q = listingBaseQuery(supabase);
-        q = withSearchOr(q, term);
-        q = applyListingFilters(q, filterOpts);
-        q = applyListingSort(q, sortBy);
-        const from = listPage * PRODUCTS_PAGE_SIZE;
-        const to = from + PRODUCTS_PAGE_SIZE - 1;
-        q = q.range(from, to);
-
-        const { data, error, count } = await q;
+        const from = (currentPage - 1) * PRODUCTS_PAGE_SIZE;
+        const { rows, total, error } = await fetchProductsListingRpc(supabase, {
+          searchTerm: term,
+          filterOpts,
+          sortBy,
+          limit: PRODUCTS_PAGE_SIZE,
+          offset: from,
+        });
         if (cancelled) return;
-        if (error) throw error;
+        if (error) throw new Error(error);
 
-        const rows = data ?? [];
-        const mapped = rows.map((row) => mapProductRow(row as Record<string, unknown>));
+        const mapped = rows.map((row) => mapProductRow(row));
 
-        if (listPage === 0) {
-          setProducts(mapped.length ? mapped : []);
-          setTotalCount(typeof count === "number" ? count : mapped.length);
-        } else {
-          setProducts((prev) => [...prev, ...mapped]);
-        }
+        setProducts(mapped.length ? mapped : []);
+        setTotalCount(total);
       } catch (err: unknown) {
-        if (!cancelled && listPage === 0) {
+        if (!cancelled) {
           console.error(err);
           setProductLoadError(err instanceof Error ? err.message : "Unable to load products");
           setProducts([]);
@@ -444,7 +437,6 @@ export default function Products() {
       } finally {
         if (!cancelled) {
           setIsLoadingProducts(false);
-          setIsLoadingMore(false);
         }
       }
     };
@@ -453,21 +445,40 @@ export default function Products() {
     return () => {
       cancelled = true;
     };
-  }, [listPage, filterSignal, filterOpts, sortBy, urlSearch]);
+  }, [currentPage, filterSignal, filterOpts, sortBy, urlSearch]);
 
   const commitSearch = () => {
     const next = new URLSearchParams(searchParams);
+    next.delete("page");
     const q = sanitizeSearchTerm(searchInput);
     if (q) next.set("search", q);
     else next.delete("search");
     setSearchParams(next);
   };
 
-  const loadMore = useCallback(() => {
-    if (isLoadingProducts || isLoadingMore) return;
-    if (totalCount != null && products.length >= totalCount) return;
-    setListPage((p) => p + 1);
-  }, [isLoadingProducts, isLoadingMore, totalCount, products.length]);
+  const totalPages = Math.max(1, totalCount != null ? Math.ceil(totalCount / PRODUCTS_PAGE_SIZE) : 1);
+
+  const goToPage = useCallback(
+    (p: number) => {
+      const target = Math.min(Math.max(1, p), totalPages);
+      setSearchParamsSoft((sp) => {
+        if (target <= 1) sp.delete("page");
+        else sp.set("page", String(target));
+      });
+    },
+    [setSearchParamsSoft, totalPages],
+  );
+
+  useEffect(() => {
+    if (totalCount == null || totalCount <= 0) return;
+    const tp = Math.max(1, Math.ceil(totalCount / PRODUCTS_PAGE_SIZE));
+    if (currentPage > tp) {
+      setSearchParamsSoft((sp) => {
+        if (tp <= 1) sp.delete("page");
+        else sp.set("page", String(tp));
+      });
+    }
+  }, [totalCount, currentPage, setSearchParamsSoft]);
 
   const clearAllFilters = () => {
     setSelectedCategory("all");
@@ -477,6 +488,7 @@ export default function Products() {
     setSelectedState("all");
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
+      next.delete("page");
       next.delete("category");
       next.delete("carBrand");
       next.delete("condition");
@@ -489,28 +501,36 @@ export default function Products() {
   const getTierIcon = (tier: string) => {
     switch (tier) {
       case "crown":
-        return <BadgeCheck className="w-[18px] h-[18px] ml-1 text-white fill-yellow-500 drop-shadow-sm" title="Crown Verified" />;
+        return (
+          <BadgeCheck className="w-[18px] h-[18px] ml-1 text-white fill-yellow-500 drop-shadow-sm" aria-label="Crown Verified" />
+        );
       case "blue":
-        return <BadgeCheck className="w-[18px] h-[18px] ml-1 text-white fill-blue-500 drop-shadow-sm" title="Blue Verified" />;
+        return (
+          <BadgeCheck className="w-[18px] h-[18px] ml-1 text-white fill-blue-500 drop-shadow-sm" aria-label="Blue Verified" />
+        );
       case "standard":
-        return <BadgeCheck className="w-[18px] h-[18px] ml-1 text-white fill-green-500 drop-shadow-sm" title="Standard Verified" />;
+        return (
+          <BadgeCheck className="w-[18px] h-[18px] ml-1 text-white fill-green-500 drop-shadow-sm" aria-label="Standard Verified" />
+        );
       default:
         return null;
     }
   };
 
-  const featuredIds = useMemo(() => getFeaturedProductIds(), [products]);
-
-  const displayProducts = useMemo(
-    () => mixFeaturedProducts(products as Array<Record<string, unknown>>, featuredIds) as typeof products,
-    [products, featuredIds],
+  const paginationItems = useMemo(
+    () => listingPaginationItems(currentPage, totalPages),
+    [currentPage, totalPages],
   );
 
-  const hasMore = totalCount != null && products.length < totalCount;
+  const showingFrom =
+    totalCount != null && totalCount > 0 ? (currentPage - 1) * PRODUCTS_PAGE_SIZE + 1 : 0;
+  const showingTo =
+    totalCount != null ? Math.min(currentPage * PRODUCTS_PAGE_SIZE, totalCount) : 0;
+
   const showChips =
     sanitizeSearchTerm(urlSearch) ||
     selectedCategory !== "all" ||
-    (selectedCategory === "vehicles" && selectedCarBrand !== "all") ||
+    (String(selectedCategory) === "vehicles" && selectedCarBrand !== "all") ||
     selectedCondition !== "all" ||
     priceRange !== "all" ||
     selectedState !== "all";
@@ -580,6 +600,7 @@ export default function Products() {
                     onClick={() => {
                       const next = new URLSearchParams(searchParams);
                       next.delete("search");
+                      next.delete("page");
                       setSearchParams(next);
                     }}
                   >
@@ -651,7 +672,7 @@ export default function Products() {
         </div>
       ) : null}
 
-      {!isLoadingProducts && sanitizeSearchTerm(urlSearch).length >= 2 && displayProducts.length === 0 ? (
+      {!isLoadingProducts && sanitizeSearchTerm(urlSearch).length >= 2 && products.length === 0 ? (
         <div className="border-b border-amber-100 bg-amber-50/50 px-4 py-3">
           <div className="mx-auto max-w-7xl text-sm text-amber-950">
             <span className="font-semibold">Did you mean? </span>
@@ -722,14 +743,16 @@ export default function Products() {
             onChange={commitSort}
             leading={
               <>
-                {isLoadingProducts && listPage === 0 ? (
+                {isLoadingProducts ? (
                   <span>Loading…</span>
                 ) : totalCount != null ? (
                   <span>
-                    Showing {Math.min(products.length, totalCount)} of {totalCount} products
+                    {totalCount === 0
+                      ? "No products"
+                      : `Showing ${showingFrom}–${showingTo} of ${totalCount} products`}
                   </span>
                 ) : (
-                  <span>{displayProducts.length} products</span>
+                  <span>{products.length} products</span>
                 )}
                 {!isLoadingProducts && productLoadError ? (
                   <span className="ml-2 text-xs text-amber-700">({productLoadError})</span>
@@ -754,12 +777,15 @@ export default function Products() {
         </aside>
 
         <main className="flex-1 min-w-0">
-          {isLoadingProducts && listPage === 0 ? (
-            <div className="flex justify-center py-20 text-gray-600 text-sm">Loading products…</div>
+          {isLoadingProducts ? (
+            <div className="py-4">
+              <ProductCardSkeletonGrid count={PRODUCTS_PAGE_SIZE} />
+              <p className="mt-4 text-center text-sm text-gray-500">Loading products…</p>
+            </div>
           ) : (
             <>
               <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4">
-                {displayProducts.map((product) => {
+                {products.map((product) => {
                   const pid = Number(product.id);
                   return (
                     <Link key={String(product.id)} to={`/products/${product.id}`} className="block h-full">
@@ -778,36 +804,76 @@ export default function Products() {
                         likesCount={Number(product.like_count ?? 0)}
                         liked={likedProductIds.has(pid)}
                         onLikeClick={(ev) => void onProductLike(ev, product)}
-                        topRightBadge={
-                          featuredIds.has(String(product.id)) ? (
-                            <span className="bg-amber-400 text-amber-950 text-[10px] md:text-xs font-bold px-2 py-1 rounded flex items-center gap-1 shadow-sm">
-                              <Star className="w-3 h-3 fill-current" />
-                              FEATURED
-                            </span>
-                          ) : undefined
-                        }
+                        topRightBadge={<BoostCardBadge row={product as Record<string, unknown>} />}
                       />
                     </Link>
                   );
                 })}
               </div>
 
-              {hasMore && !productLoadError && (
-                <div className="flex justify-center mt-8">
-                  <button
-                    type="button"
-                    onClick={loadMore}
-                    disabled={isLoadingMore}
-                    className="px-8 py-3 rounded-xl bg-white border-2 border-[#22c55e] text-[#15803d] font-semibold hover:bg-[#22c55e]/10 disabled:opacity-50 transition-colors"
-                  >
-                    {isLoadingMore ? "Loading…" : "Load more"}
-                  </button>
-                </div>
-              )}
+              {!productLoadError && totalPages > 1 ? (
+                <nav
+                  className="mt-8 flex flex-col items-center gap-3 sm:flex-row sm:justify-center"
+                  aria-label="Product list pagination"
+                >
+                  <div className="flex flex-wrap items-center justify-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => goToPage(currentPage - 1)}
+                      disabled={isLoadingProducts || currentPage <= 1}
+                      className="inline-flex h-9 items-center gap-1 rounded-lg border border-gray-200 bg-white px-2.5 text-sm font-medium text-gray-800 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-45"
+                      aria-label="Previous page"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                      <span className="hidden sm:inline">Previous</span>
+                    </button>
+                    {paginationItems.map((item, idx) =>
+                      item === "ellipsis" ? (
+                        <span
+                          key={`e-${idx}`}
+                          className="px-1 text-sm text-gray-400"
+                          aria-hidden
+                        >
+                          …
+                        </span>
+                      ) : (
+                        <button
+                          key={item}
+                          type="button"
+                          onClick={() => goToPage(item)}
+                          disabled={isLoadingProducts}
+                          aria-label={`Page ${item}`}
+                          aria-current={item === currentPage ? "page" : undefined}
+                          className={`inline-flex h-9 min-w-[2.25rem] items-center justify-center rounded-lg border text-sm font-semibold shadow-sm transition-colors disabled:opacity-45 ${
+                            item === currentPage
+                              ? "border-[#16a34a] bg-[#16a34a] text-white"
+                              : "border-gray-200 bg-white text-gray-800 hover:bg-gray-50"
+                          }`}
+                        >
+                          {item}
+                        </button>
+                      ),
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => goToPage(currentPage + 1)}
+                      disabled={isLoadingProducts || currentPage >= totalPages}
+                      className="inline-flex h-9 items-center gap-1 rounded-lg border border-gray-200 bg-white px-2.5 text-sm font-medium text-gray-800 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-45"
+                      aria-label="Next page"
+                    >
+                      <span className="hidden sm:inline">Next</span>
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-500 tabular-nums">
+                    Page {currentPage} of {totalPages}
+                  </p>
+                </nav>
+              ) : null}
             </>
           )}
 
-          {!isLoadingProducts && displayProducts.length === 0 && (
+          {!isLoadingProducts && products.length === 0 && (
             <div className="text-center py-12 max-w-md mx-auto">
               <div className="text-6xl mb-4">🔍</div>
               <h3 className="text-lg font-semibold text-gray-800 mb-2">No products found</h3>

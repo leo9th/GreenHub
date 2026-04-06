@@ -6,23 +6,25 @@ import { useCurrency } from "../hooks/useCurrency";
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "../../lib/supabase";
 import { ProductCard } from "../components/cards/ProductCard";
+import { ProductCardSkeletonGrid } from "../components/cards/ProductCardSkeleton";
 import { useAuth } from "../context/AuthContext";
 import { useInboxNotifications } from "../context/InboxNotificationsContext";
 import { fetchLikedProductIdsForUser, toggleProductLike } from "../utils/engagement";
 import { toast } from "sonner";
-import { getProductPrice } from "../utils/getProductPrice";
-import { getFeaturedProductIds, mixFeaturedProducts } from "../utils/featureProductMix";
 import { SortBar } from "../components/SortBar";
+import { BoostCardBadge } from "../components/BoostBadge";
 import {
-  activeProductsQuery,
+  fetchProductsListingRpc,
+  HOME_PAGE_SIZE,
   mapProductRow,
   sanitizeSearchTerm,
-  sortProductsClientSide,
-  withSearchOr,
+  sortProductsWithBoostFirst,
+  type ListingFilterOpts,
   type ListingSort,
 } from "../utils/productSearch";
 import { getRelatedSearchSuggestions } from "../utils/searchSuggestions";
 import { getProductThumbnailUrl } from "../utils/productImages";
+import { getRecentProductIds, RECENT_VIEWED_EVENT } from "../utils/recentlyViewedProducts";
 
 export default function Home() {
   const navigate = useNavigate();
@@ -39,24 +41,30 @@ export default function Home() {
   const [products, setProducts] = useState<Array<Record<string, unknown>>>([]);
   const [categoryAdCounts, setCategoryAdCounts] = useState<Record<string, number>>({});
   const [isLoadingProducts, setIsLoadingProducts] = useState<boolean>(true);
+  const [isLoadingMoreHome, setIsLoadingMoreHome] = useState(false);
+  const [homeTotalCount, setHomeTotalCount] = useState<number | null>(null);
   const [productLoadError, setProductLoadError] = useState<string | null>(null);
   const [likedProductIds, setLikedProductIds] = useState<Set<number>>(new Set());
   const [homeSort, setHomeSort] = useState<ListingSort>("recent");
+  const [recentViewedProducts, setRecentViewedProducts] = useState<Array<Record<string, unknown>>>([]);
+  const [recentViewedLoading, setRecentViewedLoading] = useState(() => getRecentProductIds().length > 0);
 
-  const featuredIds = useMemo(() => getFeaturedProductIds(), [products]);
-
-  const sortedProducts = useMemo(() => sortProductsClientSide(products, homeSort), [products, homeSort]);
-
-  const featuredItemsDisplay = useMemo(
-    () => mixFeaturedProducts(sortedProducts, featuredIds),
-    [sortedProducts, featuredIds],
+  const homeFilterOpts: ListingFilterOpts = useMemo(
+    () => ({
+      category: "all",
+      condition: "all",
+      state: "all",
+      priceRange: "all",
+      carBrand: "all",
+    }),
+    [],
   );
 
   const homeCardIds = useMemo(() => {
-    const fromFeatured = featuredItemsDisplay.map((p) => Number(p.id)).filter((n) => Number.isFinite(n));
-    const fromRecent = sortedProducts.slice(0, 2).map((p) => Number(p.id)).filter((n) => Number.isFinite(n));
-    return [...new Set([...fromFeatured, ...fromRecent])];
-  }, [featuredItemsDisplay, sortedProducts]);
+    const fromGrid = products.map((p) => Number(p.id)).filter((n) => Number.isFinite(n));
+    const fromRecent = recentViewedProducts.map((p) => Number(p.id)).filter((n) => Number.isFinite(n));
+    return [...new Set([...fromGrid, ...fromRecent])];
+  }, [products, recentViewedProducts]);
 
   const homeRelatedSearches = useMemo(
     () => getRelatedSearchSuggestions(searchQuery),
@@ -98,6 +106,7 @@ export default function Home() {
         return n;
       });
       setProducts((prev) => prev.map((p) => (Number(p.id) === id ? { ...p, like_count: nextCount } : p)));
+      setRecentViewedProducts((prev) => prev.map((p) => (Number(p.id) === id ? { ...p, like_count: nextCount } : p)));
       const { error } = await toggleProductLike(supabase, id, authUser.id, liked);
       if (error) {
         toast.error(error);
@@ -108,6 +117,7 @@ export default function Home() {
           return n;
         });
         setProducts((prev) => prev.map((p) => (Number(p.id) === id ? { ...p, like_count: prevCount } : p)));
+        setRecentViewedProducts((prev) => prev.map((p) => (Number(p.id) === id ? { ...p, like_count: prevCount } : p)));
       }
     },
     [authUser?.id, likedProductIds, supabase],
@@ -116,53 +126,127 @@ export default function Home() {
   useEffect(() => {
     const banner = localStorage.getItem("greenhub_custom_banner");
     if (banner) setCustomBanner(banner);
+  }, []);
 
-    const loadProducts = async () => {
-      setIsLoadingProducts(true);
-      setProductLoadError(null);
-
+  useEffect(() => {
+    let cancelled = false;
+    const loadCategoryCounts = async () => {
       try {
-        const { data, error } = await supabase
-          .from("products")
-          .select("*")
-          .eq("status", "active")
-          .order("created_at", { ascending: false });
-
-        if (error) throw error;
-
-        const rows = data ?? [];
         const counts: Record<string, number> = {};
-        for (const product of rows) {
-          const raw =
-            typeof product.category === "string" ? product.category.replace(/"/g, "").trim().toLowerCase() : "";
-          const key = raw || "other";
-          counts[key] = (counts[key] || 0) + 1;
-        }
-        setCategoryAdCounts(counts);
-
-        const serverProducts = rows.map((product: Record<string, unknown>) => ({
-          ...product,
-          price: getProductPrice(product),
-          sellerId: product.seller_id,
-          sellerTier: product.seller_tier,
-          deliveryOptions: product.delivery_options,
-          createdAt: product.created_at,
-          updatedAt: product.updated_at,
-        }));
-
-        setProducts(serverProducts);
-      } catch (error: unknown) {
-        console.error("Error loading products from Supabase:", error);
-        setProductLoadError(error instanceof Error ? error.message : "Unable to load products");
-        setProducts([]);
-        setCategoryAdCounts({});
-      } finally {
-        setIsLoadingProducts(false);
+        await Promise.all(
+          categories.map(async (c) => {
+            const { count, error } = await supabase
+              .from("products")
+              .select("id", { count: "exact", head: true })
+              .eq("status", "active")
+              .eq("category", c.id);
+            if (!cancelled && !error && count != null) counts[c.id] = count;
+          }),
+        );
+        if (!cancelled) setCategoryAdCounts(counts);
+      } catch {
+        if (!cancelled) setCategoryAdCounts({});
       }
     };
-
-    void loadProducts();
+    void loadCategoryCounts();
+    return () => {
+      cancelled = true;
+    };
   }, [activeRegion.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadFirstBatch = async () => {
+      setIsLoadingProducts(true);
+      setProductLoadError(null);
+      setProducts([]);
+      try {
+        const { rows, total, error } = await fetchProductsListingRpc(supabase, {
+          searchTerm: "",
+          filterOpts: homeFilterOpts,
+          sortBy: homeSort,
+          limit: HOME_PAGE_SIZE,
+          offset: 0,
+        });
+        if (cancelled) return;
+        if (error) throw new Error(error);
+        const mapped = rows.map((row) => mapProductRow(row));
+        setProducts(mapped);
+        setHomeTotalCount(total);
+      } catch (error: unknown) {
+        console.error("Error loading products from Supabase:", error);
+        if (!cancelled) {
+          setProductLoadError(error instanceof Error ? error.message : "Unable to load products");
+          setProducts([]);
+          setHomeTotalCount(0);
+        }
+      } finally {
+        if (!cancelled) setIsLoadingProducts(false);
+      }
+    };
+    void loadFirstBatch();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeRegion.id, homeSort, homeFilterOpts]);
+
+  const loadMoreHome = useCallback(async () => {
+    if (isLoadingProducts || isLoadingMoreHome) return;
+    if (homeTotalCount != null && products.length >= homeTotalCount) return;
+    setIsLoadingMoreHome(true);
+    try {
+      const from = products.length;
+      const { rows, error } = await fetchProductsListingRpc(supabase, {
+        searchTerm: "",
+        filterOpts: homeFilterOpts,
+        sortBy: homeSort,
+        limit: HOME_PAGE_SIZE,
+        offset: from,
+      });
+      if (error) throw new Error(error);
+      const mapped = rows.map((row) => mapProductRow(row));
+      setProducts((prev) => [...prev, ...mapped]);
+    } catch (error: unknown) {
+      console.error("Load more (home):", error);
+      toast.error(error instanceof Error ? error.message : "Could not load more listings.");
+    } finally {
+      setIsLoadingMoreHome(false);
+    }
+  }, [isLoadingProducts, isLoadingMoreHome, homeTotalCount, products.length, homeSort, homeFilterOpts]);
+
+  const loadRecentViewed = useCallback(async () => {
+    const ids = getRecentProductIds();
+    if (ids.length === 0) {
+      setRecentViewedProducts([]);
+      setRecentViewedLoading(false);
+      return;
+    }
+    setRecentViewedLoading(true);
+    try {
+      const { data, error } = await supabase.from("products").select("*").eq("status", "active").in("id", ids);
+      if (error) throw error;
+      const rows = (data ?? []) as Record<string, unknown>[];
+      const byId = new Map(rows.map((r) => [String(r.id), r]));
+      const ordered = ids.map((id) => byId.get(id)).filter((x): x is Record<string, unknown> => Boolean(x));
+      const mapped = ordered.map((row) => mapProductRow(row));
+      setRecentViewedProducts(sortProductsWithBoostFirst(mapped, homeSort));
+    } catch (e) {
+      console.error("Recent viewed:", e);
+      setRecentViewedProducts([]);
+    } finally {
+      setRecentViewedLoading(false);
+    }
+  }, [homeSort]);
+
+  useEffect(() => {
+    void loadRecentViewed();
+  }, [loadRecentViewed]);
+
+  useEffect(() => {
+    const onRecent = () => void loadRecentViewed();
+    window.addEventListener(RECENT_VIEWED_EVENT, onRecent);
+    return () => window.removeEventListener(RECENT_VIEWED_EVENT, onRecent);
+  }, [loadRecentViewed]);
 
   useEffect(() => {
     const cleaned = sanitizeSearchTerm(searchQuery);
@@ -175,11 +259,15 @@ export default function Home() {
       const term = sanitizeSearchTerm(searchQuery);
       if (term.length < 2) return;
       try {
-        let q = activeProductsQuery(supabase);
-        q = withSearchOr(q, term);
-        const { data, error } = await q.limit(15);
+        const { rows, error } = await fetchProductsListingRpc(supabase, {
+          searchTerm: term,
+          filterOpts: homeFilterOpts,
+          sortBy: "recent",
+          limit: 15,
+          offset: 0,
+        });
         if (cancelled || error) return;
-        setSearchPreviewHits((data ?? []).map((row) => mapProductRow(row as Record<string, unknown>)));
+        setSearchPreviewHits(rows.map((row) => mapProductRow(row)));
       } catch {
         if (!cancelled) setSearchPreviewHits([]);
       }
@@ -188,7 +276,7 @@ export default function Home() {
       cancelled = true;
       window.clearTimeout(handle);
     };
-  }, [searchQuery]);
+  }, [searchQuery, homeFilterOpts]);
 
   const submitSearch = () => {
     const q = sanitizeSearchTerm(searchQuery);
@@ -342,19 +430,22 @@ export default function Home() {
             {isSearchFocused && sanitizeSearchTerm(searchQuery).length >= 2 && searchPreviewHits.length > 0 && (
               <div className="bg-white/95 rounded-lg border border-white/40 shadow-md p-2 overflow-x-auto no-scrollbar flex gap-2 md:ml-[150px]">
                 <span className="text-[10px] uppercase tracking-wide text-gray-500 shrink-0 py-2 pr-1">Quick</span>
-                {searchPreviewHits.slice(0, 5).map((hit) => (
-                  <Link
-                    key={String(hit.id)}
-                    to={`/products/${hit.id}`}
-                    onMouseDown={() => setIsSearchFocused(false)}
-                    className="flex items-center gap-2 shrink-0 max-w-[200px] rounded-lg border border-gray-200 bg-gray-50 px-2 py-1.5 hover:border-[#22c55e] hover:bg-white"
-                  >
-                    {hit.image ? (
-                      <img src={String(hit.image)} alt="" className="w-10 h-10 rounded object-cover bg-gray-200" />
-                    ) : null}
-                    <span className="text-xs text-gray-800 line-clamp-2">{String(hit.title ?? "")}</span>
-                  </Link>
-                ))}
+                {searchPreviewHits.slice(0, 5).map((hit) => {
+                  const thumb = getProductThumbnailUrl(hit as Record<string, unknown>);
+                  return (
+                    <Link
+                      key={String(hit.id)}
+                      to={`/products/${hit.id}`}
+                      onMouseDown={() => setIsSearchFocused(false)}
+                      className="flex items-center gap-2 shrink-0 max-w-[200px] rounded-lg border border-gray-200 bg-gray-50 px-2 py-1.5 hover:border-[#22c55e] hover:bg-white"
+                    >
+                      {thumb ? (
+                        <img src={thumb} alt="" className="w-10 h-10 rounded object-cover bg-gray-200" />
+                      ) : null}
+                      <span className="text-xs text-gray-800 line-clamp-2">{String(hit.title ?? "")}</span>
+                    </Link>
+                  );
+                })}
               </div>
             )}
           </form>
@@ -454,14 +545,14 @@ export default function Home() {
             </div>
 
             {isLoadingProducts ? (
-              <p className="text-sm text-gray-500 py-8 text-center">Loading listings…</p>
-            ) : featuredItemsDisplay.length === 0 ? (
+              <ProductCardSkeletonGrid count={HOME_PAGE_SIZE} />
+            ) : products.length === 0 ? (
               <p className="text-sm text-gray-600 py-8 text-center rounded-xl border border-dashed border-gray-200 bg-white">
                 No products found yet. Listings with status &quot;active&quot; will appear here.
               </p>
             ) : (
               <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4">
-                {featuredItemsDisplay.map((product) => {
+                {products.map((product) => {
                   const row = product as Record<string, unknown>;
                   const pid = Number(row.id);
                   return (
@@ -473,55 +564,74 @@ export default function Home() {
                         price={Number((product as { price?: number }).price) || 0}
                         priceDisplay={formatPrice(Number((product as { price?: number }).price) || 0)}
                         location={String((product as { location?: string }).location ?? "")}
-                        rating={Number((product as { rating?: number }).rating) || 0}
+                        rating={Number(row.rating) || 0}
+                        reviews={row.reviews != null ? Number(row.reviews) : undefined}
                         productId={Number.isFinite(pid) ? pid : undefined}
                         viewsCount={Number(row.views ?? 0)}
                         likesCount={Number(row.like_count ?? 0)}
                         liked={likedProductIds.has(pid)}
                         onLikeClick={(ev) => void onProductLike(ev, row)}
-                        topRightBadge={
-                          featuredIds.has(String(product.id)) ? (
-                            <span className="bg-amber-400 text-amber-950 text-[10px] md:text-xs font-bold px-2 py-1 rounded flex items-center gap-1 shadow-sm">
-                              <Star className="w-3 h-3 fill-current" />
-                              FEATURED
-                            </span>
-                          ) : undefined
-                        }
+                        topRightBadge={<BoostCardBadge row={row} />}
                       />
                     </Link>
                   );
                 })}
               </div>
             )}
+            {!isLoadingProducts &&
+            !productLoadError &&
+            homeTotalCount != null &&
+            products.length < homeTotalCount ? (
+              <div className="mt-6 flex justify-center">
+                <button
+                  type="button"
+                  onClick={() => void loadMoreHome()}
+                  disabled={isLoadingMoreHome}
+                  className="rounded-xl border-2 border-[#22c55e] bg-white px-8 py-3 text-sm font-semibold text-[#15803d] shadow-sm transition-colors hover:bg-[#22c55e]/10 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isLoadingMoreHome ? "Loading…" : `Load more (${products.length} of ${homeTotalCount})`}
+                </button>
+              </div>
+            ) : null}
           </div>
 
-          {/* Recently Viewed */}
+          {/* Recently Viewed — persisted in localStorage, synced when you open a product */}
           <div className="mb-6">
             <h2 className="font-semibold text-gray-800 mb-3">Recently Viewed</h2>
             <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4">
-              {sortedProducts.length > 0 ? sortedProducts.slice(0, 2).map((product) => {
-                const row = product as Record<string, unknown>;
-                const pid = Number(row.id);
-                return (
-                  <Link key={String(product.id)} to={`/products/${product.id}`} className="block h-full">
-                    <ProductCard
-                      image={getProductThumbnailUrl(row)}
-                      condition={String((product as { condition?: string }).condition ?? "Good")}
-                      title={String((product as { title?: string }).title ?? "")}
-                      price={Number((product as { price?: number }).price) || 0}
-                      priceDisplay={formatPrice(Number((product as { price?: number }).price) || 0)}
-                      location={String((product as { location?: string }).location ?? "")}
-                      rating={Number((product as { rating?: number }).rating) || 0}
-                      productId={Number.isFinite(pid) ? pid : undefined}
-                      viewsCount={Number(row.views ?? 0)}
-                      likesCount={Number(row.like_count ?? 0)}
-                      liked={likedProductIds.has(pid)}
-                      onLikeClick={(ev) => void onProductLike(ev, row)}
-                    />
-                  </Link>
-                );
-              }) : (
-                <p className="text-sm text-gray-500 col-span-full">Browse products to see recents here.</p>
+              {recentViewedLoading && getRecentProductIds().length > 0 ? (
+                <div className="col-span-full">
+                  <ProductCardSkeletonGrid count={Math.min(4, getRecentProductIds().length)} />
+                </div>
+              ) : recentViewedProducts.length > 0 ? (
+                recentViewedProducts.map((product) => {
+                  const row = product as Record<string, unknown>;
+                  const pid = Number(row.id);
+                  return (
+                    <Link key={String(product.id)} to={`/products/${product.id}`} className="block h-full">
+                      <ProductCard
+                        image={getProductThumbnailUrl(row)}
+                        condition={String((product as { condition?: string }).condition ?? "Good")}
+                        title={String((product as { title?: string }).title ?? "")}
+                        price={Number((product as { price?: number }).price) || 0}
+                        priceDisplay={formatPrice(Number((product as { price?: number }).price) || 0)}
+                        location={String((product as { location?: string }).location ?? "")}
+                        rating={Number(row.rating) || 0}
+                        reviews={row.reviews != null ? Number(row.reviews) : undefined}
+                        productId={Number.isFinite(pid) ? pid : undefined}
+                        viewsCount={Number(row.views ?? 0)}
+                        likesCount={Number(row.like_count ?? 0)}
+                        liked={likedProductIds.has(pid)}
+                        onLikeClick={(ev) => void onProductLike(ev, row)}
+                        topRightBadge={<BoostCardBadge row={row} />}
+                      />
+                    </Link>
+                  );
+                })
+              ) : (
+                <p className="text-sm text-gray-500 col-span-full">
+                  Open a product page to build your recent list here.
+                </p>
               )}
             </div>
           </div>

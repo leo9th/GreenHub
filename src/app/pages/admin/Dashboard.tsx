@@ -77,6 +77,15 @@ export default function AdminDashboard() {
         {/* Quick Actions */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <Link
+            to="/admin/boosts"
+            className="flex flex-col items-center justify-center p-4 bg-white rounded-lg border border-gray-200 hover:border-[#22c55e] hover:shadow-md transition-all"
+          >
+            <div className="w-12 h-12 rounded-full bg-[#22c55e]/10 flex items-center justify-center mb-2">
+              <TrendingUp className="w-6 h-6 text-[#22c55e]" />
+            </div>
+            <span className="text-sm font-medium text-gray-800 text-center">Boost payments</span>
+          </Link>
+          <Link
             to="/admin/job-applications"
             className="bg-white rounded-lg p-4 text-center hover:shadow-md transition-shadow"
           >

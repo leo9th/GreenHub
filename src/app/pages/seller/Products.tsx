@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { ArrowLeft, Plus, Search, MoreVertical, Edit, Trash2, Loader2, Package } from "lucide-react";
+import { ArrowLeft, Plus, Search, MoreVertical, Edit, Trash2, Loader2, Package, TrendingUp } from "lucide-react";
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../context/AuthContext";
 import { useCurrency } from "../../hooks/useCurrency";
@@ -18,6 +18,8 @@ type SellerProductRow = {
   price: number | null;
   status: string | null;
   created_at: string | null;
+  boost_expires_at: string | null;
+  boost_tier: string | null;
 };
 
 function formatListedDate(iso: string | null): string {
@@ -50,7 +52,7 @@ export default function SellerProducts() {
 
     const { data, error } = await supabase
       .from("products")
-      .select("id, title, image, images, price, price_local, status, created_at")
+      .select("id, title, image, images, price, price_local, status, created_at, boost_expires_at, boost_tier")
       .eq("seller_id", user.id)
       .order("created_at", { ascending: false });
 
@@ -68,6 +70,8 @@ export default function SellerProducts() {
           price_local: row.price_local != null ? Number(row.price_local) : null,
           status: (row.status as string | null) ?? null,
           created_at: (row.created_at as string | null) ?? null,
+          boost_expires_at: (row.boost_expires_at as string | null) ?? null,
+          boost_tier: (row.boost_tier as string | null) ?? null,
         }))
       );
     }
@@ -271,6 +275,15 @@ export default function SellerProducts() {
                     </div>
 
                     <div className="mt-3 flex flex-wrap gap-2">
+                      {statusLower === "active" ? (
+                        <Link
+                          to={`/seller/advertise?productId=${encodeURIComponent(String(product.id))}`}
+                          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-[#fdba74] bg-[#ffedd5] text-sm font-medium text-[#9a3412] hover:bg-[#fed7aa]"
+                        >
+                          <TrendingUp className="w-4 h-4 shrink-0" />
+                          Boost
+                        </Link>
+                      ) : null}
                       <Link
                         to={`/seller/products/edit/${product.id}`}
                         className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-300 bg-white text-sm font-medium text-gray-800 hover:bg-gray-50"

@@ -5,6 +5,8 @@ import { supabase } from "../../lib/supabase";
 import { useAuth } from "../context/AuthContext";
 import { toast } from "sonner";
 
+const MIN_REVIEW_COMMENT_LENGTH = 10;
+
 type ProductRow = {
   id: number | string;
   title: string;
@@ -133,12 +135,18 @@ export default function WriteProductReview() {
       return;
     }
 
+    const trimmed = comment.trim();
+    if (!existingReview && trimmed.length < MIN_REVIEW_COMMENT_LENGTH) {
+      toast.error(`Please write at least ${MIN_REVIEW_COMMENT_LENGTH} characters about your experience.`);
+      return;
+    }
+
     setSubmitting(true);
     try {
       if (existingReview) {
         const { error } = await supabase
           .from("product_reviews")
-          .update({ rating, comment: comment.trim() })
+          .update({ rating, comment: trimmed })
           .eq("id", existingReview.id)
           .eq("user_id", authUser.id);
         if (error) throw error;
@@ -148,7 +156,7 @@ export default function WriteProductReview() {
           product_id: pid,
           user_id: authUser.id,
           rating,
-          comment: comment.trim(),
+          comment: trimmed,
         });
         if (error) {
           if (error.code === "23505") {
@@ -256,13 +264,17 @@ export default function WriteProductReview() {
             onChange={(e) => setComment(e.target.value)}
             rows={6}
             className="w-full resize-y rounded-lg border border-gray-300 px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#22c55e]"
-            placeholder="What did you think of this product?"
+            placeholder={`What did you think? (at least ${MIN_REVIEW_COMMENT_LENGTH} characters)`}
           />
         </div>
 
         <button
           type="submit"
-          disabled={rating < 1 || submitting}
+          disabled={
+            rating < 1 ||
+            submitting ||
+            (!existingReview && comment.trim().length < MIN_REVIEW_COMMENT_LENGTH)
+          }
           className="w-full rounded-xl bg-[#22c55e] py-3 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
         >
           {submitting ? "Saving…" : existingReview ? "Update review" : "Submit review"}

@@ -208,6 +208,13 @@ export default function SellerDashboard() {
                 <span className="text-[15px] font-medium text-gray-600">My adverts</span>
               </Link>
               <Link
+                to="/seller/boosts"
+                className="flex items-center gap-4 px-4 py-3 text-gray-700 hover:bg-gray-200/50 rounded-lg"
+              >
+                <span className="text-xl w-6 text-center">📈</span>
+                <span className="text-[15px] font-medium text-gray-600">My boosts</span>
+              </Link>
+              <Link
                 to="/seller/verification"
                 className="flex items-center gap-4 px-4 py-3 text-gray-700 hover:bg-gray-200/50 rounded-lg"
               >

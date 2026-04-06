@@ -320,13 +320,22 @@ export default function OrderDetail() {
                   ) : null}
 
                   {isDelivered && pid ? (
-                    <Link
-                      to={`/reviews/${order.id}?productId=${encodeURIComponent(pid)}`}
-                      className="mt-3 w-full py-2 border border-[#22c55e] text-[#22c55e] rounded-lg font-medium text-sm text-center flex items-center justify-center gap-2"
-                    >
-                      <Star className="w-4 h-4" />
-                      Write Review
-                    </Link>
+                    <div className="mt-3 flex flex-col gap-2">
+                      <Link
+                        to={`/products/${encodeURIComponent(pid)}/write-review`}
+                        className="w-full py-2 border border-[#22c55e] bg-[#22c55e] text-white rounded-lg font-medium text-sm text-center flex items-center justify-center gap-2 hover:bg-[#15803d]"
+                      >
+                        <Star className="w-4 h-4" />
+                        Review this product
+                      </Link>
+                      <Link
+                        to={`/reviews/${order.id}?productId=${encodeURIComponent(pid)}`}
+                        className="w-full py-2 border border-gray-300 text-gray-800 rounded-lg font-medium text-sm text-center flex items-center justify-center gap-2 hover:bg-gray-50"
+                      >
+                        <Star className="w-4 h-4" />
+                        Review seller
+                      </Link>
+                    </div>
                   ) : null}
                 </div>
               );

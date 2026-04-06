@@ -28,7 +28,8 @@ import AddProduct from "./pages/seller/AddProduct";
 import EditProduct from "./pages/seller/EditProduct";
 import BankDetails from "./pages/seller/BankDetails";
 import Advertise from "./pages/seller/Advertise";
-import SetupAd from "./pages/seller/SetupAd";
+import MyBoosts from "./pages/seller/MyBoosts";
+import AdminBoosts from "./pages/admin/AdminBoosts";
 import SellerVerification from "./pages/seller/Verification";
 import WriteReview from "./pages/WriteReview";
 import WriteProductReview from "./pages/WriteProductReview";
@@ -76,6 +77,10 @@ function LegacyReviewsRedirect() {
 
 function LegacyAdminRedirect() {
   return <Navigate to="/admin/dashboard" replace />;
+}
+
+function LegacyAdvertiseSetupRedirect() {
+  return <Navigate to="/seller/advertise" replace />;
 }
 
 function LegacySellerProductEditRedirect() {
@@ -129,7 +134,8 @@ export const router = createBrowserRouter([
       { path: "seller/bank-details", Component: BankDetails },
       { path: "seller/verification", Component: SellerVerification },
       { path: "seller/advertise", Component: Advertise },
-      { path: "seller/advertise/setup", Component: SetupAd },
+      { path: "seller/advertise/setup", Component: LegacyAdvertiseSetupRedirect },
+      { path: "seller/boosts", Component: MyBoosts },
       { path: "reviews/:orderId", Component: WriteReview },
       { path: "seller/:id/reviews", Component: SellerReviews },
       { path: "profile/:id", Component: Profile },
@@ -148,6 +154,7 @@ export const router = createBrowserRouter([
       { path: "admin/products", Component: AdminProducts },
       { path: "admin/pricing", Component: AdPricingControl },
       { path: "admin/job-applications", Component: AdminJobApplications },
+      { path: "admin/boosts", Component: AdminBoosts },
       { path: "admin/orders", Component: LegacyAdminRedirect },
       { path: "admin/reports", Component: LegacyAdminRedirect },
       { path: "help", Component: LegacyHelpRedirect },

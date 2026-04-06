@@ -375,11 +375,46 @@ function wordTypoMatch(uw: string, pw: string): boolean {
   return levenshtein(uw, pw) <= 1;
 }
 
+/** Phrase match, or single-token match as a whole word only (avoids "buy" matching inside "buying"). */
+function includesPhraseOrWholeWord(fullNorm: string, needleNorm: string): boolean {
+  const n = needleNorm.trim();
+  if (!n) return false;
+  if (n.includes(" ")) return fullNorm.includes(n);
+  const escaped = n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  try {
+    const re = new RegExp(`(?:^|\\s)${escaped}(?:\\s|$)`, "i");
+    return re.test(fullNorm);
+  } catch {
+    return fullNorm.includes(n);
+  }
+}
+
+function isBuyVsBoostContrast(userNorm: string): boolean {
+  const hasBoost = /\b(boost|boosted|boosting|advertising|advertise|advertisement|promotion|promote|sponsor|sponsored|visibility\s+tier)\b/.test(
+    userNorm,
+  );
+  const hasBuy = /\b(buy|buying|purchase|purchasing|shop|shopping|cart|checkout|order|ordering)\b/.test(userNorm);
+  const hasContrast = /\b(different|not the same|vs|versus|not that|compare|confused|instead|rather than|same as)\b/.test(
+    userNorm,
+  );
+  return hasBoost && hasBuy && hasContrast;
+}
+
+const BUY_VS_BOOST_DISAMBIG: Record<ChatbotLanguage, string> = {
+  en: `Buying and boosting are different: buying is when you shop and pay for products as a customer. Boosting is for sellers—it pays to increase visibility for your own listing. To shop, browse products and use checkout. To boost, go to Seller → Advertise (or your product’s Boost options) and complete payment.`,
+
+  yo: `Ṣiṣẹ ra ati imudara ifihan jẹ oriṣiriṣi: ra tumọ si nipa ti o ra awọn ọja bi onibara. Imudara ifihan fun awọn olota nikan—o san lati mu akosile rẹ han siwaju. Lati ra, ṣawari ọja ki o lo ideri. Lati mu akosile rẹ han, lọ si Olota → Ipolongo tabi awọn aṣayan Boost fun ọja naa.`,
+
+  ig: `Ịzụ na ime ka ọpụrụiche abụghị otu: ịzụ bụ mgbe ị na-azụ ihe dị ka onye na-azụ ahịa. Ime ka ọpụrụiche bụ maka ndị na-ere—ị na-akwụ ụgwọ ka a hụ ọkachamara gị nke ọma. Iji zụta, lelee ngwaahịa ma jiri nkwụọ. Iji mee ka ọpụrụiche, gaa na Onye na-ere → Mgbasa ozi (ma ọ bụ nhọrọ Boost maka ngwaahịa ahụ).`,
+
+  ha: `Sayayya da ƙarfafa bayanai babi ne daban: sayaywa shine ku sayi kayayyakin ku a matsayin mai sayayya. Ƙarfafa shine don masu sayarwa—kuna biyan kuɗi don ƙara ganin samfurin ku. Don sayayya, bincika samfuran ku kuma amfani da biyan kuɗi. Don ƙarfafa, je Mai sayarwa → Talla (ko zaɓukan Boost na samfurin).`,
+};
+
 function scorePattern(userNorm: string, userTokens: string[], userSet: Set<string>, patternRaw: string): number {
   const patNorm = normalizeForMatch(patternRaw);
   if (!patNorm) return 0;
 
-  if (userNorm.includes(patNorm)) {
+  if (includesPhraseOrWholeWord(userNorm, patNorm)) {
     return 10_000 + patNorm.length * 50 + Math.min(500, patNorm.split(/\s+/).length * 80);
   }
 
@@ -413,7 +448,7 @@ function scorePattern(userNorm: string, userTokens: string[], userSet: Set<strin
   let score = recall * 2_500 + dice * 800 + weighted;
 
   for (const pw of patTokens) {
-    if (pw.length >= 4 && userNorm.includes(pw)) score += 120 + pw.length * 8;
+    if (pw.length >= 4 && includesPhraseOrWholeWord(userNorm, pw)) score += 120 + pw.length * 8;
   }
 
   return score;
@@ -460,6 +495,15 @@ export function matchTrainingData(
 
   const scoped = rowsForLanguage(rows, lang);
   const userNorm = normalizeForMatch(effective);
+  if (isBuyVsBoostContrast(userNorm)) {
+    return {
+      intent: "disambiguate_buy_boost",
+      response: BUY_VS_BOOST_DISAMBIG[lang] ?? BUY_VS_BOOST_DISAMBIG.en,
+      unknown: false,
+      language: lang,
+    };
+  }
+
   const userTokens = tokenize(effective);
   const userSet = tokenSetForScore(userTokens, true);
 

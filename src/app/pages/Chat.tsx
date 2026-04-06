@@ -1,6 +1,20 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useParams, useNavigate, useSearchParams, Link } from "react-router";
-import { ArrowLeft, Send, MoreVertical, Phone, Plus, Paperclip, Check, CheckCheck, MessageCircle, Search } from "lucide-react";
+import {
+  ArrowLeft,
+  Send,
+  MoreVertical,
+  Phone,
+  Plus,
+  Paperclip,
+  Check,
+  CheckCheck,
+  MessageCircle,
+  Search,
+  User,
+  Settings,
+  Link2,
+} from "lucide-react";
 import { getAvatarUrl } from "../utils/getAvatar";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../context/AuthContext";
@@ -19,6 +33,14 @@ import {
 } from "../utils/chatConversations";
 import { fetchChatMessagesForConversation, type ChatMessageRow } from "../utils/chatMessages";
 import { formatListTime, useInboxConversationList } from "../hooks/useInboxConversationList";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "../components/ui/dropdown-menu";
 
 function parseConversationInt(v: unknown): number | null {
   if (v == null) return null;
@@ -35,6 +57,23 @@ function isDuplicateConversationError(err: { code?: string; message?: string }):
     m.includes("unique") ||
     m.includes("conversations_pair")
   );
+}
+
+/** Build tel / WhatsApp links from a profile phone string (WhatsApp uses digits only, with simple NG 0→234 normalization). */
+function phoneLinkTargets(raw: string | null): { telHref: string; waHref: string } | null {
+  if (!raw?.trim()) return null;
+  const trimmed = raw.trim();
+  const digits = trimmed.replace(/\D/g, "");
+  if (digits.length < 8) return null;
+  const telHref = trimmed.includes("+")
+    ? `tel:${trimmed.replace(/\s/g, "")}`
+    : `tel:${digits}`;
+  let waDigits = digits;
+  if (!waDigits.startsWith("234") && waDigits.startsWith("0") && waDigits.length >= 10 && waDigits.length <= 11) {
+    waDigits = `234${waDigits.slice(1)}`;
+  }
+  const waHref = `https://wa.me/${waDigits}`;
+  return { telHref, waHref };
 }
 
 /** PostgREST / Supabase errors are plain objects with `message`, not always `Error` instances. */
@@ -219,14 +258,14 @@ export default function Chat() {
       let prof: Record<string, unknown> | null = null;
       const pub = await supabase
         .from("profiles_public")
-        .select("full_name, avatar_url, gender")
+        .select("full_name, avatar_url, gender, phone")
         .eq("id", peer)
         .maybeSingle();
       if (!pub.error && pub.data) prof = pub.data as Record<string, unknown>;
       else {
         const fb = await supabase
           .from("profiles")
-          .select("full_name, avatar_url, gender")
+          .select("full_name, avatar_url, gender, phone")
           .eq("id", peer)
           .maybeSingle();
         if (!fb.error && fb.data) prof = fb.data as Record<string, unknown>;
@@ -236,7 +275,8 @@ export default function Chat() {
         const name = (prof.full_name as string)?.trim() || "Member";
         setPeerName(name);
         setPeerAvatar(getAvatarUrl(prof.avatar_url as string | null, prof.gender as string | null, name));
-        setPeerPhone(null);
+        const phoneRaw = prof.phone;
+        setPeerPhone(typeof phoneRaw === "string" && phoneRaw.trim() ? phoneRaw.trim() : null);
       } else {
         setPeerName("Member");
         setPeerAvatar(getAvatarUrl(null, null, "Member"));
@@ -473,6 +513,8 @@ export default function Chat() {
     );
   }
 
+  const peerContactLinks = phoneLinkTargets(peerPhone);
+
   const chatPanel = (
     <div className="flex min-h-0 flex-1 flex-col bg-gray-100">
       <header className="sticky top-0 z-40 shrink-0 border-b border-gray-200 bg-white shadow-sm">
@@ -497,18 +539,82 @@ export default function Chat() {
               <h1 className="font-semibold text-gray-800">{peerName}</h1>
               <p className="text-xs text-gray-600">Direct message</p>
             </div>
-            {peerPhone ? (
-              <a href={`tel:${peerPhone.replace(/\s/g, "")}`} className="p-2" aria-label="Call">
-                <Phone className="h-5 w-5 text-gray-600" />
-              </a>
-            ) : (
-              <button type="button" className="cursor-not-allowed p-2 opacity-40" aria-hidden>
-                <Phone className="h-5 w-5 text-gray-600" />
-              </button>
-            )}
-            <button type="button" className="cursor-not-allowed p-2 opacity-50" aria-hidden>
-              <MoreVertical className="h-5 w-5 text-gray-600" />
-            </button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="rounded-lg p-2 text-gray-600 hover:bg-gray-100"
+                  aria-label="Call or WhatsApp"
+                >
+                  <Phone className="h-5 w-5" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                <DropdownMenuLabel>Contact</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {peerContactLinks ? (
+                  <>
+                    <DropdownMenuItem asChild>
+                      <a href={peerContactLinks.telHref}>Voice call</a>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <a href={peerContactLinks.waHref} target="_blank" rel="noopener noreferrer">
+                        WhatsApp
+                      </a>
+                    </DropdownMenuItem>
+                  </>
+                ) : (
+                  <DropdownMenuItem
+                    disabled
+                    className="whitespace-normal text-xs font-normal text-gray-500"
+                  >
+                    No phone number — they can share one by enabling phone on their profile.
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="rounded-lg p-2 text-gray-600 hover:bg-gray-100"
+                  aria-label="Chat settings"
+                >
+                  <MoreVertical className="h-5 w-5" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel>Settings</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <Link to={`/profile/${peerId}`} className="flex cursor-pointer items-center gap-2">
+                    <User className="h-4 w-4" />
+                    View profile
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link to="/settings" className="flex cursor-pointer items-center gap-2">
+                    <Settings className="h-4 w-4" />
+                    Account and notification settings
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="flex cursor-pointer items-center gap-2"
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    const url = `${window.location.origin}/messages/c/${conversation.id}`;
+                    void navigator.clipboard.writeText(url).then(
+                      () => toast.success("Conversation link copied"),
+                      () => toast.error("Could not copy link"),
+                    );
+                  }}
+                >
+                  <Link2 className="h-4 w-4" />
+                  Copy conversation link
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </header>

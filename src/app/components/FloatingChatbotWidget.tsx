@@ -2,9 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Send, X } from "lucide-react";
 import { toast } from "sonner";
 import {
-  type ChatbotLanguage,
   type TrainingDataRow,
-  fetchApprovedTrainingForChat,
+  fetchAllApprovedTrainingForChat,
   matchTrainingData,
 } from "../utils/chatbotApi";
 
@@ -16,13 +15,6 @@ type WidgetMessage = {
   content: string;
   timeLabel: string;
 };
-
-const LANG_OPTIONS: { value: ChatbotLanguage; label: string }[] = [
-  { value: "en", label: "English" },
-  { value: "yo", label: "Yorùbá" },
-  { value: "ig", label: "Igbo" },
-  { value: "ha", label: "Hausa" },
-];
 
 function newId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -36,25 +28,26 @@ const WELCOME: WidgetMessage = {
   id: "welcome",
   role: "assistant",
   content:
-    "Hi — I’m the GreenHub assistant. I answer from approved training in Supabase. Try asking about buying, selling, or deliveries.",
+    "Hi — I’m the GreenHub assistant. I detect your language automatically (English, Yorùbá, Igbo, Hausa). Ask about buying, selling, delivery, payments, verification, or support.",
   timeLabel: "",
 };
 
 export default function FloatingChatbotWidget() {
   const [open, setOpen] = useState(false);
-  const [language, setLanguage] = useState<ChatbotLanguage>("en");
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<WidgetMessage[]>([WELCOME]);
   const [trainingRows, setTrainingRows] = useState<TrainingDataRow[]>([]);
   const [trainingLoading, setTrainingLoading] = useState(true);
   const [trainingError, setTrainingError] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const lastUserMessageRef = useRef<string | null>(null);
+  const lastAssistantMessageRef = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setTrainingLoading(true);
     setTrainingError(null);
-    void fetchApprovedTrainingForChat(language)
+    void fetchAllApprovedTrainingForChat()
       .then((rows) => {
         if (!cancelled) setTrainingRows(rows);
       })
@@ -72,7 +65,7 @@ export default function FloatingChatbotWidget() {
     return () => {
       cancelled = true;
     };
-  }, [language]);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -84,18 +77,23 @@ export default function FloatingChatbotWidget() {
     const text = input.trim();
     if (!text || trainingLoading) return;
 
+    const result = matchTrainingData(text, trainingRows, {
+      previousUserMessage: lastUserMessageRef.current,
+      previousAssistantMessage: lastAssistantMessageRef.current,
+    });
+
+    lastUserMessageRef.current = text;
+    lastAssistantMessageRef.current = result.response;
+
     const userMsg: WidgetMessage = {
       id: newId(),
       role: "user",
       content: text,
       timeLabel: timeNowLabel(),
     };
-    setMessages((m) => [...m, userMsg]);
-    setInput("");
-
-    const result = matchTrainingData(text, trainingRows);
     setMessages((m) => [
       ...m,
+      userMsg,
       {
         id: newId(),
         role: "assistant",
@@ -103,6 +101,7 @@ export default function FloatingChatbotWidget() {
         timeLabel: timeNowLabel(),
       },
     ]);
+    setInput("");
   }, [input, trainingRows, trainingLoading]);
 
   return (
@@ -122,25 +121,9 @@ export default function FloatingChatbotWidget() {
                     ? "Loading training data…"
                     : trainingError
                       ? "Training data unavailable"
-                      : `${trainingRows.length} trained intent${trainingRows.length === 1 ? "" : "s"} · instant replies`}
+                      : `${trainingRows.length} trained intent${trainingRows.length === 1 ? "" : "s"} · auto language · smart match`}
                 </p>
               </div>
-              <label className="sr-only" htmlFor="floating-chatbot-lang">
-                Language
-              </label>
-              <select
-                id="floating-chatbot-lang"
-                value={language}
-                onChange={(e) => setLanguage(e.target.value as ChatbotLanguage)}
-                disabled={trainingLoading}
-                className="max-w-[7.5rem] rounded-lg border border-white/25 bg-white/15 px-2 py-1.5 text-xs font-medium text-white outline-none ring-offset-2 ring-offset-[#15803d] focus:ring-2 focus:ring-white/50 disabled:opacity-50"
-              >
-                {LANG_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value} className="text-gray-900">
-                    {o.label}
-                  </option>
-                ))}
-              </select>
               <button
                 type="button"
                 onClick={() => setOpen(false)}

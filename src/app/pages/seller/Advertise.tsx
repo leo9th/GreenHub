@@ -7,6 +7,8 @@ import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../context/AuthContext";
 import { BOOST_TIERS, type BoostTier } from "../../utils/boost";
 import { verifyBoostPayment } from "../../utils/verifyBoostPayment";
+import { isAutoAdsSubscriberEmail } from "../../utils/autoAdsSubscriber";
+import { applyComplimentaryAdsBoost } from "../../utils/applyComplimentaryAdsBoost";
 
 type SellerProductRow = {
   id: number;
@@ -89,6 +91,7 @@ export default function Advertise() {
   };
 
   const publicKey = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY ?? "";
+  const complimentaryAds = isAutoAdsSubscriberEmail(user?.email ?? null);
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
@@ -109,6 +112,16 @@ export default function Advertise() {
           Pay once per boost. We verify your payment with Paystack, then your listing moves up in search and shows a
           boost badge until the period ends.
         </div>
+
+        {complimentaryAds ? (
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50/90 px-4 py-3 text-sm text-emerald-950">
+            <p className="font-semibold text-emerald-900">Complimentary ads on your account</p>
+            <p className="mt-1 text-emerald-900/90">
+              Choose a listing and tier below, then activate — no Paystack payment. Access is tied to your signed-in
+              email.
+            </p>
+          </div>
+        ) : null}
 
         {loadingProducts ? (
           <div className="flex justify-center py-16">
@@ -180,8 +193,12 @@ export default function Advertise() {
                         </div>
                         {active ? <CheckCircle2 className="w-5 h-5 text-[#22c55e] shrink-0" /> : null}
                       </div>
-                      <p className="mt-3 text-lg font-bold text-[#15803d]">₦{t.priceNgn.toLocaleString()}</p>
-                      <p className="text-[11px] text-gray-500 mt-1">NGN · Paystack</p>
+                        <p className="mt-3 text-lg font-bold text-[#15803d]">
+                          {complimentaryAds ? "Complimentary" : `₦${t.priceNgn.toLocaleString()}`}
+                        </p>
+                        <p className="text-[11px] text-gray-500 mt-1">
+                          {complimentaryAds ? "Included for your account" : "NGN · Paystack"}
+                        </p>
                     </button>
                   );
                 })}
@@ -189,74 +206,119 @@ export default function Advertise() {
             </section>
 
             <section className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm space-y-4">
-              <h2 className="text-sm font-semibold text-gray-800">3. Pay</h2>
-              {!publicKey ? (
-                <p className="text-sm text-amber-800">Set VITE_PAYSTACK_PUBLIC_KEY to enable checkout.</p>
-              ) : null}
+              <h2 className="text-sm font-semibold text-gray-800">{complimentaryAds ? "3. Activate" : "3. Pay"}</h2>
 
-              <button
-                type="button"
-                onClick={preparePayment}
-                disabled={!selectedProductId || !selectedTier || !publicKey}
-                className="w-full rounded-xl border-2 border-[#22c55e] py-3 font-bold text-[#15803d] hover:bg-[#22c55e]/10 disabled:opacity-50"
-              >
-                {paymentRef ? "Payment ready — use the button below" : "Prepare Paystack checkout"}
-              </button>
-
-              {paymentRef && tierInfo && selectedProductId ? (
-                <div className="space-y-3">
-                  <p className="text-center text-sm text-gray-600">
-                    Total: <span className="font-bold text-gray-900">₦{tierInfo.priceNgn.toLocaleString()}</span>
-                  </p>
-                  <PaystackButton
-                    key={paymentRef}
-                    email={user?.email || "seller@greenhub.app"}
-                    amount={amountKobo}
-                    publicKey={publicKey}
-                    text={verifying ? "Verifying…" : "Pay now"}
-                    reference={paymentRef}
-                    currency="NGN"
-                    channels={["card"]}
-                    metadata={{
-                      product_id: selectedProductId,
-                      boost_tier: selectedTier,
-                    }}
-                    disabled={verifying}
-                    onSuccess={async (res: { reference?: string } | string) => {
-                      const ref =
-                        typeof res === "string"
-                          ? res
-                          : String((res as { reference?: string })?.reference ?? paymentRef);
-                      if (!selectedTier) return;
+              {complimentaryAds ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!selectedProductId || !selectedTier) {
+                        toast.message("Choose a listing and a boost tier.");
+                        return;
+                      }
                       setVerifying(true);
                       try {
-                        const out = await verifyBoostPayment(ref, selectedProductId, selectedTier);
+                        const out = await applyComplimentaryAdsBoost(selectedProductId, selectedTier);
                         if (out.error) {
                           toast.error(out.error);
                           return;
                         }
-                        toast.success(out.message || "Boost activated! Your product is now featured.");
-                        setPaymentRef(null);
+                        toast.success("Boost activated on your listing at no charge.");
                         await loadProducts();
                         navigate(`/products/${selectedProductId}`);
                       } finally {
                         setVerifying(false);
                       }
                     }}
-                    onClose={() => toast.message("Checkout closed")}
-                    className="w-full bg-[#092b23] text-white px-6 py-4 rounded-xl font-bold hover:bg-[#061d18] transition-colors disabled:opacity-50"
-                  />
-                </div>
-              ) : null}
+                    disabled={!selectedProductId || !selectedTier || verifying}
+                    className="w-full rounded-xl bg-[#15803d] py-3.5 font-bold text-white shadow-sm hover:bg-[#166534] disabled:opacity-50"
+                  >
+                    {verifying ? (
+                      <span className="inline-flex items-center justify-center gap-2">
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                        Applying…
+                      </span>
+                    ) : (
+                      "Activate boost (complimentary)"
+                    )}
+                  </button>
+                  <p className="text-xs text-gray-500">
+                    Applies the same visibility as a paid boost. Requires the complimentary-ads migration on your
+                    Supabase project.
+                  </p>
+                </>
+              ) : (
+                <>
+                  {!publicKey ? (
+                    <p className="text-sm text-amber-800">Set VITE_PAYSTACK_PUBLIC_KEY to enable checkout.</p>
+                  ) : null}
 
-              <div className="flex items-start gap-2 text-xs text-gray-500 pt-2 border-t border-gray-100">
-                <TrendingUp className="w-4 h-4 text-[#22c55e] shrink-0 mt-0.5" />
-                <span>
-                  After payment we call Paystack to verify the reference, then update your listing. If anything fails,
-                  check that the Edge Function <code className="text-[11px]">verify-boost-payment</code> is deployed and{" "}
-                  <code className="text-[11px]">PAYSTACK_SECRET_KEY</code> is set in Supabase.
-                </span>
-              </div>
+                  <button
+                    type="button"
+                    onClick={preparePayment}
+                    disabled={!selectedProductId || !selectedTier || !publicKey}
+                    className="w-full rounded-xl border-2 border-[#22c55e] py-3 font-bold text-[#15803d] hover:bg-[#22c55e]/10 disabled:opacity-50"
+                  >
+                    {paymentRef ? "Payment ready — use the button below" : "Prepare Paystack checkout"}
+                  </button>
+
+                  {paymentRef && tierInfo && selectedProductId ? (
+                    <div className="space-y-3">
+                      <p className="text-center text-sm text-gray-600">
+                        Total: <span className="font-bold text-gray-900">₦{tierInfo.priceNgn.toLocaleString()}</span>
+                      </p>
+                      <PaystackButton
+                        key={paymentRef}
+                        email={user?.email || "seller@greenhub.app"}
+                        amount={amountKobo}
+                        publicKey={publicKey}
+                        text={verifying ? "Verifying…" : "Pay now"}
+                        reference={paymentRef}
+                        currency="NGN"
+                        channels={["card"]}
+                        metadata={{
+                          product_id: selectedProductId,
+                          boost_tier: selectedTier,
+                        }}
+                        disabled={verifying}
+                        onSuccess={async (res: { reference?: string } | string) => {
+                          const ref =
+                            typeof res === "string"
+                              ? res
+                              : String((res as { reference?: string })?.reference ?? paymentRef);
+                          if (!selectedTier) return;
+                          setVerifying(true);
+                          try {
+                            const out = await verifyBoostPayment(ref, selectedProductId, selectedTier);
+                            if (out.error) {
+                              toast.error(out.error);
+                              return;
+                            }
+                            toast.success(out.message || "Boost activated! Your product is now featured.");
+                            setPaymentRef(null);
+                            await loadProducts();
+                            navigate(`/products/${selectedProductId}`);
+                          } finally {
+                            setVerifying(false);
+                          }
+                        }}
+                        onClose={() => toast.message("Checkout closed")}
+                        className="w-full bg-[#092b23] text-white px-6 py-4 rounded-xl font-bold hover:bg-[#061d18] transition-colors disabled:opacity-50"
+                      />
+                    </div>
+                  ) : null}
+
+                  <div className="flex items-start gap-2 text-xs text-gray-500 pt-2 border-t border-gray-100">
+                    <TrendingUp className="w-4 h-4 text-[#22c55e] shrink-0 mt-0.5" />
+                    <span>
+                      After payment we call Paystack to verify the reference, then update your listing. If anything
+                      fails, check that the Edge Function <code className="text-[11px]">verify-boost-payment</code> is
+                      deployed and <code className="text-[11px]">PAYSTACK_SECRET_KEY</code> is set in Supabase.
+                    </span>
+                  </div>
+                </>
+              )}
             </section>
           </>
         )}

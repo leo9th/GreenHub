@@ -4,36 +4,35 @@ import { ArrowLeft, Loader2, TrendingUp } from "lucide-react";
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../context/AuthContext";
 import { useCurrency } from "../../hooks/useCurrency";
-import { getBoostTier, isBoostActive } from "../../utils/boost";
-
-type TxRow = {
-  id: string;
-  amount: number | null;
-  duration_days: number | null;
-  boost_tier: string | null;
-  status: string | null;
-  payment_reference: string | null;
-  created_at: string | null;
-  product_id: number | null;
-  products?: { title: string | null } | null;
-};
+import { isBoostActive } from "../../utils/boost";
 
 type ProductBoostRow = {
   id: number;
-  title: string | null;
+  title: string;
   boost_expires_at: string | null;
   boost_tier: string | null;
-  boost_count: number | null;
+  boost_count: number;
+};
+
+type TxRow = {
+  id: string;
+  product_id: number;
+  amount: number;
+  duration_days: number;
+  boost_tier: string;
+  status: string;
+  payment_reference: string | null;
+  created_at: string;
 };
 
 export default function MyBoosts() {
   const navigate = useNavigate();
-  const formatPrice = useCurrency();
   const { user, loading: authLoading } = useAuth();
-  const [loading, setLoading] = useState(true);
+  const formatPrice = useCurrency();
   const [products, setProducts] = useState<ProductBoostRow[]>([]);
   const [txs, setTxs] = useState<TxRow[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!user?.id) {
@@ -43,30 +42,45 @@ export default function MyBoosts() {
       return;
     }
     setLoading(true);
-    setError(null);
+    setErr(null);
     try {
-      const [pRes, tRes] = await Promise.all([
-        supabase
-          .from("products")
-          .select("id, title, boost_expires_at, boost_tier, boost_count")
-          .eq("seller_id", user.id)
-          .gt("boost_count", 0)
-          .order("boost_expires_at", { ascending: false }),
-        supabase
-          .from("boost_transactions")
-          .select("id, amount, duration_days, boost_tier, status, payment_reference, created_at, product_id, products(title)")
-          .eq("seller_id", user.id)
-          .order("created_at", { ascending: false })
-          .limit(100),
-      ]);
+      const { data: prodData, error: pe } = await supabase
+        .from("products")
+        .select("id, title, boost_expires_at, boost_tier, boost_count")
+        .eq("seller_id", user.id)
+        .order("created_at", { ascending: false });
+      if (pe) throw pe;
+      setProducts(
+        (prodData ?? []).map((r: Record<string, unknown>) => ({
+          id: Number(r.id),
+          title: String(r.title ?? ""),
+          boost_expires_at: (r.boost_expires_at as string | null) ?? null,
+          boost_tier: (r.boost_tier as string | null) ?? null,
+          boost_count: Math.max(0, Number(r.boost_count ?? 0)),
+        })),
+      );
 
-      if (pRes.error) throw pRes.error;
-      if (tRes.error) throw tRes.error;
-
-      setProducts((pRes.data ?? []) as ProductBoostRow[]);
-      setTxs((tRes.data ?? []) as TxRow[]);
+      const { data: txData, error: te } = await supabase
+        .from("boost_transactions")
+        .select("id, product_id, amount, duration_days, boost_tier, status, payment_reference, created_at")
+        .eq("seller_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(100);
+      if (te) throw te;
+      setTxs(
+        (txData ?? []).map((r: Record<string, unknown>) => ({
+          id: String(r.id),
+          product_id: Number(r.product_id),
+          amount: Number(r.amount ?? 0),
+          duration_days: Number(r.duration_days ?? 0),
+          boost_tier: String(r.boost_tier ?? ""),
+          status: String(r.status ?? ""),
+          payment_reference: r.payment_reference != null ? String(r.payment_reference) : null,
+          created_at: String(r.created_at ?? ""),
+        })),
+      );
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Could not load boosts");
+      setErr(e instanceof Error ? e.message : "Could not load boosts");
       setProducts([]);
       setTxs([]);
     } finally {
@@ -83,13 +97,13 @@ export default function MyBoosts() {
   }, [user, authLoading, navigate]);
 
   const { active, expired } = useMemo(() => {
-    const a: ProductBoostRow[] = [];
-    const e: ProductBoostRow[] = [];
+    const act: ProductBoostRow[] = [];
+    const exp: ProductBoostRow[] = [];
     for (const p of products) {
-      if (isBoostActive(p.boost_expires_at)) a.push(p);
-      else if (p.boost_expires_at) e.push(p);
+      if (isBoostActive(p.boost_expires_at)) act.push(p);
+      else if (p.boost_count > 0 || p.boost_expires_at) exp.push(p);
     }
-    return { active: a, expired: e };
+    return { active: act, expired: exp };
   }, [products]);
 
   if (authLoading || (!user && !authLoading)) {
@@ -104,27 +118,29 @@ export default function MyBoosts() {
     <div className="min-h-screen bg-gray-50 pb-10">
       <header className="bg-white border-b border-gray-200 sticky top-0 z-30">
         <div className="px-4 py-3 max-w-3xl mx-auto flex items-center gap-3">
-          <button type="button" onClick={() => navigate(-1)} className="p-2 -ml-2 rounded-full hover:bg-gray-100">
+          <Link to="/seller/dashboard" className="p-2 -ml-2 rounded-full hover:bg-gray-100">
             <ArrowLeft className="w-5 h-5 text-gray-700" />
-          </button>
+          </Link>
           <div>
             <h1 className="text-lg font-bold text-gray-800">My boosts</h1>
-            <p className="text-xs text-gray-500">Active placements, expired boosts, and purchase history</p>
+            <p className="text-xs text-gray-500">Active placements, past boosts, and payment history</p>
           </div>
         </div>
       </header>
 
       <div className="max-w-3xl mx-auto px-4 py-6 space-y-8">
-        <Link
-          to="/seller/advertise"
-          className="flex items-center justify-center gap-2 w-full rounded-xl bg-[#22c55e] text-white py-3 font-bold hover:bg-[#16a34a] shadow-sm"
-        >
-          <TrendingUp className="w-5 h-5" />
-          Buy a new boost
-        </Link>
+        <div className="flex flex-wrap gap-3">
+          <Link
+            to="/seller/advertise"
+            className="inline-flex items-center gap-2 rounded-xl bg-[#22c55e] px-4 py-2.5 text-sm font-bold text-white hover:bg-[#16a34a]"
+          >
+            <TrendingUp className="w-4 h-4" />
+            Buy a boost
+          </Link>
+        </div>
 
-        {error ? (
-          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>
+        {err ? (
+          <p className="text-sm text-red-600 rounded-lg border border-red-200 bg-red-50 px-4 py-3">{err}</p>
         ) : null}
 
         {loading ? (
@@ -134,26 +150,30 @@ export default function MyBoosts() {
         ) : (
           <>
             <section>
-              <h2 className="text-sm font-semibold text-gray-800 mb-3">Active boosts</h2>
+              <h2 className="text-sm font-bold text-gray-800 uppercase tracking-wide mb-3">Active</h2>
               {active.length === 0 ? (
-                <p className="text-sm text-gray-500">No active boosts right now.</p>
+                <p className="text-sm text-gray-600 bg-white rounded-xl border border-gray-200 p-4">
+                  No active boosts. Promote a listing to appear higher in search.
+                </p>
               ) : (
                 <ul className="space-y-2">
                   {active.map((p) => {
-                    const tier = getBoostTier(p.boost_tier ?? undefined);
                     const exp = p.boost_expires_at ? new Date(p.boost_expires_at) : null;
-                    const daysLeft =
-                      exp && !Number.isNaN(exp.getTime())
+                    const days =
+                      exp && Number.isFinite(exp.getTime())
                         ? Math.max(0, Math.ceil((exp.getTime() - Date.now()) / 86400000))
                         : 0;
                     return (
-                      <li key={p.id} className="rounded-xl border border-gray-200 bg-white p-4">
+                      <li key={p.id} className="bg-white rounded-xl border border-gray-200 p-4">
                         <Link to={`/products/${p.id}`} className="font-medium text-gray-900 hover:text-[#15803d]">
-                          {p.title ?? "Listing"}
+                          {p.title}
                         </Link>
                         <p className="text-xs text-gray-600 mt-1">
-                          {tier?.label ?? p.boost_tier} · {daysLeft} day{daysLeft === 1 ? "" : "s"} left · ends{" "}
-                          {exp?.toLocaleString()}
+                          Tier: <span className="font-semibold">{p.boost_tier}</span> · ~{days} day
+                          {days === 1 ? "" : "s"} left
+                        </p>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          Ends {exp ? exp.toLocaleString() : "—"}
                         </p>
                       </li>
                     );
@@ -163,17 +183,19 @@ export default function MyBoosts() {
             </section>
 
             <section>
-              <h2 className="text-sm font-semibold text-gray-800 mb-3">Expired boosts (on your listings)</h2>
+              <h2 className="text-sm font-bold text-gray-800 uppercase tracking-wide mb-3">Expired / inactive</h2>
               {expired.length === 0 ? (
-                <p className="text-sm text-gray-500">None yet.</p>
+                <p className="text-sm text-gray-500">No past boosts on record.</p>
               ) : (
                 <ul className="space-y-2">
-                  {expired.map((p) => (
-                    <li key={p.id} className="rounded-xl border border-gray-100 bg-white p-3 text-sm text-gray-700">
+                  {expired.slice(0, 20).map((p) => (
+                    <li key={p.id} className="bg-white rounded-xl border border-gray-100 p-3 text-sm text-gray-700">
                       <Link to={`/products/${p.id}`} className="font-medium hover:text-[#15803d]">
-                        {p.title ?? "Listing"}
+                        {p.title}
                       </Link>
-                      <span className="text-gray-400"> · ended {p.boost_expires_at ? new Date(p.boost_expires_at).toLocaleDateString() : "—"}</span>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Last tier: {p.boost_tier ?? "—"} · Purchases: {p.boost_count}
+                      </p>
                     </li>
                   ))}
                 </ul>
@@ -181,41 +203,38 @@ export default function MyBoosts() {
             </section>
 
             <section>
-              <h2 className="text-sm font-semibold text-gray-800 mb-3">Purchase history</h2>
+              <h2 className="text-sm font-bold text-gray-800 uppercase tracking-wide mb-3">Purchase history</h2>
               {txs.length === 0 ? (
-                <p className="text-sm text-gray-500">No boost payments recorded.</p>
+                <p className="text-sm text-gray-500">No boost payments yet.</p>
               ) : (
                 <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="border-b border-gray-100 text-left text-xs text-gray-500 uppercase">
-                        <th className="p-3">When</th>
-                        <th className="p-3">Listing</th>
+                      <tr className="text-left text-xs text-gray-500 border-b border-gray-100">
+                        <th className="p-3">Date</th>
+                        <th className="p-3">Product</th>
                         <th className="p-3">Tier</th>
                         <th className="p-3">Amount</th>
                         <th className="p-3">Status</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {txs.map((t) => (
-                        <tr key={t.id} className="border-b border-gray-50 last:border-0">
-                          <td className="p-3 whitespace-nowrap text-gray-600">
-                            {t.created_at ? new Date(t.created_at).toLocaleString() : "—"}
-                          </td>
-                          <td className="p-3">
-                            {t.product_id ? (
-                              <Link to={`/products/${t.product_id}`} className="text-[#15803d] hover:underline">
-                                {t.products?.title ?? `#${t.product_id}`}
-                              </Link>
-                            ) : (
-                              "—"
-                            )}
-                          </td>
-                          <td className="p-3">{t.boost_tier ?? "—"}</td>
-                          <td className="p-3 tabular-nums">{formatPrice(Number(t.amount ?? 0))}</td>
-                          <td className="p-3 text-xs">{t.status ?? "—"}</td>
-                        </tr>
-                      ))}
+                      {txs.map((t) => {
+                        const title = products.find((x) => x.id === t.product_id)?.title ?? `#${t.product_id}`;
+                        return (
+                          <tr key={t.id} className="border-b border-gray-50 last:border-0">
+                            <td className="p-3 whitespace-nowrap text-gray-600">
+                              {t.created_at ? new Date(t.created_at).toLocaleDateString() : "—"}
+                            </td>
+                            <td className="p-3 max-w-[140px] truncate">{title}</td>
+                            <td className="p-3">{t.boost_tier}</td>
+                            <td className="p-3 tabular-nums">{formatPrice(t.amount)}</td>
+                            <td className="p-3">
+                              <span className="text-xs font-semibold uppercase text-gray-700">{t.status}</span>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

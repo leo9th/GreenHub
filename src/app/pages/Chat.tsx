@@ -517,9 +517,9 @@ export default function Chat() {
 
   const chatPanel = (
     <div className="flex min-h-0 flex-1 flex-col bg-gray-100">
-      <header className="sticky top-0 z-40 shrink-0 border-b border-gray-200 bg-white shadow-sm">
-        <div className="px-4 py-3">
-          <div className="mb-1 flex items-center gap-3">
+      <header className="sticky top-16 z-40 shrink-0 border-b border-gray-200 bg-white shadow-sm">
+        <div className="px-4 py-3 max-md:py-4">
+          <div className="mb-1 flex items-center gap-3 max-md:mb-1.5">
             <button
               type="button"
               onClick={() => navigate("/messages")}
@@ -830,9 +830,9 @@ export default function Chat() {
   ) : null;
 
   return (
-    <div className="min-h-[calc(100dvh-4rem)] bg-gray-50">
+    <div className="min-h-[calc(100dvh-4rem)] bg-gray-50 max-md:pt-3">
       <div
-        className={`mx-auto grid w-full max-w-[1280px] min-h-[calc(100dvh-4rem)] grid-cols-1 md:grid-cols-[1fr_2fr] lg:grid-cols-[1fr_2fr_1fr] ${shellHeight}`}
+        className={`mx-auto grid w-full max-w-[1280px] min-h-[calc(100dvh-4rem)] max-md:min-h-[calc(100dvh-4rem-0.75rem)] grid-cols-1 md:grid-cols-[1fr_2fr] lg:grid-cols-[1fr_2fr_1fr] ${shellHeight}`}
       >
         <aside
           className={`hidden min-h-0 flex-col border-r border-gray-200 bg-white md:flex ${shellHeight}`}

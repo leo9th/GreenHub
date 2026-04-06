@@ -29,6 +29,7 @@ import { getProductThumbnailUrl, parseProductImagesFromRow } from "../utils/prod
 import { recordProductView } from "../utils/recentlyViewedProducts";
 import { toast } from "sonner";
 import { BoostDetailBadge } from "../components/BoostBadge";
+import { BoostDetailBadge } from "../components/BoostBadge";
 
 type ParsedDeliveryOption = { name: string; fee: number; duration: string };
 
@@ -945,6 +946,7 @@ export default function ProductDetail() {
                   <span className="absolute top-3 left-3 z-[1] bg-[#15803d] text-white text-[11px] font-semibold px-2 py-1 rounded-lg shadow-sm">
                     {product.condition}
                   </span>
+                  <BoostDetailBadge row={foundProduct as unknown as Record<string, unknown>} />
                   <BoostDetailBadge row={foundProduct as Record<string, unknown>} />
                   {product.images.length > 1 ? (
                     <span className="absolute bottom-3 right-3 z-[2] rounded-full bg-black/55 px-2.5 py-1 text-[11px] font-medium tabular-nums text-white shadow-sm">

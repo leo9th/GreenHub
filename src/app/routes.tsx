@@ -135,7 +135,7 @@ export const router = createBrowserRouter([
       { path: "seller/bank-details", Component: BankDetails },
       { path: "seller/verification", Component: SellerVerification },
       { path: "seller/advertise", Component: Advertise },
-      { path: "seller/advertise/setup", Component: LegacyAdvertiseSetupRedirect },
+      { path: "seller/advertise/setup", element: <LegacyAdvertiseSetupRedirect /> },
       { path: "seller/boosts", Component: MyBoosts },
       { path: "reviews/:orderId", Component: WriteReview },
       { path: "seller/:id/reviews", Component: SellerReviews },

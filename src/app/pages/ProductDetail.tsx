@@ -657,6 +657,17 @@ export default function ProductDetail() {
     };
   }, [serverProduct?.seller_id, serverProduct?.sellerId]);
 
+  useEffect(() => {
+    if (!phoneMenuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (phoneMenuRef.current && !phoneMenuRef.current.contains(e.target as Node)) {
+        setPhoneMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [phoneMenuOpen]);
+
   if (isServerProductLoading) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center p-4 text-gray-500 text-sm">
@@ -817,17 +828,6 @@ export default function ProductDetail() {
   const sellerTelHref = sellerPhoneRaw ? `tel:${sellerPhoneRaw.replace(/\s/g, "")}` : "";
   const whatsappDigits = sellerPhoneRaw.replace(/\D/g, "");
   const whatsappHref = whatsappDigits ? `https://wa.me/${whatsappDigits}` : "";
-
-  useEffect(() => {
-    if (!phoneMenuOpen) return;
-    const onDown = (e: MouseEvent) => {
-      if (phoneMenuRef.current && !phoneMenuRef.current.contains(e.target as Node)) {
-        setPhoneMenuOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [phoneMenuOpen]);
 
   const dbProductAvg = foundProduct?.average_rating != null ? Number(foundProduct.average_rating) : NaN;
   const dbProductTotal = Number(foundProduct?.total_reviews ?? 0);

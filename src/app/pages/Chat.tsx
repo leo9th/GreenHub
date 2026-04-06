@@ -38,6 +38,16 @@ function isDuplicateConversationError(err: { code?: string; message?: string }):
   );
 }
 
+/** PostgREST / Supabase errors are plain objects with `message`, not always `Error` instances. */
+function errorMessage(e: unknown, fallback: string): string {
+  if (e instanceof Error) return e.message;
+  if (e && typeof e === "object" && "message" in e) {
+    const m = (e as { message: unknown }).message;
+    if (typeof m === "string" && m.trim()) return m;
+  }
+  return fallback;
+}
+
 type StripProduct = {
   id: number;
   title: string;
@@ -428,7 +438,7 @@ export default function Chat() {
       if (inserted) setMessages((prev) => [...prev, inserted as ChatMessageRow]);
       setMessage("");
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Message not sent");
+      toast.error(errorMessage(e, "Message not sent"));
     } finally {
       setSendBusy(false);
     }

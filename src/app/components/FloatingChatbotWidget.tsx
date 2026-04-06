@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, Send, X } from "lucide-react";
+import { Send, X } from "lucide-react";
 import { toast } from "sonner";
-import { type ChatbotLanguage, invokeChatbotProcess } from "../utils/chatbotApi";
+import {
+  type ChatbotLanguage,
+  type TrainingDataRow,
+  fetchApprovedTrainingForChat,
+  matchTrainingData,
+} from "../utils/chatbotApi";
 
 type ChatRole = "user" | "assistant";
 
@@ -31,7 +36,7 @@ const WELCOME: WidgetMessage = {
   id: "welcome",
   role: "assistant",
   content:
-    "Hi — I’m the GreenHub assistant. Ask about buying, selling, listings, or deliveries. I reply using our help training (English + local languages).",
+    "Hi — I’m the GreenHub assistant. I answer from approved training in Supabase. Try asking about buying, selling, or deliveries.",
   timeLabel: "",
 };
 
@@ -39,19 +44,45 @@ export default function FloatingChatbotWidget() {
   const [open, setOpen] = useState(false);
   const [language, setLanguage] = useState<ChatbotLanguage>("en");
   const [input, setInput] = useState("");
-  const [sending, setSending] = useState(false);
   const [messages, setMessages] = useState<WidgetMessage[]>([WELCOME]);
+  const [trainingRows, setTrainingRows] = useState<TrainingDataRow[]>([]);
+  const [trainingLoading, setTrainingLoading] = useState(true);
+  const [trainingError, setTrainingError] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setTrainingLoading(true);
+    setTrainingError(null);
+    void fetchApprovedTrainingForChat(language)
+      .then((rows) => {
+        if (!cancelled) setTrainingRows(rows);
+      })
+      .catch((e) => {
+        console.error(e);
+        if (!cancelled) {
+          setTrainingRows([]);
+          setTrainingError(e instanceof Error ? e.message : "Could not load training data.");
+          toast.error(e instanceof Error ? e.message : "Could not load training data.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setTrainingLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [language]);
 
   useEffect(() => {
     if (!open) return;
     const el = listRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [messages, sending, open]);
+  }, [messages, open]);
 
-  const sendMessage = useCallback(async () => {
+  const sendMessage = useCallback(() => {
     const text = input.trim();
-    if (!text || sending) return;
+    if (!text || trainingLoading) return;
 
     const userMsg: WidgetMessage = {
       id: newId(),
@@ -61,35 +92,18 @@ export default function FloatingChatbotWidget() {
     };
     setMessages((m) => [...m, userMsg]);
     setInput("");
-    setSending(true);
 
-    try {
-      const result = await invokeChatbotProcess(text, language);
-      setMessages((m) => [
-        ...m,
-        {
-          id: newId(),
-          role: "assistant",
-          content: result.response,
-          timeLabel: timeNowLabel(),
-        },
-      ]);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not reach assistant.");
-      setMessages((m) => [
-        ...m,
-        {
-          id: newId(),
-          role: "assistant",
-          content:
-            "Sorry — I couldn’t reach the assistant right now. Check your connection or try again in a moment.",
-          timeLabel: timeNowLabel(),
-        },
-      ]);
-    } finally {
-      setSending(false);
-    }
-  }, [input, sending, language]);
+    const result = matchTrainingData(text, trainingRows);
+    setMessages((m) => [
+      ...m,
+      {
+        id: newId(),
+        role: "assistant",
+        content: result.response,
+        timeLabel: timeNowLabel(),
+      },
+    ]);
+  }, [input, trainingRows, trainingLoading]);
 
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[60] flex justify-end">
@@ -103,7 +117,13 @@ export default function FloatingChatbotWidget() {
             <header className="flex shrink-0 items-center gap-2 border-b border-emerald-800/20 bg-gradient-to-r from-[#15803d] to-[#16a34a] px-3 py-2.5 text-white">
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold leading-tight">GreenHub Help</p>
-                <p className="text-[11px] text-emerald-100/95">We typically reply instantly</p>
+                <p className="text-[11px] text-emerald-100/95">
+                  {trainingLoading
+                    ? "Loading training data…"
+                    : trainingError
+                      ? "Training data unavailable"
+                      : `${trainingRows.length} trained intent${trainingRows.length === 1 ? "" : "s"} · instant replies`}
+                </p>
               </div>
               <label className="sr-only" htmlFor="floating-chatbot-lang">
                 Language
@@ -112,7 +132,8 @@ export default function FloatingChatbotWidget() {
                 id="floating-chatbot-lang"
                 value={language}
                 onChange={(e) => setLanguage(e.target.value as ChatbotLanguage)}
-                className="max-w-[7.5rem] rounded-lg border border-white/25 bg-white/15 px-2 py-1.5 text-xs font-medium text-white outline-none ring-offset-2 ring-offset-[#15803d] focus:ring-2 focus:ring-white/50"
+                disabled={trainingLoading}
+                className="max-w-[7.5rem] rounded-lg border border-white/25 bg-white/15 px-2 py-1.5 text-xs font-medium text-white outline-none ring-offset-2 ring-offset-[#15803d] focus:ring-2 focus:ring-white/50 disabled:opacity-50"
               >
                 {LANG_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value} className="text-gray-900">
@@ -159,21 +180,13 @@ export default function FloatingChatbotWidget() {
                   </div>
                 </div>
               ))}
-              {sending ? (
-                <div className="flex justify-start">
-                  <div className="inline-flex items-center gap-2 rounded-2xl rounded-bl-md border border-gray-100 bg-white px-3 py-2 text-xs text-gray-500 shadow-sm">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin text-[#16a34a]" aria-hidden />
-                    …
-                  </div>
-                </div>
-              ) : null}
             </div>
 
             <form
               className="shrink-0 border-t border-gray-100 bg-white p-2.5"
               onSubmit={(e) => {
                 e.preventDefault();
-                void sendMessage();
+                sendMessage();
               }}
             >
               <div className="flex gap-2">
@@ -181,14 +194,15 @@ export default function FloatingChatbotWidget() {
                   type="text"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder="Type a message…"
-                  className="min-w-0 flex-1 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus:border-[#22c55e] focus:outline-none focus:ring-2 focus:ring-[#22c55e]/20"
+                  placeholder={trainingLoading ? "Loading…" : "Type a message…"}
+                  disabled={trainingLoading}
+                  className="min-w-0 flex-1 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus:border-[#22c55e] focus:outline-none focus:ring-2 focus:ring-[#22c55e]/20 disabled:opacity-60"
                   autoComplete="off"
                   aria-label="Message"
                 />
                 <button
                   type="submit"
-                  disabled={sending || !input.trim()}
+                  disabled={trainingLoading || !input.trim()}
                   className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#16a34a] text-white shadow-sm transition hover:bg-[#15803d] disabled:opacity-45"
                   aria-label="Send"
                 >

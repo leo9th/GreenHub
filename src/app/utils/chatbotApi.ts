@@ -10,13 +10,17 @@ export type TrainingDataRow = {
   language: string;
 };
 
-/** Approved training rows for one locale (keyword source for the simple matcher). */
-export async function fetchApprovedTrainingData(language: ChatbotLanguage): Promise<TrainingDataRow[]> {
+/**
+ * Approved `training_data` rows for the floating chatbot.
+ * Includes English as a fallback when the selected language is not English (same idea as the old Edge Function).
+ */
+export async function fetchApprovedTrainingForChat(language: ChatbotLanguage): Promise<TrainingDataRow[]> {
+  const langs: string[] = language === "en" ? ["en"] : [language, "en"];
   const { data, error } = await supabase
     .from("training_data")
     .select("id, intent, patterns, responses, language")
     .eq("approved", true)
-    .eq("language", language);
+    .in("language", langs);
 
   if (error) throw error;
   return (data ?? []) as TrainingDataRow[];
@@ -74,12 +78,6 @@ export function matchTrainingData(
 
 // --- Optional Edge Function helpers (feedback / teach) ---
 
-export type ChatProcessResult = {
-  response: string;
-  intent: string | null;
-  unknown: boolean;
-};
-
 export type FeedbackPayload = {
   message: string;
   botResponse: string;
@@ -104,22 +102,6 @@ async function getFnErrorMessage(error: unknown, data: unknown): Promise<string>
     if (e) return String(e);
   }
   return "Assistant is unavailable. Try again later.";
-}
-
-/** Calls Edge Function `chat` with the current session (if any). */
-export async function invokeChatbotProcess(message: string, language: ChatbotLanguage): Promise<ChatProcessResult> {
-  const body = { message: message.trim(), language };
-  const { data, error } = await supabase.functions.invoke<ChatProcessResult>("chat", { body });
-
-  if (error || !data || typeof (data as ChatProcessResult).response !== "string") {
-    throw new Error(await getFnErrorMessage(error, data));
-  }
-
-  return {
-    response: data.response,
-    intent: data.intent ?? null,
-    unknown: Boolean(data.unknown),
-  };
 }
 
 export async function invokeChatbotFeedback(payload: FeedbackPayload): Promise<void> {

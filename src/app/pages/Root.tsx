@@ -2,6 +2,7 @@ import { Outlet, useLocation, Link } from "react-router";
 import { Briefcase, Wallet, ShoppingBag, TrendingUp } from "lucide-react";
 import { useEffect } from "react";
 import Footer from "../components/Footer";
+import FloatingChatbotWidget from "../components/FloatingChatbotWidget";
 import TopNav from "../components/TopNav";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../../lib/supabase";
@@ -29,6 +30,7 @@ export default function Root() {
     };
   }, [user?.id]);
   const hideNavOnPaths = ["/login", "/register", "/verify-otp", "/design-system"];
+  const hideFloatingChatbot = hideNavOnPaths.some((path) => location.pathname.startsWith(path));
   const isMessageThread =
     location.pathname !== "/messages" &&
     (/^\/messages\/c\//.test(location.pathname) ||
@@ -44,6 +46,8 @@ export default function Root() {
         <Outlet />
         {showBottomNav && <Footer />}
       </main>
+
+      {!hideFloatingChatbot ? <FloatingChatbotWidget /> : null}
 
       {showBottomNav && (
         <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">

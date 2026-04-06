@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "react-router";
-import { Bell, ShoppingCart, LogOut, Settings, Store, MessageSquare, BarChart2, Bot } from "lucide-react";
+import { Bell, ShoppingCart, LogOut, Settings, Store, MessageSquare, BarChart2 } from "lucide-react";
 import { useCart } from "../context/CartContext";
 import { useAuth } from "../context/AuthContext";
 import { useInboxNotifications } from "../context/InboxNotificationsContext";
@@ -195,10 +195,6 @@ export default function TopNav() {
             )}
           </Link>
 
-          <Link to="/chatbot" className="p-1" title="Chatbot" aria-label="Help chatbot">
-            <Bot className={`w-6 h-6 transition-colors ${iconClass}`} />
-          </Link>
-
           {session ? (
             <Link to="/messages" className="relative p-1" title="Messages" aria-label="Messages">
               <MessageSquare className={`w-6 h-6 transition-colors ${iconClass}`} />
@@ -245,15 +241,6 @@ export default function TopNav() {
                     >
                       <Store className="w-[18px] h-[18px] text-gray-500" />
                       <span className="text-[14px] font-medium">My shop</span>
-                    </Link>
-
-                    <Link
-                      to="/chatbot"
-                      onClick={() => setShowDropdown(false)}
-                      className="flex items-center gap-3 px-4 py-2 hover:bg-gray-100 text-gray-700 transition-colors"
-                    >
-                      <Bot className="w-[18px] h-[18px] text-gray-500" />
-                      <span className="text-[14px] font-medium">Assistant</span>
                     </Link>
 
                     <Link

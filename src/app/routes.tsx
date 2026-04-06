@@ -45,8 +45,6 @@ import NotFound from "./pages/NotFound";
 import WorkersBrowse from "./pages/workers/WorkersBrowse";
 import WorkerProfileDetail from "./pages/workers/WorkerProfileDetail";
 import WorkerProfileRegister from "./pages/workers/WorkerProfileRegister";
-import Chatbot from "./pages/Chatbot";
-import Chatbot from "./pages/Chatbot";
 
 function LegacySellRouteRedirect() {
   return <Navigate to="/seller/products/new" replace />;
@@ -102,7 +100,7 @@ export const router = createBrowserRouter([
       { path: "terms", Component: Terms },
       { path: "privacy", Component: Privacy },
       { path: "faq", Component: FAQ },
-      { path: "chatbot", Component: Chatbot },
+      { path: "chatbot", element: <Navigate to="/" replace /> },
       { path: "design-system", Component: DesignSystem },
       { path: "login", Component: Login },
       { path: "register", Component: Register },

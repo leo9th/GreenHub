@@ -30,6 +30,7 @@ import BankDetails from "./pages/seller/BankDetails";
 import Advertise from "./pages/seller/Advertise";
 import MyBoosts from "./pages/seller/MyBoosts";
 import AdminBoosts from "./pages/admin/AdminBoosts";
+import AdminChatbotLearning from "./pages/admin/AdminChatbotLearning";
 import SellerVerification from "./pages/seller/Verification";
 import WriteReview from "./pages/WriteReview";
 import WriteProductReview from "./pages/WriteProductReview";
@@ -155,6 +156,7 @@ export const router = createBrowserRouter([
       { path: "admin/pricing", Component: AdPricingControl },
       { path: "admin/job-applications", Component: AdminJobApplications },
       { path: "admin/boosts", Component: AdminBoosts },
+      { path: "admin/chatbot-learning", Component: AdminChatbotLearning },
       { path: "admin/orders", Component: LegacyAdminRedirect },
       { path: "admin/reports", Component: LegacyAdminRedirect },
       { path: "help", Component: LegacyHelpRedirect },

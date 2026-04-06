@@ -1,5 +1,5 @@
 import { Link } from "react-router";
-import { Users, Package, ShoppingBag, DollarSign, TrendingUp, AlertCircle, Briefcase } from "lucide-react";
+import { Users, Package, ShoppingBag, DollarSign, TrendingUp, AlertCircle, Briefcase, MessageCircle } from "lucide-react";
 import { useCurrency } from "../../hooks/useCurrency";
 
 export default function AdminDashboard() {
@@ -84,6 +84,15 @@ export default function AdminDashboard() {
               <TrendingUp className="w-6 h-6 text-[#22c55e]" />
             </div>
             <span className="text-sm font-medium text-gray-800 text-center">Boost payments</span>
+          </Link>
+          <Link
+            to="/admin/chatbot-learning"
+            className="flex flex-col items-center justify-center p-4 bg-white rounded-lg border border-gray-200 hover:border-[#22c55e] hover:shadow-md transition-all"
+          >
+            <div className="w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center mb-2">
+              <MessageCircle className="w-6 h-6 text-[#15803d]" />
+            </div>
+            <span className="text-sm font-medium text-gray-800 text-center">Chatbot learning</span>
           </Link>
           <Link
             to="/admin/job-applications"

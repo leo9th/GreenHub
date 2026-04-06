@@ -622,3 +622,50 @@ export async function invokeChatbotTeach(payload: TeachPayload): Promise<void> {
   const { data, error } = await supabase.functions.invoke("teach", { body: payload });
   if (error) throw new Error(await getFnErrorMessage(error, data));
 }
+
+// --- Direct Supabase learning tables (used by FloatingChatbotWidget + admin review) -----
+
+/** Saves one user message and assistant reply for admin review. Fails silently except console. */
+export async function logChatbotConversation(params: {
+  message: string;
+  response: string;
+  language: ChatbotLanguage;
+  intent: string;
+}): Promise<void> {
+  try {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    const { error } = await supabase.from("chatbot_conversations").insert({
+      user_id: user?.id ?? null,
+      message: params.message,
+      response: params.response,
+      language: params.language,
+      intent: params.intent,
+    });
+    if (error) console.error("logChatbotConversation:", error.message);
+  } catch (e) {
+    console.error("logChatbotConversation:", e);
+  }
+}
+
+export type SaveFeedbackResult = { ok: true } | { ok: false; message: string };
+
+/** Thumbs on a bot turn → `user_feedback`. */
+export async function saveChatbotFeedback(params: {
+  message: string;
+  botResponse: string;
+  userRating: -1 | 1;
+}): Promise<SaveFeedbackResult> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const { error } = await supabase.from("user_feedback").insert({
+    user_id: user?.id ?? null,
+    message: params.message,
+    bot_response: params.botResponse,
+    user_rating: params.userRating,
+  });
+  if (error) return { ok: false, message: error.message };
+  return { ok: true };
+}

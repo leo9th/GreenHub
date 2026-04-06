@@ -123,7 +123,6 @@ begin
     where p.status = 'active'
       and (
         v_search is null
-        or length(v_search) < 2
         or p.title ilike '%' || v_search || '%'
       )
       and (v_cat is null or p.category = v_cat)

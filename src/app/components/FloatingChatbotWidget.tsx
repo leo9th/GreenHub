@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Send, X } from "lucide-react";
 import { toast } from "sonner";
+import { Send, ThumbsDown, ThumbsUp, X } from "lucide-react";
 import {
   type TrainingDataRow,
   fetchAllApprovedTrainingForChat,
+  logChatbotConversation,
   matchTrainingData,
+  saveChatbotFeedback,
 } from "../utils/chatbotApi";
 
 type ChatRole = "user" | "assistant";
@@ -14,6 +16,9 @@ type WidgetMessage = {
   role: ChatRole;
   content: string;
   timeLabel: string;
+  /** User text that produced this assistant reply (for ratings). */
+  sourceUserText?: string;
+  feedbackVote?: -1 | 1;
 };
 
 function newId(): string {
@@ -67,6 +72,25 @@ export default function FloatingChatbotWidget() {
     };
   }, []);
 
+  const submitFeedbackVote = useCallback(
+    async (msgId: string, sourceUserText: string, botResponse: string, rating: -1 | 1) => {
+      const res = await saveChatbotFeedback({
+        message: sourceUserText,
+        botResponse,
+        userRating: rating,
+      });
+      if (!res.ok) {
+        toast.error(res.message);
+        return;
+      }
+      setMessages((prev) =>
+        prev.map((m) => (m.id === msgId ? { ...m, feedbackVote: rating } : m)),
+      );
+      toast.success(rating === 1 ? "Thanks for the feedback." : "Thanks—we will use this to improve.");
+    },
+    [],
+  );
+
   useEffect(() => {
     if (!open) return;
     const el = listRef.current;
@@ -85,6 +109,13 @@ export default function FloatingChatbotWidget() {
     lastUserMessageRef.current = text;
     lastAssistantMessageRef.current = result.response;
 
+    void logChatbotConversation({
+      message: text,
+      response: result.response,
+      language: result.language,
+      intent: result.intent,
+    });
+
     const userMsg: WidgetMessage = {
       id: newId(),
       role: "user",
@@ -98,6 +129,7 @@ export default function FloatingChatbotWidget() {
         id: newId(),
         role: "assistant",
         content: result.response,
+        sourceUserText: text,
         timeLabel: timeNowLabel(),
       },
     ]);
@@ -151,6 +183,37 @@ export default function FloatingChatbotWidget() {
                     }`}
                   >
                     <p className="whitespace-pre-wrap">{msg.content}</p>
+                    {msg.role === "assistant" && msg.sourceUserText ? (
+                      <div className="mt-2 flex items-center gap-1 border-t border-gray-100 pt-2">
+                        <span className="mr-1 text-[10px] text-gray-400">Helpful?</span>
+                        <button
+                          type="button"
+                          disabled={msg.feedbackVote !== undefined}
+                          onClick={() => void submitFeedbackVote(msg.id, msg.sourceUserText!, msg.content, 1)}
+                          className={`inline-flex h-7 w-7 items-center justify-center rounded-md border transition ${
+                            msg.feedbackVote === 1
+                              ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                              : "border-gray-200 text-gray-500 hover:bg-gray-50"
+                          } disabled:opacity-50`}
+                          aria-label="Thumbs up"
+                        >
+                          <ThumbsUp className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={msg.feedbackVote !== undefined}
+                          onClick={() => void submitFeedbackVote(msg.id, msg.sourceUserText!, msg.content, -1)}
+                          className={`inline-flex h-7 w-7 items-center justify-center rounded-md border transition ${
+                            msg.feedbackVote === -1
+                              ? "border-red-400 bg-red-50 text-red-700"
+                              : "border-gray-200 text-gray-500 hover:bg-gray-50"
+                          } disabled:opacity-50`}
+                          aria-label="Thumbs down"
+                        >
+                          <ThumbsDown className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ) : null}
                     {msg.timeLabel ? (
                       <p
                         className={`mt-1 text-[10px] tabular-nums ${

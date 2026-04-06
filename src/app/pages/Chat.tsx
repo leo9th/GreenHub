@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useParams, useNavigate, useSearchParams, Link } from "react-router";
-import { ArrowLeft, Send, MoreVertical, Phone, Plus, Paperclip, Check, CheckCheck } from "lucide-react";
+import { ArrowLeft, Send, MoreVertical, Phone, Plus, Paperclip, Check, CheckCheck, MessageCircle, Search } from "lucide-react";
 import { getAvatarUrl } from "../utils/getAvatar";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../context/AuthContext";
@@ -18,8 +18,7 @@ import {
   type ConversationRow,
 } from "../utils/chatConversations";
 import { fetchChatMessagesForConversation, type ChatMessageRow } from "../utils/chatMessages";
-import { useInboxConversationList } from "../hooks/useInboxConversationList";
-import { InboxSplitLayout } from "../components/messaging/InboxSplitLayout";
+import { formatListTime, useInboxConversationList } from "../hooks/useInboxConversationList";
 
 function parseConversationInt(v: unknown): number | null {
   if (v == null) return null;
@@ -515,28 +514,6 @@ export default function Chat() {
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4">
-        {stripProduct ? (
-          <div className="mb-4 flex items-center gap-3 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm">
-            <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-gray-100">
-              {stripProduct.image ? (
-                <img src={stripProduct.image} alt="" className="h-full w-full object-cover" />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center text-xs text-gray-400">No image</div>
-              )}
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="line-clamp-2 text-sm font-semibold text-gray-900">{stripProduct.title}</p>
-              <p className="mt-0.5 text-sm font-bold text-[#16a34a]">{formatPrice(stripProduct.price)}</p>
-              <Link
-                to={`/products/${stripProduct.id}`}
-                className="mt-1 inline-block text-xs font-semibold text-[#16a34a] hover:underline"
-              >
-                View product
-              </Link>
-            </div>
-          </div>
-        ) : null}
-
         <div className="space-y-4">
           {messages.map((msg) => {
             const mine = msg.sender_id === authUser.id;
@@ -629,22 +606,144 @@ export default function Chat() {
     </div>
   );
 
+  const shellHeight = "md:h-[calc(100dvh-4rem)] md:max-h-[calc(100dvh-4rem)]";
+
+  const conversationList = (
+    <>
+      <div className="shrink-0 border-b border-gray-200 bg-white px-3 py-3">
+        <div className="mb-3 flex items-center gap-2">
+          <h1 className="text-lg font-semibold text-gray-800">Messages</h1>
+        </div>
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
+          <input
+            type="search"
+            value={inboxSearch}
+            onChange={(e) => setInboxSearch(e.target.value)}
+            placeholder="Search conversations..."
+            className="w-full rounded-lg bg-gray-100 py-2 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-[#22c55e]"
+          />
+        </div>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-white">
+        {inboxLoadError ? (
+          <div className="px-4 py-8 text-center text-sm text-red-600">{inboxLoadError}</div>
+        ) : inboxLoading ? (
+          <div className="px-4 py-12 text-center text-sm text-gray-600">Loading conversations…</div>
+        ) : inboxFiltered.length === 0 ? (
+          <div className="px-4 py-12 text-center">
+            <div className="mx-auto mb-4 flex h-24 w-24 items-center justify-center rounded-full bg-gray-100">
+              <MessageCircle className="h-12 w-12 text-gray-400" />
+            </div>
+            <h3 className="mb-2 text-lg font-semibold text-gray-800">No messages yet</h3>
+            <p className="mb-6 text-sm text-gray-600">
+              Start chatting with sellers about products you&apos;re interested in
+            </p>
+            <Link
+              to="/products"
+              className="inline-block rounded-lg bg-[#22c55e] px-6 py-3 font-medium text-white"
+            >
+              Browse Products
+            </Link>
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-100">
+            {inboxFiltered.map((row) => {
+              const oid = inboxOtherPartyUserId(row);
+              if (!oid) return null;
+              const p = inboxProfiles.get(oid);
+              const name = p?.full_name?.trim() || "Member";
+              const avatar = getAvatarUrl(p?.avatar_url ?? null, p?.gender ?? null, name);
+              const aboutProduct =
+                row.context_product_id != null ? inboxProductTitles.get(row.context_product_id) : undefined;
+              const active = conversation.id === row.id;
+              return (
+                <Link
+                  key={row.id}
+                  to={`/messages/c/${row.id}`}
+                  className={`flex items-center gap-3 border-b border-gray-50 p-3 transition-colors hover:bg-gray-50 sm:p-4 ${
+                    active ? "bg-emerald-50/80 hover:bg-emerald-50" : ""
+                  }`}
+                >
+                  <div className="relative shrink-0">
+                    <img src={avatar} alt="" className="h-12 w-12 rounded-full bg-gray-100 object-cover sm:h-14 sm:w-14" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-1 flex items-start justify-between gap-2">
+                      <h3 className="font-semibold text-gray-800">{name}</h3>
+                      <span className="ml-2 flex shrink-0 items-center gap-1.5">
+                        {(inboxUnreadByConv.get(row.id) ?? 0) > 0 ? (
+                          <span className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-[#22c55e] px-1 text-[10px] font-bold text-white">
+                            {inboxUnreadByConv.get(row.id)! > 99 ? "99+" : inboxUnreadByConv.get(row.id)}
+                          </span>
+                        ) : null}
+                        <span className="text-xs text-gray-500">{formatListTime(row.last_message_at)}</span>
+                      </span>
+                    </div>
+                    {aboutProduct ? (
+                      <p className="mb-0.5 truncate text-xs font-medium text-[#16a34a]">Re: {aboutProduct}</p>
+                    ) : null}
+                    <p
+                      className={`line-clamp-2 text-sm ${row.last_message ? "text-gray-700" : "italic text-gray-400"}`}
+                    >
+                      {row.last_message || "No messages yet — say hello"}
+                    </p>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </>
+  );
+
+  const productDetailsAside = stripProduct ? (
+    <div className="lg:sticky lg:top-0">
+      <div className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm">
+        <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-gray-100">
+          {stripProduct.image ? (
+            <img src={stripProduct.image} alt="" className="h-full w-full object-cover" />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center text-xs text-gray-400">No image</div>
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="line-clamp-2 text-sm font-semibold text-gray-900">{stripProduct.title}</p>
+          <p className="mt-0.5 text-sm font-bold text-[#16a34a]">{formatPrice(stripProduct.price)}</p>
+          <Link
+            to={`/products/${stripProduct.id}`}
+            className="mt-1 inline-block text-xs font-semibold text-[#16a34a] hover:underline"
+          >
+            View product
+          </Link>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
   return (
     <div className="min-h-[calc(100dvh-4rem)] bg-gray-50">
-      <InboxSplitLayout
-        listVariant="sidebar"
-        activeConversationId={conversation.id}
-        search={inboxSearch}
-        onSearchChange={setInboxSearch}
-        loadError={inboxLoadError}
-        loading={inboxLoading}
-        filtered={inboxFiltered}
-        profiles={inboxProfiles}
-        productTitles={inboxProductTitles}
-        unreadByConv={inboxUnreadByConv}
-        otherPartyUserId={inboxOtherPartyUserId}
-        rightPanel={chatPanel}
-      />
+      <div
+        className={`mx-auto grid w-full max-w-[1280px] min-h-[calc(100dvh-4rem)] grid-cols-1 md:grid-cols-[1fr_2fr] lg:grid-cols-[1fr_2fr_1fr] ${shellHeight}`}
+      >
+        <aside
+          className={`hidden min-h-0 flex-col border-r border-gray-200 bg-white md:flex ${shellHeight}`}
+        >
+          {conversationList}
+        </aside>
+
+        <section className={`flex min-h-0 min-w-0 flex-col ${shellHeight}`}>
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{chatPanel}</div>
+        </section>
+
+        <aside
+          className={`hidden min-h-0 flex-col border-l border-gray-200 bg-white p-4 lg:flex ${shellHeight} overflow-y-auto overscroll-contain`}
+        >
+          {productDetailsAside}
+        </aside>
+      </div>
     </div>
   );
 }

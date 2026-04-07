@@ -104,8 +104,8 @@ export default function TopNav() {
 
   return (
     <div className={`${bgClass} sticky top-0 z-[45] transition-colors duration-200`}>
-      <div className="h-16 px-4 max-w-7xl mx-auto flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3 md:gap-4 min-w-0">
+      <div className="h-16 px-3 sm:px-4 max-w-7xl mx-auto flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 md:gap-3 min-w-0">
           <Link to="/" className={`text-xl sm:text-2xl font-bold flex items-center gap-1 shrink-0 ${textClass}`}>
             🌿 GreenHub
           </Link>
@@ -118,7 +118,7 @@ export default function TopNav() {
             Shop
           </Link>
         </div>
-        <div className="flex items-center gap-4 md:gap-6">
+        <div className="flex items-center gap-2 md:gap-3 shrink-0">
           {session ? (
             <div className="relative hidden md:block" ref={notifRef}>
               <button
@@ -211,8 +211,8 @@ export default function TopNav() {
           ) : null}
 
           {session ? (
-            <div className="flex items-center gap-3 md:gap-5">
-              <div className="relative border-l pl-4 border-gray-200/30" ref={dropdownRef}>
+            <div className="flex items-center gap-2 md:gap-3">
+              <div className="relative border-l pl-2 md:pl-3 border-gray-200/30" ref={dropdownRef}>
                 <button
                   type="button"
                   onClick={() => {

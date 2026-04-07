@@ -5,6 +5,7 @@ export type ChatMessageRow = {
   sender_id: string;
   message: string;
   created_at: string;
+  reply_to_id?: string | null;
 };
 
 /**
@@ -14,7 +15,7 @@ export async function fetchChatMessagesForConversation(
   supabase: SupabaseClient,
   conversationId: string,
 ): Promise<{ data: ChatMessageRow[]; error: { message: string } | null }> {
-  const sel = "id, sender_id, message, created_at";
+  const sel = "id, sender_id, message, created_at, reply_to_id";
   const q1 = await supabase
     .from("chat_messages")
     .select(sel)

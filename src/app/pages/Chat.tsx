@@ -14,6 +14,9 @@ import {
   Settings,
   Link2,
   Smile,
+  Reply,
+  Trash2,
+  X,
 } from "lucide-react";
 import { getAvatarUrl } from "../utils/getAvatar";
 import { supabase } from "../../lib/supabase";
@@ -42,6 +45,16 @@ import {
   DropdownMenuTrigger,
 } from "../components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popover";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "../components/ui/alert-dialog";
+import { buttonVariants } from "../components/ui/button";
 
 function parseConversationInt(v: unknown): number | null {
   if (v == null) return null;
@@ -187,7 +200,11 @@ export default function Chat() {
   const formatPrice = useCurrency();
   const [message, setMessage] = useState("");
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [replyTo, setReplyTo] = useState<ChatMessageRow | null>(null);
+  const [deleteConfirmMessage, setDeleteConfirmMessage] = useState<ChatMessageRow | null>(null);
+  const [clearMineOpen, setClearMineOpen] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const messagesScrollRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const typingBroadcastRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const peerTypingClearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -227,13 +244,17 @@ export default function Chat() {
 
   const peerFirstName = useMemo(() => peerName.split(/\s+/)[0] || "Member", [peerName]);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
+  const scrollMessagesToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
+    const el = messagesScrollRef.current;
+    if (!el) return;
+    requestAnimationFrame(() => {
+      el.scrollTo({ top: el.scrollHeight, behavior });
+    });
+  }, []);
 
   useEffect(() => {
-    scrollToBottom();
-  }, [messages, peerTyping]);
+    scrollMessagesToBottom("smooth");
+  }, [messages, stripProduct, scrollMessagesToBottom]);
 
   const resolveConversation = useCallback(async () => {
     const threadId = threadIdParam?.trim() ?? legacyThreadId?.trim();
@@ -474,6 +495,21 @@ export default function Chat() {
           setMessages((prev) => (prev.some((m) => m.id === row.id) ? prev : [...prev, row]));
         },
       )
+      .on(
+        "postgres_changes",
+        {
+          event: "DELETE",
+          schema: "public",
+          table: "chat_messages",
+          filter: `conversation_id=eq.${mid}`,
+        },
+        (payload) => {
+          const oldRow = payload.old as { id?: string };
+          const id = oldRow?.id;
+          if (!id) return;
+          setMessages((prev) => prev.filter((m) => m.id !== id));
+        },
+      )
       .subscribe();
 
     const convChannel = supabase
@@ -545,6 +581,7 @@ export default function Chat() {
     const text = message.trim();
     if (!text || !authUser?.id || !conversation) return;
 
+    const replyId = replyTo?.id ?? null;
     setSendBusy(true);
     try {
       const { data: inserted, error } = await supabase
@@ -553,17 +590,59 @@ export default function Chat() {
           conversation_id: conversation.id,
           sender_id: authUser.id,
           message: text,
+          ...(replyId ? { reply_to_id: replyId } : {}),
         })
-        .select("id, sender_id, message, created_at")
+        .select("id, sender_id, message, created_at, reply_to_id")
         .single();
 
       if (error) throw error;
       if (inserted) setMessages((prev) => [...prev, inserted as ChatMessageRow]);
       setMessage("");
+      setReplyTo(null);
     } catch (e: unknown) {
       toast.error(errorMessage(e, "Message not sent"));
     } finally {
       setSendBusy(false);
+    }
+  };
+
+  const executeDeleteMessage = async (msg: ChatMessageRow) => {
+    if (!authUser?.id || msg.sender_id !== authUser.id) return;
+    setDeleteBusy(true);
+    try {
+      const { error } = await supabase.from("chat_messages").delete().eq("id", msg.id);
+      if (error) throw error;
+      setMessages((prev) => prev.filter((m) => m.id !== msg.id));
+      setReplyTo((r) => (r?.id === msg.id ? null : r));
+      setDeleteConfirmMessage(null);
+      toast.success("Message removed");
+    } catch (e: unknown) {
+      toast.error(errorMessage(e, "Could not delete message"));
+    } finally {
+      setDeleteBusy(false);
+    }
+  };
+
+  const executeClearMyMessages = async () => {
+    if (!authUser?.id || !conversation) return;
+    const mine = messages.filter((m) => m.sender_id === authUser.id);
+    if (mine.length === 0) {
+      setClearMineOpen(false);
+      return;
+    }
+    setDeleteBusy(true);
+    try {
+      const ids = mine.map((m) => m.id);
+      const { error } = await supabase.from("chat_messages").delete().in("id", ids);
+      if (error) throw error;
+      setMessages((prev) => prev.filter((m) => m.sender_id !== authUser.id));
+      setReplyTo(null);
+      setClearMineOpen(false);
+      toast.success(`Removed ${ids.length} message${ids.length === 1 ? "" : "s"}`);
+    } catch (e: unknown) {
+      toast.error(errorMessage(e, "Could not clear your messages"));
+    } finally {
+      setDeleteBusy(false);
     }
   };
 
@@ -616,11 +695,14 @@ export default function Chat() {
 
   const peerContactLinks = phoneLinkTargets(peerPhone);
 
+  const myMessageCount = messages.filter((m) => m.sender_id === authUser.id).length;
+
   const chatPanel = (
-    <div className="flex min-h-0 flex-1 flex-col bg-gray-100">
-      <header className="sticky top-16 z-40 shrink-0 border-b border-gray-200 bg-white shadow-sm">
-        <div className="px-4 py-3 max-md:py-4">
-          <div className="mb-1 flex items-center gap-3 max-md:mb-1.5">
+    <>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-gray-100">
+      <header className="z-10 shrink-0 border-b border-gray-200 bg-white shadow-sm">
+        <div className="px-3 py-2.5 sm:px-4">
+          <div className="flex items-center gap-2 sm:gap-3">
             <button
               type="button"
               onClick={() => navigate("/messages")}
@@ -702,6 +784,18 @@ export default function Chat() {
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   className="flex cursor-pointer items-center gap-2"
+                  disabled={deleteBusy || myMessageCount === 0}
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    setClearMineOpen(true);
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Clear my messages
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="flex cursor-pointer items-center gap-2"
                   onSelect={(e) => {
                     e.preventDefault();
                     const url = `${window.location.origin}/messages/c/${conversation.id}`;
@@ -720,52 +814,181 @@ export default function Chat() {
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4">
-        <div className="space-y-4">
+      {stripProduct ? (
+        <div className="shrink-0 border-b border-emerald-100 bg-gradient-to-r from-emerald-50/80 to-white px-3 py-2.5 sm:px-4">
+          <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-800/80">
+            Product in this chat
+          </p>
+          <Link
+            to={`/products/${stripProduct.id}`}
+            className="flex items-center gap-3 rounded-xl border border-emerald-100 bg-white/90 p-2 shadow-sm transition-colors hover:border-emerald-200 hover:bg-white"
+          >
+            <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-gray-100">
+              {stripProduct.image ? (
+                <img src={stripProduct.image} alt="" className="h-full w-full object-cover" />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-[10px] text-gray-400">No image</div>
+              )}
+            </div>
+            <div className="min-w-0 flex-1 text-left">
+              <p className="line-clamp-2 text-sm font-semibold text-gray-900">{stripProduct.title}</p>
+              <p className="mt-0.5 text-sm font-bold text-[#16a34a]">{formatPrice(stripProduct.price)}</p>
+              <span className="mt-0.5 inline-block text-[11px] font-semibold text-[#15803d] hover:underline">
+                View listing →
+              </span>
+            </div>
+          </Link>
+        </div>
+      ) : null}
+
+      <div
+        ref={messagesScrollRef}
+        className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain scroll-smooth px-3 py-3 sm:px-4 sm:py-4 [-webkit-overflow-scrolling:touch]"
+      >
+        <div className="flex flex-col pb-1">
           {messages.map((msg) => {
             const mine = msg.sender_id === authUser.id;
             const t = new Date(msg.created_at);
             const timeLabel = Number.isNaN(t.getTime()) ? "" : t.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
             const readByPeer = mine && isOutgoingReadByPeer(conversation, authUser.id, msg.created_at);
+            const parent = msg.reply_to_id ? messages.find((m) => m.id === msg.reply_to_id) : undefined;
+            const replyLabel =
+              parent == null ? "Message" : parent.sender_id === authUser.id ? "You" : peerFirstName;
+            const replyPreview = parent ? parent.message : "Original message unavailable";
+            const replyShort =
+              replyPreview.length > 100 ? `${replyPreview.slice(0, 100).trimEnd()}…` : replyPreview;
             return (
-              <div key={msg.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+              <div key={msg.id} className={`group/msg mb-2 flex last:mb-0 ${mine ? "justify-end" : "justify-start"}`}>
                 <div
-                  className={`max-w-[75%] rounded-2xl px-4 py-2 ${
-                    mine ? "rounded-br-sm bg-[#22c55e] text-white" : "rounded-bl-sm border border-gray-200 bg-white text-gray-800"
+                  className={`relative max-w-[min(85%,22rem)] rounded-2xl p-3 shadow-sm sm:max-w-[75%] ${
+                    mine
+                      ? "rounded-tr-none border border-green-200/70 bg-green-100 text-gray-900"
+                      : "rounded-tl-none border border-gray-200/90 bg-white text-gray-900"
                   }`}
                 >
-                  <p className="whitespace-pre-wrap break-words text-sm">{msg.message}</p>
-                  <div className={`mt-1 flex items-center gap-1.5 ${mine ? "justify-end" : ""}`}>
-                    <span className={`text-xs ${mine ? "text-white/80" : "text-gray-500"}`}>{timeLabel}</span>
+                  {msg.reply_to_id ? (
+                    <div className="mb-2 rounded-md bg-gray-200/95 px-2 py-1.5 text-left text-sm text-gray-700">
+                      <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-600">{replyLabel}</p>
+                      <p className="line-clamp-3 text-xs leading-snug">{replyShort}</p>
+                    </div>
+                  ) : null}
+                  <div className="whitespace-pre-wrap break-words text-[0.9375rem] leading-relaxed">{msg.message}</div>
+                  <div className={`mt-2 flex items-center gap-1.5 ${mine ? "justify-end" : "justify-between"}`}>
+                    {!mine ? (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            type="button"
+                            className="-ml-1 rounded-lg p-1 text-gray-500 opacity-100 hover:bg-gray-100 md:opacity-0 md:transition-opacity md:group-hover/msg:opacity-100"
+                            aria-label="Message actions"
+                          >
+                            <MoreVertical className="h-4 w-4" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start" className="w-44">
+                          <DropdownMenuItem
+                            className="gap-2"
+                            onSelect={(e) => {
+                              e.preventDefault();
+                              setReplyTo(msg);
+                            }}
+                          >
+                            <Reply className="h-4 w-4" />
+                            Reply
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    ) : null}
+                    <div className={`flex items-center gap-1 ${mine ? "" : "ml-auto"}`}>
+                      {timeLabel ? (
+                        <span className="text-[11px] tabular-nums text-gray-500">{timeLabel}</span>
+                      ) : null}
+                      {mine ? (
+                        <span
+                          className={`inline-flex items-center ${readByPeer ? "text-blue-600" : "text-gray-500"}`}
+                          title={readByPeer ? "Read" : "Delivered"}
+                        >
+                          {readByPeer ? <CheckCheck className="h-3.5 w-3.5" strokeWidth={2.5} /> : <Check className="h-3.5 w-3.5" strokeWidth={2.5} />}
+                        </span>
+                      ) : null}
+                    </div>
                     {mine ? (
-                      <span className="inline-flex items-center text-white/90" title={readByPeer ? "Read" : "Delivered"}>
-                        {readByPeer ? <CheckCheck className="h-3.5 w-3.5" strokeWidth={2.5} /> : <Check className="h-3.5 w-3.5" strokeWidth={2.5} />}
-                      </span>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            type="button"
+                            className="-mr-1 rounded-lg p-1 text-gray-600 opacity-100 hover:bg-green-200/50 md:opacity-0 md:transition-opacity md:group-hover/msg:opacity-100"
+                            aria-label="Message actions"
+                          >
+                            <MoreVertical className="h-4 w-4" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-44">
+                          <DropdownMenuItem
+                            className="gap-2"
+                            onSelect={(e) => {
+                              e.preventDefault();
+                              setReplyTo(msg);
+                            }}
+                          >
+                            <Reply className="h-4 w-4" />
+                            Reply
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            variant="destructive"
+                            className="gap-2"
+                            onSelect={(e) => {
+                              e.preventDefault();
+                              setDeleteConfirmMessage(msg);
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     ) : null}
                   </div>
                 </div>
               </div>
             );
           })}
-
-          {peerTyping ? (
-            <div className="flex justify-start">
-              <div className="inline-flex items-center gap-2 rounded-2xl rounded-bl-sm border border-gray-200 bg-white px-4 py-2.5 text-sm text-gray-600">
-                <span className="typing-dots flex gap-1" aria-hidden>
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400 [animation-delay:0ms]" />
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400 [animation-delay:150ms]" />
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400 [animation-delay:300ms]" />
-                </span>
-                <span className="text-xs">{peerFirstName} is typing…</span>
-              </div>
-            </div>
-          ) : null}
-          <div ref={messagesEndRef} />
         </div>
       </div>
 
       <div className="relative z-30 shrink-0 border-t border-gray-200 bg-white shadow-[0_-2px_10px_rgba(0,0,0,0.06)] pb-[max(0.5rem,env(safe-area-inset-bottom))]">
         <div className="px-3 py-3">
+          {peerTyping ? (
+            <div className="mb-2 mt-0.5 flex items-center gap-2 text-sm italic text-gray-500">
+              <span className="typing-dots flex gap-1" aria-hidden>
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400 [animation-delay:0ms]" />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400 [animation-delay:150ms]" />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400 [animation-delay:300ms]" />
+              </span>
+              <span>
+                {peerFirstName} is typing…
+              </span>
+            </div>
+          ) : null}
+          {replyTo ? (
+            <div className="mb-2 flex items-start gap-2 rounded-xl border border-emerald-200/80 bg-emerald-50/90 px-3 py-2">
+              <Reply className="mt-0.5 h-4 w-4 shrink-0 text-[#15803d]" aria-hidden />
+              <div className="min-w-0 flex-1 border-l-2 border-[#22c55e] pl-2">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-[#15803d]">
+                  Replying to {replyTo.sender_id === authUser.id ? "yourself" : peerFirstName}
+                </p>
+                <p className="line-clamp-2 text-xs text-gray-700">{replyTo.message}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setReplyTo(null)}
+                className="shrink-0 rounded-lg p-1 text-gray-500 hover:bg-gray-200/80"
+                aria-label="Cancel reply"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          ) : null}
           <div className="flex items-end gap-2">
             <Popover open={emojiPickerOpen} onOpenChange={setEmojiPickerOpen}>
               <PopoverTrigger asChild>
@@ -827,7 +1050,65 @@ export default function Chat() {
           </div>
         </div>
       </div>
-    </div>
+      </div>
+
+      <AlertDialog
+        open={deleteConfirmMessage != null}
+        onOpenChange={(open) => {
+          if (!open && !deleteBusy) setDeleteConfirmMessage(null);
+        }}
+      >
+        <AlertDialogContent className="sm:max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this message?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This removes the message for both you and {peerName}. You can&apos;t undo this action.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteBusy}>Cancel</AlertDialogCancel>
+            <button
+              type="button"
+              disabled={deleteBusy}
+              className={buttonVariants({ variant: "destructive" })}
+              onClick={() => {
+                if (deleteConfirmMessage) void executeDeleteMessage(deleteConfirmMessage);
+              }}
+            >
+              {deleteBusy ? "Deleting…" : "Delete"}
+            </button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={clearMineOpen}
+        onOpenChange={(open) => {
+          if (!open && !deleteBusy) setClearMineOpen(false);
+        }}
+      >
+        <AlertDialogContent className="sm:max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Clear your messages?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete {myMessageCount} message{myMessageCount === 1 ? "" : "s"} you sent in this
+              conversation. {peerFirstName} will no longer see them.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteBusy}>Cancel</AlertDialogCancel>
+            <button
+              type="button"
+              disabled={deleteBusy}
+              className={buttonVariants({ variant: "destructive" })}
+              onClick={() => void executeClearMyMessages()}
+            >
+              {deleteBusy ? "Clearing…" : "Clear my messages"}
+            </button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 
   const shellHeight =

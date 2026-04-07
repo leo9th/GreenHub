@@ -7,8 +7,7 @@ import { toast } from "sonner";
 import { useAuth } from "../../context/AuthContext";
 import { AuthSocialButtons } from "../../components/auth/AuthSocialButtons";
 import { toE164Ng } from "../../utils/phoneE164";
-
-const REDIRECT = typeof window !== "undefined" ? window.location.origin : "";
+import { authRedirectTo } from "../../utils/authSiteUrl";
 
 function stripOAuthCodeFromUrl() {
   if (window.location.pathname !== "/login") return;
@@ -79,7 +78,7 @@ export default function Login() {
     }
   }, [searchParams]);
 
-  const oauthRedirect = `${REDIRECT}/login`;
+  const oauthRedirect = authRedirectTo("/login");
 
   const handleSocialLogin = async (provider: "google" | "facebook") => {
     setError(null);

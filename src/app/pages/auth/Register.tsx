@@ -7,10 +7,9 @@ import { AuthSocialButtons } from "../../components/auth/AuthSocialButtons";
 import { toE164Ng } from "../../utils/phoneE164";
 import { nigerianStates } from "../../data/catalogConstants";
 import { getLGAsForState } from "../../data/mockData";
+import { authRedirectTo } from "../../utils/authSiteUrl";
 
 type Step = "choose" | "phone" | "email";
-
-const REDIRECT = typeof window !== "undefined" ? window.location.origin : "";
 
 export default function Register() {
   const navigate = useNavigate();
@@ -35,7 +34,7 @@ export default function Register() {
 
   const lgas = selectedState ? getLGAsForState(selectedState) : [];
 
-  const oauthRedirect = `${REDIRECT}/login`;
+  const oauthRedirect = authRedirectTo("/login");
 
   const handleSocialLogin = async (provider: "google" | "facebook") => {
     setError(null);
@@ -128,7 +127,7 @@ export default function Register() {
         email: emailNorm,
         password,
         options: {
-          emailRedirectTo: `${REDIRECT}/login`,
+          emailRedirectTo: authRedirectTo("/login"),
           data: {
             full_name: fullName.trim(),
             phone: phoneForMeta ?? "",

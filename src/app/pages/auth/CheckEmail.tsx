@@ -3,6 +3,7 @@ import { ArrowLeft, Loader2, Mail } from "lucide-react";
 import { useState } from "react";
 import { supabase } from "../../../lib/supabase";
 import { toast } from "sonner";
+import { authRedirectTo } from "../../utils/authSiteUrl";
 
 export default function CheckEmail() {
   const navigate = useNavigate();
@@ -22,7 +23,7 @@ export default function CheckEmail() {
         type: "signup",
         email: emailParam.toLowerCase(),
         options: {
-          emailRedirectTo: `${window.location.origin}/login`,
+          emailRedirectTo: authRedirectTo("/login"),
         },
       });
       if (error) {

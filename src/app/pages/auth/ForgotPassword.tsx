@@ -1,13 +1,61 @@
 import { Link } from "react-router";
 import { Loader2 } from "lucide-react";
 import { useState } from "react";
+import type { AuthError } from "@supabase/supabase-js";
 import { supabase } from "../../../lib/supabase";
 import { toast } from "sonner";
+import { authRedirectTo, getAuthSiteOrigin } from "../../utils/authSiteUrl";
+
+function formatRecoveryError(err: AuthError): { title: string; detail: string } {
+  const raw = (err.message || "").trim();
+  const lower = raw.toLowerCase();
+  const resetUrl = authRedirectTo("/reset-password");
+  const origin = getAuthSiteOrigin() || "(your app URL)";
+
+  if (
+    lower.includes("error sending recovery email") ||
+    lower.includes("sending recovery email") ||
+    lower.includes("mailer") ||
+    lower.includes("smtp") ||
+    err.code === "unexpected_failure"
+  ) {
+    return {
+      title: "Could not send reset email",
+      detail:
+        "Supabase could not deliver the message. In the project dashboard, open Logs → Auth for the real reason. " +
+        "Common fixes: configure SMTP under Project Settings → Authentication, or fix the “Reset password” template under Authentication → Email Templates. " +
+        `Also allow this redirect URL: ${resetUrl}`,
+    };
+  }
+
+  if (
+    lower.includes("redirect") &&
+    (lower.includes("not allowed") || lower.includes("invalid") || lower.includes("verification"))
+  ) {
+    return {
+      title: "Reset link URL blocked",
+      detail: `Add this exact URL under Authentication → URL Configuration → Redirect URLs: ${resetUrl}. ` +
+        `Site URL / origins must include: ${origin}`,
+    };
+  }
+
+  if (lower.includes("rate limit") || lower.includes("too many")) {
+    return {
+      title: "Too many requests",
+      detail: "Please wait a few minutes before requesting another reset email.",
+    };
+  }
+
+  return {
+    title: "Something went wrong",
+    detail: raw || "Please try again or contact support if the problem continues.",
+  };
+}
 
 export default function ForgotPassword() {
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ title: string; detail: string } | null>(null);
   const [success, setSuccess] = useState(false);
 
   const handleReset = async (e: React.FormEvent) => {
@@ -16,18 +64,21 @@ export default function ForgotPassword() {
     setError(null);
     setSuccess(false);
 
-    const origin = typeof window !== "undefined" ? window.location.origin : "";
-    const { error: resetErr } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
-      redirectTo: `${origin}/reset-password`,
-    });
+    const redirectTo = authRedirectTo("/reset-password");
 
-    setLoading(false);
-
-    if (resetErr) {
-      setError(resetErr.message);
-    } else {
+    try {
+      const { error: resetErr } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+        redirectTo,
+      });
+      if (resetErr) {
+        console.error("resetPasswordForEmail:", resetErr.message, resetErr);
+        setError(formatRecoveryError(resetErr));
+        return;
+      }
       setSuccess(true);
       toast.success("If an account exists for that email, we sent reset instructions.");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -47,8 +98,12 @@ export default function ForgotPassword() {
 
         <div className="p-6 md:p-8">
           {error ? (
-            <div className="mb-4 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-center text-sm text-red-700">
-              {error}
+            <div
+              role="alert"
+              className="mb-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-left text-sm text-red-800"
+            >
+              <p className="font-semibold text-red-900">{error.title}</p>
+              <p className="mt-2 leading-relaxed text-red-800/95">{error.detail}</p>
             </div>
           ) : null}
           {success ? (

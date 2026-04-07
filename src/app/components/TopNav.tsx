@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "react-router";
-import { Bell, ShoppingCart, LogOut, Settings, Store, MessageSquare, BarChart2 } from "lucide-react";
+import { Bell, ShoppingCart, LogOut, Settings, Store, MessageSquare, BarChart2, ClipboardList } from "lucide-react";
 import { useCart } from "../context/CartContext";
 import { useAuth } from "../context/AuthContext";
 import { useInboxNotifications } from "../context/InboxNotificationsContext";
@@ -104,10 +104,18 @@ export default function TopNav() {
 
   return (
     <div className={`${bgClass} sticky top-0 z-[45] transition-colors duration-200`}>
-      <div className="h-16 px-4 max-w-7xl mx-auto flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Link to="/" className={`text-2xl font-bold flex items-center gap-1 ${textClass}`}>
+      <div className="h-16 px-4 max-w-7xl mx-auto flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3 md:gap-4 min-w-0">
+          <Link to="/" className={`text-xl sm:text-2xl font-bold flex items-center gap-1 shrink-0 ${textClass}`}>
             🌿 GreenHub
+          </Link>
+          <Link
+            to="/products"
+            className={`text-sm font-bold shrink-0 whitespace-nowrap ${
+              isHome ? "text-white/95 hover:text-white" : "text-[#15803d] hover:text-[#22c55e]"
+            }`}
+          >
+            Shop
           </Link>
         </div>
         <div className="flex items-center gap-4 md:gap-6">
@@ -255,6 +263,15 @@ export default function TopNav() {
                           {messageUnread > 99 ? "99+" : messageUnread}
                         </span>
                       ) : null}
+                    </Link>
+
+                    <Link
+                      to="/orders"
+                      onClick={() => setShowDropdown(false)}
+                      className="flex items-center gap-3 px-4 py-2 hover:bg-gray-100 text-gray-700 transition-colors"
+                    >
+                      <ClipboardList className="w-[18px] h-[18px] text-gray-500" />
+                      <span className="text-[14px] font-medium">Orders</span>
                     </Link>
 
                     <Link

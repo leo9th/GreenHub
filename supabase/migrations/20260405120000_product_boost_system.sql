@@ -1,6 +1,13 @@
 -- GreenHub: per-listing paid boosts (Paystack) + listing sort + admin/seller visibility
 
 -- ---------------------------------------------------------------------------
+-- Review aggregates (rpc_products_listing sort=rating); idempotent with product_reviews migration
+-- ---------------------------------------------------------------------------
+alter table public.products
+  add column if not exists average_rating numeric(4, 2) null,
+  add column if not exists total_reviews integer not null default 0;
+
+-- ---------------------------------------------------------------------------
 -- Products: boost fields
 -- ---------------------------------------------------------------------------
 alter table public.products

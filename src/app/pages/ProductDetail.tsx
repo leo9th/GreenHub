@@ -29,7 +29,7 @@ import { getProductThumbnailUrl, parseProductImagesFromRow } from "../utils/prod
 import { recordProductView } from "../utils/recentlyViewedProducts";
 import { toast } from "sonner";
 import { BoostDetailBadge } from "../components/BoostBadge";
-import { BoostDetailBadge } from "../components/BoostBadge";
+import { getAuthSiteOrigin } from "../utils/authSiteUrl";
 
 type ParsedDeliveryOption = { name: string; fee: number; duration: string };
 
@@ -77,6 +77,38 @@ function shuffleRelatedProducts<T>(items: T[]): T[] {
     [next[i], next[j]] = [next[j], next[i]];
   }
   return next;
+}
+
+const DEFAULT_DOCUMENT_TITLE = "GreenHub - Buy & Sell in Nigeria";
+const DEFAULT_META_DESCRIPTION =
+  "GreenHub is Nigeria's premier C2C marketplace to buy and sell electronics, fashion, and goods securely.";
+
+function upsertHeadMeta(attr: "property" | "name", key: string, content: string) {
+  const selector = attr === "property" ? `meta[property="${key}"]` : `meta[name="${key}"]`;
+  let el = document.head.querySelector(selector);
+  if (!el) {
+    el = document.createElement("meta");
+    el.setAttribute(attr, key);
+    document.head.appendChild(el);
+  }
+  el.setAttribute("content", content);
+}
+
+function applyHomePageMeta(origin: string) {
+  const base = origin.replace(/\/$/, "");
+  const defaultUrl = `${base}/`;
+  const defaultImage = `${base}/favicon.svg`;
+  document.title = DEFAULT_DOCUMENT_TITLE;
+  upsertHeadMeta("property", "og:type", "website");
+  upsertHeadMeta("property", "og:url", defaultUrl);
+  upsertHeadMeta("property", "og:title", DEFAULT_DOCUMENT_TITLE);
+  upsertHeadMeta("property", "og:description", DEFAULT_META_DESCRIPTION);
+  upsertHeadMeta("property", "og:image", defaultImage);
+  upsertHeadMeta("name", "twitter:card", "summary_large_image");
+  upsertHeadMeta("name", "twitter:url", defaultUrl);
+  upsertHeadMeta("name", "twitter:title", DEFAULT_DOCUMENT_TITLE);
+  upsertHeadMeta("name", "twitter:description", DEFAULT_META_DESCRIPTION);
+  upsertHeadMeta("name", "twitter:image", defaultImage);
 }
 
 type RelatedCarouselItem = {
@@ -269,6 +301,43 @@ export default function ProductDetail() {
   };
 
   const foundProduct = serverProduct;
+
+  useEffect(() => {
+    const origin = getAuthSiteOrigin() || (typeof window !== "undefined" ? window.location.origin : "");
+    if (!origin) return;
+
+    if (isServerProductLoading) return;
+
+    if (!serverProduct?.id) {
+      applyHomePageMeta(origin);
+      return;
+    }
+
+    const titleStr =
+      typeof serverProduct.title === "string" ? serverProduct.title : String(serverProduct.title ?? "Listing");
+    const descRaw = typeof serverProduct.description === "string" ? serverProduct.description : "";
+    const desc = (descRaw.slice(0, 160).trim() || DEFAULT_META_DESCRIPTION).replace(/\s+/g, " ");
+
+    const pid = String(serverProduct.id);
+    const pageUrl = `${origin.replace(/\/$/, "")}/products/${pid}`;
+    const ogImageUrl = `${origin.replace(/\/$/, "")}/api/og/product/${encodeURIComponent(pid)}`;
+
+    document.title = `${titleStr} | GreenHub`;
+    upsertHeadMeta("property", "og:type", "website");
+    upsertHeadMeta("property", "og:url", pageUrl);
+    upsertHeadMeta("property", "og:title", `${titleStr} | GreenHub`);
+    upsertHeadMeta("property", "og:description", desc);
+    upsertHeadMeta("property", "og:image", ogImageUrl);
+    upsertHeadMeta("name", "twitter:card", "summary_large_image");
+    upsertHeadMeta("name", "twitter:image", ogImageUrl);
+    upsertHeadMeta("name", "twitter:title", `${titleStr} | GreenHub`);
+    upsertHeadMeta("name", "twitter:description", desc);
+
+    return () => {
+      const o = getAuthSiteOrigin() || (typeof window !== "undefined" ? window.location.origin : "");
+      if (o) applyHomePageMeta(o);
+    };
+  }, [serverProduct, isServerProductLoading]);
 
   useEffect(() => {
     if (!foundProduct) return;

@@ -295,6 +295,17 @@ export default function Home() {
           <h2 className="text-white text-center text-xl md:text-2xl font-bold mb-4 hidden md:block">
             What are you looking for?
           </h2>
+          <p className="text-white/90 text-center text-xs sm:text-sm px-2 mb-3 md:mb-4 max-w-2xl mx-auto leading-relaxed">
+            <span className="hidden md:inline">Search listings below, or </span>
+            <span className="md:hidden">Search here, or </span>
+            <Link to="/products" className="font-semibold underline underline-offset-2 hover:text-white">
+              browse all listings
+            </Link>
+            <span className="mx-1 opacity-80">·</span>
+            <Link to="/how-to-buy" className="font-semibold underline underline-offset-2 hover:text-white">
+              how buying works
+            </Link>
+          </p>
 
           <form
             onSubmit={(e) => {

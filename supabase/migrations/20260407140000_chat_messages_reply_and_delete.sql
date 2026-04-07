@@ -39,7 +39,8 @@ $$;
 drop trigger if exists trg_touch_conversation_on_chat_message_delete on public.chat_messages;
 create trigger trg_touch_conversation_on_chat_message_delete
   after delete on public.chat_messages
-  for each row execute function public.touch_conversation_on_chat_message_delete();
+  for each row
+  execute procedure public.touch_conversation_on_chat_message_delete();
 
 drop policy if exists "chat_messages_delete_own" on public.chat_messages;
 

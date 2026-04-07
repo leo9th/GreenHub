@@ -610,14 +610,13 @@ export default function Chat() {
     if (!authUser?.id || msg.sender_id !== authUser.id) return;
     setDeleteBusy(true);
     try {
-      const { error } = await supabase.rpc("delete_own_chat_message", { p_message_id: msg.id });
+      const { error } = await supabase.from("chat_messages").delete().eq("id", msg.id);
       if (error) throw error;
       setMessages((prev) => prev.filter((m) => m.id !== msg.id));
       setReplyTo((r) => (r?.id === msg.id ? null : r));
       setDeleteConfirmMessage(null);
       toast.success("Message removed");
     } catch (e: unknown) {
-      console.error(e);
       toast.error(errorMessage(e, "Could not delete message"));
     } finally {
       setDeleteBusy(false);
@@ -631,20 +630,16 @@ export default function Chat() {
       setClearMineOpen(false);
       return;
     }
-    const prevCount = mine.length;
     setDeleteBusy(true);
     try {
-      const { data: removed, error } = await supabase.rpc("delete_my_messages_in_conversation", {
-        p_conversation_id: conversation.id,
-      });
+      const ids = mine.map((m) => m.id);
+      const { error } = await supabase.from("chat_messages").delete().in("id", ids);
       if (error) throw error;
-      const n = typeof removed === "number" ? removed : prevCount;
       setMessages((prev) => prev.filter((m) => m.sender_id !== authUser.id));
       setReplyTo(null);
       setClearMineOpen(false);
-      toast.success(`Removed ${n} message${n === 1 ? "" : "s"}`);
+      toast.success(`Removed ${ids.length} message${ids.length === 1 ? "" : "s"}`);
     } catch (e: unknown) {
-      console.error(e);
       toast.error(errorMessage(e, "Could not clear your messages"));
     } finally {
       setDeleteBusy(false);

@@ -3,7 +3,6 @@ import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { supabase } from "../../../lib/supabase";
 import { toast } from "sonner";
-import { useAuth } from "../../context/AuthContext";
 
 export default function ResetPassword() {
   const navigate = useNavigate();
@@ -11,35 +10,38 @@ export default function ResetPassword() {
   const [showPassword, setShowPassword] = useState(false);
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [exchangeBusy, setExchangeBusy] = useState(false);
+  const [submitBusy, setSubmitBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const { session } = useAuth();
+  const [linkReady, setLinkReady] = useState(false);
 
   useEffect(() => {
-    // Check for PKCE flow `code` first
+    const hash = window.location.hash;
+    if (hash.includes("error_description")) {
+      const params = new URLSearchParams(hash.substring(1));
+      const errorDesc = params.get("error_description");
+      if (errorDesc) {
+        setError(errorDesc.replace(/\+/g, " "));
+      }
+      return;
+    }
+
     const code = searchParams.get("code");
     if (code) {
-      setLoading(true);
-      supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
-        setLoading(false);
-        if (error) {
-          setError("The password reset link has expired or is invalid. Please request a new one.");
+      setExchangeBusy(true);
+      void supabase.auth.exchangeCodeForSession(code).then(({ error: exErr }) => {
+        setExchangeBusy(false);
+        if (exErr) {
+          setError("This reset link has expired or is invalid. Please request a new one from the login page.");
         } else {
-          navigate("/reset-password", { replace: true });
+          setLinkReady(true);
+          void navigate("/reset-password", { replace: true });
         }
       });
-    } else {
-      // Fallback for legacy implicit grant
-      const hash = window.location.hash;
-      if (hash && hash.includes("error_description")) {
-        const params = new URLSearchParams(hash.substring(1));
-        const errorDesc = params.get("error_description");
-        if (errorDesc) {
-           setError(errorDesc.replace(/\+/g, " "));
-        }
-      }
+      return;
     }
+
+    setLinkReady(true);
   }, [searchParams, navigate]);
 
   const handleUpdatePassword = async (e: React.FormEvent) => {
@@ -53,84 +55,114 @@ export default function ResetPassword() {
       return;
     }
 
-    setLoading(true);
+    setSubmitBusy(true);
     setError(null);
 
-    const { error } = await supabase.auth.updateUser({
-      password: password,
+    const { error: updateErr } = await supabase.auth.updateUser({
+      password,
     });
 
-    setLoading(false);
+    setSubmitBusy(false);
 
-    if (error) {
-      setError(error.message);
-    } else {
-      toast.success("Password updated successfully! You can now log in.");
-      navigate("/login");
+    if (updateErr) {
+      setError(updateErr.message);
+      return;
     }
+
+    toast.success("Password updated. Sign in with your new password.");
+    await supabase.auth.signOut();
+    navigate("/login", { replace: true });
   };
 
+  if (exchangeBusy) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-[#ecfdf5] via-white to-gray-50 flex flex-col items-center justify-center p-4">
+        <Loader2 className="h-10 w-10 animate-spin text-[#15803d]" aria-label="Loading" />
+        <p className="mt-4 text-sm text-gray-600">Verifying your reset link…</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-white flex flex-col pt-12">
-      <div className="px-4 py-6 max-w-7xl mx-auto w-full">
-        <div className="text-center mb-8">
-          <Link to="/" className="text-4xl font-bold text-[#22c55e] flex items-center justify-center gap-2 mb-2 hover:opacity-80 transition-opacity">
-            🌿 GreenHub
+    <div className="min-h-screen bg-gradient-to-b from-[#ecfdf5] via-white to-gray-50 flex flex-col items-center justify-center p-4 py-12">
+      <div className="w-full max-w-[460px] overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-xl shadow-gray-200/50">
+        <div className="border-b border-gray-100 bg-[#15803d] px-6 py-6 text-center">
+          <Link to="/" className="inline-flex items-center gap-2 text-xl font-bold tracking-tight text-white">
+            <span className="text-2xl" aria-hidden>
+              🌿
+            </span>
+            GreenHub
           </Link>
-          <h1 className="text-2xl font-bold text-gray-800 mb-1">Set New Password</h1>
-          <p className="text-gray-600">Please enter your new password</p>
+          <h1 className="mt-2 text-lg font-semibold text-emerald-50">Set a new password</h1>
+          <p className="text-sm text-emerald-100/90">Choose a strong password for your account</p>
         </div>
 
-        <form onSubmit={handleUpdatePassword} className="space-y-4 max-w-md mx-auto">
-          {error && (
-            <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm text-center">
+        <div className="p-6 md:p-8">
+          {error ? (
+            <div className="mb-4 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-center text-sm text-red-700">
               {error}
             </div>
-          )}
-          
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">New Password</label>
-            <div className="relative">
-              <input
-                type={showPassword ? "text" : "password"}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="New Password"
-                required
-                className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#22c55e] focus:border-transparent pr-12"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
-              >
-                {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-              </button>
-            </div>
-          </div>
+          ) : null}
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Confirm New Password</label>
-            <div className="relative">
+          {!linkReady && !error ? (
+            <p className="text-center text-sm text-gray-600">Preparing secure session…</p>
+          ) : null}
+
+          <form onSubmit={(e) => void handleUpdatePassword(e)} className="space-y-4">
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-gray-700">New password</label>
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="At least 6 characters"
+                  required
+                  autoComplete="new-password"
+                  disabled={!linkReady || !!error}
+                  className="w-full rounded-xl border border-gray-200 px-4 py-3 pr-12 text-sm focus:border-[#22c55e] focus:outline-none focus:ring-2 focus:ring-[#22c55e]/20 disabled:bg-gray-50"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-gray-700">Confirm new password</label>
               <input
                 type={showPassword ? "text" : "password"}
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="Confirm Password"
+                placeholder="Repeat password"
                 required
-                className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#22c55e] focus:border-transparent pr-12"
+                autoComplete="new-password"
+                disabled={!linkReady || !!error}
+                className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-[#22c55e] focus:outline-none focus:ring-2 focus:ring-[#22c55e]/20 disabled:bg-gray-50"
               />
             </div>
-          </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-[#22c55e] text-white py-3 rounded-lg font-medium hover:bg-[#16a34a] transition-colors flex justify-center items-center gap-2 disabled:opacity-70 mt-4"
-          >
-            {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Update Password"}
-          </button>
-        </form>
+            <button
+              type="submit"
+              disabled={submitBusy || !linkReady || !!error}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#15803d] py-3.5 text-sm font-bold text-white shadow-sm hover:bg-[#166534] disabled:opacity-60"
+            >
+              {submitBusy ? <Loader2 className="h-5 w-5 animate-spin" /> : null}
+              Update password
+            </button>
+          </form>
+
+          <p className="mt-8 text-center text-sm text-gray-600">
+            <Link to="/login" className="font-bold text-[#15803d] hover:underline">
+              Back to sign in
+            </Link>
+          </p>
+        </div>
       </div>
     </div>
   );

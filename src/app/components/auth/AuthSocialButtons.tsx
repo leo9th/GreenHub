@@ -37,6 +37,8 @@ type Props = {
   onFacebook?: () => void;
   /** When omitted, uses `import.meta.env.VITE_ENABLE_FACEBOOK_LOGIN === "true"`. */
   showFacebook?: boolean;
+  /** Use “Sign in with …” (login). Default “Continue with …” (register). */
+  signInLabels?: boolean;
   busy?: "google" | "facebook" | null;
   disabled?: boolean;
   layout?: "stack" | "grid";
@@ -48,6 +50,7 @@ export function AuthSocialButtons({
   onGoogle,
   onFacebook = () => {},
   showFacebook,
+  signInLabels = false,
   busy,
   disabled,
   layout = "stack",
@@ -55,6 +58,8 @@ export function AuthSocialButtons({
   const facebookOn = showFacebook ?? defaultFacebookEnabled();
   const wrap =
     layout === "grid" ? "grid grid-cols-2 gap-3" : "flex flex-col gap-3";
+  const googleText = signInLabels ? "Sign in with Google" : "Continue with Google";
+  const facebookText = signInLabels ? "Sign in with Facebook" : "Continue with Facebook";
 
   return (
     <div className={wrap}>
@@ -65,7 +70,7 @@ export function AuthSocialButtons({
         className="flex items-center justify-center gap-3 w-full py-3.5 px-4 rounded-xl border border-gray-200 bg-white font-semibold text-gray-800 shadow-sm hover:bg-gray-50 hover:border-gray-300 transition-colors disabled:opacity-60"
       >
         {busy === "google" ? <Loader2 className="h-5 w-5 animate-spin text-[#4285F4]" /> : <GoogleIcon />}
-        Continue with Google
+        {googleText}
       </button>
       {facebookOn ? (
         <button
@@ -79,7 +84,7 @@ export function AuthSocialButtons({
           ) : (
             <FacebookIcon className="h-5 w-5 text-white" />
           )}
-          Continue with Facebook
+          {facebookText}
         </button>
       ) : null}
     </div>

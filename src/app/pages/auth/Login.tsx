@@ -1,6 +1,7 @@
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { Eye, EyeOff, Loader2, Smartphone } from "lucide-react";
 import { useState, useEffect } from "react";
+import type { AuthError } from "@supabase/supabase-js";
 import { supabase } from "../../../lib/supabase";
 import { toast } from "sonner";
 import { useAuth } from "../../context/AuthContext";
@@ -14,6 +15,14 @@ function stripOAuthCodeFromUrl() {
   const url = new URL(window.location.href);
   url.searchParams.delete("code");
   window.history.replaceState(null, "", url.pathname + url.search);
+}
+
+/** Supabase / GoTrue: user must confirm email before password sign-in. */
+function isEmailNotConfirmedError(err: AuthError): boolean {
+  const code = (err as { code?: string }).code;
+  if (code === "email_not_confirmed") return true;
+  const m = err.message.toLowerCase();
+  return m.includes("email not confirmed") || m.includes("confirm your email");
 }
 
 export default function Login() {
@@ -80,6 +89,14 @@ export default function Login() {
         provider,
         options: {
           redirectTo: oauthRedirect,
+          ...(provider === "google"
+            ? {
+                queryParams: {
+                  prompt: "select_account",
+                  access_type: "offline",
+                },
+              }
+            : {}),
         },
       });
       if (signInError) {
@@ -102,7 +119,12 @@ export default function Login() {
     });
 
     if (pwErr) {
-      setError(pwErr.message);
+      if (isEmailNotConfirmedError(pwErr)) {
+        setError("Please confirm your email first.");
+        toast.message("Check your inbox for the confirmation link.", { duration: 5000 });
+      } else {
+        setError(pwErr.message);
+      }
       setLoading(false);
     } else {
       navigate("/");
@@ -160,6 +182,7 @@ export default function Login() {
           ) : null}
 
           <AuthSocialButtons
+            signInLabels
             onGoogle={() => void handleSocialLogin("google")}
             onFacebook={() => void handleSocialLogin("facebook")}
             busy={oauthBusy}
@@ -190,10 +213,10 @@ export default function Login() {
             </div>
 
             <div>
-              <div className="mb-1.5 flex items-center justify-between">
+              <div className="mb-1.5 flex items-center justify-between gap-2">
                 <label className="text-sm font-medium text-gray-700">Password</label>
-                <Link to="/forgot-password" className="text-xs font-semibold text-[#15803d] hover:underline">
-                  Forgot?
+                <Link to="/forgot-password" className="text-xs font-semibold text-[#15803d] hover:underline shrink-0">
+                  Forgot Password?
                 </Link>
               </div>
               <div className="relative">

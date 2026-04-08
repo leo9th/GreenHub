@@ -65,6 +65,20 @@ export default function ForgotPassword() {
     setSuccess(false);
 
     const redirectTo = authRedirectTo("/reset-password");
+    if (!redirectTo || !/^https?:\/\//i.test(redirectTo)) {
+      setError({
+        title: "Site URL not configured",
+        detail:
+          "Set VITE_SITE_URL in your environment to your public site URL (e.g. https://greenhub.example.com), " +
+          "then rebuild. For local dev, open this app in the browser and try again.",
+      });
+      setLoading(false);
+      return;
+    }
+
+    if (import.meta.env.DEV) {
+      console.info("[ForgotPassword] resetPasswordForEmail redirectTo:", redirectTo);
+    }
 
     try {
       const { error: resetErr } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {

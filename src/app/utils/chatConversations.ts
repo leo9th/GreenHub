@@ -248,3 +248,15 @@ export async function setConversationContextProduct(
   if (error) return { error: { message: error.message } };
   return { error: null };
 }
+
+export async function clearConversationContextProduct(
+  supabase: SupabaseClient,
+  conversationId: string,
+): Promise<{ error: { message: string } | null }> {
+  const { error } = await supabase
+    .from("conversations")
+    .update({ context_product_id: null })
+    .eq("id", conversationId);
+  if (error) return { error: { message: error.message } };
+  return { error: null };
+}

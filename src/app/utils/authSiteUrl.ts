@@ -9,7 +9,14 @@
 export function getAuthSiteOrigin(): string {
   const fromEnv = import.meta.env.VITE_SITE_URL as string | undefined;
   if (fromEnv?.trim()) {
-    return fromEnv.trim().replace(/\/$/, "");
+    const raw = fromEnv.trim().replace(/\/$/, "");
+    const withScheme = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+    try {
+      const u = new URL(withScheme);
+      return `${u.protocol}//${u.host}`;
+    } catch {
+      return raw;
+    }
   }
   if (typeof window !== "undefined") {
     return window.location.origin;
@@ -17,8 +24,15 @@ export function getAuthSiteOrigin(): string {
   return "";
 }
 
+/** Vite base path (e.g. `/` or `/app`) so auth redirects work when the app is not hosted at domain root. */
+function viteBasePath(): string {
+  const raw = String(import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+  return raw === "" || raw === "/" ? "" : raw;
+}
+
 export function authRedirectTo(path: string): string {
-  const base = getAuthSiteOrigin();
+  const origin = getAuthSiteOrigin();
+  const basePath = viteBasePath();
   const p = path.startsWith("/") ? path : `/${path}`;
-  return `${base}${p}`;
+  return `${origin}${basePath}${p}`;
 }

@@ -314,61 +314,70 @@ export default function AddProduct() {
           <label className="block font-semibold text-gray-800 mb-3">
             Product images * (max {MAX_PRODUCT_IMAGES}, first is the main image)
           </label>
-          <div className="grid grid-cols-3 gap-3 mb-3">
-            {existingImageUrls.map((url, index) => (
-              <div key={`existing-${url}-${index}`} className="relative aspect-square bg-gray-100 rounded-lg overflow-hidden">
-                <img src={url} alt="" className="w-full h-full object-cover" />
-                <button
-                  type="button"
-                  onClick={() => removeExistingUrl(index)}
-                  className="absolute top-1 right-1 w-6 h-6 bg-[#ef4444] rounded-full flex items-center justify-center text-white shadow-sm"
+          <p className="text-xs text-gray-500 mb-2">Swipe sideways to see all photos you added.</p>
+          <div className="-mx-1 mb-3 overflow-x-auto overscroll-x-contain pb-1 [scrollbar-width:thin] [-webkit-overflow-scrolling:touch] touch-pan-x">
+            <div className="flex w-max flex-nowrap gap-3 px-1">
+              {existingImageUrls.map((url, index) => (
+                <div
+                  key={`existing-${url}-${index}`}
+                  className="relative aspect-square w-[100px] shrink-0 bg-gray-100 rounded-lg overflow-hidden sm:w-[7.5rem]"
                 >
-                  <X className="w-4 h-4" />
-                </button>
-                {index === 0 && (
-                  <span className="absolute bottom-1 left-1 bg-[#22c55e] text-white text-xs px-2 py-0.5 rounded shadow-sm">
-                    Main
-                  </span>
-                )}
-              </div>
-            ))}
-            {imageFiles.map((img, index) => (
-              <div key={img.preview} className="relative aspect-square bg-gray-100 rounded-lg overflow-hidden">
-                <img src={img.preview} alt="" className="w-full h-full object-cover" />
-                <button
-                  type="button"
-                  onClick={() => removeImage(index)}
-                  className="absolute top-1 right-1 w-6 h-6 bg-[#ef4444] rounded-full flex items-center justify-center text-white shadow-sm"
+                  <img src={url} alt="" className="w-full h-full object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => removeExistingUrl(index)}
+                    className="absolute top-1 right-1 w-6 h-6 bg-[#ef4444] rounded-full flex items-center justify-center text-white shadow-sm"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                  {index === 0 && (
+                    <span className="absolute bottom-1 left-1 bg-[#22c55e] text-white text-xs px-2 py-0.5 rounded shadow-sm">
+                      Main
+                    </span>
+                  )}
+                </div>
+              ))}
+              {imageFiles.map((img, index) => (
+                <div
+                  key={img.preview}
+                  className="relative aspect-square w-[100px] shrink-0 bg-gray-100 rounded-lg overflow-hidden sm:w-[7.5rem]"
                 >
-                  <X className="w-4 h-4" />
-                </button>
-                {existingImageUrls.length + index === 0 && (
-                  <span className="absolute bottom-1 left-1 bg-[#22c55e] text-white text-xs px-2 py-0.5 rounded shadow-sm">
-                    Main
-                  </span>
-                )}
-              </div>
-            ))}
-            {existingImageUrls.length + imageFiles.length < MAX_PRODUCT_IMAGES && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="aspect-square border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center text-gray-500 hover:border-[#22c55e] hover:text-[#22c55e] transition-colors"
-                >
-                  <Upload className="w-6 h-6 mb-1" />
-                  <span className="text-xs">Upload</span>
-                </button>
-                <input 
-                  type="file" 
-                  ref={fileInputRef}
-                  onChange={handleImageUpload}
-                  accept="image/*" 
-                  multiple
-                  className="hidden" 
-                />
-              </>
-            )}
+                  <img src={img.preview} alt="" className="w-full h-full object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => removeImage(index)}
+                    className="absolute top-1 right-1 w-6 h-6 bg-[#ef4444] rounded-full flex items-center justify-center text-white shadow-sm"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                  {existingImageUrls.length + index === 0 && (
+                    <span className="absolute bottom-1 left-1 bg-[#22c55e] text-white text-xs px-2 py-0.5 rounded shadow-sm">
+                      Main
+                    </span>
+                  )}
+                </div>
+              ))}
+              {existingImageUrls.length + imageFiles.length < MAX_PRODUCT_IMAGES && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="aspect-square w-[100px] shrink-0 border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center text-gray-500 hover:border-[#22c55e] hover:text-[#22c55e] transition-colors sm:w-[7.5rem]"
+                  >
+                    <Upload className="w-6 h-6 mb-1" />
+                    <span className="text-xs">Upload</span>
+                  </button>
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleImageUpload}
+                    accept="image/*"
+                    multiple
+                    className="hidden"
+                  />
+                </>
+              )}
+            </div>
           </div>
           {isEdit && existingImageUrls.length === 0 && imageFiles.length === 0 ? (
             <p className="text-xs text-amber-700 p-2 bg-amber-50 rounded-lg">Add at least one image to publish this listing.</p>

@@ -319,8 +319,15 @@ export default function ProductDetail() {
     const desc = (descRaw.slice(0, 160).trim() || DEFAULT_META_DESCRIPTION).replace(/\s+/g, " ");
 
     const pid = String(serverProduct.id);
-    const pageUrl = `${origin.replace(/\/$/, "")}/products/${pid}`;
-    const ogImageUrl = `${origin.replace(/\/$/, "")}/api/og/product/${encodeURIComponent(pid)}`;
+    const base = origin.replace(/\/$/, "");
+    const pageUrl = `${base}/products/${pid}`;
+    const thumb = getProductThumbnailUrl(serverProduct as { image?: unknown; images?: unknown }).trim();
+    const ogImageUrl =
+      thumb && /^https?:\/\//i.test(thumb)
+        ? thumb
+        : thumb
+          ? `${base}${thumb.startsWith("/") ? thumb : `/${thumb}`}`
+          : `${base}/favicon.svg`;
 
     document.title = `${titleStr} | GreenHub`;
     upsertHeadMeta("property", "og:type", "website");
@@ -970,7 +977,7 @@ export default function ProductDetail() {
             <div className="relative w-full max-w-[520px] md:max-w-none mx-auto">
               <div className="relative rounded-2xl overflow-hidden bg-white shadow-sm ring-1 ring-gray-200/90">
                 <div
-                  className="relative aspect-[3/4] w-full bg-gray-100 md:min-h-[min(70vh,560px)] md:aspect-auto md:h-[min(70vh,560px)] touch-pan-y"
+                  className="relative aspect-[3/4] w-full bg-gray-100 md:min-h-[min(70vh,560px)] md:aspect-auto md:h-[min(70vh,560px)] touch-manipulation"
                   role="region"
                   aria-label="Product gallery"
                   aria-roledescription="carousel"
@@ -1015,7 +1022,6 @@ export default function ProductDetail() {
                   <span className="absolute top-3 left-3 z-[1] bg-[#15803d] text-white text-[11px] font-semibold px-2 py-1 rounded-lg shadow-sm">
                     {product.condition}
                   </span>
-                  <BoostDetailBadge row={foundProduct as unknown as Record<string, unknown>} />
                   <BoostDetailBadge row={foundProduct as Record<string, unknown>} />
                   {product.images.length > 1 ? (
                     <span className="absolute bottom-3 right-3 z-[2] rounded-full bg-black/55 px-2.5 py-1 text-[11px] font-medium tabular-nums text-white shadow-sm">
@@ -1025,8 +1031,8 @@ export default function ProductDetail() {
                 </div>
               </div>
               {product.images.length > 1 && (
-                <div className="mt-3 w-full mx-auto">
-                  <div className="flex gap-2 overflow-x-auto pb-1 justify-center md:justify-start snap-x snap-mandatory">
+                <div className="mt-3 w-full -mx-1 overflow-x-auto overscroll-x-contain [scrollbar-width:thin] [-webkit-overflow-scrolling:touch] touch-pan-x">
+                  <div className="flex w-max gap-2 px-1 snap-x snap-mandatory">
                     {product.images.map((src, index) => (
                       <button
                         key={`${src}-${index}`}

@@ -1,11 +1,10 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo, Fragment } from "react";
 import { useParams, useNavigate, useSearchParams, Link } from "react-router";
 import {
   ArrowLeft,
   Send,
   MoreVertical,
   Phone,
-  Paperclip,
   Check,
   CheckCheck,
   MessageCircle,
@@ -14,9 +13,8 @@ import {
   Settings,
   Link2,
   Smile,
-  Reply,
-  Trash2,
-  X,
+  ThumbsUp,
+  Share2,
 } from "lucide-react";
 import { getAvatarUrl } from "../utils/getAvatar";
 import { supabase } from "../../lib/supabase";
@@ -31,6 +29,7 @@ import {
   otherPartyUserId,
   updateConversationLastRead,
   setConversationContextProduct,
+  clearConversationContextProduct,
   isOutgoingReadByPeer,
   type ConversationRow,
 } from "../utils/chatConversations";
@@ -45,16 +44,6 @@ import {
   DropdownMenuTrigger,
 } from "../components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popover";
-import {
-  AlertDialog,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "../components/ui/alert-dialog";
-import { buttonVariants } from "../components/ui/button";
 
 function parseConversationInt(v: unknown): number | null {
   if (v == null) return null;
@@ -181,6 +170,45 @@ function errorMessage(e: unknown, fallback: string): string {
   return fallback;
 }
 
+function withinMinutes(isoA: string, isoB: string, mins: number): boolean {
+  const a = new Date(isoA).getTime();
+  const b = new Date(isoB).getTime();
+  if (Number.isNaN(a) || Number.isNaN(b)) return false;
+  return Math.abs(a - b) < mins * 60 * 1000;
+}
+
+function dayKey(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+}
+
+function formatEngagementCount(n: number): string {
+  if (n >= 1_000_000) {
+    const v = n / 1_000_000;
+    return v >= 10 ? `${Math.round(v)}M` : `${v.toFixed(1).replace(/\.0$/, "")}M`;
+  }
+  if (n >= 10_000) return `${Math.round(n / 1000)}K`;
+  if (n >= 1000) {
+    const v = n / 1000;
+    return `${v.toFixed(1).replace(/\.0$/, "")}K`;
+  }
+  return String(n);
+}
+
+function dayDividerLabel(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const sameDay = (x: Date, y: Date) =>
+    x.getFullYear() === y.getFullYear() && x.getMonth() === y.getMonth() && x.getDate() === y.getDate();
+  if (sameDay(d, today)) return "Today";
+  if (sameDay(d, yesterday)) return "Yesterday";
+  return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+}
+
 type StripProduct = {
   id: number;
   title: string;
@@ -200,12 +228,8 @@ export default function Chat() {
   const formatPrice = useCurrency();
   const [message, setMessage] = useState("");
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
-  const [replyTo, setReplyTo] = useState<ChatMessageRow | null>(null);
-  const [deleteConfirmMessage, setDeleteConfirmMessage] = useState<ChatMessageRow | null>(null);
-  const [clearMineOpen, setClearMineOpen] = useState(false);
-  const [deleteBusy, setDeleteBusy] = useState(false);
-  const messagesScrollRef = useRef<HTMLDivElement>(null);
-  const composerRef = useRef<HTMLTextAreaElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLInputElement>(null);
   const typingBroadcastRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const peerTypingClearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typingChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
@@ -217,6 +241,9 @@ export default function Chat() {
   const [peerPhone, setPeerPhone] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessageRow[]>([]);
   const [stripProduct, setStripProduct] = useState<StripProduct | null>(null);
+  const [reelLiked, setReelLiked] = useState(false);
+  const [reelLikeCount, setReelLikeCount] = useState(0);
+  const [contextClearBusy, setContextClearBusy] = useState(false);
   const [peerTyping, setPeerTyping] = useState(false);
   const [loading, setLoading] = useState(true);
   const [sendBusy, setSendBusy] = useState(false);
@@ -244,17 +271,13 @@ export default function Chat() {
 
   const peerFirstName = useMemo(() => peerName.split(/\s+/)[0] || "Member", [peerName]);
 
-  const scrollMessagesToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
-    const el = messagesScrollRef.current;
-    if (!el) return;
-    requestAnimationFrame(() => {
-      el.scrollTo({ top: el.scrollHeight, behavior });
-    });
-  }, []);
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
 
   useEffect(() => {
-    scrollMessagesToBottom("smooth");
-  }, [messages, stripProduct, scrollMessagesToBottom]);
+    scrollToBottom();
+  }, [messages, peerTyping]);
 
   const resolveConversation = useCallback(async () => {
     const threadId = threadIdParam?.trim() ?? legacyThreadId?.trim();
@@ -495,21 +518,6 @@ export default function Chat() {
           setMessages((prev) => (prev.some((m) => m.id === row.id) ? prev : [...prev, row]));
         },
       )
-      .on(
-        "postgres_changes",
-        {
-          event: "DELETE",
-          schema: "public",
-          table: "chat_messages",
-          filter: `conversation_id=eq.${mid}`,
-        },
-        (payload) => {
-          const oldRow = payload.old as { id?: string };
-          const id = oldRow?.id;
-          if (!id) return;
-          setMessages((prev) => prev.filter((m) => m.id !== id));
-        },
-      )
       .subscribe();
 
     const convChannel = supabase
@@ -581,7 +589,6 @@ export default function Chat() {
     const text = message.trim();
     if (!text || !authUser?.id || !conversation) return;
 
-    const replyId = replyTo?.id ?? null;
     setSendBusy(true);
     try {
       const { data: inserted, error } = await supabase
@@ -590,59 +597,17 @@ export default function Chat() {
           conversation_id: conversation.id,
           sender_id: authUser.id,
           message: text,
-          ...(replyId ? { reply_to_id: replyId } : {}),
         })
-        .select("id, sender_id, message, created_at, reply_to_id")
+        .select("id, sender_id, message, created_at")
         .single();
 
       if (error) throw error;
       if (inserted) setMessages((prev) => [...prev, inserted as ChatMessageRow]);
       setMessage("");
-      setReplyTo(null);
     } catch (e: unknown) {
       toast.error(errorMessage(e, "Message not sent"));
     } finally {
       setSendBusy(false);
-    }
-  };
-
-  const executeDeleteMessage = async (msg: ChatMessageRow) => {
-    if (!authUser?.id || msg.sender_id !== authUser.id) return;
-    setDeleteBusy(true);
-    try {
-      const { error } = await supabase.from("chat_messages").delete().eq("id", msg.id);
-      if (error) throw error;
-      setMessages((prev) => prev.filter((m) => m.id !== msg.id));
-      setReplyTo((r) => (r?.id === msg.id ? null : r));
-      setDeleteConfirmMessage(null);
-      toast.success("Message removed");
-    } catch (e: unknown) {
-      toast.error(errorMessage(e, "Could not delete message"));
-    } finally {
-      setDeleteBusy(false);
-    }
-  };
-
-  const executeClearMyMessages = async () => {
-    if (!authUser?.id || !conversation) return;
-    const mine = messages.filter((m) => m.sender_id === authUser.id);
-    if (mine.length === 0) {
-      setClearMineOpen(false);
-      return;
-    }
-    setDeleteBusy(true);
-    try {
-      const ids = mine.map((m) => m.id);
-      const { error } = await supabase.from("chat_messages").delete().in("id", ids);
-      if (error) throw error;
-      setMessages((prev) => prev.filter((m) => m.sender_id !== authUser.id));
-      setReplyTo(null);
-      setClearMineOpen(false);
-      toast.success(`Removed ${ids.length} message${ids.length === 1 ? "" : "s"}`);
-    } catch (e: unknown) {
-      toast.error(errorMessage(e, "Could not clear your messages"));
-    } finally {
-      setDeleteBusy(false);
     }
   };
 
@@ -653,6 +618,55 @@ export default function Chat() {
       if (v.trim()) broadcastTyping();
     }, 600);
   };
+
+  const removeProductContext = useCallback(async () => {
+    if (!conversation || contextClearBusy) return;
+    setContextClearBusy(true);
+    try {
+      const { error } = await clearConversationContextProduct(supabase, conversation.id);
+      if (error) throw new Error(error.message);
+      setConversation((c) => (c ? { ...c, context_product_id: null } : c));
+      setStripProduct(null);
+      toast.success("Listing removed from this chat");
+    } catch (e: unknown) {
+      toast.error(errorMessage(e, "Could not clear listing"));
+    } finally {
+      setContextClearBusy(false);
+    }
+  }, [conversation, contextClearBusy]);
+
+  const shareConversationOrProduct = useCallback(async () => {
+    const productUrl = stripProduct ? `${window.location.origin}/products/${stripProduct.id}` : null;
+    const threadUrl = `${window.location.origin}/messages/c/${conversation?.id ?? ""}`;
+    const url = productUrl ?? threadUrl;
+    const title = stripProduct ? stripProduct.title : `Chat with ${peerName}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title, url });
+        return;
+      } catch (e) {
+        if ((e as Error)?.name === "AbortError") return;
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success(productUrl ? "Product link copied" : "Conversation link copied");
+    } catch {
+      toast.error("Could not copy link");
+    }
+  }, [stripProduct, conversation?.id, peerName]);
+
+  const focusComposer = useCallback(() => {
+    composerRef.current?.focus();
+  }, []);
+
+  const toggleReelLike = useCallback(() => {
+    setReelLiked((v) => {
+      const next = !v;
+      setReelLikeCount((c) => Math.max(0, c + (next ? 1 : -1)));
+      return next;
+    });
+  }, []);
 
   const insertEmoji = useCallback((emoji: string) => {
     const el = composerRef.current;
@@ -667,7 +681,11 @@ export default function Chat() {
     requestAnimationFrame(() => {
       el.focus();
       const pos = start + emoji.length;
-      el.setSelectionRange(pos, pos);
+      try {
+        el.setSelectionRange(pos, pos);
+      } catch {
+        /* noop */
+      }
     });
   }, []);
 
@@ -695,11 +713,9 @@ export default function Chat() {
 
   const peerContactLinks = phoneLinkTargets(peerPhone);
 
-  const myMessageCount = messages.filter((m) => m.sender_id === authUser.id).length;
-
   const chatPanel = (
     <>
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-gray-100">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#e4e6eb]">
       <header className="z-10 shrink-0 border-b border-gray-200 bg-white shadow-sm">
         <div className="px-3 py-2.5 sm:px-4">
           <div className="flex items-center gap-2 sm:gap-3">
@@ -784,18 +800,6 @@ export default function Chat() {
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   className="flex cursor-pointer items-center gap-2"
-                  disabled={deleteBusy || myMessageCount === 0}
-                  onSelect={(e) => {
-                    e.preventDefault();
-                    setClearMineOpen(true);
-                  }}
-                >
-                  <Trash2 className="h-4 w-4" />
-                  Clear my messages
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  className="flex cursor-pointer items-center gap-2"
                   onSelect={(e) => {
                     e.preventDefault();
                     const url = `${window.location.origin}/messages/c/${conversation.id}`;
@@ -814,217 +818,224 @@ export default function Chat() {
         </div>
       </header>
 
-      {stripProduct ? (
-        <div className="shrink-0 border-b border-emerald-100 bg-gradient-to-r from-emerald-50/80 to-white px-3 py-2.5 sm:px-4">
-          <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-800/80">
-            Product in this chat
-          </p>
-          <Link
-            to={`/products/${stripProduct.id}`}
-            className="flex items-center gap-3 rounded-xl border border-emerald-100 bg-white/90 p-2 shadow-sm transition-colors hover:border-emerald-200 hover:bg-white"
-          >
-            <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-gray-100">
-              {stripProduct.image ? (
-                <img src={stripProduct.image} alt="" className="h-full w-full object-cover" />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center text-[10px] text-gray-400">No image</div>
-              )}
-            </div>
-            <div className="min-w-0 flex-1 text-left">
-              <p className="line-clamp-2 text-sm font-semibold text-gray-900">{stripProduct.title}</p>
-              <p className="mt-0.5 text-sm font-bold text-[#16a34a]">{formatPrice(stripProduct.price)}</p>
-              <span className="mt-0.5 inline-block text-[11px] font-semibold text-[#15803d] hover:underline">
-                View listing →
-              </span>
-            </div>
-          </Link>
-        </div>
-      ) : null}
-
-      <div
-        ref={messagesScrollRef}
-        className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain scroll-smooth px-3 py-3 sm:px-4 sm:py-4 [-webkit-overflow-scrolling:touch]"
-      >
-        <div className="flex flex-col pb-1">
-          {messages.map((msg) => {
-            const mine = msg.sender_id === authUser.id;
-            const t = new Date(msg.created_at);
-            const timeLabel = Number.isNaN(t.getTime()) ? "" : t.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-            const readByPeer = mine && isOutgoingReadByPeer(conversation, authUser.id, msg.created_at);
-            const parent = msg.reply_to_id ? messages.find((m) => m.id === msg.reply_to_id) : undefined;
-            const replyLabel =
-              parent == null ? "Message" : parent.sender_id === authUser.id ? "You" : peerFirstName;
-            const replyPreview = parent ? parent.message : "Original message unavailable";
-            const replyShort =
-              replyPreview.length > 100 ? `${replyPreview.slice(0, 100).trimEnd()}…` : replyPreview;
-            return (
-              <div key={msg.id} className={`group/msg mb-2 flex last:mb-0 ${mine ? "justify-end" : "justify-start"}`}>
-                <div
-                  className={`relative max-w-[min(85%,22rem)] rounded-2xl p-3 shadow-sm sm:max-w-[75%] ${
-                    mine
-                      ? "rounded-tr-none border border-green-200/70 bg-green-100 text-gray-900"
-                      : "rounded-tl-none border border-gray-200/90 bg-white text-gray-900"
-                  }`}
-                >
-                  {msg.reply_to_id ? (
-                    <div className="mb-2 rounded-md bg-gray-200/95 px-2 py-1.5 text-left text-sm text-gray-700">
-                      <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-600">{replyLabel}</p>
-                      <p className="line-clamp-3 text-xs leading-snug">{replyShort}</p>
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <div className="chat-messages min-h-0 flex-1 overflow-y-auto overscroll-y-contain scroll-smooth px-3 py-3 sm:px-4 sm:py-4 [-webkit-overflow-scrolling:touch]">
+          <div className="flex flex-col pb-1">
+            {messages.map((msg, i) => {
+              const prev = i > 0 ? messages[i - 1] : null;
+              const next = i < messages.length - 1 ? messages[i + 1] : null;
+              const showDayDivider = !prev || dayKey(prev.created_at) !== dayKey(msg.created_at);
+              const sameCluster =
+                !!prev && prev.sender_id === msg.sender_id && withinMinutes(prev.created_at, msg.created_at, 8);
+              const sameNextCluster =
+                !!next && next.sender_id === msg.sender_id && withinMinutes(msg.created_at, next.created_at, 8);
+              const showMeta = !sameNextCluster;
+              const mine = msg.sender_id === authUser.id;
+              const mineTail = mine && !sameNextCluster;
+              const theirsTail = !mine && !sameNextCluster;
+              const t = new Date(msg.created_at);
+              const timeLabel = Number.isNaN(t.getTime()) ? "" : t.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+              const readByPeer = mine && isOutgoingReadByPeer(conversation, authUser.id, msg.created_at);
+              const pad = sameCluster ? "px-3 py-1.5" : "p-3";
+              return (
+                <Fragment key={msg.id}>
+                  {showDayDivider ? (
+                    <div className="mb-3 flex justify-center">
+                      <span className="rounded-full bg-black/[0.07] px-3 py-1 text-[11px] font-semibold tracking-wide text-gray-600">
+                        {dayDividerLabel(msg.created_at)}
+                      </span>
                     </div>
                   ) : null}
-                  <div className="whitespace-pre-wrap break-words text-[0.9375rem] leading-relaxed">{msg.message}</div>
-                  <div className={`mt-2 flex items-center gap-1.5 ${mine ? "justify-end" : "justify-between"}`}>
-                    {!mine ? (
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <button
-                            type="button"
-                            className="-ml-1 rounded-lg p-1 text-gray-500 opacity-100 hover:bg-gray-100 md:opacity-0 md:transition-opacity md:group-hover/msg:opacity-100"
-                            aria-label="Message actions"
-                          >
-                            <MoreVertical className="h-4 w-4" />
-                          </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="start" className="w-44">
-                          <DropdownMenuItem
-                            className="gap-2"
-                            onSelect={(e) => {
-                              e.preventDefault();
-                              setReplyTo(msg);
-                            }}
-                          >
-                            <Reply className="h-4 w-4" />
-                            Reply
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    ) : null}
-                    <div className={`flex items-center gap-1 ${mine ? "" : "ml-auto"}`}>
-                      {timeLabel ? (
-                        <span className="text-[11px] tabular-nums text-gray-500">{timeLabel}</span>
-                      ) : null}
-                      {mine ? (
-                        <span
-                          className={`inline-flex items-center ${readByPeer ? "text-blue-600" : "text-gray-500"}`}
-                          title={readByPeer ? "Read" : "Delivered"}
-                        >
-                          {readByPeer ? <CheckCheck className="h-3.5 w-3.5" strokeWidth={2.5} /> : <Check className="h-3.5 w-3.5" strokeWidth={2.5} />}
-                        </span>
+                  <div className={`flex ${sameCluster ? "mb-0.5" : "mb-2"} ${mine ? "justify-end" : "justify-start"}`}>
+                    <div
+                      className={`max-w-[min(72%,20rem)] sm:max-w-[75%] ${pad} shadow-sm ${
+                        mine
+                          ? mineTail
+                            ? "rounded-2xl rounded-tr-none bg-[#0084ff] text-white"
+                            : "rounded-2xl bg-[#0084ff] text-white"
+                          : theirsTail
+                            ? "rounded-2xl rounded-tl-none border border-gray-200/90 bg-white text-gray-900"
+                            : "rounded-2xl border border-gray-200/90 bg-white text-gray-900"
+                      }`}
+                    >
+                      <div className="whitespace-pre-wrap break-words text-[0.9375rem] leading-relaxed">{msg.message}</div>
+                      {showMeta ? (
+                        <div className={`mt-2 flex items-center gap-1 ${mine ? "justify-end" : "justify-start"}`}>
+                          {timeLabel ? (
+                            <span
+                              className={`text-[11px] tabular-nums ${mine ? "text-white/85" : "text-gray-500"}`}
+                            >
+                              {timeLabel}
+                            </span>
+                          ) : null}
+                          {mine ? (
+                            <span
+                              className={`inline-flex items-center ${readByPeer ? "text-white" : "text-white/70"}`}
+                              title={readByPeer ? "Read" : "Delivered"}
+                            >
+                              {readByPeer ? (
+                                <CheckCheck className="h-3.5 w-3.5" strokeWidth={2.5} />
+                              ) : (
+                                <Check className="h-3.5 w-3.5" strokeWidth={2.5} />
+                              )}
+                            </span>
+                          ) : null}
+                        </div>
                       ) : null}
                     </div>
-                    {mine ? (
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <button
-                            type="button"
-                            className="-mr-1 rounded-lg p-1 text-gray-600 opacity-100 hover:bg-green-200/50 md:opacity-0 md:transition-opacity md:group-hover/msg:opacity-100"
-                            aria-label="Message actions"
-                          >
-                            <MoreVertical className="h-4 w-4" />
-                          </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-44">
-                          <DropdownMenuItem
-                            className="gap-2"
-                            onSelect={(e) => {
-                              e.preventDefault();
-                              setReplyTo(msg);
-                            }}
-                          >
-                            <Reply className="h-4 w-4" />
-                            Reply
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            variant="destructive"
-                            className="gap-2"
-                            onSelect={(e) => {
-                              e.preventDefault();
-                              setDeleteConfirmMessage(msg);
-                            }}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                            Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    ) : null}
                   </div>
-                </div>
+                </Fragment>
+              );
+            })}
+            {peerTyping ? (
+              <div className="mb-2 flex items-center gap-2 text-sm italic text-gray-600">
+                <span className="typing-dots flex gap-1" aria-hidden>
+                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400 [animation-delay:0ms]" />
+                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400 [animation-delay:150ms]" />
+                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400 [animation-delay:300ms]" />
+                </span>
+                <span>{peerFirstName} is typing…</span>
               </div>
-            );
-          })}
+            ) : null}
+            <div ref={messagesEndRef} className="h-px shrink-0" aria-hidden />
+          </div>
         </div>
-      </div>
 
-      <div className="relative z-30 shrink-0 border-t border-gray-200 bg-white shadow-[0_-2px_10px_rgba(0,0,0,0.06)] pb-[max(0.5rem,env(safe-area-inset-bottom))]">
-        <div className="px-3 py-3">
-          {peerTyping ? (
-            <div className="mb-2 mt-0.5 flex items-center gap-2 text-sm italic text-gray-500">
-              <span className="typing-dots flex gap-1" aria-hidden>
-                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400 [animation-delay:0ms]" />
-                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400 [animation-delay:150ms]" />
-                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400 [animation-delay:300ms]" />
-              </span>
-              <span>
-                {peerFirstName} is typing…
-              </span>
-            </div>
-          ) : null}
-          {replyTo ? (
-            <div className="mb-2 flex items-start gap-2 rounded-xl border border-emerald-200/80 bg-emerald-50/90 px-3 py-2">
-              <Reply className="mt-0.5 h-4 w-4 shrink-0 text-[#15803d]" aria-hidden />
-              <div className="min-w-0 flex-1 border-l-2 border-[#22c55e] pl-2">
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-[#15803d]">
-                  Replying to {replyTo.sender_id === authUser.id ? "yourself" : peerFirstName}
-                </p>
-                <p className="line-clamp-2 text-xs text-gray-700">{replyTo.message}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setReplyTo(null)}
-                className="shrink-0 rounded-lg p-1 text-gray-500 hover:bg-gray-200/80"
-                aria-label="Cancel reply"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          ) : null}
-          <div className="flex items-end gap-2">
-            <Popover open={emojiPickerOpen} onOpenChange={setEmojiPickerOpen}>
-              <PopoverTrigger asChild>
+        <div className="chat-composer-stack z-30 shrink-0 border-t border-gray-200 bg-white shadow-[0_-2px_10px_rgba(0,0,0,0.06)] pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+          {stripProduct ? (
+            <div className="product-context border-b border-gray-200 px-3 pt-3 sm:px-4">
+              <div className="relative mx-auto max-w-md overflow-hidden rounded-2xl bg-gray-900 shadow-lg ring-1 ring-black/10">
+                <Link
+                  to={`/products/${stripProduct.id}`}
+                  className="relative block h-[min(220px,42svh)] w-full sm:h-[260px]"
+                  aria-label={`Open listing: ${stripProduct.title}`}
+                >
+                  {stripProduct.image ? (
+                    <img
+                      src={stripProduct.image}
+                      alt=""
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center bg-gray-800 text-sm text-gray-400">
+                      No image
+                    </div>
+                  )}
+                </Link>
+                <div
+                  className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-black/35"
+                  aria-hidden
+                />
                 <button
                   type="button"
-                  className="shrink-0 rounded-full p-2 text-gray-600 hover:bg-gray-100"
-                  aria-label="Emoji"
+                  onClick={() => void removeProductContext()}
+                  disabled={contextClearBusy}
+                  className="remove-product absolute left-2.5 top-2.5 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-black/45 text-lg font-light leading-none text-white ring-1 ring-white/35 backdrop-blur-sm transition-colors hover:bg-black/55 disabled:opacity-50"
+                  title="Remove listing from this chat"
+                  aria-label="Remove listing from chat"
                 >
-                  <Smile className="h-5 w-5" />
+                  ×
                 </button>
-              </PopoverTrigger>
-              <PopoverContent
-                side="top"
-                align="start"
-                sideOffset={10}
-                className="z-[70] w-auto border-gray-200 p-2 shadow-lg"
-              >
-                <ChatEmojiPickerContent
-                  onPick={(em) => {
-                    insertEmoji(em);
-                    setEmojiPickerOpen(false);
-                  }}
-                />
-              </PopoverContent>
-            </Popover>
-            <button
-              type="button"
-              className="shrink-0 rounded-full p-2 text-gray-500 hover:bg-gray-100 disabled:opacity-50"
-              aria-label="Attach"
-              disabled
-            >
-              <Paperclip className="h-5 w-5 opacity-50" />
-            </button>
-            <div className="relative min-w-0 flex-1">
-              <textarea
+                <div className="pointer-events-none absolute bottom-24 right-0 top-10 z-20 w-14 sm:bottom-28 sm:top-12">
+                  <div className="pointer-events-auto flex h-full flex-col items-center justify-center gap-5 pr-2 sm:pr-2.5">
+                    <button
+                      type="button"
+                      onClick={toggleReelLike}
+                      className="flex flex-col items-center gap-1 text-white"
+                      aria-label={reelLiked ? "Unlike" : "Like"}
+                    >
+                      <span className="flex h-11 w-11 items-center justify-center rounded-full bg-black/40 ring-1 ring-white/40 shadow-md backdrop-blur-sm transition-transform active:scale-90">
+                        <ThumbsUp
+                          className={`h-5 w-5 ${reelLiked ? "fill-white text-white" : "text-white"}`}
+                          strokeWidth={reelLiked ? 0 : 2.25}
+                        />
+                      </span>
+                      <span className="max-w-[3.25rem] text-center text-[11px] font-bold leading-none tracking-tight drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+                        {formatEngagementCount(reelLikeCount)}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={focusComposer}
+                       className="flex flex-col items-center gap-1 text-white"
+                      aria-label="Comment"
+                    >
+                      <span className="flex h-11 w-11 items-center justify-center rounded-full bg-black/40 ring-1 ring-white/40 shadow-md backdrop-blur-sm transition-transform active:scale-90">
+                        <MessageCircle className="h-5 w-5 text-white" strokeWidth={2.25} />
+                      </span>
+                      <span className="max-w-[3.25rem] text-center text-[11px] font-bold leading-none tracking-tight drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+                        {formatEngagementCount(messages.length)}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void shareConversationOrProduct()}
+                      className="flex flex-col items-center gap-1 text-white"
+                      aria-label="Share"
+                    >
+                      <span className="flex h-11 w-11 items-center justify-center rounded-full bg-black/40 ring-1 ring-white/40 shadow-md backdrop-blur-sm transition-transform active:scale-90">
+                        <Share2 className="h-5 w-5 text-white" strokeWidth={2.25} />
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => navigate("/products")}
+                      className="flex flex-col items-center gap-1 text-white"
+                      aria-label="Search products"
+                    >
+                      <span className="flex h-11 w-11 items-center justify-center rounded-full bg-black/40 ring-1 ring-white/40 shadow-md backdrop-blur-sm transition-transform active:scale-90">
+                        <Search className="h-5 w-5 text-white" strokeWidth={2.25} />
+                      </span>
+                    </button>
+                  </div>
+                </div>
+                <div className="pointer-events-none absolute bottom-0 left-0 right-14 z-10 p-3 sm:right-16 sm:p-4">
+                  <p className="line-clamp-2 text-sm font-semibold leading-snug text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)]">
+                    {stripProduct.title}
+                  </p>
+                  <p className="mt-1 text-sm font-bold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)]">
+                    {formatPrice(stripProduct.price)}
+                  </p>
+                  <Link
+                    to={`/products/${stripProduct.id}`}
+                    className="pointer-events-auto mt-2 inline-block text-xs font-bold uppercase tracking-wide text-white/95 underline decoration-white/60 underline-offset-2 hover:text-white"
+                  >
+                    View listing
+                  </Link>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="message-input-area px-3 py-3 sm:px-4">
+            <div className="flex items-center gap-2">
+              <Popover open={emojiPickerOpen} onOpenChange={setEmojiPickerOpen}>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className="shrink-0 rounded-full p-2 text-gray-600 hover:bg-gray-100"
+                    aria-label="Emoji"
+                  >
+                    <Smile className="h-5 w-5" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent
+                  side="top"
+                  align="start"
+                  sideOffset={10}
+                  className="z-[70] w-auto border-gray-200 p-2 shadow-lg"
+                >
+                  <ChatEmojiPickerContent
+                    onPick={(em) => {
+                      insertEmoji(em);
+                      setEmojiPickerOpen(false);
+                    }}
+                  />
+                </PopoverContent>
+              </Popover>
+              <input
                 ref={composerRef}
+                type="text"
                 value={message}
                 onChange={(e) => onComposerChange(e.target.value)}
                 onKeyDown={(e) => {
@@ -1033,81 +1044,24 @@ export default function Chat() {
                     void handleSend();
                   }
                 }}
-                placeholder="Type a message..."
-                rows={1}
-                className="w-full resize-none rounded-full bg-gray-100 px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#22c55e]"
-                style={{ minHeight: "40px", maxHeight: "120px" }}
+                placeholder="General comment..."
+                autoComplete="off"
+                className="message-input min-h-[44px] w-full min-w-0 flex-1 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#22c55e]"
               />
+              <button
+                type="button"
+                onClick={() => void handleSend()}
+                disabled={!message.trim() || sendBusy}
+                className="send-btn shrink-0 rounded-full bg-[#22c55e] p-2.5 text-white disabled:cursor-not-allowed disabled:opacity-50"
+                aria-label="Send"
+              >
+                <Send className="h-5 w-5" />
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => void handleSend()}
-              disabled={!message.trim() || sendBusy}
-              className="shrink-0 rounded-full bg-[#22c55e] p-2.5 text-white disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Send className="h-5 w-5" />
-            </button>
           </div>
         </div>
       </div>
       </div>
-
-      <AlertDialog
-        open={deleteConfirmMessage != null}
-        onOpenChange={(open) => {
-          if (!open && !deleteBusy) setDeleteConfirmMessage(null);
-        }}
-      >
-        <AlertDialogContent className="sm:max-w-md">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete this message?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This removes the message for both you and {peerName}. You can&apos;t undo this action.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleteBusy}>Cancel</AlertDialogCancel>
-            <button
-              type="button"
-              disabled={deleteBusy}
-              className={buttonVariants({ variant: "destructive" })}
-              onClick={() => {
-                if (deleteConfirmMessage) void executeDeleteMessage(deleteConfirmMessage);
-              }}
-            >
-              {deleteBusy ? "Deleting…" : "Delete"}
-            </button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <AlertDialog
-        open={clearMineOpen}
-        onOpenChange={(open) => {
-          if (!open && !deleteBusy) setClearMineOpen(false);
-        }}
-      >
-        <AlertDialogContent className="sm:max-w-md">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Clear your messages?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will permanently delete {myMessageCount} message{myMessageCount === 1 ? "" : "s"} you sent in this
-              conversation. {peerFirstName} will no longer see them.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleteBusy}>Cancel</AlertDialogCancel>
-            <button
-              type="button"
-              disabled={deleteBusy}
-              className={buttonVariants({ variant: "destructive" })}
-              onClick={() => void executeClearMyMessages()}
-            >
-              {deleteBusy ? "Clearing…" : "Clear my messages"}
-            </button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </>
   );
 
@@ -1205,50 +1159,16 @@ export default function Chat() {
     </>
   );
 
-  const productDetailsAside = stripProduct ? (
-    <div className="lg:sticky lg:top-0">
-      <div className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm">
-        <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-gray-100">
-          {stripProduct.image ? (
-            <img src={stripProduct.image} alt="" className="h-full w-full object-cover" />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center text-xs text-gray-400">No image</div>
-          )}
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="line-clamp-2 text-sm font-semibold text-gray-900">{stripProduct.title}</p>
-          <p className="mt-0.5 text-sm font-bold text-[#16a34a]">{formatPrice(stripProduct.price)}</p>
-          <Link
-            to={`/products/${stripProduct.id}`}
-            className="mt-1 inline-block text-xs font-semibold text-[#16a34a] hover:underline"
-          >
-            View product
-          </Link>
-        </div>
-      </div>
-    </div>
-  ) : null;
-
   return (
     <div className="min-h-[calc(100dvh-4rem)] bg-gray-50 max-md:pt-3">
-      <div
-        className={`mx-auto grid w-full max-w-[1280px] grid-cols-1 md:grid-cols-[1fr_2fr] lg:grid-cols-[1fr_2fr_1fr] ${shellHeight}`}
-      >
-        <aside
-          className={`hidden min-h-0 flex-col border-r border-gray-200 bg-white md:flex ${shellHeight}`}
-        >
+      <div className={`mx-auto grid w-full max-w-[1100px] grid-cols-1 md:grid-cols-[minmax(260px,1fr)_minmax(0,2fr)] ${shellHeight}`}>
+        <aside className={`hidden min-h-0 flex-col border-r border-gray-200 bg-white md:flex ${shellHeight}`}>
           {conversationList}
         </aside>
 
         <section className={`flex min-h-0 min-w-0 flex-col ${shellHeight}`}>
           <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{chatPanel}</div>
         </section>
-
-        <aside
-          className={`hidden min-h-0 flex-col border-l border-gray-200 bg-white p-4 lg:flex ${shellHeight} overflow-y-auto overscroll-contain`}
-        >
-          {productDetailsAside}
-        </aside>
       </div>
     </div>
   );

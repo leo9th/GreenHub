@@ -4,6 +4,23 @@ import { useState, useEffect } from "react";
 import { supabase } from "../../../lib/supabase";
 import { toast } from "sonner";
 
+function parseHashParams(): URLSearchParams {
+  const h = window.location.hash;
+  if (!h || h.length < 2) return new URLSearchParams();
+  return new URLSearchParams(h.startsWith("#") ? h.slice(1) : h);
+}
+
+async function waitForSessionFromUrl(maxAttempts = 8, delayMs = 75): Promise<boolean> {
+  for (let i = 0; i < maxAttempts; i++) {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (session) return true;
+    await new Promise((r) => setTimeout(r, delayMs));
+  }
+  return false;
+}
+
 export default function ResetPassword() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -16,32 +33,71 @@ export default function ResetPassword() {
   const [linkReady, setLinkReady] = useState(false);
 
   useEffect(() => {
-    const hash = window.location.hash;
-    if (hash.includes("error_description")) {
-      const params = new URLSearchParams(hash.substring(1));
-      const errorDesc = params.get("error_description");
-      if (errorDesc) {
-        setError(errorDesc.replace(/\+/g, " "));
-      }
-      return;
-    }
+    let cancelled = false;
 
-    const code = searchParams.get("code");
-    if (code) {
-      setExchangeBusy(true);
-      void supabase.auth.exchangeCodeForSession(code).then(({ error: exErr }) => {
+    void (async () => {
+      const hashParams = parseHashParams();
+
+      if (window.location.hash.includes("error_description") || hashParams.get("error_description")) {
+        const errorDesc = hashParams.get("error_description");
+        if (errorDesc) {
+          setError(errorDesc.replace(/\+/g, " "));
+        }
+        window.history.replaceState(null, "", window.location.pathname + window.location.search);
+        return;
+      }
+
+      const code = searchParams.get("code");
+      if (code) {
+        setExchangeBusy(true);
+        const { error: exErr } = await supabase.auth.exchangeCodeForSession(code);
+        if (cancelled) return;
         setExchangeBusy(false);
         if (exErr) {
           setError("This reset link has expired or is invalid. Please request a new one from the login page.");
-        } else {
-          setLinkReady(true);
-          void navigate("/reset-password", { replace: true });
+          return;
         }
-      });
-      return;
-    }
+        setLinkReady(true);
+        void navigate("/reset-password", { replace: true });
+        return;
+      }
 
-    setLinkReady(true);
+      const accessToken = hashParams.get("access_token");
+      const refreshToken = hashParams.get("refresh_token");
+      const type = hashParams.get("type");
+      if (accessToken && refreshToken && type === "recovery") {
+        setExchangeBusy(true);
+        const { error: sessErr } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        });
+        if (cancelled) return;
+        setExchangeBusy(false);
+        window.history.replaceState(null, "", window.location.pathname + window.location.search);
+        if (sessErr) {
+          setError("This reset link has expired or is invalid. Please request a new one from the login page.");
+          return;
+        }
+        setLinkReady(true);
+        return;
+      }
+
+      if (await waitForSessionFromUrl()) {
+        if (cancelled) return;
+        setLinkReady(true);
+        return;
+      }
+
+      if (cancelled) return;
+      setError(
+        "Open the password reset link from your email, or go back and request a new one. If you already used this page, sign in from the login page.",
+      );
+      setLinkReady(false);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [searchParams, navigate]);
 
   const handleUpdatePassword = async (e: React.FormEvent) => {

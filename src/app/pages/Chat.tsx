@@ -7,6 +7,7 @@ import {
   Phone,
   Check,
   CheckCheck,
+  Clock,
   MessageCircle,
   Search,
   User,
@@ -31,10 +32,17 @@ import {
   updateConversationLastRead,
   setConversationContextProduct,
   clearConversationContextProduct,
-  isOutgoingReadByPeer,
   type ConversationRow,
 } from "../utils/chatConversations";
-import { fetchChatMessagesForConversation, type ChatMessageRow } from "../utils/chatMessages";
+import {
+  CHAT_MESSAGE_COLUMNS,
+  fetchChatMessagesForConversation,
+  markConversationMessagesDelivered,
+  markConversationMessagesRead,
+  normalizeChatMessageRow,
+  outgoingReceiptPhase,
+  type ChatMessageRow,
+} from "../utils/chatMessages";
 import { formatListTime, useInboxConversationList } from "../hooks/useInboxConversationList";
 import {
   DropdownMenu,
@@ -50,6 +58,38 @@ import {
   fetchProductLikeCount,
   fetchUserLikesProduct,
 } from "../utils/engagement";
+
+function MessageReceiptTicks({ phase }: { phase: "sending" | "sent" | "delivered" | "read" }) {
+  const gray = "text-gray-500";
+  const blue = "text-sky-600";
+  if (phase === "sending") {
+    return (
+      <span className={`inline-flex items-center gap-0.5 ${gray}`} title="Sending">
+        <Clock className="h-3.5 w-3.5" strokeWidth={2} />
+        <Check className="h-3 w-3 opacity-60" strokeWidth={2.5} />
+      </span>
+    );
+  }
+  if (phase === "sent") {
+    return (
+      <span className={gray} title="Sent">
+        <Check className="h-3.5 w-3.5" strokeWidth={2.5} />
+      </span>
+    );
+  }
+  if (phase === "delivered") {
+    return (
+      <span className={gray} title="Delivered">
+        <CheckCheck className="h-3.5 w-3.5" strokeWidth={2.5} />
+      </span>
+    );
+  }
+  return (
+    <span className={blue} title="Read">
+      <CheckCheck className="h-3.5 w-3.5" strokeWidth={2.5} />
+    </span>
+  );
+}
 
 function parseConversationInt(v: unknown): number | null {
   if (v == null) return null;
@@ -570,6 +610,8 @@ export default function Chat() {
         const { error } = await updateConversationLastRead(supabase, conversation, authUser.id);
         if (error) return;
         void supabase.rpc("mark_message_notifications_read", { p_conversation_id: conversation.id });
+        const readErr = await markConversationMessagesRead(supabase, conversation.id);
+        if (readErr.error) console.warn("markConversationMessagesRead:", readErr.error.message);
         const now = new Date().toISOString();
         setConversation((c) =>
           c
@@ -586,11 +628,22 @@ export default function Chat() {
   }, [conversation?.id, authUser?.id, messages.length]);
 
   useEffect(() => {
+    if (!conversation?.id || !authUser?.id) return;
+    const t = window.setTimeout(() => {
+      void (async () => {
+        const { error } = await markConversationMessagesDelivered(supabase, conversation.id);
+        if (error) console.warn("markConversationMessagesDelivered:", error.message);
+      })();
+    }, 300);
+    return () => clearTimeout(t);
+  }, [conversation?.id, authUser?.id, messages.length]);
+
+  useEffect(() => {
     if (!conversation?.id) return;
     const mid = conversation.id;
 
     const msgChannel = supabase
-      .channel(`chat-inserts:${mid}`)
+      .channel(`chat-messages:${mid}`)
       .on(
         "postgres_changes",
         {
@@ -600,8 +653,23 @@ export default function Chat() {
           filter: `conversation_id=eq.${mid}`,
         },
         (payload) => {
-          const row = payload.new as ChatMessageRow;
+          const row = normalizeChatMessageRow(payload.new as Record<string, unknown>);
           setMessages((prev) => (prev.some((m) => m.id === row.id) ? prev : [...prev, row]));
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "chat_messages",
+          filter: `conversation_id=eq.${mid}`,
+        },
+        (payload) => {
+          const row = normalizeChatMessageRow(payload.new as Record<string, unknown>);
+          setMessages((prev) =>
+            prev.map((m) => (m.id === row.id ? { ...m, ...row, client_sending: false } : m)),
+          );
         },
       )
       .subscribe();
@@ -675,6 +743,19 @@ export default function Chat() {
     const text = message.trim();
     if (!text || !authUser?.id || !conversation) return;
 
+    const tempId = `pending-${crypto.randomUUID()}`;
+    const optimistic: ChatMessageRow = {
+      id: tempId,
+      sender_id: authUser.id,
+      message: text,
+      created_at: new Date().toISOString(),
+      status: "sent",
+      delivered_at: null,
+      read_at: null,
+      client_sending: true,
+    };
+    setMessages((prev) => [...prev, optimistic]);
+
     setSendBusy(true);
     try {
       const { data: inserted, error } = await supabase
@@ -684,13 +765,25 @@ export default function Chat() {
           sender_id: authUser.id,
           message: text,
         })
-        .select("id, sender_id, message, created_at")
+        .select(CHAT_MESSAGE_COLUMNS)
         .single();
 
       if (error) throw error;
-      if (inserted) setMessages((prev) => [...prev, inserted as ChatMessageRow]);
+      if (inserted) {
+        const row = normalizeChatMessageRow(inserted as Record<string, unknown>);
+        setMessages((prev) => {
+          const withoutPending = prev.filter((m) => m.id !== tempId);
+          if (withoutPending.some((m) => m.id === row.id)) {
+            return withoutPending.map((m) =>
+              m.id === row.id ? { ...row, client_sending: false } : m,
+            );
+          }
+          return [...withoutPending, { ...row, client_sending: false }];
+        });
+      }
       setMessage("");
     } catch (e: unknown) {
+      setMessages((prev) => prev.filter((m) => m.id !== tempId));
       toast.error(errorMessage(e, "Message not sent"));
     } finally {
       setSendBusy(false);
@@ -966,7 +1059,6 @@ export default function Chat() {
               const theirsTail = !mine && !sameNextCluster;
               const t = new Date(msg.created_at);
               const timeLabel = Number.isNaN(t.getTime()) ? "" : t.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-              const readByPeer = mine && isOutgoingReadByPeer(conversation, authUser.id, msg.created_at);
               const pad = sameCluster ? "px-3 py-1.5" : "p-3";
               return (
                 <Fragment key={msg.id}>
@@ -978,37 +1070,35 @@ export default function Chat() {
                     </div>
                   ) : null}
                   <div className={`flex ${sameCluster ? "mb-0.5" : "mb-2"} ${mine ? "justify-end" : "justify-start"}`}>
-                    <div
-                      className={`max-w-[min(72%,20rem)] sm:max-w-[75%] ${pad} shadow-sm ${
-                        mine
-                          ? mineTail
-                            ? "rounded-2xl rounded-tr-none bg-[#0084ff] text-white"
-                            : "rounded-2xl bg-[#0084ff] text-white"
-                          : theirsTail
-                            ? "rounded-2xl rounded-tl-none border border-gray-200/90 bg-white text-gray-900"
-                            : "rounded-2xl border border-gray-200/90 bg-white text-gray-900"
-                      }`}
-                    >
-                      <div className="whitespace-pre-wrap break-words text-[0.9375rem] leading-relaxed">{msg.message}</div>
+                    <div className="flex max-w-[min(72%,20rem)] flex-col sm:max-w-[75%]">
+                      <div
+                        className={`${pad} shadow-sm ${
+                          mine
+                            ? mineTail
+                              ? "rounded-2xl rounded-tr-none bg-[#0084ff] text-white"
+                              : "rounded-2xl bg-[#0084ff] text-white"
+                            : theirsTail
+                              ? "rounded-2xl rounded-tl-none border border-gray-200/90 bg-white text-gray-900"
+                              : "rounded-2xl border border-gray-200/90 bg-white text-gray-900"
+                        }`}
+                      >
+                        <div className="whitespace-pre-wrap break-words text-[0.9375rem] leading-relaxed">{msg.message}</div>
+                      </div>
                       {showMeta ? (
-                        <div className={`mt-2 flex items-center gap-1 ${mine ? "justify-end" : "justify-start"}`}>
+                        <div
+                          className={`mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 px-0.5 ${mine ? "justify-end" : "justify-start"}`}
+                        >
                           {timeLabel ? (
-                            <span
-                              className={`text-[11px] tabular-nums ${mine ? "text-white/85" : "text-gray-500"}`}
-                            >
-                              {timeLabel}
-                            </span>
+                            <span className="text-[11px] tabular-nums text-gray-500">{timeLabel}</span>
                           ) : null}
                           {mine ? (
+                            <MessageReceiptTicks phase={outgoingReceiptPhase(msg)} />
+                          ) : msg.read_at ? (
                             <span
-                              className={`inline-flex items-center ${readByPeer ? "text-white" : "text-white/70"}`}
-                              title={readByPeer ? "Read" : "Delivered"}
+                              className="inline-flex items-center gap-0.5 text-sky-600"
+                              title="You read this message"
                             >
-                              {readByPeer ? (
-                                <CheckCheck className="h-3.5 w-3.5" strokeWidth={2.5} />
-                              ) : (
-                                <Check className="h-3.5 w-3.5" strokeWidth={2.5} />
-                              )}
+                              <CheckCheck className="h-3.5 w-3.5" strokeWidth={2.5} />
                             </span>
                           ) : null}
                         </div>

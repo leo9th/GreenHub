@@ -66,6 +66,32 @@ export async function toggleProductLike(
   return { error: error?.message ?? null };
 }
 
+/** `products.like_count` maintained by triggers on `product_likes`. */
+export async function fetchProductLikeCount(
+  supabase: SupabaseClient,
+  productId: number,
+): Promise<number> {
+  const { data, error } = await supabase.from("products").select("like_count").eq("id", productId).maybeSingle();
+  if (error || !data) return 0;
+  const n = (data as { like_count?: unknown }).like_count;
+  return typeof n === "number" && Number.isFinite(n) ? n : Number(n) || 0;
+}
+
+export async function fetchUserLikesProduct(
+  supabase: SupabaseClient,
+  productId: number,
+  userId: string,
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("product_likes")
+    .select("product_id")
+    .eq("product_id", productId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) return false;
+  return Boolean(data);
+}
+
 export async function fetchLikedProductIdsForUser(
   supabase: SupabaseClient,
   userId: string,

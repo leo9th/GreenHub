@@ -15,6 +15,7 @@ import {
   Smile,
   ThumbsUp,
   Share2,
+  UserPlus,
 } from "lucide-react";
 import { getAvatarUrl } from "../utils/getAvatar";
 import { supabase } from "../../lib/supabase";
@@ -44,6 +45,11 @@ import {
   DropdownMenuTrigger,
 } from "../components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popover";
+import {
+  toggleProductLike,
+  fetchProductLikeCount,
+  fetchUserLikesProduct,
+} from "../utils/engagement";
 
 function parseConversationInt(v: unknown): number | null {
   if (v == null) return null;
@@ -214,6 +220,7 @@ type StripProduct = {
   title: string;
   price: number;
   image: string | null;
+  like_count: number;
 };
 
 export default function Chat() {
@@ -243,6 +250,9 @@ export default function Chat() {
   const [stripProduct, setStripProduct] = useState<StripProduct | null>(null);
   const [reelLiked, setReelLiked] = useState(false);
   const [reelLikeCount, setReelLikeCount] = useState(0);
+  const [likeBusy, setLikeBusy] = useState(false);
+  const [peerFollowing, setPeerFollowing] = useState(false);
+  const [followBusy, setFollowBusy] = useState(false);
   const [contextClearBusy, setContextClearBusy] = useState(false);
   const [peerTyping, setPeerTyping] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -456,7 +466,7 @@ export default function Chat() {
     (async () => {
       const { data, error } = await supabase
         .from("products")
-        .select("id, title, price, price_local, image")
+        .select("id, title, price, price_local, image, like_count")
         .eq("id", pid)
         .maybeSingle();
       if (cancelled) return;
@@ -465,17 +475,93 @@ export default function Chat() {
         return;
       }
       const row = data as Record<string, unknown>;
+      const lcRaw = row.like_count;
+      const likeCount =
+        typeof lcRaw === "number" && Number.isFinite(lcRaw) ? lcRaw : Number(lcRaw) || 0;
       setStripProduct({
         id: Number(row.id),
         title: String(row.title ?? "Listing"),
         price: getProductPrice(row as { price?: unknown; price_local?: unknown }),
         image: typeof row.image === "string" ? row.image : null,
+        like_count: likeCount,
       });
     })();
     return () => {
       cancelled = true;
     };
   }, [conversation?.context_product_id]);
+
+  useEffect(() => {
+    if (stripProduct == null) {
+      setReelLikeCount(0);
+      return;
+    }
+    setReelLikeCount(stripProduct.like_count);
+  }, [stripProduct]);
+
+  useEffect(() => {
+    if (!stripProduct?.id || !authUser?.id) {
+      setReelLiked(false);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const liked = await fetchUserLikesProduct(supabase, stripProduct.id, authUser.id);
+      if (!cancelled) setReelLiked(liked);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [stripProduct?.id, authUser?.id]);
+
+  useEffect(() => {
+    const pid = stripProduct?.id;
+    if (pid == null) return;
+    const ch = supabase
+      .channel(`chat-product-like-count:${pid}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "products",
+          filter: `id=eq.${pid}`,
+        },
+        (payload) => {
+          const n = (payload.new as { like_count?: unknown })?.like_count;
+          const next =
+            typeof n === "number" && Number.isFinite(n) ? n : n != null ? Number(n) || 0 : null;
+          if (next != null) {
+            setReelLikeCount(next);
+            setStripProduct((p) => (p && p.id === pid ? { ...p, like_count: next } : p));
+          }
+        },
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(ch);
+    };
+  }, [stripProduct?.id]);
+
+  useEffect(() => {
+    if (!authUser?.id || !peerId || peerId === authUser.id) {
+      setPeerFollowing(false);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const { data, error } = await supabase
+        .from("profile_follows")
+        .select("follower_id")
+        .eq("follower_id", authUser.id)
+        .eq("following_id", peerId)
+        .maybeSingle();
+      if (!cancelled && !error) setPeerFollowing(!!data);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [authUser?.id, peerId]);
 
   useEffect(() => {
     if (!conversation?.id || !authUser?.id) return;
@@ -635,38 +721,83 @@ export default function Chat() {
     }
   }, [conversation, contextClearBusy]);
 
-  const shareConversationOrProduct = useCallback(async () => {
-    const productUrl = stripProduct ? `${window.location.origin}/products/${stripProduct.id}` : null;
-    const threadUrl = `${window.location.origin}/messages/c/${conversation?.id ?? ""}`;
-    const url = productUrl ?? threadUrl;
-    const title = stripProduct ? stripProduct.title : `Chat with ${peerName}`;
-    if (navigator.share) {
-      try {
-        await navigator.share({ title, url });
-        return;
-      } catch (e) {
-        if ((e as Error)?.name === "AbortError") return;
-      }
-    }
+  const copyProductLinkToClipboard = useCallback(async () => {
+    if (!stripProduct) return;
+    const url = `${window.location.origin}/products/${stripProduct.id}`;
     try {
       await navigator.clipboard.writeText(url);
-      toast.success(productUrl ? "Product link copied" : "Conversation link copied");
+      toast.success("Link copied to clipboard");
     } catch {
       toast.error("Could not copy link");
     }
-  }, [stripProduct, conversation?.id, peerName]);
+  }, [stripProduct]);
 
   const focusComposer = useCallback(() => {
-    composerRef.current?.focus();
-  }, []);
-
-  const toggleReelLike = useCallback(() => {
-    setReelLiked((v) => {
-      const next = !v;
-      setReelLikeCount((c) => Math.max(0, c + (next ? 1 : -1)));
-      return next;
+    const el = composerRef.current;
+    if (!el) return;
+    el.focus();
+    requestAnimationFrame(() => {
+      el.focus();
+      const len = el.value.length;
+      try {
+        el.setSelectionRange(len, len);
+      } catch {
+        /* noop */
+      }
     });
   }, []);
+
+  const handleProductLikeToggle = useCallback(async () => {
+    if (!authUser?.id || !stripProduct || likeBusy) return;
+    setLikeBusy(true);
+    const prevLiked = reelLiked;
+    const prevCount = reelLikeCount;
+    const nextLiked = !prevLiked;
+    setReelLiked(nextLiked);
+    setReelLikeCount((c) => Math.max(0, c + (nextLiked ? 1 : -1)));
+    try {
+      const { error } = await toggleProductLike(supabase, stripProduct.id, authUser.id, prevLiked);
+      if (error) throw new Error(error);
+      const synced = await fetchProductLikeCount(supabase, stripProduct.id);
+      setReelLikeCount(synced);
+      setStripProduct((p) => (p && p.id === stripProduct.id ? { ...p, like_count: synced } : p));
+    } catch (e: unknown) {
+      setReelLiked(prevLiked);
+      setReelLikeCount(prevCount);
+      toast.error(errorMessage(e, "Could not update like"));
+    } finally {
+      setLikeBusy(false);
+    }
+  }, [authUser?.id, stripProduct, likeBusy, reelLiked, reelLikeCount]);
+
+  const toggleFollowPeer = useCallback(async () => {
+    if (!authUser?.id || !peerId || peerId === authUser.id || followBusy) return;
+    setFollowBusy(true);
+    try {
+      if (peerFollowing) {
+        const { error } = await supabase
+          .from("profile_follows")
+          .delete()
+          .eq("follower_id", authUser.id)
+          .eq("following_id", peerId);
+        if (error) throw error;
+        setPeerFollowing(false);
+        toast.success("Unfollowed");
+      } else {
+        const { error } = await supabase.from("profile_follows").insert({
+          follower_id: authUser.id,
+          following_id: peerId,
+        });
+        if (error) throw error;
+        setPeerFollowing(true);
+        toast.success(`Following ${peerFirstName}`);
+      }
+    } catch (e: unknown) {
+      toast.error(errorMessage(e, "Could not update follow"));
+    } finally {
+      setFollowBusy(false);
+    }
+  }, [authUser?.id, peerId, peerFollowing, followBusy, peerFirstName]);
 
   const insertEmoji = useCallback((emoji: string) => {
     const el = composerRef.current;
@@ -940,8 +1071,9 @@ export default function Chat() {
                   <div className="pointer-events-auto flex h-full flex-col items-center justify-center gap-5 pr-2 sm:pr-2.5">
                     <button
                       type="button"
-                      onClick={toggleReelLike}
-                      className="flex flex-col items-center gap-1 text-white"
+                      onClick={() => void handleProductLikeToggle()}
+                      disabled={likeBusy}
+                      className="flex flex-col items-center gap-1 text-white disabled:opacity-50"
                       aria-label={reelLiked ? "Unlike" : "Like"}
                     >
                       <span className="flex h-11 w-11 items-center justify-center rounded-full bg-black/40 ring-1 ring-white/40 shadow-md backdrop-blur-sm transition-transform active:scale-90">
@@ -969,9 +1101,9 @@ export default function Chat() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => void shareConversationOrProduct()}
+                      onClick={() => void copyProductLinkToClipboard()}
                       className="flex flex-col items-center gap-1 text-white"
-                      aria-label="Share"
+                      aria-label="Copy product link"
                     >
                       <span className="flex h-11 w-11 items-center justify-center rounded-full bg-black/40 ring-1 ring-white/40 shadow-md backdrop-blur-sm transition-transform active:scale-90">
                         <Share2 className="h-5 w-5 text-white" strokeWidth={2.25} />
@@ -989,19 +1121,37 @@ export default function Chat() {
                     </button>
                   </div>
                 </div>
-                <div className="pointer-events-none absolute bottom-0 left-0 right-14 z-10 p-3 sm:right-16 sm:p-4">
-                  <p className="line-clamp-2 text-sm font-semibold leading-snug text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)]">
-                    {stripProduct.title}
-                  </p>
-                  <p className="mt-1 text-sm font-bold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)]">
-                    {formatPrice(stripProduct.price)}
-                  </p>
-                  <Link
-                    to={`/products/${stripProduct.id}`}
-                    className="pointer-events-auto mt-2 inline-block text-xs font-bold uppercase tracking-wide text-white/95 underline decoration-white/60 underline-offset-2 hover:text-white"
-                  >
-                    View listing
-                  </Link>
+                <div className="pointer-events-none absolute bottom-0 left-0 right-14 z-10 flex flex-col gap-2 p-3 sm:right-16 sm:p-4">
+                  <div>
+                    <p className="line-clamp-2 text-sm font-semibold leading-snug text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)]">
+                      {stripProduct.title}
+                    </p>
+                    <p className="mt-1 text-sm font-bold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)]">
+                      {formatPrice(stripProduct.price)}
+                    </p>
+                    <Link
+                      to={`/products/${stripProduct.id}`}
+                      className="pointer-events-auto mt-2 inline-block text-xs font-bold uppercase tracking-wide text-white/95 underline decoration-white/60 underline-offset-2 hover:text-white"
+                    >
+                      View listing
+                    </Link>
+                  </div>
+                  <div className="pointer-events-auto border-t border-white/25 pt-2">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-white/80">General comment</p>
+                    <p className="mt-0.5 text-[11px] leading-snug text-white/85">
+                      Your message below goes to {peerFirstName} about this product.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => void toggleFollowPeer()}
+                      disabled={followBusy || peerId === authUser.id}
+                      className="mt-2 inline-flex items-center gap-1.5 rounded-lg border-2 border-white bg-white/10 px-3 py-1.5 text-xs font-bold text-white backdrop-blur-sm transition-colors hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-40"
+                      aria-label={peerFollowing ? "Unfollow" : "Follow seller"}
+                    >
+                      <UserPlus className="h-3.5 w-3.5 shrink-0" strokeWidth={2.5} />
+                      {peerFollowing ? "Following" : "Follow"}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

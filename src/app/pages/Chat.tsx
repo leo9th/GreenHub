@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useMemo, Fragment } from "react";
+import React, { useState, useRef, useEffect, useCallback, useMemo, Fragment } from "react";
 import { useParams, useNavigate, useSearchParams, Link } from "react-router";
 import {
   ArrowLeft,
@@ -81,6 +81,55 @@ import {
   fetchProductLikeCount,
   fetchUserLikesProduct,
 } from "../utils/engagement";
+
+function ChatErrorBoundary({ children }: { children: React.ReactNode }) {
+  class Boundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
+    constructor(props: { children: React.ReactNode }) {
+      super(props);
+      this.state = { error: null };
+    }
+    static getDerivedStateFromError(error: Error) {
+      return { error };
+    }
+    componentDidCatch(error: Error, info: React.ErrorInfo) {
+      // eslint-disable-next-line no-console
+      console.error("Chat boundary caught:", error, info);
+    }
+    render() {
+      if (this.state.error) {
+        return (
+          <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center px-6 text-center">
+            <div className="mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-red-50 text-red-600 shadow-inner">
+              <MessageCircle className="h-8 w-8" />
+            </div>
+            <h2 className="text-lg font-semibold text-gray-900">Chat encountered a problem</h2>
+            <p className="mt-2 max-w-md text-sm text-gray-600">
+              We couldn&apos;t render this conversation. Please reload or go back to your inbox.
+            </p>
+            <div className="mt-4 flex gap-3">
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="rounded-lg bg-[#22c55e] px-4 py-2 text-sm font-semibold text-white hover:bg-[#16a34a]"
+              >
+                Reload
+              </button>
+              <Link
+                to="/messages"
+                className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+              >
+                Back to messages
+              </Link>
+            </div>
+          </div>
+        );
+      }
+      return this.props.children;
+    }
+  }
+
+  return <Boundary>{children}</Boundary>;
+}
 
 function MessageReceiptTicks({ phase }: { phase: "sending" | "sent" | "delivered" | "read" }) {
   const gray = "text-gray-500";
@@ -1358,7 +1407,22 @@ export default function Chat() {
     );
   }
 
-  if (!authUser || !conversation || !peerId) {
+  if (!authUser) {
+    return (
+      <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center px-4 text-center pb-8">
+        <p className="text-gray-800 font-medium mb-2">Please sign in to view this chat.</p>
+        <button
+          type="button"
+          onClick={() => navigate("/login")}
+          className="px-4 py-2 rounded-lg bg-[#22c55e] text-white text-sm font-medium"
+        >
+          Go to login
+        </button>
+      </div>
+    );
+  }
+
+  if (!conversation || !peerId) {
     return (
       <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center px-4 text-center pb-8">
         <p className="text-gray-800 font-medium mb-2">Chat could not be loaded.</p>
@@ -1515,6 +1579,7 @@ export default function Chat() {
           >
             <div className="flex flex-col pb-1">
               {messages.map((msg, i) => {
+                const messageId = msg.id ?? `msg-${i}-${msg.created_at}`;
                 const prev = i > 0 ? messages[i - 1] : null;
                 const next = i < messages.length - 1 ? messages[i + 1] : null;
                 const showDayDivider = !prev || dayKey(prev.created_at) !== dayKey(msg.created_at);
@@ -1536,7 +1601,7 @@ export default function Chat() {
                 const isHighlighted = highlightedMessageId === msg.id;
                 const swipeOffset = activeSwipe?.messageId === msg.id ? activeSwipe.offset : 0;
                 return (
-                  <Fragment key={msg.id}>
+                  <Fragment key={messageId}>
                     {showDayDivider ? (
                       <div className="mb-3 flex justify-center">
                         <span className="rounded-full bg-white/75 px-3 py-1 text-[11px] font-semibold tracking-wide text-gray-600 shadow-sm ring-1 ring-black/5 backdrop-blur">
@@ -1545,7 +1610,7 @@ export default function Chat() {
                       </div>
                     ) : null}
                     <div
-                      ref={(node) => setMessageNode(msg.id, node)}
+                      ref={(node) => setMessageNode(messageId, node)}
                       className={`scroll-mt-24 flex ${sameCluster ? "mb-0.5" : "mb-2"} ${mine ? "justify-end" : "justify-start"}`}
                     >
                       <ContextMenu>
@@ -2047,7 +2112,7 @@ export default function Chat() {
               const avatar = getAvatarUrl(p?.avatar_url ?? null, p?.gender ?? null, name);
               const aboutProduct =
                 row.context_product_id != null ? inboxProductTitles.get(row.context_product_id) : undefined;
-              const active = conversation.id === row.id;
+              const active = conversation?.id === row.id;
               return (
                 <Link
                   key={row.id}
@@ -2090,19 +2155,21 @@ export default function Chat() {
   );
 
   return (
-    <div
-      className="h-[calc(var(--chat-viewport-height,100dvh)-4rem)] overflow-hidden bg-[linear-gradient(180deg,#f0fdf4_0%,#f8fafc_22%,#f7fee7_100%)]"
-      style={chatShellStyle}
-    >
-      <div className={`mx-auto grid w-full max-w-[1100px] grid-cols-1 md:grid-cols-[minmax(260px,1fr)_minmax(0,2fr)] ${shellHeight}`}>
-        <aside className={`hidden min-h-0 flex-col border-r border-emerald-100 bg-white/95 backdrop-blur md:flex ${shellHeight}`}>
-          {conversationList}
-        </aside>
+    <ChatErrorBoundary>
+      <div
+        className="h-[calc(var(--chat-viewport-height,100dvh)-4rem)] overflow-hidden bg-[linear-gradient(180deg,#f0fdf4_0%,#f8fafc_22%,#f7fee7_100%)]"
+        style={chatShellStyle}
+      >
+        <div className={`mx-auto grid w-full max-w-[1100px] grid-cols-1 md:grid-cols-[minmax(260px,1fr)_minmax(0,2fr)] ${shellHeight}`}>
+          <aside className={`hidden min-h-0 flex-col border-r border-emerald-100 bg-white/95 backdrop-blur md:flex ${shellHeight}`}>
+            {conversationList}
+          </aside>
 
-        <section className={`flex min-h-0 min-w-0 flex-col ${shellHeight}`}>
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{chatPanel}</div>
-        </section>
+          <section className={`flex min-h-0 min-w-0 flex-col ${shellHeight}`}>
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{chatPanel}</div>
+          </section>
+        </div>
       </div>
-    </div>
+    </ChatErrorBoundary>
   );
 }

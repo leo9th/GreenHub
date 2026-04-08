@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, type TouchEvent } from "react";
+import { useState, useEffect, useCallback, useRef, type TouchEvent, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent } from "react";
 import useEmblaCarousel from "embla-carousel-react";
 import { Link, useParams, useNavigate } from "react-router";
 import {
@@ -30,6 +30,7 @@ import { recordProductView } from "../utils/recentlyViewedProducts";
 import { toast } from "sonner";
 import { BoostDetailBadge } from "../components/BoostBadge";
 import { getAuthSiteOrigin } from "../utils/authSiteUrl";
+import { Textarea } from "../components/ui/textarea";
 
 type ParsedDeliveryOption = { name: string; fee: number; duration: string };
 
@@ -82,6 +83,7 @@ function shuffleRelatedProducts<T>(items: T[]): T[] {
 const DEFAULT_DOCUMENT_TITLE = "GreenHub - Buy & Sell in Nigeria";
 const DEFAULT_META_DESCRIPTION =
   "GreenHub is Nigeria's premier C2C marketplace to buy and sell electronics, fashion, and goods securely.";
+const COMMENTS_PAGE_SIZE = 10;
 
 function upsertHeadMeta(attr: "property" | "name", key: string, content: string) {
   const selector = attr === "property" ? `meta[property="${key}"]` : `meta[name="${key}"]`;
@@ -149,6 +151,17 @@ type ProductReviewDisplay = {
   user_id: string;
   reviewer_name: string;
   reviewer_avatar: string;
+};
+
+type ProductCommentDisplay = {
+  id: string;
+  user_id: string;
+  comment: string;
+  created_at: string;
+  like_count: number;
+  user_name: string;
+  user_avatar: string;
+  liked_by_me: boolean;
 };
 
 function RelatedProductsCarousel({
@@ -276,6 +289,10 @@ export default function ProductDetail() {
   const { user: authUser } = useAuth();
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const galleryTouchStartX = useRef<number | null>(null);
+  const galleryRef = useRef<HTMLDivElement | null>(null);
+  const lastTapRef = useRef(0);
+  const tapHeartIdRef = useRef(0);
+  const [tapHearts, setTapHearts] = useState<Array<{ id: number; x: number; y: number }>>([]);
   const [liked, setLiked] = useState(false);
   const [likeBusy, setLikeBusy] = useState(false);
   const [sellerProfile, setSellerProfile] = useState<SellerProfileRow | null>(null);
@@ -292,6 +309,22 @@ export default function ProductDetail() {
   const [moreFromSeller, setMoreFromSeller] = useState<RelatedCarouselItem[]>([]);
   const [productReviews, setProductReviews] = useState<ProductReviewDisplay[]>([]);
   const [productReviewsReady, setProductReviewsReady] = useState(false);
+  const [comments, setComments] = useState<ProductCommentDisplay[]>([]);
+  const [commentsReady, setCommentsReady] = useState(false);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [commentsHasMore, setCommentsHasMore] = useState(true);
+  const [commentsTotal, setCommentsTotal] = useState(0);
+  const [commentInput, setCommentInput] = useState("");
+  const [commentBusy, setCommentBusy] = useState(false);
+  const [commentLikeBusy, setCommentLikeBusy] = useState<Set<string>>(new Set());
+  const commentsLengthRef = useRef(0);
+  const [zoomOpen, setZoomOpen] = useState(false);
+  const [zoomScale, setZoomScale] = useState(1);
+  const [zoomOffset, setZoomOffset] = useState({ x: 0, y: 0 });
+  const zoomPointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const zoomLastDistanceRef = useRef<number | null>(null);
+  const zoomScaleRef = useRef(1);
+  const singleTapTimerRef = useRef<number | null>(null);
 
   /** URL `products/:id` — pass through trimmed string so PostgREST matches int/bigint/uuid PKs without Number() precision loss */
   const normalizeRouteProductId = (raw: string | undefined): string | null => {
@@ -747,6 +780,22 @@ export default function ProductDetail() {
     return () => document.removeEventListener("mousedown", onDown);
   }, [phoneMenuOpen]);
 
+  useEffect(() => {
+    zoomScaleRef.current = zoomScale;
+  }, [zoomScale]);
+
+  useEffect(() => {
+    return () => cancelSingleTapZoom();
+  }, []);
+
+  useEffect(() => {
+    commentsLengthRef.current = comments.length;
+  }, [comments.length]);
+
+  useEffect(() => {
+    void loadComments(true, 0);
+  }, [loadComments]);
+
   if (isServerProductLoading) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center p-4 text-gray-500 text-sm">
@@ -809,6 +858,23 @@ export default function ProductDetail() {
   const likeCount = Number(foundProduct.like_count ?? 0);
   const sellerOnline = isOnlineFromLastActive(sellerProfile?.last_active);
 
+  const spawnTapHeart = (clientX: number, clientY: number) => {
+    const rect = galleryRef.current?.getBoundingClientRect();
+    const x = rect ? clientX - rect.left : clientX;
+    const y = rect ? clientY - rect.top : clientY;
+    const id = ++tapHeartIdRef.current;
+    setTapHearts((prev) => [...prev, { id, x, y }]);
+    window.setTimeout(() => {
+      setTapHearts((prev) => prev.filter((h) => h.id !== id));
+    }, 850);
+  };
+
+  const handleDoubleTapLike = (clientX: number, clientY: number) => {
+    spawnTapHeart(clientX, clientY);
+    if (likeBusy) return;
+    void handleToggleLike();
+  };
+
   const handleToggleLike = async () => {
     if (!authUser?.id) {
       toast.message("Sign in to like this listing");
@@ -836,6 +902,43 @@ export default function ProductDetail() {
       setLiked(wasLiked);
       setServerProduct((p) => (p ? { ...p, like_count: prevCount } : p));
     }
+  };
+
+  const clampScale = (value: number) => Math.min(4, Math.max(1, value));
+
+  const resetZoomState = () => {
+    setZoomScale(1);
+    setZoomOffset({ x: 0, y: 0 });
+    zoomScaleRef.current = 1;
+    zoomPointersRef.current.clear();
+    zoomLastDistanceRef.current = null;
+  };
+
+  const cancelSingleTapZoom = () => {
+    if (singleTapTimerRef.current != null) {
+      window.clearTimeout(singleTapTimerRef.current);
+      singleTapTimerRef.current = null;
+    }
+  };
+
+  const openZoom = () => {
+    if (galleryImages.length === 0) return;
+    resetZoomState();
+    setZoomOpen(true);
+  };
+
+  const closeZoom = () => {
+    cancelSingleTapZoom();
+    setZoomOpen(false);
+    resetZoomState();
+  };
+
+  const scheduleSingleTapZoom = () => {
+    cancelSingleTapZoom();
+    singleTapTimerRef.current = window.setTimeout(() => {
+      openZoom();
+      singleTapTimerRef.current = null;
+    }, 340);
   };
 
   const product = {
@@ -869,6 +972,200 @@ export default function ProductDetail() {
     deliveryOptions: parseDeliveryOptionsFromDb(foundProduct.deliveryOptions ?? foundProduct.delivery_options),
   };
 
+  const loadComments = useCallback(
+    async (reset = false, startOverride?: number) => {
+      const pid = normalizeRouteProductId(id) ?? (foundProduct?.id != null ? String(foundProduct.id) : null);
+      if (!pid) {
+        setComments([]);
+        setCommentsHasMore(false);
+        setCommentsTotal(0);
+        setCommentsReady(true);
+        setCommentsLoading(false);
+        return;
+      }
+      const start = reset ? 0 : startOverride ?? commentsLengthRef.current;
+      if (reset) {
+        setComments([]);
+        setCommentsHasMore(true);
+        setCommentsReady(false);
+        setCommentsTotal(0);
+      }
+      setCommentsLoading(true);
+
+      const { data, error, count } = await supabase
+        .from("product_comments")
+        .select("id, user_id, comment, like_count, created_at", { count: "exact" })
+        .eq("product_id", pid)
+        .order("created_at", { ascending: false })
+        .range(start, start + COMMENTS_PAGE_SIZE - 1);
+
+      if (error) {
+        const msg = String(error.message || "").toLowerCase();
+        if (!(msg.includes("product_comments") && msg.includes("does not exist"))) {
+          console.warn("Product comments:", error.message);
+        }
+        setCommentsReady(true);
+        setCommentsLoading(false);
+        setCommentsHasMore(false);
+        return;
+      }
+
+      const rows =
+        (data ?? []) as {
+          id: string;
+          user_id: string;
+          comment: string;
+          like_count: number;
+          created_at: string;
+        }[];
+
+      const userIds = [...new Set(rows.map((r) => r.user_id).filter(Boolean))];
+      const profileMap = new Map<
+        string,
+        { full_name: string | null; avatar_url: string | null; gender: string | null }
+      >();
+      if (userIds.length > 0) {
+        const { data: profs } = await supabase
+          .from("profiles_public")
+          .select("id, full_name, avatar_url, gender")
+          .in("id", userIds);
+        for (const p of (profs ?? []) as {
+          id: string;
+          full_name: string | null;
+          avatar_url: string | null;
+          gender: string | null;
+        }[]) {
+          if (p.id) profileMap.set(String(p.id), p);
+        }
+      }
+
+      let likedSet = new Set<string>();
+      if (authUser?.id && rows.length > 0) {
+        const { data: likedRows } = await supabase
+          .from("comment_likes")
+          .select("comment_id")
+          .eq("user_id", authUser.id)
+          .in(
+            "comment_id",
+            rows.map((r) => r.id),
+          );
+        likedSet = new Set(
+          (likedRows ?? []).map((r) => {
+            const cid = (r as { comment_id: string }).comment_id;
+            return cid ? String(cid) : "";
+          }),
+        );
+      }
+
+      const mapped: ProductCommentDisplay[] = rows.map((r) => {
+        const profile = profileMap.get(String(r.user_id));
+        const name = profile?.full_name?.trim() || "Member";
+        return {
+          id: r.id,
+          user_id: r.user_id,
+          comment: r.comment,
+          created_at: r.created_at,
+          like_count: Number(r.like_count ?? 0),
+          user_name: name,
+          user_avatar: getAvatarUrl(profile?.avatar_url ?? null, profile?.gender ?? null, name),
+          liked_by_me: likedSet.has(String(r.id)),
+        };
+      });
+
+      const nextLength = start + mapped.length;
+      setComments((prev) => (reset ? mapped : [...prev, ...mapped]));
+      setCommentsTotal(count ?? nextLength);
+      setCommentsHasMore(count != null ? nextLength < count : mapped.length === COMMENTS_PAGE_SIZE);
+      setCommentsReady(true);
+      setCommentsLoading(false);
+    },
+    [authUser?.id, commentsLengthRef, foundProduct?.id, id],
+  );
+
+  const handleSubmitComment = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!authUser?.id) {
+      toast.message("Sign in to comment");
+      navigate("/login");
+      return;
+    }
+    const text = commentInput.trim();
+    if (!text) {
+      toast.error("Please write a comment first");
+      return;
+    }
+    const pid = normalizeRouteProductId(id) ?? (foundProduct?.id != null ? String(foundProduct.id) : null);
+    if (!pid) return;
+    setCommentBusy(true);
+    const { data, error } = await supabase
+      .from("product_comments")
+      .insert({
+        product_id: pid,
+        user_id: authUser.id,
+        comment: text,
+      })
+      .select("id, user_id, comment, like_count, created_at")
+      .single();
+    setCommentBusy(false);
+    if (error) {
+      toast.error("Could not post comment");
+      return;
+    }
+    const name = (authUser.user_metadata?.full_name as string | undefined)?.trim() || "You";
+    const newComment: ProductCommentDisplay = {
+      id: (data as { id: string }).id,
+      user_id: authUser.id,
+      comment: text,
+      created_at: (data as { created_at: string }).created_at,
+      like_count: Number((data as { like_count?: number }).like_count ?? 0),
+      user_name: name,
+      user_avatar: getAvatarUrl(
+        (authUser.user_metadata?.avatar_url as string | null) ?? null,
+        (authUser.user_metadata?.gender as string | null) ?? null,
+        name,
+      ),
+      liked_by_me: false,
+    };
+    setComments((prev) => [newComment, ...prev]);
+    setCommentInput("");
+    setCommentsTotal((c) => c + 1);
+  };
+
+  const handleToggleCommentLike = async (commentId: string) => {
+    if (!authUser?.id) {
+      toast.message("Sign in to like comments");
+      navigate("/login");
+      return;
+    }
+    if (commentLikeBusy.has(commentId)) return;
+    const existing = comments.find((c) => c.id === commentId);
+    if (!existing) return;
+    const nextLiked = !existing.liked_by_me;
+    const prevCount = existing.like_count;
+    setCommentLikeBusy((prev) => {
+      const n = new Set(prev);
+      n.add(commentId);
+      return n;
+    });
+    setComments((prev) =>
+      prev.map((c) =>
+        c.id === commentId ? { ...c, liked_by_me: nextLiked, like_count: nextLiked ? prevCount + 1 : Math.max(0, prevCount - 1) } : c,
+      ),
+    );
+    const { error } = nextLiked
+      ? await supabase.from("comment_likes").insert({ comment_id: commentId, user_id: authUser.id })
+      : await supabase.from("comment_likes").delete().eq("comment_id", commentId).eq("user_id", authUser.id);
+    if (error) {
+      toast.error("Could not update like");
+      setComments((prev) => prev.map((c) => (c.id === commentId ? existing : c)));
+    }
+    setCommentLikeBusy((prev) => {
+      const n = new Set(prev);
+      n.delete(commentId);
+      return n;
+    });
+  };
+
   const handlePrevImage = () => {
     if (product.images.length <= 1) return;
     setCurrentImageIndex((prev) => (prev === 0 ? product.images.length - 1 : prev - 1));
@@ -884,15 +1181,98 @@ export default function ProductDetail() {
   };
 
   const onGalleryTouchEnd = (e: TouchEvent) => {
+    const touch = e.changedTouches[0];
+    const now = Date.now();
+    if (touch) {
+      const delta = now - lastTapRef.current;
+      if (delta < 320) {
+        e.preventDefault();
+        cancelSingleTapZoom();
+        handleDoubleTapLike(touch.clientX, touch.clientY);
+        lastTapRef.current = 0;
+        galleryTouchStartX.current = null;
+        return;
+      }
+      lastTapRef.current = now;
+    }
+
     const start = galleryTouchStartX.current;
     galleryTouchStartX.current = null;
     if (start == null || product.images.length <= 1) return;
-    const end = e.changedTouches[0]?.clientX;
+    const end = touch?.clientX;
     if (end == null) return;
     const dx = end - start;
-    if (Math.abs(dx) < 48) return;
-    if (dx > 0) handlePrevImage();
-    else handleNextImage();
+    if (Math.abs(dx) >= 48) {
+      cancelSingleTapZoom();
+      if (dx > 0) handlePrevImage();
+      else handleNextImage();
+      return;
+    }
+    scheduleSingleTapZoom();
+  };
+
+  const onGalleryClick = (e: ReactMouseEvent<HTMLDivElement>) => {
+    const now = Date.now();
+    const delta = now - lastTapRef.current;
+    if (delta < 320) {
+      cancelSingleTapZoom();
+      handleDoubleTapLike(e.clientX, e.clientY);
+      lastTapRef.current = 0;
+      return;
+    }
+    lastTapRef.current = now;
+    scheduleSingleTapZoom();
+  };
+
+  const onZoomPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (!zoomOpen) return;
+    e.preventDefault();
+    zoomPointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+  };
+
+  const onZoomPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (!zoomOpen) return;
+    if (!zoomPointersRef.current.has(e.pointerId)) return;
+    e.preventDefault();
+    const prev = zoomPointersRef.current.get(e.pointerId);
+    if (!prev) return;
+    zoomPointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const points = [...zoomPointersRef.current.values()];
+    if (points.length >= 2) {
+      const [p1, p2] = points;
+      const dist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+      const last = zoomLastDistanceRef.current ?? dist;
+      zoomLastDistanceRef.current = dist;
+      setZoomScale((prevScale) => {
+        const next = clampScale(prevScale * (dist / last));
+        zoomScaleRef.current = next;
+        return next;
+      });
+    } else if (points.length === 1 && zoomScaleRef.current > 1) {
+      const dx = e.clientX - prev.x;
+      const dy = e.clientY - prev.y;
+      setZoomOffset((o) => ({ x: o.x + dx, y: o.y + dy }));
+    }
+  };
+
+  const onZoomPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
+    zoomPointersRef.current.delete(e.pointerId);
+    if (zoomPointersRef.current.size < 2) {
+      zoomLastDistanceRef.current = null;
+    }
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
+  };
+
+  const onZoomWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    if (!zoomOpen) return;
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? -0.15 : 0.15;
+    setZoomScale((prev) => {
+      const next = clampScale(prev + delta);
+      zoomScaleRef.current = next;
+      return next;
+    });
   };
 
   const handleShare = async () => {
@@ -977,12 +1357,14 @@ export default function ProductDetail() {
             <div className="relative w-full max-w-[520px] md:max-w-none mx-auto">
               <div className="relative rounded-2xl overflow-hidden bg-white shadow-sm ring-1 ring-gray-200/90">
                 <div
+                  ref={galleryRef}
                   className="relative aspect-[3/4] w-full bg-gray-100 md:min-h-[min(70vh,560px)] md:aspect-auto md:h-[min(70vh,560px)] touch-manipulation"
                   role="region"
                   aria-label="Product gallery"
                   aria-roledescription="carousel"
                   onTouchStart={onGalleryTouchStart}
                   onTouchEnd={onGalleryTouchEnd}
+                  onClick={onGalleryClick}
                 >
                   {product.images.length > 0 ? (
                     <img
@@ -999,6 +1381,16 @@ export default function ProductDetail() {
                       No image
                     </div>
                   )}
+                  {tapHearts.map((heart) => (
+                    <span
+                      key={heart.id}
+                      className="pointer-events-none absolute text-red-500 drop-shadow-sm animate-[ping_0.8s_cubic-bezier(0,0,0.2,1)_1]"
+                      style={{ left: heart.x, top: heart.y, transform: "translate(-50%, -50%)" }}
+                      aria-hidden
+                    >
+                      <Heart className="w-12 h-12" />
+                    </span>
+                  ))}
                 {product.images.length > 1 && (
                   <>
                     <button
@@ -1356,6 +1748,94 @@ export default function ProductDetail() {
               )}
             </section>
 
+            <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200/80 sm:p-5">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Comments</h2>
+                <span className="text-xs text-gray-500 tabular-nums">{commentsTotal} total</span>
+              </div>
+              <form onSubmit={(e) => void handleSubmitComment(e)} className="mb-4 space-y-2">
+                <Textarea
+                  value={commentInput}
+                  onChange={(e) => setCommentInput(e.target.value)}
+                  placeholder="Share your thoughts about this product"
+                  className="min-h-[88px]"
+                />
+                <div className="flex items-center gap-2">
+                  {!authUser ? (
+                    <span className="text-xs text-gray-500">Sign in to add a comment.</span>
+                  ) : null}
+                  <button
+                    type="submit"
+                    disabled={commentBusy || !commentInput.trim()}
+                    className="ml-auto inline-flex items-center justify-center rounded-lg bg-[#16a34a] px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#15803d] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {commentBusy ? "Posting…" : "Post comment"}
+                  </button>
+                </div>
+              </form>
+              {!commentsReady ? (
+                <p className="text-sm text-gray-500">Loading comments…</p>
+              ) : comments.length === 0 ? (
+                <p className="text-sm text-gray-500">No comments yet. Be the first to share.</p>
+              ) : (
+                <ul className="space-y-3">
+                  {comments.map((c) => (
+                    <li key={c.id} className="rounded-xl bg-gray-50/90 p-3 ring-1 ring-gray-100">
+                      <div className="flex items-start gap-3">
+                        <img
+                          src={c.user_avatar}
+                          alt=""
+                          className="h-10 w-10 shrink-0 rounded-full bg-gray-100 object-cover ring-1 ring-gray-100"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <p className="text-sm font-semibold text-gray-900">{c.user_name}</p>
+                              <p className="text-[11px] text-gray-400">
+                                {new Date(c.created_at).toLocaleString(undefined, {
+                                  dateStyle: "medium",
+                                  timeStyle: "short",
+                                })}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              disabled={commentLikeBusy.has(c.id)}
+                              onClick={() => void handleToggleCommentLike(c.id)}
+                              className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-semibold ring-1 transition-colors ${
+                                c.liked_by_me
+                                  ? "bg-red-50 text-red-600 ring-red-100"
+                                  : "bg-white text-gray-600 ring-gray-200 hover:bg-gray-50"
+                              } disabled:cursor-not-allowed disabled:opacity-50`}
+                              aria-label={c.liked_by_me ? "Unlike comment" : "Like comment"}
+                            >
+                              <Heart className={`w-4 h-4 ${c.liked_by_me ? "fill-current" : ""}`} />
+                              <span className="tabular-nums">{c.like_count}</span>
+                            </button>
+                          </div>
+                          {c.comment.trim() ? (
+                            <p className="mt-2 whitespace-pre-wrap break-words text-sm text-gray-800">{c.comment.trim()}</p>
+                          ) : null}
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {commentsHasMore ? (
+                <div className="mt-4">
+                  <button
+                    type="button"
+                    onClick={() => void loadComments(false, commentsLengthRef.current)}
+                    disabled={commentsLoading}
+                    className="inline-flex items-center justify-center rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-800 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {commentsLoading ? "Loading…" : "Load more comments"}
+                  </button>
+                </div>
+              ) : null}
+            </section>
+
             <section className="rounded-2xl bg-amber-50/90 px-4 py-4 text-sm text-gray-800 ring-1 ring-amber-100/80">
               <p className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
                 <Shield className="w-4 h-4 text-amber-700 shrink-0" aria-hidden />
@@ -1440,6 +1920,48 @@ export default function ProductDetail() {
           </button>
         </div>
       </div>
+
+      {zoomOpen ? (
+        <div
+          className="fixed inset-0 z-[60] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={closeZoom}
+          role="dialog"
+          aria-label="Zoomed product image"
+        >
+          <div className="relative h-full w-full max-w-5xl" onClick={(e) => e.stopPropagation()}>
+            <div
+              className="h-full w-full overflow-hidden rounded-2xl bg-black touch-none"
+              onPointerDown={onZoomPointerDown}
+              onPointerMove={onZoomPointerMove}
+              onPointerUp={onZoomPointerUp}
+              onPointerCancel={onZoomPointerUp}
+              onWheel={onZoomWheel}
+            >
+              {product.images.length > 0 ? (
+                <img
+                  src={product.images[currentImageIndex]}
+                  alt={product.title}
+                  className="h-full w-full object-contain select-none"
+                  style={{ transform: `translate(${zoomOffset.x}px, ${zoomOffset.y}px) scale(${zoomScale})` }}
+                  draggable={false}
+                />
+              ) : (
+                <div className="h-full w-full flex items-center justify-center text-gray-300">No image</div>
+              )}
+            </div>
+            <div className="absolute top-3 right-3 flex items-center gap-2">
+              <span className="text-[11px] text-white/80 bg-black/50 rounded-full px-3 py-1">Pinch to zoom, tap to close</span>
+              <button
+                type="button"
+                onClick={closeZoom}
+                className="rounded-full bg-white/90 px-3 py-1 text-xs font-semibold text-gray-900 shadow-sm hover:bg-white"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

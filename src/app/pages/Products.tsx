@@ -319,6 +319,7 @@ export default function Products() {
   const [products, setProducts] = useState<Array<Record<string, unknown>>>([]);
   const [isLoadingProducts, setIsLoadingProducts] = useState<boolean>(true);
   const [productLoadError, setProductLoadError] = useState<string | null>(null);
+  const [commentCounts, setCommentCounts] = useState<Record<string, number>>({});
   const [likedProductIds, setLikedProductIds] = useState<Set<number>>(new Set());
 
   const filterOpts: ListingFilterOpts = useMemo(
@@ -364,6 +365,39 @@ export default function Products() {
       cancelled = true;
     };
   }, [authUser?.id, products]);
+
+  useEffect(() => {
+    const ids = products.map((p) => String(p.id)).filter(Boolean);
+    if (ids.length === 0) {
+      setCommentCounts({});
+      return;
+    }
+    let cancelled = false;
+    const loadCommentCounts = async () => {
+      const { data, error } = await supabase
+        .from("product_comments")
+        .select("product_id")
+        .in("product_id", ids);
+      if (cancelled) return;
+      if (error) {
+        console.warn("Products comment counts:", error.message);
+        setCommentCounts({});
+        return;
+      }
+      const map: Record<string, number> = {};
+      for (const row of (data ?? []) as { product_id: string | number }[]) {
+        if (row.product_id != null) {
+          const key = String(row.product_id);
+          map[key] = (map[key] ?? 0) + 1;
+        }
+      }
+      setCommentCounts(map);
+    };
+    void loadCommentCounts();
+    return () => {
+      cancelled = true;
+    };
+  }, [products]);
 
   const currentPage = parseListingPageParam(searchParams.get("page"));
 
@@ -787,26 +821,28 @@ export default function Products() {
               <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4">
                 {products.map((product) => {
                   const pid = Number(product.id);
+                  const row = product as Record<string, unknown>;
                   return (
-                    <Link key={String(product.id)} to={`/products/${product.id}`} className="block h-full">
-                      <ProductCard
-                        image={getProductThumbnailUrl(product as Record<string, unknown>)}
-                        condition={String(product.condition ?? "Good")}
-                        title={String(product.title ?? "")}
-                        titleAdornment={getTierIcon(String(product.sellerTier ?? ""))}
-                        price={Number(product.price) || 0}
-                        priceDisplay={formatPrice(Number(product.price) || 0)}
-                        location={String(product.location ?? "")}
-                        rating={Number(product.rating) || 0}
-                        reviews={product.reviews != null ? Number(product.reviews) : undefined}
-                        productId={Number.isFinite(pid) ? pid : undefined}
-                        viewsCount={Number(product.views ?? 0)}
-                        likesCount={Number(product.like_count ?? 0)}
-                        liked={likedProductIds.has(pid)}
-                        onLikeClick={(ev) => void onProductLike(ev, product)}
-                        topRightBadge={<BoostCardBadge row={product as Record<string, unknown>} />}
-                      />
-                    </Link>
+                    <ProductCard
+                      key={String(product.id)}
+                      href={`/products/${product.id}`}
+                      image={getProductThumbnailUrl(row)}
+                      condition={String(product.condition ?? "Good")}
+                      title={String(product.title ?? "")}
+                      titleAdornment={getTierIcon(String(product.sellerTier ?? ""))}
+                      price={Number(product.price) || 0}
+                      priceDisplay={formatPrice(Number(product.price) || 0)}
+                      location={String(product.location ?? "")}
+                      rating={Number(product.rating) || 0}
+                      reviews={product.reviews != null ? Number(product.reviews) : undefined}
+                      productId={Number.isFinite(pid) ? pid : String(row.id ?? "")}
+                      viewsCount={Number(product.views ?? 0)}
+                      likesCount={Number(product.like_count ?? 0)}
+                      commentCount={commentCounts[String(product.id)] ?? 0}
+                      liked={likedProductIds.has(pid)}
+                      onLikeClick={(ev) => void onProductLike(ev, product)}
+                      topRightBadge={<BoostCardBadge row={row} />}
+                    />
                   );
                 })}
               </div>

@@ -3,6 +3,12 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 /** Persisted in DB: sent → delivered → read. `sending` is optimistic UI only (see client_sending). */
 export type ChatMessageDeliveryStatus = "sent" | "delivered" | "read";
 
+export type ChatMessageReplyPreview = {
+  id: string;
+  sender_id: string;
+  message: string;
+};
+
 export type ChatMessageRow = {
   id: string;
   sender_id: string;
@@ -11,17 +17,56 @@ export type ChatMessageRow = {
   status: ChatMessageDeliveryStatus | string;
   delivered_at: string | null;
   read_at: string | null;
+  reply_to_id: string | null;
+  reply_preview: ChatMessageReplyPreview | null;
   /** Local only: message is being sent to the server */
   client_sending?: boolean;
 };
 
+export const CHAT_MESSAGE_BASE_COLUMNS =
+  "id, sender_id, message, created_at, status, delivered_at, read_at, reply_to_id";
+
 export const CHAT_MESSAGE_COLUMNS =
-  "id, sender_id, message, created_at, status, delivered_at, read_at";
+  `${CHAT_MESSAGE_BASE_COLUMNS}, reply_to:chat_messages!chat_messages_reply_to_id_fkey(id, sender_id, message)`;
+
+function normalizeReplyPreview(raw: unknown): ChatMessageReplyPreview | null {
+  if (!raw) return null;
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (!value || typeof value !== "object") return null;
+  const row = value as Record<string, unknown>;
+  if (row.id == null || row.sender_id == null) return null;
+  return {
+    id: String(row.id),
+    sender_id: String(row.sender_id),
+    message: String(row.message ?? ""),
+  };
+}
+
+export function resolveChatMessageReplyPreviews(rows: ChatMessageRow[]): ChatMessageRow[] {
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  return rows.map((row) => {
+    if (row.reply_preview || !row.reply_to_id) return row;
+    const target = byId.get(row.reply_to_id);
+    if (!target) return row;
+    return {
+      ...row,
+      reply_preview: {
+        id: target.id,
+        sender_id: target.sender_id,
+        message: target.message,
+      },
+    };
+  });
+}
 
 export function normalizeChatMessageRow(raw: Record<string, unknown>): ChatMessageRow {
   const st = raw.status;
   const status: ChatMessageDeliveryStatus =
     st === "delivered" || st === "read" || st === "sent" ? st : "sent";
+  const replyPreview =
+    normalizeReplyPreview(raw.reply_preview) ??
+    normalizeReplyPreview(raw.reply_to) ??
+    normalizeReplyPreview(raw.replied_message);
   return {
     id: String(raw.id),
     sender_id: String(raw.sender_id),
@@ -30,6 +75,8 @@ export function normalizeChatMessageRow(raw: Record<string, unknown>): ChatMessa
     status,
     delivered_at: (raw.delivered_at as string | null) ?? null,
     read_at: (raw.read_at as string | null) ?? null,
+    reply_to_id: (raw.reply_to_id as string | null) ?? null,
+    reply_preview: replyPreview,
   };
 }
 
@@ -48,15 +95,29 @@ export async function fetchChatMessagesForConversation(
   supabase: SupabaseClient,
   conversationId: string,
 ): Promise<{ data: ChatMessageRow[]; error: { message: string } | null }> {
-  const sel = CHAT_MESSAGE_COLUMNS;
-  const q1 = await supabase
-    .from("chat_messages")
-    .select(sel)
-    .eq("conversation_id", conversationId)
-    .order("created_at", { ascending: true });
+  const selectRows = async (table: "chat_messages" | "messages") => {
+    const withReply = await supabase
+      .from(table)
+      .select(CHAT_MESSAGE_COLUMNS)
+      .eq("conversation_id", conversationId)
+      .order("created_at", { ascending: true });
+
+    if (!withReply.error) return withReply;
+
+    const fallback = await supabase
+      .from(table)
+      .select(CHAT_MESSAGE_BASE_COLUMNS)
+      .eq("conversation_id", conversationId)
+      .order("created_at", { ascending: true });
+
+    return fallback;
+  };
+  const q1 = await selectRows("chat_messages");
 
   if (!q1.error) {
-    const rows = (q1.data ?? []).map((r) => normalizeChatMessageRow(r as Record<string, unknown>));
+    const rows = resolveChatMessageReplyPreviews(
+      (q1.data ?? []).map((r) => normalizeChatMessageRow(r as Record<string, unknown>)),
+    );
     return { data: rows, error: null };
   }
 
@@ -68,16 +129,14 @@ export async function fetchChatMessagesForConversation(
     return { data: [], error: { message: q1.error.message } };
   }
 
-  const q2 = await supabase
-    .from("messages")
-    .select(sel)
-    .eq("conversation_id", conversationId)
-    .order("created_at", { ascending: true });
+  const q2 = await selectRows("messages");
 
   if (q2.error) {
     return { data: [], error: { message: q2.error.message } };
   }
-  const rows = (q2.data ?? []).map((r) => normalizeChatMessageRow(r as Record<string, unknown>));
+  const rows = resolveChatMessageReplyPreviews(
+    (q2.data ?? []).map((r) => normalizeChatMessageRow(r as Record<string, unknown>)),
+  );
   return { data: rows, error: null };
 }
 

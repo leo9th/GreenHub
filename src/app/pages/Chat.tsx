@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback, useMemo, Fragment } from "rea
 import { useParams, useNavigate, useSearchParams, Link } from "react-router";
 import {
   ArrowLeft,
+  ArrowDown,
   Send,
   MoreVertical,
   Phone,
@@ -9,6 +10,7 @@ import {
   CheckCheck,
   Clock,
   MessageCircle,
+  Reply,
   Search,
   User,
   Settings,
@@ -35,15 +37,23 @@ import {
   type ConversationRow,
 } from "../utils/chatConversations";
 import {
+  CHAT_MESSAGE_BASE_COLUMNS,
   CHAT_MESSAGE_COLUMNS,
   fetchChatMessagesForConversation,
   markConversationMessagesDelivered,
   markConversationMessagesRead,
   normalizeChatMessageRow,
   outgoingReceiptPhase,
+  resolveChatMessageReplyPreviews,
   type ChatMessageRow,
 } from "../utils/chatMessages";
 import { formatListTime, useInboxConversationList } from "../hooks/useInboxConversationList";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "../components/ui/context-menu";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -53,6 +63,7 @@ import {
   DropdownMenuTrigger,
 } from "../components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popover";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "../components/ui/sheet";
 import {
   toggleProductLike,
   fetchProductLikeCount,
@@ -255,6 +266,14 @@ function dayDividerLabel(iso: string): string {
   return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
 }
 
+function messagePreviewText(message: string): string {
+  const normalized = message.replace(/\s+/g, " ").trim();
+  return normalized || "Message";
+}
+
+const MOBILE_REPLY_HOLD_MS = 420;
+type ExternalChannel = "voice" | "whatsapp";
+
 type StripProduct = {
   id: number;
   title: string;
@@ -275,11 +294,26 @@ export default function Chat() {
   const formatPrice = useCurrency();
   const [message, setMessage] = useState("");
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<ChatMessageRow | null>(null);
+  const [mobileActionMessage, setMobileActionMessage] = useState<ChatMessageRow | null>(null);
+  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
+  const [isNearBottom, setIsNearBottom] = useState(true);
+  const [showScrollToLatest, setShowScrollToLatest] = useState(false);
+  const [pendingNewMessages, setPendingNewMessages] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesScrollerRef = useRef<HTMLDivElement>(null);
+  const messageRefs = useRef(new Map<string, HTMLDivElement>());
   const composerRef = useRef<HTMLInputElement>(null);
   const typingBroadcastRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const peerTypingClearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typingChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const highlightClearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const feedStateRef = useRef<{ count: number; lastMessageId: string | null; peerTyping: boolean }>({
+    count: 0,
+    lastMessageId: null,
+    peerTyping: false,
+  });
 
   const [conversation, setConversation] = useState<ConversationRow | null>(null);
   const [peerId, setPeerId] = useState<string | null>(null);
@@ -321,13 +355,173 @@ export default function Chat() {
 
   const peerFirstName = useMemo(() => peerName.split(/\s+/)[0] || "Member", [peerName]);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
+  const setMessageNode = useCallback((messageId: string, node: HTMLDivElement | null) => {
+    if (node) messageRefs.current.set(messageId, node);
+    else messageRefs.current.delete(messageId);
+  }, []);
+
+  const updateScrollState = useCallback(() => {
+    const el = messagesScrollerRef.current;
+    if (!el) return;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 96;
+    setIsNearBottom(nearBottom);
+    if (nearBottom) {
+      setShowScrollToLatest(false);
+      setPendingNewMessages(0);
+    }
+  }, []);
+
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
+    messagesEndRef.current?.scrollIntoView({ behavior });
+    setIsNearBottom(true);
+    setShowScrollToLatest(false);
+    setPendingNewMessages(0);
+  }, []);
+
+  const scrollToMessageNode = useCallback(
+    (messageId: string | null, options?: { behavior?: ScrollBehavior; block?: ScrollLogicalPosition }) => {
+      if (!messageId) return false;
+      const node = messageRefs.current.get(messageId);
+      if (!node) return false;
+      node.scrollIntoView({
+        behavior: options?.behavior ?? "smooth",
+        block: options?.block ?? "center",
+      });
+      return true;
+    },
+    [],
+  );
+
+  const focusComposer = useCallback(() => {
+    const el = composerRef.current;
+    if (!el) return;
+    el.focus();
+    requestAnimationFrame(() => {
+      el.focus();
+      const len = el.value.length;
+      try {
+        el.setSelectionRange(len, len);
+      } catch {
+        /* noop */
+      }
+    });
+  }, []);
+
+  const senderLabel = useCallback(
+    (senderId: string) => {
+      if (senderId === authUser?.id) return "You";
+      if (senderId === peerId) return peerFirstName;
+      return "Member";
+    },
+    [authUser?.id, peerId, peerFirstName],
+  );
+
+  const selectReply = useCallback(
+    (msg: ChatMessageRow) => {
+      setReplyingTo(msg);
+      setMobileActionMessage(null);
+      focusComposer();
+    },
+    [focusComposer],
+  );
+
+  const cancelReply = useCallback(() => {
+    setReplyingTo(null);
+    setMobileActionMessage(null);
+  }, []);
+
+  const clearPendingLongPress = useCallback(() => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  }, []);
+
+  const handleMessagePointerDown = useCallback(
+    (msg: ChatMessageRow, pointerType: string | undefined) => {
+      if (pointerType !== "touch" && pointerType !== "pen") return;
+      clearPendingLongPress();
+      longPressTimerRef.current = setTimeout(() => {
+        setMobileActionMessage(msg);
+      }, MOBILE_REPLY_HOLD_MS);
+    },
+    [clearPendingLongPress],
+  );
+
+  const jumpToMessage = useCallback(
+    (messageId: string | null) => {
+      if (!messageId) return;
+      const didScroll = scrollToMessageNode(messageId, { block: "center" });
+      if (!didScroll) {
+        toast.message("Original message is not visible in this chat yet.");
+        return;
+      }
+      setHighlightedMessageId(messageId);
+      setShowScrollToLatest(true);
+      setPendingNewMessages(0);
+      if (highlightClearRef.current) clearTimeout(highlightClearRef.current);
+      highlightClearRef.current = setTimeout(() => {
+        setHighlightedMessageId((current) => (current === messageId ? null : current));
+      }, 1800);
+    },
+    [scrollToMessageNode],
+  );
+
+  const highlightMessage = useCallback((messageId: string) => {
+    setHighlightedMessageId(messageId);
+    if (highlightClearRef.current) clearTimeout(highlightClearRef.current);
+    highlightClearRef.current = setTimeout(() => {
+      setHighlightedMessageId((current) => (current === messageId ? null : current));
+    }, 1800);
+  }, []);
 
   useEffect(() => {
-    scrollToBottom();
-  }, [messages, peerTyping]);
+    const prev = feedStateRef.current;
+    const lastMessage = messages[messages.length - 1] ?? null;
+    const lastMessageId = lastMessage?.id ?? null;
+    const hasNewMessage = lastMessageId !== prev.lastMessageId || messages.length !== prev.count;
+    const typingStarted = peerTyping && !prev.peerTyping;
+    const newestIsMine = lastMessage?.sender_id === authUser?.id;
+
+    if (hasNewMessage) {
+      if (newestIsMine || isNearBottom) scrollToBottom(prev.count === 0 ? "auto" : "smooth");
+      else {
+        setShowScrollToLatest(true);
+        setPendingNewMessages((count) => count + 1);
+      }
+    } else if (typingStarted && isNearBottom) {
+      scrollToBottom("smooth");
+    }
+
+    feedStateRef.current = { count: messages.length, lastMessageId, peerTyping };
+  }, [authUser?.id, isNearBottom, messages, peerTyping, scrollToBottom]);
+
+  useEffect(() => {
+    updateScrollState();
+  }, [messages.length, peerTyping, updateScrollState]);
+
+  useEffect(() => {
+    return () => {
+      clearPendingLongPress();
+      if (highlightClearRef.current) clearTimeout(highlightClearRef.current);
+    };
+  }, [clearPendingLongPress]);
+
+  useEffect(() => {
+    if (!replyingTo) return;
+    const next = messages.find((msg) => msg.id === replyingTo.id);
+    if (!next) {
+      setReplyingTo(null);
+      return;
+    }
+    if (
+      next.message !== replyingTo.message ||
+      next.created_at !== replyingTo.created_at ||
+      next.sender_id !== replyingTo.sender_id
+    ) {
+      setReplyingTo(next);
+    }
+  }, [messages, replyingTo]);
 
   const resolveConversation = useCallback(async () => {
     const threadId = threadIdParam?.trim() ?? legacyThreadId?.trim();
@@ -463,6 +657,9 @@ export default function Chat() {
 
       const { data: msgs, error: mErr } = await fetchChatMessagesForConversation(supabase, conv.id);
       if (mErr) throw new Error(mErr.message);
+      setReplyingTo(null);
+      setHighlightedMessageId(null);
+      setMobileActionMessage(null);
       setMessages(msgs);
     } catch (e: unknown) {
       console.error(e);
@@ -654,7 +851,11 @@ export default function Chat() {
         },
         (payload) => {
           const row = normalizeChatMessageRow(payload.new as Record<string, unknown>);
-          setMessages((prev) => (prev.some((m) => m.id === row.id) ? prev : [...prev, row]));
+          setMessages((prev) =>
+            prev.some((m) => m.id === row.id)
+              ? prev
+              : resolveChatMessageReplyPreviews([...prev, row]),
+          );
         },
       )
       .on(
@@ -668,7 +869,9 @@ export default function Chat() {
         (payload) => {
           const row = normalizeChatMessageRow(payload.new as Record<string, unknown>);
           setMessages((prev) =>
-            prev.map((m) => (m.id === row.id ? { ...m, ...row, client_sending: false } : m)),
+            resolveChatMessageReplyPreviews(
+              prev.map((m) => (m.id === row.id ? { ...m, ...row, client_sending: false } : m)),
+            ),
           );
         },
       )
@@ -744,6 +947,14 @@ export default function Chat() {
     if (!text || !authUser?.id || !conversation) return;
 
     const tempId = `pending-${crypto.randomUUID()}`;
+    const replyPreview =
+      replyingTo == null
+        ? null
+        : {
+            id: replyingTo.id,
+            sender_id: replyingTo.sender_id,
+            message: replyingTo.message,
+          };
     const optimistic: ChatMessageRow = {
       id: tempId,
       sender_id: authUser.id,
@@ -752,9 +963,11 @@ export default function Chat() {
       status: "sent",
       delivered_at: null,
       read_at: null,
+      reply_to_id: replyingTo?.id ?? null,
+      reply_preview: replyPreview,
       client_sending: true,
     };
-    setMessages((prev) => [...prev, optimistic]);
+    setMessages((prev) => resolveChatMessageReplyPreviews([...prev, optimistic]));
 
     setSendBusy(true);
     try {
@@ -764,24 +977,30 @@ export default function Chat() {
           conversation_id: conversation.id,
           sender_id: authUser.id,
           message: text,
+          reply_to_id: replyingTo?.id ?? null,
         })
-        .select(CHAT_MESSAGE_COLUMNS)
+        .select(CHAT_MESSAGE_BASE_COLUMNS)
         .single();
 
       if (error) throw error;
       if (inserted) {
-        const row = normalizeChatMessageRow(inserted as Record<string, unknown>);
+        const row = normalizeChatMessageRow({
+          ...(inserted as Record<string, unknown>),
+          reply_preview: replyPreview,
+        });
         setMessages((prev) => {
           const withoutPending = prev.filter((m) => m.id !== tempId);
           if (withoutPending.some((m) => m.id === row.id)) {
-            return withoutPending.map((m) =>
-              m.id === row.id ? { ...row, client_sending: false } : m,
+            return resolveChatMessageReplyPreviews(
+              withoutPending.map((m) => (m.id === row.id ? { ...row, client_sending: false } : m)),
             );
           }
-          return [...withoutPending, { ...row, client_sending: false }];
+          return resolveChatMessageReplyPreviews([...withoutPending, { ...row, client_sending: false }]);
         });
       }
       setMessage("");
+      cancelReply();
+      scrollToBottom("smooth");
     } catch (e: unknown) {
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
       toast.error(errorMessage(e, "Message not sent"));
@@ -825,20 +1044,20 @@ export default function Chat() {
     }
   }, [stripProduct]);
 
-  const focusComposer = useCallback(() => {
-    const el = composerRef.current;
-    if (!el) return;
-    el.focus();
-    requestAnimationFrame(() => {
-      el.focus();
-      const len = el.value.length;
-      try {
-        el.setSelectionRange(len, len);
-      } catch {
-        /* noop */
+  const openExternalChannel = useCallback(
+    (channel: ExternalChannel) => {
+      const links = phoneLinkTargets(peerPhone);
+      if (!links) return;
+      if (channel === "voice") {
+        toast.message("Voice calls open outside GreenHub. Call details will not appear in this chat.");
+        window.location.href = links.telHref;
+        return;
       }
-    });
-  }, []);
+      toast.message("WhatsApp opens outside GreenHub. Messages there will not sync back into this chat.");
+      window.open(links.waHref, "_blank", "noopener,noreferrer");
+    },
+    [peerPhone],
+  );
 
   const handleProductLikeToggle = useCallback(async () => {
     if (!authUser?.id || !stripProduct || likeBusy) return;
@@ -936,193 +1155,341 @@ export default function Chat() {
   }
 
   const peerContactLinks = phoneLinkTargets(peerPhone);
+  const channelBadges = [
+    {
+      key: "in-app",
+      label: "In-app chat",
+      detail: "History synced",
+      className: "bg-emerald-50 text-emerald-700 ring-emerald-100",
+    },
+    {
+      key: "whatsapp",
+      label: "WhatsApp",
+      detail: peerContactLinks ? "Off-platform" : "Unavailable",
+      className: peerContactLinks
+        ? "bg-white/90 text-gray-700 ring-gray-200"
+        : "bg-gray-100 text-gray-500 ring-gray-200",
+    },
+    {
+      key: "phone",
+      label: "Phone",
+      detail: peerContactLinks ? "Off-platform" : "Unavailable",
+      className: peerContactLinks
+        ? "bg-white/90 text-gray-700 ring-gray-200"
+        : "bg-gray-100 text-gray-500 ring-gray-200",
+    },
+  ] as const;
 
   const chatPanel = (
     <>
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#e4e6eb]">
-      <header className="z-10 shrink-0 border-b border-gray-200 bg-white shadow-sm">
-        <div className="px-3 py-2.5 sm:px-4">
-          <div className="flex items-center gap-2 sm:gap-3">
-            <button
-              type="button"
-              onClick={() => navigate("/messages")}
-              className="-ml-2 rounded-lg p-2 hover:bg-gray-100 md:hidden"
-              aria-label="Back to conversations"
-            >
-              <ArrowLeft className="h-5 w-5 text-gray-700" />
-            </button>
-            <div className="relative shrink-0">
-              <img
-                src={peerAvatar || getAvatarUrl(null, null, peerName)}
-                alt=""
-                className="h-10 w-10 rounded-full bg-gray-100 object-cover"
-              />
-            </div>
-            <div className="min-w-0 flex-1">
-              <h1 className="font-semibold text-gray-800">{peerName}</h1>
-              <p className="text-xs text-gray-600">Direct message</p>
-            </div>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className="rounded-lg p-2 text-gray-600 hover:bg-gray-100"
-                  aria-label="Call or WhatsApp"
-                >
-                  <Phone className="h-5 w-5" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-52">
-                <DropdownMenuLabel>Contact</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                {peerContactLinks ? (
-                  <>
-                    <DropdownMenuItem asChild>
-                      <a href={peerContactLinks.telHref}>Voice call</a>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem asChild>
-                      <a href={peerContactLinks.waHref} target="_blank" rel="noopener noreferrer">
-                        WhatsApp
-                      </a>
-                    </DropdownMenuItem>
-                  </>
-                ) : (
-                  <DropdownMenuItem
-                    disabled
-                    className="whitespace-normal text-xs font-normal text-gray-500"
-                  >
-                    No phone number — they can share one by enabling phone on their profile.
-                  </DropdownMenuItem>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className="rounded-lg p-2 text-gray-600 hover:bg-gray-100"
-                  aria-label="Chat settings"
-                >
-                  <MoreVertical className="h-5 w-5" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuLabel>Settings</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem asChild>
-                  <Link to={`/profile/${peerId}`} className="flex cursor-pointer items-center gap-2">
-                    <User className="h-4 w-4" />
-                    View profile
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link to="/settings" className="flex cursor-pointer items-center gap-2">
-                    <Settings className="h-4 w-4" />
-                    Account and notification settings
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  className="flex cursor-pointer items-center gap-2"
-                  onSelect={(e) => {
-                    e.preventDefault();
-                    const url = `${window.location.origin}/messages/c/${conversation.id}`;
-                    void navigator.clipboard.writeText(url).then(
-                      () => toast.success("Conversation link copied"),
-                      () => toast.error("Could not copy link"),
-                    );
-                  }}
-                >
-                  <Link2 className="h-4 w-4" />
-                  Copy conversation link
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-gradient-to-br from-emerald-50 via-[#eefbf4] to-lime-50">
+        <div
+          className="pointer-events-none absolute inset-0"
+          aria-hidden
+        >
+          <div className="absolute -left-14 top-10 h-44 w-44 rounded-full bg-emerald-300/20 blur-3xl" />
+          <div className="absolute right-0 top-1/3 h-64 w-64 rounded-full bg-lime-200/25 blur-3xl" />
+          <div className="absolute bottom-0 left-1/3 h-56 w-56 rounded-full bg-emerald-200/20 blur-3xl" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(34,197,94,0.14),transparent_34%),radial-gradient(circle_at_bottom_right,rgba(132,204,22,0.12),transparent_30%)]" />
         </div>
-      </header>
-
-      <div className="relative flex min-h-0 flex-1 flex-col">
-        <div className="chat-messages min-h-0 flex-1 overflow-y-auto overscroll-y-contain scroll-smooth px-3 py-3 sm:px-4 sm:py-4 [-webkit-overflow-scrolling:touch]">
-          <div className="flex flex-col pb-1">
-            {messages.map((msg, i) => {
-              const prev = i > 0 ? messages[i - 1] : null;
-              const next = i < messages.length - 1 ? messages[i + 1] : null;
-              const showDayDivider = !prev || dayKey(prev.created_at) !== dayKey(msg.created_at);
-              const sameCluster =
-                !!prev && prev.sender_id === msg.sender_id && withinMinutes(prev.created_at, msg.created_at, 8);
-              const sameNextCluster =
-                !!next && next.sender_id === msg.sender_id && withinMinutes(msg.created_at, next.created_at, 8);
-              const showMeta = !sameNextCluster;
-              const mine = msg.sender_id === authUser.id;
-              const mineTail = mine && !sameNextCluster;
-              const theirsTail = !mine && !sameNextCluster;
-              const t = new Date(msg.created_at);
-              const timeLabel = Number.isNaN(t.getTime()) ? "" : t.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-              const pad = sameCluster ? "px-3 py-1.5" : "p-3";
-              return (
-                <Fragment key={msg.id}>
-                  {showDayDivider ? (
-                    <div className="mb-3 flex justify-center">
-                      <span className="rounded-full bg-black/[0.07] px-3 py-1 text-[11px] font-semibold tracking-wide text-gray-600">
-                        {dayDividerLabel(msg.created_at)}
-                      </span>
-                    </div>
-                  ) : null}
-                  <div className={`flex ${sameCluster ? "mb-0.5" : "mb-2"} ${mine ? "justify-end" : "justify-start"}`}>
-                    <div className="flex max-w-[min(72%,20rem)] flex-col sm:max-w-[75%]">
-                      <div
-                        className={`${pad} shadow-sm ${
-                          mine
-                            ? mineTail
-                              ? "rounded-2xl rounded-tr-none bg-[#0084ff] text-white"
-                              : "rounded-2xl bg-[#0084ff] text-white"
-                            : theirsTail
-                              ? "rounded-2xl rounded-tl-none border border-gray-200/90 bg-white text-gray-900"
-                              : "rounded-2xl border border-gray-200/90 bg-white text-gray-900"
-                        }`}
-                      >
-                        <div className="whitespace-pre-wrap break-words text-[0.9375rem] leading-relaxed">{msg.message}</div>
-                      </div>
-                      {showMeta ? (
-                        <div
-                          className={`mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 px-0.5 ${mine ? "justify-end" : "justify-start"}`}
-                        >
-                          {timeLabel ? (
-                            <span className="text-[11px] tabular-nums text-gray-500">{timeLabel}</span>
-                          ) : null}
-                          {mine ? (
-                            <MessageReceiptTicks phase={outgoingReceiptPhase(msg)} />
-                          ) : msg.read_at ? (
-                            <span
-                              className="inline-flex items-center gap-0.5 text-sky-600"
-                              title="You read this message"
-                            >
-                              <CheckCheck className="h-3.5 w-3.5" strokeWidth={2.5} />
-                            </span>
-                          ) : null}
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-                </Fragment>
-              );
-            })}
-            {peerTyping ? (
-              <div className="mb-2 flex items-center gap-2 text-sm italic text-gray-600">
-                <span className="typing-dots flex gap-1" aria-hidden>
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400 [animation-delay:0ms]" />
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400 [animation-delay:150ms]" />
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400 [animation-delay:300ms]" />
-                </span>
-                <span>{peerFirstName} is typing…</span>
+        <header className="z-10 shrink-0 border-b border-emerald-100/80 bg-white/92 shadow-sm backdrop-blur">
+          <div className="px-3 py-2.5 sm:px-4">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <button
+                type="button"
+                onClick={() => navigate("/messages")}
+                className="-ml-2 rounded-lg p-2 hover:bg-gray-100 md:hidden"
+                aria-label="Back to conversations"
+              >
+                <ArrowLeft className="h-5 w-5 text-gray-700" />
+              </button>
+              <div className="relative shrink-0">
+                <img
+                  src={peerAvatar || getAvatarUrl(null, null, peerName)}
+                  alt=""
+                  className="h-10 w-10 rounded-full bg-gray-100 object-cover"
+                />
               </div>
-            ) : null}
-            <div ref={messagesEndRef} className="h-px shrink-0" aria-hidden />
+              <div className="min-w-0 flex-1">
+                <h1 className="font-semibold text-gray-800">{peerName}</h1>
+                <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px]">
+                  {channelBadges.map((badge) => (
+                    <span
+                      key={badge.key}
+                      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium ring-1 ${badge.className}`}
+                    >
+                      <span>{badge.label}</span>
+                      <span className="opacity-75">{badge.detail}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    className="rounded-lg p-2 text-gray-600 hover:bg-gray-100"
+                    aria-label="Call or WhatsApp"
+                  >
+                    <Phone className="h-5 w-5" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-72">
+                  <DropdownMenuLabel>Contact channels</DropdownMenuLabel>
+                  <div className="px-2 py-1.5 text-xs leading-relaxed text-gray-500">
+                    GreenHub chat keeps replies, read receipts, and message history here. WhatsApp and phone launch outside the app; GreenHub only logs that the handoff was opened for future analytics.
+                  </div>
+                  <DropdownMenuSeparator />
+                  {peerContactLinks ? (
+                    <>
+                      <DropdownMenuItem
+                        className="items-start gap-3 py-2"
+                        onSelect={(e) => {
+                          e.preventDefault();
+                          openExternalChannel("voice");
+                        }}
+                      >
+                        <Phone className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
+                        <div className="flex flex-col gap-0.5">
+                          <span className="font-medium text-gray-900">Phone call</span>
+                          <span className="text-xs text-gray-500">
+                            Off-platform. GreenHub logs the handoff only.
+                          </span>
+                        </div>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        className="items-start gap-3 py-2"
+                        onSelect={(e) => {
+                          e.preventDefault();
+                          openExternalChannel("whatsapp");
+                        }}
+                      >
+                        <MessageCircle className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
+                        <div className="flex flex-col gap-0.5">
+                          <span className="font-medium text-gray-900">WhatsApp</span>
+                          <span className="text-xs text-gray-500">
+                            Off-platform. Chat there will not sync back here.
+                          </span>
+                        </div>
+                      </DropdownMenuItem>
+                    </>
+                  ) : (
+                    <DropdownMenuItem
+                      disabled
+                      className="whitespace-normal text-xs font-normal text-gray-500"
+                    >
+                      No phone number — they can share one by enabling phone on their profile.
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    className="rounded-lg p-2 text-gray-600 hover:bg-gray-100"
+                    aria-label="Chat settings"
+                  >
+                    <MoreVertical className="h-5 w-5" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuLabel>Settings</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem asChild>
+                    <Link to={`/profile/${peerId}`} className="flex cursor-pointer items-center gap-2">
+                      <User className="h-4 w-4" />
+                      View profile
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link to="/settings" className="flex cursor-pointer items-center gap-2">
+                      <Settings className="h-4 w-4" />
+                      Account and notification settings
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className="flex cursor-pointer items-center gap-2"
+                    onSelect={(e) => {
+                      e.preventDefault();
+                      const url = `${window.location.origin}/messages/c/${conversation.id}`;
+                      void navigator.clipboard.writeText(url).then(
+                        () => toast.success("Conversation link copied"),
+                        () => toast.error("Could not copy link"),
+                      );
+                    }}
+                  >
+                    <Link2 className="h-4 w-4" />
+                    Copy conversation link
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
-        </div>
+        </header>
 
-        <div className="chat-composer-stack z-30 shrink-0 border-t border-gray-200 bg-white shadow-[0_-2px_10px_rgba(0,0,0,0.06)] pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+        <div className="relative z-10 flex min-h-0 flex-1 flex-col">
+          {showScrollToLatest ? (
+            <div className="pointer-events-none absolute inset-x-0 bottom-4 z-20 flex justify-center px-4">
+              <div className="pointer-events-auto flex flex-wrap justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => scrollToBottom("smooth")}
+                  className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white/95 px-3 py-2 text-sm font-medium text-emerald-700 shadow-lg backdrop-blur hover:bg-white"
+                >
+                  <ArrowDown className="h-4 w-4" />
+                  {pendingNewMessages > 0 ? `${pendingNewMessages} new ${pendingNewMessages === 1 ? "message" : "messages"}` : "Latest messages"}
+                </button>
+              </div>
+            </div>
+          ) : null}
+          <div
+            ref={messagesScrollerRef}
+            onScroll={updateScrollState}
+            className="chat-messages min-h-0 flex-1 overflow-y-auto overscroll-y-contain scroll-smooth px-3 py-3 sm:px-4 sm:py-4 [-webkit-overflow-scrolling:touch]"
+          >
+            <div className="flex flex-col pb-1">
+              {messages.map((msg, i) => {
+                const prev = i > 0 ? messages[i - 1] : null;
+                const next = i < messages.length - 1 ? messages[i + 1] : null;
+                const showDayDivider = !prev || dayKey(prev.created_at) !== dayKey(msg.created_at);
+                const sameCluster =
+                  !!prev && prev.sender_id === msg.sender_id && withinMinutes(prev.created_at, msg.created_at, 8);
+                const sameNextCluster =
+                  !!next && next.sender_id === msg.sender_id && withinMinutes(msg.created_at, next.created_at, 8);
+                const showMeta = !sameNextCluster;
+                const mine = msg.sender_id === authUser.id;
+                const mineTail = mine && !sameNextCluster;
+                const theirsTail = !mine && !sameNextCluster;
+                const t = new Date(msg.created_at);
+                const timeLabel = Number.isNaN(t.getTime())
+                  ? ""
+                  : t.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+                const pad = sameCluster ? "px-3 py-1.5" : "p-3";
+                const replyPreview = msg.reply_preview;
+                const quotedSender = replyPreview ? senderLabel(replyPreview.sender_id) : "Original message";
+                const isHighlighted = highlightedMessageId === msg.id;
+                return (
+                  <Fragment key={msg.id}>
+                    {showDayDivider ? (
+                      <div className="mb-3 flex justify-center">
+                        <span className="rounded-full bg-white/75 px-3 py-1 text-[11px] font-semibold tracking-wide text-gray-600 shadow-sm ring-1 ring-black/5 backdrop-blur">
+                          {dayDividerLabel(msg.created_at)}
+                        </span>
+                      </div>
+                    ) : null}
+                    <div
+                      ref={(node) => setMessageNode(msg.id, node)}
+                      className={`flex ${sameCluster ? "mb-0.5" : "mb-2"} ${mine ? "justify-end" : "justify-start"}`}
+                    >
+                      <ContextMenu>
+                        <ContextMenuTrigger asChild>
+                          <div
+                            className="group relative flex max-w-[min(78%,22rem)] flex-col sm:max-w-[75%]"
+                            onPointerDown={(e) => handleMessagePointerDown(msg, e.pointerType)}
+                            onPointerUp={clearPendingLongPress}
+                            onPointerMove={clearPendingLongPress}
+                            onPointerLeave={clearPendingLongPress}
+                            onPointerCancel={clearPendingLongPress}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => selectReply(msg)}
+                              className={`absolute top-2 z-10 hidden items-center gap-1.5 rounded-full border border-emerald-200 bg-white/95 px-2.5 py-1.5 text-xs font-medium text-emerald-700 shadow-sm transition hover:bg-emerald-50 focus:outline-none focus:ring-2 focus:ring-emerald-300 sm:flex ${
+                                mine
+                                  ? "left-0 -translate-x-[calc(100%+0.35rem)] opacity-0 group-hover:opacity-100"
+                                  : "right-0 translate-x-[calc(100%+0.35rem)] opacity-0 group-hover:opacity-100"
+                              }`}
+                              aria-label={`Reply to ${senderLabel(msg.sender_id)}`}
+                            >
+                              <Reply className="h-3.5 w-3.5" />
+                              <span>Reply</span>
+                            </button>
+                            <div
+                              className={`${pad} shadow-sm transition ${
+                                mine
+                                  ? mineTail
+                                    ? "rounded-2xl rounded-tr-none bg-[#0084ff] text-white"
+                                    : "rounded-2xl bg-[#0084ff] text-white"
+                                  : theirsTail
+                                    ? "rounded-2xl rounded-tl-none border border-white/75 bg-white/90 text-gray-900 backdrop-blur"
+                                    : "rounded-2xl border border-white/75 bg-white/90 text-gray-900 backdrop-blur"
+                              } ${isHighlighted ? "ring-2 ring-emerald-400 ring-offset-2 ring-offset-emerald-50" : ""}`}
+                            >
+                              {replyPreview || msg.reply_to_id ? (
+                                <button
+                                  type="button"
+                                  onClick={() => jumpToMessage(replyPreview?.id ?? msg.reply_to_id)}
+                                  className={`mb-2 block w-full rounded-xl border-l-4 px-3 py-2 text-left transition ${
+                                    mine
+                                      ? "border-white/60 bg-white/18 text-white/95 hover:bg-white/22"
+                                      : "border-emerald-400 bg-emerald-50/90 text-gray-700 hover:bg-emerald-50"
+                                  }`}
+                                  aria-label="Jump to original message"
+                                >
+                                  <p className="truncate text-[11px] font-semibold">{quotedSender}</p>
+                                  <p className="line-clamp-2 text-[12px] leading-snug opacity-90">
+                                    {replyPreview ? messagePreviewText(replyPreview.message) : "Original message unavailable"}
+                                  </p>
+                                </button>
+                              ) : null}
+                              <div className="whitespace-pre-wrap break-words text-[0.9375rem] leading-relaxed">
+                                {msg.message}
+                              </div>
+                            </div>
+                            {showMeta ? (
+                              <div
+                                className={`mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 px-0.5 ${mine ? "justify-end" : "justify-start"}`}
+                              >
+                                {timeLabel ? (
+                                  <span className="text-[11px] tabular-nums text-gray-500">{timeLabel}</span>
+                                ) : null}
+                                {mine ? (
+                                  <MessageReceiptTicks phase={outgoingReceiptPhase(msg)} />
+                                ) : msg.read_at ? (
+                                  <span
+                                    className="inline-flex items-center gap-0.5 text-sky-600"
+                                    title="You read this message"
+                                  >
+                                    <CheckCheck className="h-3.5 w-3.5" strokeWidth={2.5} />
+                                  </span>
+                                ) : null}
+                              </div>
+                            ) : null}
+                          </div>
+                        </ContextMenuTrigger>
+                        <ContextMenuContent className="w-40">
+                      <ContextMenuItem
+                        onSelect={() => {
+                          selectReply(msg);
+                          highlightMessage(msg.id);
+                        }}
+                      >
+                            <Reply className="h-4 w-4" />
+                            Reply
+                          </ContextMenuItem>
+                        </ContextMenuContent>
+                      </ContextMenu>
+                    </div>
+                  </Fragment>
+                );
+              })}
+              {peerTyping ? (
+                <div className="mb-2 flex items-center gap-2 text-sm italic text-gray-600">
+                  <span className="typing-dots flex gap-1" aria-hidden>
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400 [animation-delay:0ms]" />
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400 [animation-delay:150ms]" />
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400 [animation-delay:300ms]" />
+                  </span>
+                  <span>{peerFirstName} is typing…</span>
+                </div>
+              ) : null}
+              <div ref={messagesEndRef} className="h-px shrink-0" aria-hidden />
+            </div>
+          </div>
+
+          <div className="chat-composer-stack z-30 shrink-0 border-t border-emerald-100/90 bg-white/96 shadow-[0_-2px_10px_rgba(0,0,0,0.06)] backdrop-blur pb-[max(0.5rem,env(safe-area-inset-bottom))]">
           {stripProduct ? (
             <div className="product-context border-b border-gray-200 px-3 pt-3 sm:px-4">
               <div className="relative mx-auto max-w-md overflow-hidden rounded-2xl bg-gray-900 shadow-lg ring-1 ring-black/10">
@@ -1248,6 +1615,24 @@ export default function Chat() {
           ) : null}
 
           <div className="message-input-area px-3 py-3 sm:px-4">
+            {replyingTo ? (
+              <div className="mb-2 flex items-start justify-between gap-3 rounded-2xl border border-emerald-100 bg-emerald-50/80 px-3 py-2">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
+                    Replying to {senderLabel(replyingTo.sender_id)}
+                  </p>
+                  <p className="truncate text-sm text-emerald-950/80">{messagePreviewText(replyingTo.message)}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={cancelReply}
+                  className="shrink-0 rounded-full border border-emerald-200 px-3 py-1.5 text-xs font-medium text-emerald-800 hover:bg-emerald-100"
+                  aria-label="Cancel reply"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : null}
             <div className="flex items-center gap-2">
               <Popover open={emojiPickerOpen} onOpenChange={setEmojiPickerOpen}>
                 <PopoverTrigger asChild>
@@ -1284,7 +1669,7 @@ export default function Chat() {
                     void handleSend();
                   }
                 }}
-                placeholder="General comment..."
+                placeholder={replyingTo ? `Reply to ${senderLabel(replyingTo.sender_id)}...` : "General comment..."}
                 autoComplete="off"
                 className="message-input min-h-[44px] w-full min-w-0 flex-1 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#22c55e]"
               />
@@ -1302,6 +1687,32 @@ export default function Chat() {
         </div>
       </div>
       </div>
+      <Sheet open={mobileActionMessage != null} onOpenChange={(open) => !open && setMobileActionMessage(null)}>
+        <SheetContent side="bottom" className="rounded-t-3xl px-0 pb-[max(1rem,env(safe-area-inset-bottom))]">
+          <SheetHeader className="pb-2">
+            <SheetTitle>Message actions</SheetTitle>
+            <SheetDescription>Press and hold any message to reply on mobile.</SheetDescription>
+          </SheetHeader>
+          {mobileActionMessage ? (
+            <div className="px-4 pb-2">
+              <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 px-3 py-2 text-sm text-gray-700">
+                <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
+                  {senderLabel(mobileActionMessage.sender_id)}
+                </p>
+                <p className="line-clamp-3">{messagePreviewText(mobileActionMessage.message)}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => selectReply(mobileActionMessage)}
+                className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-[#22c55e] px-4 py-3 text-sm font-semibold text-white"
+              >
+                <Reply className="h-4 w-4" />
+                Reply
+              </button>
+            </div>
+          ) : null}
+        </SheetContent>
+      </Sheet>
     </>
   );
 
@@ -1400,9 +1811,9 @@ export default function Chat() {
   );
 
   return (
-    <div className="min-h-[calc(100dvh-4rem)] bg-gray-50 max-md:pt-3">
+    <div className="min-h-[calc(100dvh-4rem)] bg-[linear-gradient(180deg,#f0fdf4_0%,#f8fafc_22%,#f7fee7_100%)] max-md:pt-3">
       <div className={`mx-auto grid w-full max-w-[1100px] grid-cols-1 md:grid-cols-[minmax(260px,1fr)_minmax(0,2fr)] ${shellHeight}`}>
-        <aside className={`hidden min-h-0 flex-col border-r border-gray-200 bg-white md:flex ${shellHeight}`}>
+        <aside className={`hidden min-h-0 flex-col border-r border-emerald-100 bg-white/95 backdrop-blur md:flex ${shellHeight}`}>
           {conversationList}
         </aside>
 

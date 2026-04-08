@@ -204,3 +204,29 @@
     line-height: 1.5;
   }
 }
+
+@layer components {
+  .chat-pane {
+    --chat-header-height: 72px;
+    isolation: isolate;
+    overscroll-behavior-y: contain;
+  }
+
+  .chat-header-fixed {
+    position: sticky;
+    top: env(safe-area-inset-top, 0px);
+    z-index: 50;
+    height: var(--chat-header-height);
+  }
+
+  .chat-messages {
+    scroll-padding-top: calc(var(--chat-header-height, 72px) + 12px);
+    scroll-padding-bottom: 160px;
+  }
+
+  @supports (scrollbar-gutter: stable) {
+    .chat-messages {
+      scrollbar-gutter: stable both-edges;
+    }
+  }
+}

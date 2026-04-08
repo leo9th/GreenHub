@@ -6,15 +6,17 @@ import {
   Send,
   MoreVertical,
   Phone,
+  Copy,
   Check,
   CheckCheck,
   Clock,
   MessageCircle,
   Reply,
   Search,
+  Trash2,
   User,
-  Settings,
-  Link2,
+  Ban,
+  Eraser,
   Smile,
   ThumbsUp,
   Share2,
@@ -54,6 +56,16 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from "../components/ui/context-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "../components/ui/alert-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -106,6 +118,11 @@ function parseConversationInt(v: unknown): number | null {
   if (v == null) return null;
   const n = typeof v === "number" ? v : Number(v);
   return Number.isFinite(n) ? n : null;
+}
+
+function isUuidLike(value: string | null | undefined): boolean {
+  if (!value) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.trim());
 }
 
 function isDuplicateConversationError(err: { code?: string; message?: string }): boolean {
@@ -282,6 +299,20 @@ type StripProduct = {
   like_count: number;
 };
 
+type PendingConfirmAction =
+  | { kind: "delete-message"; message: ChatMessageRow }
+  | { kind: "delete-conversation" }
+  | { kind: "clear-chat" }
+  | null;
+
+function WhatsAppIcon({ className = "h-5 w-5" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden className={className} fill="currentColor">
+      <path d="M19.05 4.94A9.9 9.9 0 0 0 12 2a9.96 9.96 0 0 0-8.61 14.96L2 22l5.2-1.36A10 10 0 1 0 19.05 4.94ZM12 20.15a8.14 8.14 0 0 1-4.15-1.13l-.3-.18-3.09.81.83-3.01-.2-.31A8.13 8.13 0 1 1 12 20.15Zm4.46-6.1c-.24-.12-1.43-.7-1.65-.78-.22-.08-.38-.12-.54.12-.16.24-.62.78-.76.94-.14.16-.28.18-.52.06-.24-.12-1.01-.37-1.92-1.19-.71-.63-1.19-1.41-1.33-1.65-.14-.24-.02-.37.1-.49.11-.11.24-.28.36-.42.12-.14.16-.24.24-.4.08-.16.04-.3-.02-.42-.06-.12-.54-1.29-.74-1.77-.2-.47-.4-.4-.54-.41h-.46c-.16 0-.42.06-.64.3-.22.24-.84.82-.84 2s.86 2.32.98 2.48c.12.16 1.69 2.58 4.1 3.62.57.25 1.02.4 1.36.51.57.18 1.09.16 1.5.1.46-.07 1.43-.58 1.63-1.14.2-.56.2-1.04.14-1.14-.06-.1-.22-.16-.46-.28Z" />
+    </svg>
+  );
+}
+
 export default function Chat() {
   const { conversationId: threadIdParam, peerUserId: peerRouteParam, legacyThreadId } = useParams<{
     conversationId?: string;
@@ -300,6 +331,10 @@ export default function Chat() {
   const [isNearBottom, setIsNearBottom] = useState(true);
   const [showScrollToLatest, setShowScrollToLatest] = useState(false);
   const [pendingNewMessages, setPendingNewMessages] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState<number | null>(null);
+  const [activeSwipe, setActiveSwipe] = useState<{ messageId: string; offset: number } | null>(null);
+  const [pendingConfirmAction, setPendingConfirmAction] = useState<PendingConfirmAction>(null);
+  const [actionBusy, setActionBusy] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesScrollerRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef(new Map<string, HTMLDivElement>());
@@ -309,6 +344,7 @@ export default function Chat() {
   const typingChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const highlightClearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const swipeStartRef = useRef<{ messageId: string; x: number; y: number } | null>(null);
   const feedStateRef = useRef<{ count: number; lastMessageId: string | null; peerTyping: boolean }>({
     count: 0,
     lastMessageId: null,
@@ -448,6 +484,14 @@ export default function Chat() {
     [clearPendingLongPress],
   );
 
+  const openMobileReplyActions = useCallback(
+    (msg: ChatMessageRow) => {
+      clearPendingLongPress();
+      setMobileActionMessage(msg);
+    },
+    [clearPendingLongPress],
+  );
+
   const jumpToMessage = useCallback(
     (messageId: string | null) => {
       if (!messageId) return;
@@ -508,6 +552,24 @@ export default function Chat() {
   }, [clearPendingLongPress]);
 
   useEffect(() => {
+    const updateViewportHeight = () => {
+      const next = Math.round(window.visualViewport?.height ?? window.innerHeight);
+      setViewportHeight(next);
+    };
+
+    updateViewportHeight();
+    window.addEventListener("resize", updateViewportHeight);
+    window.visualViewport?.addEventListener("resize", updateViewportHeight);
+    window.visualViewport?.addEventListener("scroll", updateViewportHeight);
+
+    return () => {
+      window.removeEventListener("resize", updateViewportHeight);
+      window.visualViewport?.removeEventListener("resize", updateViewportHeight);
+      window.visualViewport?.removeEventListener("scroll", updateViewportHeight);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!replyingTo) return;
     const next = messages.find((msg) => msg.id === replyingTo.id);
     if (!next) {
@@ -536,6 +598,26 @@ export default function Chat() {
 
     if (threadId && peerFromUrl) {
       setLoadError("Invalid chat URL.");
+      setLoading(false);
+      return;
+    }
+
+    if (threadId && !isUuidLike(threadId)) {
+      setLoadError(
+        "This chat link is invalid. Open the conversation from Messages again so GreenHub can use the correct thread ID.",
+      );
+      setConversation(null);
+      setPeerId(null);
+      setLoading(false);
+      return;
+    }
+
+    if (peerFromUrl && !isUuidLike(peerFromUrl)) {
+      setLoadError(
+        "This user cannot be messaged from this link because the account ID is invalid. Open their profile or listing again and try Chat once more.",
+      );
+      setConversation(null);
+      setPeerId(null);
       setLoading(false);
       return;
     }
@@ -1132,6 +1214,144 @@ export default function Chat() {
     });
   }, []);
 
+  const closeMobileActions = useCallback(() => {
+    setMobileActionMessage(null);
+  }, []);
+
+  const copyMessageText = useCallback(async (msg: ChatMessageRow) => {
+    try {
+      await navigator.clipboard.writeText(msg.message);
+      toast.success("Message copied");
+      closeMobileActions();
+    } catch {
+      toast.error("Could not copy message");
+    }
+  }, [closeMobileActions]);
+
+  const forwardMessage = useCallback(async (msg: ChatMessageRow) => {
+    try {
+      if (navigator.share) {
+        await navigator.share({ text: msg.message });
+        toast.success("Message ready to forward");
+      } else {
+        await navigator.clipboard.writeText(msg.message);
+        toast.success("Message copied for forwarding");
+      }
+      closeMobileActions();
+    } catch {
+      toast.error("Could not forward message");
+    }
+  }, [closeMobileActions]);
+
+  const promptDeleteMessage = useCallback((msg: ChatMessageRow) => {
+    closeMobileActions();
+    setPendingConfirmAction({ kind: "delete-message", message: msg });
+  }, [closeMobileActions]);
+
+  const promptDeleteConversation = useCallback(() => {
+    setPendingConfirmAction({ kind: "delete-conversation" });
+  }, []);
+
+  const promptClearChat = useCallback(() => {
+    setPendingConfirmAction({ kind: "clear-chat" });
+  }, []);
+
+  const handleBlockUser = useCallback(() => {
+    navigate("/settings/blocked-users");
+    toast.message("Finish blocking this account from Settings.");
+  }, [navigate]);
+
+  const runPendingConfirmAction = useCallback(async () => {
+    if (!pendingConfirmAction || actionBusy) return;
+
+    setActionBusy(true);
+    try {
+      if (pendingConfirmAction.kind === "delete-message") {
+        const target = pendingConfirmAction.message;
+        const { error } = await supabase.from("chat_messages").delete().eq("id", target.id);
+        if (error) throw error;
+        setMessages((prev) => prev.filter((msg) => msg.id !== target.id));
+        setReplyingTo((current) => (current?.id === target.id ? null : current));
+        setHighlightedMessageId((current) => (current === target.id ? null : current));
+        toast.success("Message deleted");
+      } else if (pendingConfirmAction.kind === "delete-conversation") {
+        const { error } = await supabase.from("conversations").delete().eq("id", conversation.id);
+        if (error) throw error;
+        toast.success("Conversation deleted");
+        navigate("/messages", { replace: true });
+        return;
+      } else if (pendingConfirmAction.kind === "clear-chat") {
+        if (messages.length === 0) {
+          toast.message("Chat is already empty");
+        } else {
+          const { error } = await supabase.from("chat_messages").delete().eq("conversation_id", conversation.id);
+          if (error) {
+            toast.message("Bulk clear is not available in this project yet.");
+          } else {
+            setMessages([]);
+            setReplyingTo(null);
+            setHighlightedMessageId(null);
+            toast.success("Chat cleared");
+          }
+        }
+      }
+    } catch (e: unknown) {
+      toast.error(errorMessage(e, "Action failed"));
+    } finally {
+      setActionBusy(false);
+      setPendingConfirmAction(null);
+    }
+  }, [actionBusy, conversation.id, messages.length, navigate, pendingConfirmAction]);
+
+  const startSwipe = useCallback(
+    (msg: ChatMessageRow, pointerType: string | undefined, clientX: number, clientY: number) => {
+      if (pointerType !== "touch" && pointerType !== "pen") return;
+      swipeStartRef.current = { messageId: msg.id, x: clientX, y: clientY };
+      setActiveSwipe(null);
+    },
+    [],
+  );
+
+  const moveSwipe = useCallback(
+    (msg: ChatMessageRow, pointerType: string | undefined, clientX: number, clientY: number) => {
+      if (pointerType !== "touch" && pointerType !== "pen") return;
+      const start = swipeStartRef.current;
+      if (!start || start.messageId !== msg.id) return;
+      const deltaX = clientX - start.x;
+      const deltaY = clientY - start.y;
+      if (Math.abs(deltaY) > 10 && Math.abs(deltaY) > Math.abs(deltaX)) {
+        setActiveSwipe(null);
+        return;
+      }
+      if (deltaX > 0 && Math.abs(deltaX) > Math.abs(deltaY)) {
+        clearPendingLongPress();
+        setActiveSwipe({ messageId: msg.id, offset: Math.min(deltaX, 72) });
+      } else if (activeSwipe?.messageId === msg.id) {
+        setActiveSwipe(null);
+      }
+    },
+    [activeSwipe?.messageId, clearPendingLongPress],
+  );
+
+  const finishSwipe = useCallback(
+    (msg: ChatMessageRow) => {
+      clearPendingLongPress();
+      const offset = activeSwipe?.messageId === msg.id ? activeSwipe.offset : 0;
+      swipeStartRef.current = null;
+      setActiveSwipe(null);
+      if (offset >= 54) {
+        selectReply(msg);
+        highlightMessage(msg.id);
+      }
+    },
+    [activeSwipe, clearPendingLongPress, highlightMessage, selectReply],
+  );
+
+  const cancelSwipe = useCallback(() => {
+    swipeStartRef.current = null;
+    setActiveSwipe(null);
+  }, []);
+
   if (authLoading || loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center text-sm text-gray-600">Loading…</div>
@@ -1155,34 +1375,17 @@ export default function Chat() {
   }
 
   const peerContactLinks = phoneLinkTargets(peerPhone);
-  const channelBadges = [
-    {
-      key: "in-app",
-      label: "In-app chat",
-      detail: "History synced",
-      className: "bg-emerald-50 text-emerald-700 ring-emerald-100",
-    },
-    {
-      key: "whatsapp",
-      label: "WhatsApp",
-      detail: peerContactLinks ? "Off-platform" : "Unavailable",
-      className: peerContactLinks
-        ? "bg-white/90 text-gray-700 ring-gray-200"
-        : "bg-gray-100 text-gray-500 ring-gray-200",
-    },
-    {
-      key: "phone",
-      label: "Phone",
-      detail: peerContactLinks ? "Off-platform" : "Unavailable",
-      className: peerContactLinks
-        ? "bg-white/90 text-gray-700 ring-gray-200"
-        : "bg-gray-100 text-gray-500 ring-gray-200",
-    },
-  ] as const;
+  const chatViewportStyle = viewportHeight
+    ? ({ ["--chat-viewport-height" as string]: `${viewportHeight}px` } as { [key: string]: string })
+    : undefined;
+  const chatShellStyle = {
+    ...chatViewportStyle,
+    ["--chat-header-height" as string]: "72px",
+  } as { [key: string]: string };
 
   const chatPanel = (
     <>
-      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-gradient-to-br from-emerald-50 via-[#eefbf4] to-lime-50">
+      <div className="chat-pane relative isolate flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-gradient-to-br from-emerald-50 via-[#eefbf4] to-lime-50">
         <div
           className="pointer-events-none absolute inset-0"
           aria-hidden
@@ -1192,7 +1395,7 @@ export default function Chat() {
           <div className="absolute bottom-0 left-1/3 h-56 w-56 rounded-full bg-emerald-200/20 blur-3xl" />
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(34,197,94,0.14),transparent_34%),radial-gradient(circle_at_bottom_right,rgba(132,204,22,0.12),transparent_30%)]" />
         </div>
-        <header className="z-10 shrink-0 border-b border-emerald-100/80 bg-white/92 shadow-sm backdrop-blur">
+        <header className="chat-header-fixed z-40 shrink-0 border-b border-emerald-100/80 bg-white/95 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-white/88">
           <div className="px-3 py-2.5 sm:px-4">
             <div className="flex items-center gap-2 sm:gap-3">
               <button
@@ -1212,77 +1415,28 @@ export default function Chat() {
               </div>
               <div className="min-w-0 flex-1">
                 <h1 className="font-semibold text-gray-800">{peerName}</h1>
-                <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px]">
-                  {channelBadges.map((badge) => (
-                    <span
-                      key={badge.key}
-                      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium ring-1 ${badge.className}`}
-                    >
-                      <span>{badge.label}</span>
-                      <span className="opacity-75">{badge.detail}</span>
-                    </span>
-                  ))}
-                </div>
+                <p className="mt-0.5 truncate text-xs text-gray-500">Always-on chat</p>
               </div>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    type="button"
-                    className="rounded-lg p-2 text-gray-600 hover:bg-gray-100"
-                    aria-label="Call or WhatsApp"
-                  >
-                    <Phone className="h-5 w-5" />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-72">
-                  <DropdownMenuLabel>Contact channels</DropdownMenuLabel>
-                  <div className="px-2 py-1.5 text-xs leading-relaxed text-gray-500">
-                    GreenHub chat keeps replies, read receipts, and message history here. WhatsApp and phone launch outside the app; GreenHub only logs that the handoff was opened for future analytics.
-                  </div>
-                  <DropdownMenuSeparator />
-                  {peerContactLinks ? (
-                    <>
-                      <DropdownMenuItem
-                        className="items-start gap-3 py-2"
-                        onSelect={(e) => {
-                          e.preventDefault();
-                          openExternalChannel("voice");
-                        }}
-                      >
-                        <Phone className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
-                        <div className="flex flex-col gap-0.5">
-                          <span className="font-medium text-gray-900">Phone call</span>
-                          <span className="text-xs text-gray-500">
-                            Off-platform. GreenHub logs the handoff only.
-                          </span>
-                        </div>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        className="items-start gap-3 py-2"
-                        onSelect={(e) => {
-                          e.preventDefault();
-                          openExternalChannel("whatsapp");
-                        }}
-                      >
-                        <MessageCircle className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
-                        <div className="flex flex-col gap-0.5">
-                          <span className="font-medium text-gray-900">WhatsApp</span>
-                          <span className="text-xs text-gray-500">
-                            Off-platform. Chat there will not sync back here.
-                          </span>
-                        </div>
-                      </DropdownMenuItem>
-                    </>
-                  ) : (
-                    <DropdownMenuItem
-                      disabled
-                      className="whitespace-normal text-xs font-normal text-gray-500"
-                    >
-                      No phone number — they can share one by enabling phone on their profile.
-                    </DropdownMenuItem>
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <button
+                type="button"
+                className="rounded-lg p-2 text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label="Call user"
+                title={peerContactLinks ? "Call user" : undefined}
+                disabled={!peerContactLinks}
+                onClick={() => openExternalChannel("voice")}
+              >
+                <Phone className="h-5 w-5" />
+              </button>
+              <button
+                type="button"
+                className="rounded-lg p-2 text-[#25D366] hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label="Open WhatsApp"
+                title={peerContactLinks ? "Open WhatsApp" : undefined}
+                disabled={!peerContactLinks}
+                onClick={() => openExternalChannel("whatsapp")}
+              >
+                <WhatsAppIcon className="h-5 w-5" />
+              </button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
@@ -1294,34 +1448,44 @@ export default function Chat() {
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuLabel>Settings</DropdownMenuLabel>
+                  <DropdownMenuLabel>Chat options</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className="flex cursor-pointer items-center gap-2"
+                    onSelect={(e) => {
+                      e.preventDefault();
+                      promptDeleteConversation();
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Delete conversation
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="flex cursor-pointer items-center gap-2"
+                    onSelect={(e) => {
+                      e.preventDefault();
+                      handleBlockUser();
+                    }}
+                  >
+                    <Ban className="h-4 w-4" />
+                    Block user
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="flex cursor-pointer items-center gap-2"
+                    onSelect={(e) => {
+                      e.preventDefault();
+                      promptClearChat();
+                    }}
+                  >
+                    <Eraser className="h-4 w-4" />
+                    Clear chat
+                  </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem asChild>
                     <Link to={`/profile/${peerId}`} className="flex cursor-pointer items-center gap-2">
                       <User className="h-4 w-4" />
                       View profile
                     </Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem asChild>
-                    <Link to="/settings" className="flex cursor-pointer items-center gap-2">
-                      <Settings className="h-4 w-4" />
-                      Account and notification settings
-                    </Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    className="flex cursor-pointer items-center gap-2"
-                    onSelect={(e) => {
-                      e.preventDefault();
-                      const url = `${window.location.origin}/messages/c/${conversation.id}`;
-                      void navigator.clipboard.writeText(url).then(
-                        () => toast.success("Conversation link copied"),
-                        () => toast.error("Could not copy link"),
-                      );
-                    }}
-                  >
-                    <Link2 className="h-4 w-4" />
-                    Copy conversation link
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -1370,6 +1534,7 @@ export default function Chat() {
                 const replyPreview = msg.reply_preview;
                 const quotedSender = replyPreview ? senderLabel(replyPreview.sender_id) : "Original message";
                 const isHighlighted = highlightedMessageId === msg.id;
+                const swipeOffset = activeSwipe?.messageId === msg.id ? activeSwipe.offset : 0;
                 return (
                   <Fragment key={msg.id}>
                     {showDayDivider ? (
@@ -1381,18 +1546,42 @@ export default function Chat() {
                     ) : null}
                     <div
                       ref={(node) => setMessageNode(msg.id, node)}
-                      className={`flex ${sameCluster ? "mb-0.5" : "mb-2"} ${mine ? "justify-end" : "justify-start"}`}
+                      className={`scroll-mt-24 flex ${sameCluster ? "mb-0.5" : "mb-2"} ${mine ? "justify-end" : "justify-start"}`}
                     >
                       <ContextMenu>
                         <ContextMenuTrigger asChild>
                           <div
-                            className="group relative flex max-w-[min(78%,22rem)] flex-col sm:max-w-[75%]"
-                            onPointerDown={(e) => handleMessagePointerDown(msg, e.pointerType)}
-                            onPointerUp={clearPendingLongPress}
-                            onPointerMove={clearPendingLongPress}
-                            onPointerLeave={clearPendingLongPress}
-                            onPointerCancel={clearPendingLongPress}
+                            className="group relative flex max-w-[min(78%,22rem)] touch-manipulation select-none flex-col [touch-action:pan-y] sm:max-w-[75%] [-webkit-touch-callout:none] [-webkit-user-select:none]"
+                            onPointerDown={(e) => {
+                              handleMessagePointerDown(msg, e.pointerType);
+                              startSwipe(msg, e.pointerType, e.clientX, e.clientY);
+                            }}
+                            onPointerUp={() => finishSwipe(msg)}
+                            onPointerMove={(e) => moveSwipe(msg, e.pointerType, e.clientX, e.clientY)}
+                            onPointerLeave={() => {
+                              clearPendingLongPress();
+                              cancelSwipe();
+                            }}
+                            onPointerCancel={() => {
+                              clearPendingLongPress();
+                              cancelSwipe();
+                            }}
+                            onContextMenu={(e) => {
+                              if (window.matchMedia("(pointer: coarse)").matches) {
+                                e.preventDefault();
+                                openMobileReplyActions(msg);
+                              }
+                            }}
                           >
+                            <div className="pointer-events-none absolute inset-y-0 left-2 flex items-center">
+                              <div
+                                className={`rounded-full bg-emerald-100 p-2 text-emerald-700 transition ${
+                                  swipeOffset > 16 ? "scale-100 opacity-100" : "scale-75 opacity-0"
+                                }`}
+                              >
+                                <Reply className="h-4 w-4" />
+                              </div>
+                            </div>
                             <button
                               type="button"
                               onClick={() => selectReply(msg)}
@@ -1416,6 +1605,7 @@ export default function Chat() {
                                     ? "rounded-2xl rounded-tl-none border border-white/75 bg-white/90 text-gray-900 backdrop-blur"
                                     : "rounded-2xl border border-white/75 bg-white/90 text-gray-900 backdrop-blur"
                               } ${isHighlighted ? "ring-2 ring-emerald-400 ring-offset-2 ring-offset-emerald-50" : ""}`}
+                              style={swipeOffset > 0 ? { transform: `translateX(${swipeOffset}px)` } : undefined}
                             >
                               {replyPreview || msg.reply_to_id ? (
                                 <button
@@ -1437,6 +1627,17 @@ export default function Chat() {
                               <div className="whitespace-pre-wrap break-words text-[0.9375rem] leading-relaxed">
                                 {msg.message}
                               </div>
+                            </div>
+                            <div className={`mt-1 flex sm:hidden ${mine ? "justify-end" : "justify-start"}`}>
+                              <button
+                                type="button"
+                                onClick={() => selectReply(msg)}
+                                className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium text-emerald-700 hover:bg-emerald-50"
+                                aria-label={`Reply to ${senderLabel(msg.sender_id)}`}
+                              >
+                                <Reply className="h-3.5 w-3.5" />
+                                Reply
+                              </button>
                             </div>
                             {showMeta ? (
                               <div
@@ -1460,14 +1661,31 @@ export default function Chat() {
                           </div>
                         </ContextMenuTrigger>
                         <ContextMenuContent className="w-40">
-                      <ContextMenuItem
-                        onSelect={() => {
-                          selectReply(msg);
-                          highlightMessage(msg.id);
-                        }}
-                      >
+                          <ContextMenuItem
+                            onSelect={() => {
+                              selectReply(msg);
+                              highlightMessage(msg.id);
+                            }}
+                          >
                             <Reply className="h-4 w-4" />
                             Reply
+                          </ContextMenuItem>
+                          <ContextMenuItem onSelect={() => void copyMessageText(msg)}>
+                            <Copy className="h-4 w-4" />
+                            Copy text
+                          </ContextMenuItem>
+                          {mine ? (
+                            <ContextMenuItem
+                              className="text-red-600 focus:text-red-600"
+                              onSelect={() => promptDeleteMessage(msg)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              Delete
+                            </ContextMenuItem>
+                          ) : null}
+                          <ContextMenuItem onSelect={() => void forwardMessage(msg)}>
+                            <Share2 className="h-4 w-4" />
+                            Forward
                           </ContextMenuItem>
                         </ContextMenuContent>
                       </ContextMenu>
@@ -1489,8 +1707,8 @@ export default function Chat() {
             </div>
           </div>
 
-          <div className="chat-composer-stack z-30 shrink-0 border-t border-emerald-100/90 bg-white/96 shadow-[0_-2px_10px_rgba(0,0,0,0.06)] backdrop-blur pb-[max(0.5rem,env(safe-area-inset-bottom))]">
-          {stripProduct ? (
+          <div className="chat-composer-stack sticky bottom-0 z-30 shrink-0 border-t border-emerald-100/90 bg-white/96 shadow-[0_-2px_10px_rgba(0,0,0,0.06)] backdrop-blur supports-[backdrop-filter]:bg-white/90 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+            {stripProduct ? (
             <div className="product-context border-b border-gray-200 px-3 pt-3 sm:px-4">
               <div className="relative mx-auto max-w-md overflow-hidden rounded-2xl bg-gray-900 shadow-lg ring-1 ring-black/10">
                 <Link
@@ -1612,10 +1830,10 @@ export default function Chat() {
                 </div>
               </div>
             </div>
-          ) : null}
+            ) : null}
 
-          <div className="message-input-area px-3 py-3 sm:px-4">
-            {replyingTo ? (
+            <div className="message-input-area px-3 py-3 sm:px-4">
+              {replyingTo ? (
               <div className="mb-2 flex items-start justify-between gap-3 rounded-2xl border border-emerald-100 bg-emerald-50/80 px-3 py-2">
                 <div className="min-w-0">
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
@@ -1632,8 +1850,8 @@ export default function Chat() {
                   Cancel
                 </button>
               </div>
-            ) : null}
-            <div className="flex items-center gap-2">
+              ) : null}
+              <div className="flex items-center gap-2">
               <Popover open={emojiPickerOpen} onOpenChange={setEmojiPickerOpen}>
                 <PopoverTrigger asChild>
                   <button
@@ -1691,7 +1909,7 @@ export default function Chat() {
         <SheetContent side="bottom" className="rounded-t-3xl px-0 pb-[max(1rem,env(safe-area-inset-bottom))]">
           <SheetHeader className="pb-2">
             <SheetTitle>Message actions</SheetTitle>
-            <SheetDescription>Press and hold any message to reply on mobile.</SheetDescription>
+            <SheetDescription>Press and hold for quick message tools.</SheetDescription>
           </SheetHeader>
           {mobileActionMessage ? (
             <div className="px-4 pb-2">
@@ -1701,23 +1919,84 @@ export default function Chat() {
                 </p>
                 <p className="line-clamp-3">{messagePreviewText(mobileActionMessage.message)}</p>
               </div>
-              <button
-                type="button"
-                onClick={() => selectReply(mobileActionMessage)}
-                className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-[#22c55e] px-4 py-3 text-sm font-semibold text-white"
-              >
-                <Reply className="h-4 w-4" />
-                Reply
-              </button>
+              <div className="mt-3 grid gap-2">
+                <button
+                  type="button"
+                  onClick={() => selectReply(mobileActionMessage)}
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#22c55e] px-4 py-3 text-sm font-semibold text-white"
+                >
+                  <Reply className="h-4 w-4" />
+                  Reply
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void copyMessageText(mobileActionMessage)}
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-800"
+                >
+                  <Copy className="h-4 w-4" />
+                  Copy text
+                </button>
+                {mobileActionMessage.sender_id === authUser.id ? (
+                  <button
+                    type="button"
+                    onClick={() => promptDeleteMessage(mobileActionMessage)}
+                    className="flex w-full items-center justify-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Delete
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => void forwardMessage(mobileActionMessage)}
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-800"
+                >
+                  <Share2 className="h-4 w-4" />
+                  Forward
+                </button>
+              </div>
             </div>
           ) : null}
         </SheetContent>
       </Sheet>
+      <AlertDialog open={pendingConfirmAction != null} onOpenChange={(open) => !open && setPendingConfirmAction(null)}>
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {pendingConfirmAction?.kind === "delete-message"
+                ? "Delete message?"
+                : pendingConfirmAction?.kind === "delete-conversation"
+                  ? "Delete conversation?"
+                  : "Clear chat?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingConfirmAction?.kind === "delete-message"
+                ? "This removes the message from the conversation."
+                : pendingConfirmAction?.kind === "delete-conversation"
+                  ? "This deletes the full conversation and returns you to the inbox."
+                  : "This tries to remove all messages from the current chat."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={actionBusy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={actionBusy}
+              className="bg-red-600 hover:bg-red-700 focus-visible:ring-red-300"
+              onClick={(e) => {
+                e.preventDefault();
+                void runPendingConfirmAction();
+              }}
+            >
+              {actionBusy ? "Working..." : "Continue"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 
   const shellHeight =
-    "max-md:h-[calc(100dvh-4rem-0.75rem)] max-md:max-h-[calc(100dvh-4rem-0.75rem)] md:h-[calc(100dvh-4rem)] md:max-h-[calc(100dvh-4rem)]";
+    "max-md:h-[calc(var(--chat-viewport-height,100dvh)-4rem)] max-md:max-h-[calc(var(--chat-viewport-height,100dvh)-4rem)] md:h-[calc(var(--chat-viewport-height,100dvh)-4rem)] md:max-h-[calc(var(--chat-viewport-height,100dvh)-4rem)]";
 
   const conversationList = (
     <>
@@ -1811,7 +2090,10 @@ export default function Chat() {
   );
 
   return (
-    <div className="min-h-[calc(100dvh-4rem)] bg-[linear-gradient(180deg,#f0fdf4_0%,#f8fafc_22%,#f7fee7_100%)] max-md:pt-3">
+    <div
+      className="h-[calc(var(--chat-viewport-height,100dvh)-4rem)] overflow-hidden bg-[linear-gradient(180deg,#f0fdf4_0%,#f8fafc_22%,#f7fee7_100%)]"
+      style={chatShellStyle}
+    >
       <div className={`mx-auto grid w-full max-w-[1100px] grid-cols-1 md:grid-cols-[minmax(260px,1fr)_minmax(0,2fr)] ${shellHeight}`}>
         <aside className={`hidden min-h-0 flex-col border-r border-emerald-100 bg-white/95 backdrop-blur md:flex ${shellHeight}`}>
           {conversationList}

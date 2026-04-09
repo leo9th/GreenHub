@@ -287,6 +287,7 @@ export default function ProductDetail() {
   const navigate = useNavigate();
   const { addToCart } = useCart();
   const { user: authUser } = useAuth();
+  const authUserId = authUser?.id ?? null;
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const galleryTouchStartX = useRef<number | null>(null);
   const galleryRef = useRef<HTMLDivElement | null>(null);
@@ -414,7 +415,7 @@ export default function ProductDetail() {
   }, [serverProduct?.id]);
 
   useEffect(() => {
-    if (!authUser?.id || !serverProduct?.id) {
+    if (!authUserId || !serverProduct?.id) {
       setLiked(false);
       return;
     }
@@ -425,7 +426,7 @@ export default function ProductDetail() {
       .from("product_likes")
       .select("product_id")
       .eq("product_id", asNum)
-      .eq("user_id", authUser.id)
+      .eq("user_id", authUserId)
       .maybeSingle()
       .then(({ data, error }) => {
         if (cancelled || error) return;
@@ -434,7 +435,7 @@ export default function ProductDetail() {
     return () => {
       cancelled = true;
     };
-  }, [authUser?.id, serverProduct?.id]);
+  }, [authUserId, serverProduct?.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -804,7 +805,7 @@ export default function ProductDetail() {
     );
   }
 
-  if (!foundProduct) {
+  if (!foundProduct || foundProduct.id == null) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center p-4">
         <div className="text-center max-w-sm">
@@ -870,13 +871,18 @@ export default function ProductDetail() {
   };
 
   const handleDoubleTapLike = (clientX: number, clientY: number) => {
+    if (isServerProductLoading || foundProduct?.id == null) return;
     spawnTapHeart(clientX, clientY);
     if (likeBusy) return;
     void handleToggleLike();
   };
 
   const handleToggleLike = async () => {
-    if (!authUser?.id) {
+    if (isServerProductLoading || foundProduct?.id == null) {
+      toast.message("Listing is still loading.");
+      return;
+    }
+    if (!authUserId) {
       toast.message("Sign in to like this listing");
       navigate("/login");
       return;
@@ -895,7 +901,7 @@ export default function ProductDetail() {
           }
         : p,
     );
-    const { error } = await toggleProductLike(supabase, asNum, authUser.id, wasLiked);
+    const { error } = await toggleProductLike(supabase, asNum, authUserId, wasLiked);
     setLikeBusy(false);
     if (error) {
       toast.error(error);
@@ -922,7 +928,7 @@ export default function ProductDetail() {
   };
 
   const openZoom = () => {
-    if (galleryImages.length === 0) return;
+    if (isServerProductLoading || foundProduct?.id == null || galleryImages.length === 0) return;
     resetZoomState();
     setZoomOpen(true);
   };
@@ -934,6 +940,7 @@ export default function ProductDetail() {
   };
 
   const scheduleSingleTapZoom = () => {
+    if (isServerProductLoading || foundProduct?.id == null || galleryImages.length === 0) return;
     cancelSingleTapZoom();
     singleTapTimerRef.current = window.setTimeout(() => {
       openZoom();
@@ -1040,11 +1047,11 @@ export default function ProductDetail() {
       }
 
       let likedSet = new Set<string>();
-      if (authUser?.id && rows.length > 0) {
+      if (authUserId && rows.length > 0) {
         const { data: likedRows } = await supabase
           .from("comment_likes")
           .select("comment_id")
-          .eq("user_id", authUser.id)
+          .eq("user_id", authUserId)
           .in(
             "comment_id",
             rows.map((r) => r.id),
@@ -1079,12 +1086,12 @@ export default function ProductDetail() {
       setCommentsReady(true);
       setCommentsLoading(false);
     },
-    [authUser?.id, commentsLengthRef, foundProduct?.id, id],
+    [authUserId, commentsLengthRef, foundProduct?.id, id],
   );
 
   const handleSubmitComment = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (!authUser?.id) {
+    if (!authUserId) {
       toast.message("Sign in to comment");
       navigate("/login");
       return;
@@ -1101,7 +1108,7 @@ export default function ProductDetail() {
       .from("product_comments")
       .insert({
         product_id: pid,
-        user_id: authUser.id,
+        user_id: authUserId,
         comment: text,
       })
       .select("id, user_id, comment, like_count, created_at")
@@ -1114,7 +1121,7 @@ export default function ProductDetail() {
     const name = (authUser.user_metadata?.full_name as string | undefined)?.trim() || "You";
     const newComment: ProductCommentDisplay = {
       id: (data as { id: string }).id,
-      user_id: authUser.id,
+      user_id: authUserId,
       comment: text,
       created_at: (data as { created_at: string }).created_at,
       like_count: Number((data as { like_count?: number }).like_count ?? 0),
@@ -1132,7 +1139,7 @@ export default function ProductDetail() {
   };
 
   const handleToggleCommentLike = async (commentId: string) => {
-    if (!authUser?.id) {
+    if (!authUserId) {
       toast.message("Sign in to like comments");
       navigate("/login");
       return;
@@ -1153,8 +1160,8 @@ export default function ProductDetail() {
       ),
     );
     const { error } = nextLiked
-      ? await supabase.from("comment_likes").insert({ comment_id: commentId, user_id: authUser.id })
-      : await supabase.from("comment_likes").delete().eq("comment_id", commentId).eq("user_id", authUser.id);
+      ? await supabase.from("comment_likes").insert({ comment_id: commentId, user_id: authUserId })
+      : await supabase.from("comment_likes").delete().eq("comment_id", commentId).eq("user_id", authUserId);
     if (error) {
       toast.error("Could not update like");
       setComments((prev) => prev.map((c) => (c.id === commentId ? existing : c)));
@@ -1177,10 +1184,16 @@ export default function ProductDetail() {
   };
 
   const onGalleryTouchStart = (e: TouchEvent) => {
+    if (isServerProductLoading || foundProduct?.id == null) return;
     galleryTouchStartX.current = e.touches[0]?.clientX ?? null;
   };
 
   const onGalleryTouchEnd = (e: TouchEvent) => {
+    if (isServerProductLoading || foundProduct?.id == null) {
+      galleryTouchStartX.current = null;
+      cancelSingleTapZoom();
+      return;
+    }
     const touch = e.changedTouches[0];
     const now = Date.now();
     if (touch) {
@@ -1212,6 +1225,10 @@ export default function ProductDetail() {
   };
 
   const onGalleryClick = (e: ReactMouseEvent<HTMLDivElement>) => {
+    if (isServerProductLoading || foundProduct?.id == null) {
+      cancelSingleTapZoom();
+      return;
+    }
     const now = Date.now();
     const delta = now - lastTapRef.current;
     if (delta < 320) {
@@ -1311,7 +1328,7 @@ export default function ProductDetail() {
         ? Math.round((productReviews.reduce((s, r) => s + r.rating, 0) / productReviews.length) * 10) / 10
         : 0;
   const productRatingTotal = dbProductTotal > 0 ? dbProductTotal : productReviews.length;
-  const userHasProductReview = Boolean(authUser && productReviews.some((r) => r.user_id === authUser.id));
+  const userHasProductReview = Boolean(authUserId && productReviews.some((r) => r.user_id === authUserId));
   const productIdForReviewLink = normalizeRouteProductId(id) ?? String(foundProduct?.id ?? "");
 
   return (
@@ -1625,8 +1642,8 @@ export default function ProductDetail() {
             <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200/80 sm:p-5">
               <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Product reviews</h2>
-                {authUser &&
-                String(foundProduct.seller_id ?? foundProduct.sellerId ?? "").trim() !== authUser.id ? (
+                {authUserId &&
+                String(foundProduct.seller_id ?? foundProduct.sellerId ?? "").trim() !== authUserId ? (
                   <Link
                     to={`/products/${encodeURIComponent(productIdForReviewLink)}/write-review`}
                     className="inline-flex shrink-0 items-center justify-center rounded-xl bg-[#22c55e] px-4 py-2.5 text-center text-sm font-semibold text-white hover:bg-[#15803d]"

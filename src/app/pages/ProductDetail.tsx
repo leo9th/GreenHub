@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, type TouchEvent, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent } from "react";
+import React, { useState, useEffect, useCallback, useRef, type TouchEvent, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent } from "react";
 import useEmblaCarousel from "embla-carousel-react";
 import { Link, useParams, useNavigate } from "react-router";
 import {
@@ -164,6 +164,55 @@ type ProductCommentDisplay = {
   liked_by_me: boolean;
 };
 
+function ProductDetailErrorBoundary({ children }: { children: React.ReactNode }) {
+  class Boundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
+    constructor(props: { children: React.ReactNode }) {
+      super(props);
+      this.state = { error: null };
+    }
+    static getDerivedStateFromError(error: Error) {
+      return { error };
+    }
+    componentDidCatch(error: Error, info: React.ErrorInfo) {
+      // eslint-disable-next-line no-console
+      console.error("ProductDetail boundary caught:", error, info);
+    }
+    render() {
+      if (this.state.error) {
+        return (
+          <div className="min-h-screen bg-white flex items-center justify-center p-4">
+            <div className="max-w-md text-center">
+              <h2 className="text-xl font-semibold text-gray-900 mb-2">Product page hit a problem</h2>
+              <p className="text-sm text-gray-600 mb-6">
+                We couldn't render this listing fully. Please reload or go back and open it again.
+              </p>
+              <div className="flex justify-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => window.location.reload()}
+                  className="px-4 py-2 rounded-lg bg-[#16a34a] text-white text-sm font-medium hover:bg-[#15803d]"
+                >
+                  Reload
+                </button>
+                <button
+                  type="button"
+                  onClick={() => window.history.back()}
+                  className="px-4 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  Go back
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      }
+      return this.props.children;
+    }
+  }
+
+  return <Boundary>{children}</Boundary>;
+}
+
 function RelatedProductsCarousel({
   items,
   formatPrice,
@@ -281,7 +330,7 @@ function RelatedProductsCarousel({
   );
 }
 
-export default function ProductDetail() {
+function ProductDetailContent() {
   const formatPrice = useCurrency();
   const { id } = useParams();
   const navigate = useNavigate();
@@ -793,10 +842,6 @@ export default function ProductDetail() {
     commentsLengthRef.current = comments.length;
   }, [comments.length]);
 
-  useEffect(() => {
-    void loadComments(true, 0);
-  }, [loadComments]);
-
   if (isServerProductLoading) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center p-4 text-gray-500 text-sm">
@@ -1088,6 +1133,10 @@ export default function ProductDetail() {
     },
     [authUserId, commentsLengthRef, foundProduct?.id, id],
   );
+
+  useEffect(() => {
+    void loadComments(true, 0);
+  }, [loadComments]);
 
   const handleSubmitComment = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -1980,5 +2029,13 @@ export default function ProductDetail() {
         </div>
       ) : null}
     </div>
+  );
+}
+
+export default function ProductDetail() {
+  return (
+    <ProductDetailErrorBoundary>
+      <ProductDetailContent />
+    </ProductDetailErrorBoundary>
   );
 }

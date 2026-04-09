@@ -174,6 +174,11 @@ function isUuidLike(value: string | null | undefined): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.trim());
 }
 
+function isInvalidUuidSyntaxError(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return normalized.includes("invalid input syntax for type uuid");
+}
+
 function isDuplicateConversationError(err: { code?: string; message?: string }): boolean {
   const c = String(err.code ?? "");
   const m = String(err.message ?? "").toLowerCase();
@@ -664,12 +669,11 @@ export default function Chat() {
     }
 
     if (peerFromUrl && !isUuidLike(peerFromUrl)) {
-      setLoadError(
-        "This user cannot be messaged from this link because the account ID is invalid. Open their profile or listing again and try Chat once more.",
-      );
+      setLoadError("Unable to start chat. Invalid user ID.");
       setConversation(null);
       setPeerId(null);
       setLoading(false);
+      toast.error("Unable to start chat. Invalid user ID.");
       return;
     }
 
@@ -802,9 +806,11 @@ export default function Chat() {
           ? "Messaging tables are not set up yet. Run the Supabase migration for conversations and chat_messages."
           : msg.includes("context_product_id") || msg.includes("buyer_last_read_at")
             ? "Run the latest messaging migration (context product + read receipts) on your Supabase project."
+            : isInvalidUuidSyntaxError(msg)
+              ? "Unable to start chat. Invalid user ID."
             : msg,
       );
-      toast.error(msg);
+      toast.error(isInvalidUuidSyntaxError(msg) ? "Unable to start chat. Invalid user ID." : msg);
       setConversation(null);
       setPeerId(null);
     } finally {

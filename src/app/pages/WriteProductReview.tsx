@@ -20,6 +20,31 @@ type ExistingReview = {
   comment: string;
 };
 
+function normalizeProductId(value: string | number | null | undefined): string | number | null {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const asNumber = Number(trimmed);
+    return Number.isFinite(asNumber) && String(asNumber) === trimmed ? asNumber : trimmed;
+  }
+  return null;
+}
+
+function isRecoverableReviewQueryError(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("invalid input syntax for type") ||
+    normalized.includes("operator does not exist") ||
+    normalized.includes("could not find the") ||
+    normalized.includes("product_reviews") ||
+    normalized.includes("column") ||
+    normalized.includes("schema cache")
+  );
+}
+
 export default function WriteProductReview() {
   const navigate = useNavigate();
   const { productId: productIdParam } = useParams<{ productId: string }>();
@@ -43,6 +68,7 @@ export default function WriteProductReview() {
     }
 
     setLoading(true);
+    let loadedProduct: ProductRow | null = null;
     try {
       const { data: prow, error: pErr } = await supabase
         .from("products")
@@ -58,6 +84,7 @@ export default function WriteProductReview() {
       }
 
       const row = prow as ProductRow;
+      loadedProduct = row;
       if (String(row.seller_id) === authUser.id) {
         toast.error("You can’t review your own listing.");
         navigate(`/products/${rawId}`, { replace: true });
@@ -74,9 +101,8 @@ export default function WriteProductReview() {
 
       setSellerName(((prof as { full_name?: string } | null)?.full_name || "Seller").trim());
 
-      const pid =
-        typeof row.id === "number" && Number.isFinite(row.id) ? row.id : Number(row.id);
-      if (!Number.isFinite(pid)) {
+      const pid = normalizeProductId(row.id);
+      if (pid == null) {
         setProduct(null);
         return;
       }
@@ -89,9 +115,21 @@ export default function WriteProductReview() {
         .maybeSingle();
 
       if (rErr && rErr.code !== "PGRST116") {
-        if (rErr.message.includes("product_reviews") && rErr.message.includes("does not exist")) {
+        const reviewErrorMessage = String(rErr.message || "");
+        if (
+          reviewErrorMessage.includes("product_reviews") && reviewErrorMessage.includes("does not exist")
+        ) {
           toast.error("Product reviews aren’t set up yet. Run the product_reviews SQL migration in Supabase.");
-          setProduct(null);
+          setExistingReview(null);
+          setRating(0);
+          setComment("");
+          return;
+        }
+        if (isRecoverableReviewQueryError(reviewErrorMessage)) {
+          console.warn("WriteProductReview existing review lookup:", reviewErrorMessage);
+          setExistingReview(null);
+          setRating(0);
+          setComment("");
           return;
         }
         throw rErr;
@@ -110,7 +148,7 @@ export default function WriteProductReview() {
     } catch (e: unknown) {
       console.error(e);
       toast.error(e instanceof Error ? e.message : "Could not load product");
-      setProduct(null);
+      setProduct(loadedProduct);
     } finally {
       setLoading(false);
     }
@@ -128,8 +166,11 @@ export default function WriteProductReview() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!authUser || !product) return;
-    const pid = typeof product.id === "number" ? product.id : Number(product.id);
-    if (!Number.isFinite(pid)) return;
+    const pid = normalizeProductId(product.id);
+    if (pid == null) {
+      toast.error("Could not load this product.");
+      return;
+    }
     if (rating < 1 || rating > 5) {
       toast.error("Choose a star rating from 1 to 5.");
       return;

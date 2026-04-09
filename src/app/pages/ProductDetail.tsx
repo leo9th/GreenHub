@@ -274,7 +274,12 @@ function RelatedProductsCarousel({
     emblaApi?.scrollNext();
   };
 
-  if (items.length === 0) return null;
+  const safeItems = items.filter(
+    (item): item is RelatedCarouselItem =>
+      Boolean(item) && typeof item === "object" && "id" in item && item.id != null,
+  );
+
+  if (safeItems.length === 0) return null;
 
   return (
     <div
@@ -284,7 +289,7 @@ function RelatedProductsCarousel({
     >
       <div className="overflow-hidden sm:rounded-xl" ref={emblaRef}>
         <div className="flex -ml-3 sm:-ml-4 touch-pan-x">
-          {items.map((item) => (
+          {safeItems.map((item) => (
             <div
               key={String(item.id)}
               className="min-w-0 shrink-0 grow-0 pl-3 sm:pl-4 basis-[220px] w-[220px] max-w-[220px]"
@@ -319,7 +324,7 @@ function RelatedProductsCarousel({
         </div>
       </div>
 
-      {items.length > 1 ? (
+      {safeItems.length > 1 ? (
         <>
           <button
             type="button"
@@ -1474,6 +1479,18 @@ function ProductDetailContent() {
   const productRatingTotal = dbProductTotal > 0 ? dbProductTotal : productReviews.length;
   const userHasProductReview = Boolean(authUserId && productReviews.some((r) => r.user_id === authUserId));
   const productIdForReviewLink = normalizeRouteProductId(id) ?? String(foundProduct?.id ?? "");
+  const safeProductReviews = productReviews.filter(
+    (review): review is ProductReviewDisplay =>
+      Boolean(review) && typeof review === "object" && "id" in review && review.id != null,
+  );
+  const safeSellerReviewsPreview = sellerReviewsPreview.filter(
+    (review): review is SellerReviewPreview =>
+      Boolean(review) && typeof review === "object" && "id" in review && review.id != null,
+  );
+  const safeComments = comments.filter(
+    (comment): comment is ProductCommentDisplay =>
+      Boolean(comment) && typeof comment === "object" && "id" in comment && comment.id != null,
+  );
 
   return (
     <div className="min-h-screen bg-gray-100 text-gray-900 pb-28 md:pb-8">
@@ -1798,11 +1815,11 @@ function ProductDetailContent() {
               </div>
               {!productReviewsReady ? (
                 <p className="text-sm text-gray-500">Loading…</p>
-              ) : productReviews.length === 0 ? (
+              ) : safeProductReviews.length === 0 ? (
                 <p className="text-sm text-gray-500">No written reviews yet. Be the first to review this item.</p>
               ) : (
                 <ul className="space-y-4">
-                  {productReviews.map((r) => (
+                  {safeProductReviews.map((r) => (
                     <li key={r.id} className="rounded-xl bg-gray-50/90 p-3 ring-1 ring-gray-100">
                       <div className="flex items-start gap-3">
                         <img
@@ -1848,11 +1865,11 @@ function ProductDetailContent() {
                   </Link>
                 ) : null}
               </div>
-              {sellerReviewsPreview.length === 0 ? (
+              {safeSellerReviewsPreview.length === 0 ? (
                 <p className="text-sm text-gray-500">No reviews for this seller yet.</p>
               ) : (
                 <ul className="space-y-3">
-                  {sellerReviewsPreview.map((r) => (
+                  {safeSellerReviewsPreview.map((r) => (
                     <li key={r.id} className="rounded-xl bg-gray-50/90 ring-1 ring-gray-100 p-3">
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-sm font-medium text-gray-900">{r.reviewer_name}</span>
@@ -1936,11 +1953,11 @@ function ProductDetailContent() {
               </form>
               {!commentsReady ? (
                 <p className="text-sm text-gray-500">Loading comments…</p>
-              ) : comments.length === 0 ? (
+              ) : safeComments.length === 0 ? (
                 <p className="text-sm text-gray-500">No comments yet. Be the first to share.</p>
               ) : (
                 <ul className="space-y-3">
-                  {comments.map((c) => (
+                  {safeComments.map((c) => (
                     <li key={c.id} className="rounded-xl bg-gray-50/90 p-3 ring-1 ring-gray-100">
                       <div className="flex items-start gap-3">
                         <img

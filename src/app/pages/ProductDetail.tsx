@@ -174,8 +174,21 @@ function ProductDetailErrorBoundary({ children }: { children: React.ReactNode })
       return { error };
     }
     componentDidCatch(error: Error, info: React.ErrorInfo) {
+      const debugSnapshot =
+        typeof window !== "undefined"
+          ? (window as Window & { __GREENHUB_PRODUCTDETAIL_DEBUG__?: unknown }).__GREENHUB_PRODUCTDETAIL_DEBUG__
+          : undefined;
       // eslint-disable-next-line no-console
-      console.error("ProductDetail boundary caught:", error, info);
+      console.error("ProductDetail Error:", error.message);
+      // eslint-disable-next-line no-console
+      console.error("Error stack:", error.stack);
+      // eslint-disable-next-line no-console
+      console.error("Component stack:", info.componentStack);
+      // eslint-disable-next-line no-console
+      console.error("ProductDetail debug snapshot:", {
+        href: typeof window !== "undefined" ? window.location.href : "",
+        debugSnapshot,
+      });
     }
     render() {
       if (this.state.error) {
@@ -386,6 +399,32 @@ function ProductDetailContent() {
   const foundProduct = serverProduct;
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    (window as Window & { __GREENHUB_PRODUCTDETAIL_DEBUG__?: Record<string, unknown> }).__GREENHUB_PRODUCTDETAIL_DEBUG__ = {
+      routeId: id ?? null,
+      productId: foundProduct?.id ?? null,
+      sellerId: foundProduct?.seller_id ?? foundProduct?.sellerId ?? null,
+      isServerProductLoading,
+      commentsReady,
+      commentsLoading,
+      commentsCount: comments.length,
+      productReviewsReady,
+      productReviewsCount: productReviews.length,
+    };
+  }, [
+    comments.length,
+    commentsLoading,
+    commentsReady,
+    foundProduct?.id,
+    foundProduct?.sellerId,
+    foundProduct?.seller_id,
+    id,
+    isServerProductLoading,
+    productReviews.length,
+    productReviewsReady,
+  ]);
+
+  useEffect(() => {
     const origin = getAuthSiteOrigin() || (typeof window !== "undefined" ? window.location.origin : "");
     if (!origin) return;
 
@@ -592,7 +631,13 @@ function ProductDetailContent() {
       if (cancelled) return;
 
       if (error) {
-        console.warn("ProductDetail:", error.message);
+        console.error("ProductDetail loadServerProduct failed:", {
+          routeId: idForQuery,
+          message: error.message,
+          code: error.code,
+          details: error.details,
+          hint: error.hint,
+        });
         setServerProduct(null);
         setIsServerProductLoading(false);
         setSellerInfoReady(true);
@@ -613,7 +658,15 @@ function ProductDetailContent() {
           createdAt: data.created_at,
           updatedAt: data.updated_at,
         });
+        console.info("ProductDetail loaded product:", {
+          routeId: idForQuery,
+          productId: data.id ?? null,
+          sellerId: data.seller_id ?? null,
+          hasImage: data.image != null,
+          imageCount: parseProductImagesFromRow(data as { image?: unknown; images?: unknown }).length,
+        });
       } else {
+        console.warn("ProductDetail no product found for route:", idForQuery);
         setServerProduct(null);
       }
 
@@ -1044,92 +1097,134 @@ function ProductDetailContent() {
       }
       setCommentsLoading(true);
 
-      const { data, error, count } = await supabase
-        .from("product_comments")
-        .select("id, user_id, comment, like_count, created_at", { count: "exact" })
-        .eq("product_id", pid)
-        .order("created_at", { ascending: false })
-        .range(start, start + COMMENTS_PAGE_SIZE - 1);
+      try {
+        const { data, error, count } = await supabase
+          .from("product_comments")
+          .select("id, user_id, comment, like_count, created_at", { count: "exact" })
+          .eq("product_id", pid)
+          .order("created_at", { ascending: false })
+          .range(start, start + COMMENTS_PAGE_SIZE - 1);
 
-      if (error) {
-        const msg = String(error.message || "").toLowerCase();
-        if (!(msg.includes("product_comments") && msg.includes("does not exist"))) {
-          console.warn("Product comments:", error.message);
+        if (error) {
+          const msg = String(error.message || "").toLowerCase();
+          if (!(msg.includes("product_comments") && msg.includes("does not exist"))) {
+            console.error("ProductDetail loadComments failed:", {
+              productId: pid,
+              start,
+              message: error.message,
+              code: error.code,
+              details: error.details,
+              hint: error.hint,
+            });
+          }
+          setCommentsReady(true);
+          setCommentsLoading(false);
+          setCommentsHasMore(false);
+          return;
         }
+
+        const rows =
+          (data ?? []) as {
+            id: string | null;
+            user_id: string | null;
+            comment: string | null;
+            like_count: number | null;
+            created_at: string | null;
+          }[];
+
+        const userIds = [...new Set(rows.map((r) => r.user_id).filter(Boolean))] as string[];
+        const profileMap = new Map<
+          string,
+          { full_name: string | null; avatar_url: string | null; gender: string | null }
+        >();
+        if (userIds.length > 0) {
+          const { data: profs, error: profileError } = await supabase
+            .from("profiles_public")
+            .select("id, full_name, avatar_url, gender")
+            .in("id", userIds);
+          if (profileError) {
+            console.error("ProductDetail loadComments profiles failed:", {
+              productId: pid,
+              message: profileError.message,
+              code: profileError.code,
+            });
+          }
+          for (const p of (profs ?? []) as {
+            id: string;
+            full_name: string | null;
+            avatar_url: string | null;
+            gender: string | null;
+          }[]) {
+            if (p.id) profileMap.set(String(p.id), p);
+          }
+        }
+
+        let likedSet = new Set<string>();
+        if (authUserId && rows.length > 0) {
+          const commentIds = rows.map((r) => r.id).filter(Boolean) as string[];
+          if (commentIds.length > 0) {
+            const { data: likedRows, error: likedError } = await supabase
+              .from("comment_likes")
+              .select("comment_id")
+              .eq("user_id", authUserId)
+              .in("comment_id", commentIds);
+            if (likedError) {
+              console.error("ProductDetail loadComments likes failed:", {
+                productId: pid,
+                message: likedError.message,
+                code: likedError.code,
+              });
+            }
+            likedSet = new Set(
+              (likedRows ?? []).map((r) => {
+                const cid = (r as { comment_id: string }).comment_id;
+                return cid ? String(cid) : "";
+              }),
+            );
+          }
+        }
+
+        const mapped: ProductCommentDisplay[] = rows.map((r, index) => {
+          const commentId = String(r.id ?? `comment-${start + index}`);
+          const userId = String(r.user_id ?? "");
+          const profile = profileMap.get(userId);
+          const name = profile?.full_name?.trim() || "Member";
+          return {
+            id: commentId,
+            user_id: userId,
+            comment: String(r.comment ?? ""),
+            created_at: String(r.created_at ?? ""),
+            like_count: Number(r.like_count ?? 0),
+            user_name: name,
+            user_avatar: getAvatarUrl(profile?.avatar_url ?? null, profile?.gender ?? null, name),
+            liked_by_me: likedSet.has(commentId),
+          };
+        });
+
+        console.info("ProductDetail loaded comments:", {
+          productId: pid,
+          fetched: mapped.length,
+          total: count ?? mapped.length,
+          reset,
+          start,
+        });
+
+        const nextLength = start + mapped.length;
+        setComments((prev) => (reset ? mapped : [...prev, ...mapped]));
+        setCommentsTotal(count ?? nextLength);
+        setCommentsHasMore(count != null ? nextLength < count : mapped.length === COMMENTS_PAGE_SIZE);
+        setCommentsReady(true);
+        setCommentsLoading(false);
+      } catch (error) {
+        console.error("ProductDetail loadComments threw:", {
+          productId: pid,
+          start,
+          error,
+        });
         setCommentsReady(true);
         setCommentsLoading(false);
         setCommentsHasMore(false);
-        return;
       }
-
-      const rows =
-        (data ?? []) as {
-          id: string;
-          user_id: string;
-          comment: string;
-          like_count: number;
-          created_at: string;
-        }[];
-
-      const userIds = [...new Set(rows.map((r) => r.user_id).filter(Boolean))];
-      const profileMap = new Map<
-        string,
-        { full_name: string | null; avatar_url: string | null; gender: string | null }
-      >();
-      if (userIds.length > 0) {
-        const { data: profs } = await supabase
-          .from("profiles_public")
-          .select("id, full_name, avatar_url, gender")
-          .in("id", userIds);
-        for (const p of (profs ?? []) as {
-          id: string;
-          full_name: string | null;
-          avatar_url: string | null;
-          gender: string | null;
-        }[]) {
-          if (p.id) profileMap.set(String(p.id), p);
-        }
-      }
-
-      let likedSet = new Set<string>();
-      if (authUserId && rows.length > 0) {
-        const { data: likedRows } = await supabase
-          .from("comment_likes")
-          .select("comment_id")
-          .eq("user_id", authUserId)
-          .in(
-            "comment_id",
-            rows.map((r) => r.id),
-          );
-        likedSet = new Set(
-          (likedRows ?? []).map((r) => {
-            const cid = (r as { comment_id: string }).comment_id;
-            return cid ? String(cid) : "";
-          }),
-        );
-      }
-
-      const mapped: ProductCommentDisplay[] = rows.map((r) => {
-        const profile = profileMap.get(String(r.user_id));
-        const name = profile?.full_name?.trim() || "Member";
-        return {
-          id: r.id,
-          user_id: r.user_id,
-          comment: r.comment,
-          created_at: r.created_at,
-          like_count: Number(r.like_count ?? 0),
-          user_name: name,
-          user_avatar: getAvatarUrl(profile?.avatar_url ?? null, profile?.gender ?? null, name),
-          liked_by_me: likedSet.has(String(r.id)),
-        };
-      });
-
-      const nextLength = start + mapped.length;
-      setComments((prev) => (reset ? mapped : [...prev, ...mapped]));
-      setCommentsTotal(count ?? nextLength);
-      setCommentsHasMore(count != null ? nextLength < count : mapped.length === COMMENTS_PAGE_SIZE);
-      setCommentsReady(true);
-      setCommentsLoading(false);
     },
     [authUserId, commentsLengthRef, foundProduct?.id, id],
   );

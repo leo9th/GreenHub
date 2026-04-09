@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { ChevronLeft, Heart, Share2, Star, MapPin, ShieldCheck, MessageCircle, Phone, Truck, Package, Store } from "lucide-react";
 
@@ -12,6 +12,10 @@ export function ProductDetail() {
   const [currentImage, setCurrentImage] = useState(0);
   const [isFavorite, setIsFavorite] = useState(false);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
 
   return (
     <div className="max-w-7xl mx-auto bg-white min-h-screen">

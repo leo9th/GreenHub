@@ -10,7 +10,12 @@ import { useAuth } from "../context/AuthContext";
 import { ProductCard } from "../components/cards/ProductCard";
 import { ProductCardSkeletonGrid } from "../components/cards/ProductCardSkeleton";
 import { SortBar } from "../components/SortBar";
-import { fetchLikedProductIdsForUser, toggleProductLike } from "../utils/engagement";
+import {
+  fetchLikedProductIdsForUser,
+  fetchProductLikeCount,
+  subscribeToProductLikes,
+  toggleProductLike,
+} from "../utils/engagement";
 import { BoostCardBadge } from "../components/BoostBadge";
 import {
   fetchProductsListingRpc,
@@ -321,6 +326,13 @@ export default function Products() {
   const [productLoadError, setProductLoadError] = useState<string | null>(null);
   const [commentCounts, setCommentCounts] = useState<Record<string, number>>({});
   const [likedProductIds, setLikedProductIds] = useState<Set<number>>(new Set());
+  const [pendingLikeIds, setPendingLikeIds] = useState<Set<number>>(new Set());
+  const productIds = useMemo(
+    () => [...new Set(products.map((p) => Number(p.id)).filter((n) => Number.isFinite(n)))],
+    [products],
+  );
+  const productIdsKey = useMemo(() => productIds.join(","), [productIds]);
+  const productIdStrings = useMemo(() => productIds.map(String), [productIds]);
 
   const filterOpts: ListingFilterOpts = useMemo(
     () => ({
@@ -356,19 +368,17 @@ export default function Products() {
       setLikedProductIds(new Set());
       return;
     }
-    const ids = [...new Set(products.map((p) => Number(p.id)).filter((n) => Number.isFinite(n)))];
     let cancelled = false;
-    void fetchLikedProductIdsForUser(supabase, authUser.id, ids).then((set) => {
+    void fetchLikedProductIdsForUser(supabase, authUser.id, productIds).then((set) => {
       if (!cancelled) setLikedProductIds(set);
     });
     return () => {
       cancelled = true;
     };
-  }, [authUser?.id, products]);
+  }, [authUser?.id, productIdsKey]);
 
   useEffect(() => {
-    const ids = products.map((p) => String(p.id)).filter(Boolean);
-    if (ids.length === 0) {
+    if (productIdStrings.length === 0) {
       setCommentCounts({});
       return;
     }
@@ -377,7 +387,7 @@ export default function Products() {
       const { data, error } = await supabase
         .from("product_comments")
         .select("product_id")
-        .in("product_id", ids);
+        .in("product_id", productIdStrings);
       if (cancelled) return;
       if (error) {
         console.warn("Products comment counts:", error.message);
@@ -397,7 +407,23 @@ export default function Products() {
     return () => {
       cancelled = true;
     };
-  }, [products]);
+  }, [productIdsKey]);
+
+  useEffect(() => {
+    if (productIds.length === 0) return;
+    const channels = productIds.map((id) =>
+      subscribeToProductLikes(supabase, id, (count) => {
+        setProducts((prev) =>
+          prev.map((p) => (Number(p.id) === id ? { ...p, like_count: count } : p)),
+        );
+      }),
+    );
+    return () => {
+      channels.forEach((channel) => {
+        void supabase.removeChannel(channel);
+      });
+    };
+  }, [productIdsKey]);
 
   const currentPage = parseListingPageParam(searchParams.get("page"));
 
@@ -406,15 +432,17 @@ export default function Products() {
       e.preventDefault();
       e.stopPropagation();
       if (!authUser?.id) {
-        toast.message("Sign in to like listings");
+        toast.message("Login to like");
         return;
       }
       const id = Number(row.id);
       if (!Number.isFinite(id)) return;
+      if (pendingLikeIds.has(id)) return;
       const liked = likedProductIds.has(id);
       const prevCount = Number(row.like_count ?? 0);
       const nextLiked = !liked;
       const nextCount = nextLiked ? prevCount + 1 : Math.max(0, prevCount - 1);
+      setPendingLikeIds((prev) => new Set(prev).add(id));
       setLikedProductIds((prev) => {
         const n = new Set(prev);
         if (nextLiked) n.add(id);
@@ -422,9 +450,15 @@ export default function Products() {
         return n;
       });
       setProducts((prev) => prev.map((p) => (Number(p.id) === id ? { ...p, like_count: nextCount } : p)));
-      const { error } = await toggleProductLike(supabase, id, authUser.id, liked);
-      if (error) {
-        toast.error(error);
+      try {
+        const { error } = await toggleProductLike(supabase, id, authUser.id, liked);
+        if (error) throw new Error(error);
+        const syncedCount = await fetchProductLikeCount(supabase, id);
+        setProducts((prev) => prev.map((p) => (Number(p.id) === id ? { ...p, like_count: syncedCount } : p)));
+      } catch (error: unknown) {
+        const message =
+          error instanceof Error && error.message.trim() ? error.message : "Could not update like";
+        toast.error(message);
         setLikedProductIds((prev) => {
           const n = new Set(prev);
           if (liked) n.add(id);
@@ -432,9 +466,15 @@ export default function Products() {
           return n;
         });
         setProducts((prev) => prev.map((p) => (Number(p.id) === id ? { ...p, like_count: prevCount } : p)));
+      } finally {
+        setPendingLikeIds((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
       }
     },
-    [authUser?.id, likedProductIds, supabase],
+    [authUser?.id, likedProductIds, pendingLikeIds],
   );
 
   useEffect(() => {
@@ -818,7 +858,7 @@ export default function Products() {
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4">
+              <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                 {products.map((product) => {
                   const pid = Number(product.id);
                   const row = product as Record<string, unknown>;
@@ -840,6 +880,7 @@ export default function Products() {
                       likesCount={Number(product.like_count ?? 0)}
                       commentCount={commentCounts[String(product.id)] ?? 0}
                       liked={likedProductIds.has(pid)}
+                      likeDisabled={pendingLikeIds.has(pid)}
                       onLikeClick={(ev) => void onProductLike(ev, product)}
                       topRightBadge={<BoostCardBadge row={row} />}
                     />

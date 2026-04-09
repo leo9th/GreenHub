@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, type TouchEvent } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, type TouchEvent } from "react";
 import useEmblaCarousel from "embla-carousel-react";
 import { Link, useParams, useNavigate } from "react-router";
 import {
@@ -20,7 +20,6 @@ import { useCart } from "../context/CartContext";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../../lib/supabase";
 import { getOrCreateAnonViewSession } from "../utils/viewSession";
-import { toggleProductLike } from "../utils/engagement";
 import { isOnlineFromLastActive, formatLastSeen } from "../utils/presence";
 import { getAvatarUrl } from "../utils/getAvatar";
 import { getProductPrice } from "../utils/getProductPrice";
@@ -30,6 +29,15 @@ import { recordProductView } from "../utils/recentlyViewedProducts";
 import { toast } from "sonner";
 import { BoostDetailBadge } from "../components/BoostBadge";
 import { getAuthSiteOrigin } from "../utils/authSiteUrl";
+import { useProductLike } from "../hooks/useProductLike";
+import {
+  fetchProductReviewsForProduct,
+  formatProductReviewDate,
+  isMissingProductReviewsTableError,
+  isRecoverableReviewQueryError,
+  normalizeReviewProductId,
+  type ProductReviewDisplay,
+} from "../utils/reviews";
 
 type ParsedDeliveryOption = { name: string; fee: number; duration: string };
 
@@ -139,16 +147,6 @@ type SellerReviewPreview = {
   created_at: string;
   reviewer_id: string;
   reviewer_name: string;
-};
-
-type ProductReviewDisplay = {
-  id: string;
-  rating: number;
-  comment: string;
-  created_at: string;
-  user_id: string;
-  reviewer_name: string;
-  reviewer_avatar: string;
 };
 
 function RelatedProductsCarousel({
@@ -276,8 +274,6 @@ export default function ProductDetail() {
   const { user: authUser } = useAuth();
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const galleryTouchStartX = useRef<number | null>(null);
-  const [liked, setLiked] = useState(false);
-  const [likeBusy, setLikeBusy] = useState(false);
   const [sellerProfile, setSellerProfile] = useState<SellerProfileRow | null>(null);
   const [sellerReviewAvg, setSellerReviewAvg] = useState(0);
   const [sellerReviewCount, setSellerReviewCount] = useState(0);
@@ -293,6 +289,10 @@ export default function ProductDetail() {
   const [productReviews, setProductReviews] = useState<ProductReviewDisplay[]>([]);
   const [productReviewsReady, setProductReviewsReady] = useState(false);
 
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
   /** URL `products/:id` — pass through trimmed string so PostgREST matches int/bigint/uuid PKs without Number() precision loss */
   const normalizeRouteProductId = (raw: string | undefined): string | null => {
     if (raw == null) return null;
@@ -301,6 +301,31 @@ export default function ProductDetail() {
   };
 
   const foundProduct = serverProduct;
+  const likeProductId = useMemo(() => {
+    const raw = foundProduct?.id;
+    if (raw == null) return null;
+    const n = typeof raw === "number" ? raw : Number(raw);
+    return Number.isFinite(n) ? n : null;
+  }, [foundProduct?.id]);
+  const initialLikeCount = useMemo(() => {
+    const n = Number(foundProduct?.like_count ?? 0);
+    return Number.isFinite(n) ? Math.max(0, n) : 0;
+  }, [foundProduct?.like_count]);
+  const {
+    liked,
+    likeBusy,
+    likeCount,
+    toggleLike: toggleProductLikeState,
+  } = useProductLike({
+    productId: likeProductId,
+    initialLikeCount,
+    userId: authUser?.id ?? null,
+    onAuthRequired: () => {
+      toast.message("Login to like");
+      navigate("/login");
+    },
+    onError: (message) => toast.error(message),
+  });
 
   useEffect(() => {
     const origin = getAuthSiteOrigin() || (typeof window !== "undefined" ? window.location.origin : "");
@@ -380,108 +405,57 @@ export default function ProductDetail() {
       });
   }, [serverProduct?.id]);
 
-  useEffect(() => {
-    if (!authUser?.id || !serverProduct?.id) {
-      setLiked(false);
+  const loadProductReviews = useCallback(async () => {
+    const pid = normalizeReviewProductId(serverProduct?.id);
+    if (pid == null) {
+      setProductReviews([]);
+      setProductReviewsReady(true);
       return;
     }
-    const asNum = typeof serverProduct.id === "number" ? serverProduct.id : Number(serverProduct.id);
-    if (!Number.isFinite(asNum)) return;
-    let cancelled = false;
-    void supabase
-      .from("product_likes")
-      .select("product_id")
-      .eq("product_id", asNum)
-      .eq("user_id", authUser.id)
-      .maybeSingle()
-      .then(({ data, error }) => {
-        if (cancelled || error) return;
-        setLiked(Boolean(data));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [authUser?.id, serverProduct?.id]);
+
+    setProductReviewsReady(false);
+    const { data, error } = await fetchProductReviewsForProduct(supabase, pid);
+    if (error) {
+      if (!isMissingProductReviewsTableError(error.message) && !isRecoverableReviewQueryError(error.message)) {
+        console.warn("ProductDetail product_reviews:", error.message);
+      }
+      setProductReviews([]);
+      setProductReviewsReady(true);
+      return;
+    }
+
+    setProductReviews(data);
+    setProductReviewsReady(true);
+  }, [serverProduct?.id]);
 
   useEffect(() => {
-    let cancelled = false;
-
-    const loadProductReviews = async () => {
-      const pid = serverProduct?.id;
-      if (pid == null) {
-        setProductReviews([]);
-        setProductReviewsReady(true);
-        return;
-      }
-      const pidNum = typeof pid === "number" ? pid : Number(pid);
-      if (!Number.isFinite(pidNum)) {
-        setProductReviews([]);
-        setProductReviewsReady(true);
-        return;
-      }
-
-      setProductReviewsReady(false);
-      const { data, error } = await supabase
-        .from("product_reviews")
-        .select("id, rating, comment, created_at, user_id")
-        .eq("product_id", pidNum)
-        .order("created_at", { ascending: false });
-
-      if (cancelled) return;
-
-      if (error) {
-        const msg = String(error.message || "").toLowerCase();
-        if (!(msg.includes("product_reviews") && msg.includes("does not exist"))) {
-          console.warn("ProductDetail product_reviews:", error.message);
-        }
-        setProductReviews([]);
-        setProductReviewsReady(true);
-        return;
-      }
-
-      const rows = (data ?? []) as {
-        id: string;
-        rating: number;
-        comment: string;
-        created_at: string;
-        user_id: string;
-      }[];
-      const uids = [...new Set(rows.map((r) => r.user_id).filter(Boolean))];
-      type ProfLite = { id: string; full_name: string | null; avatar_url: string | null; gender: string | null };
-      let profMap = new Map<string, ProfLite>();
-      if (uids.length > 0) {
-        const { data: pubs } = await supabase
-          .from("profiles_public")
-          .select("id, full_name, avatar_url, gender")
-          .in("id", uids);
-        for (const p of (pubs ?? []) as ProfLite[]) {
-          if (p.id) profMap.set(String(p.id), p);
-        }
-      }
-
-      setProductReviews(
-        rows.map((r) => {
-          const pr = profMap.get(String(r.user_id));
-          const name = pr?.full_name?.trim() || "Member";
-          return {
-            id: r.id,
-            rating: Number(r.rating),
-            comment: String(r.comment ?? ""),
-            created_at: r.created_at,
-            user_id: r.user_id,
-            reviewer_name: name,
-            reviewer_avatar: getAvatarUrl(pr?.avatar_url ?? null, pr?.gender ?? null, name),
-          };
-        }),
-      );
-      setProductReviewsReady(true);
-    };
-
     void loadProductReviews();
+  }, [loadProductReviews]);
+
+  useEffect(() => {
+    const pid = normalizeReviewProductId(serverProduct?.id);
+    if (pid == null) return;
+
+    const channel = supabase
+      .channel(`product-reviews:${String(pid)}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "product_reviews",
+          filter: `product_id=eq.${String(pid)}`,
+        },
+        () => {
+          void loadProductReviews();
+        },
+      )
+      .subscribe();
+
     return () => {
-      cancelled = true;
+      void supabase.removeChannel(channel);
     };
-  }, [serverProduct?.id]);
+  }, [loadProductReviews, serverProduct?.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -806,36 +780,10 @@ export default function ProductDetail() {
         : "";
   const sellerTierLower = sellerTierRaw.toLowerCase();
 
-  const likeCount = Number(foundProduct.like_count ?? 0);
   const sellerOnline = isOnlineFromLastActive(sellerProfile?.last_active);
 
   const handleToggleLike = async () => {
-    if (!authUser?.id) {
-      toast.message("Sign in to like this listing");
-      navigate("/login");
-      return;
-    }
-    const asNum = typeof foundProduct.id === "number" ? foundProduct.id : Number(foundProduct.id);
-    if (!Number.isFinite(asNum)) return;
-    setLikeBusy(true);
-    const wasLiked = liked;
-    const prevCount = likeCount;
-    setLiked(!wasLiked);
-    setServerProduct((p) =>
-      p
-        ? {
-            ...p,
-            like_count: wasLiked ? Math.max(0, prevCount - 1) : prevCount + 1,
-          }
-        : p,
-    );
-    const { error } = await toggleProductLike(supabase, asNum, authUser.id, wasLiked);
-    setLikeBusy(false);
-    if (error) {
-      toast.error(error);
-      setLiked(wasLiked);
-      setServerProduct((p) => (p ? { ...p, like_count: prevCount } : p));
-    }
+    await toggleProductLikeState();
   };
 
   const product = {
@@ -924,13 +872,14 @@ export default function ProductDetail() {
 
   const dbProductAvg = foundProduct?.average_rating != null ? Number(foundProduct.average_rating) : NaN;
   const dbProductTotal = Number(foundProduct?.total_reviews ?? 0);
+  const hasLoadedProductReviews = productReviews.length > 0;
   const productRatingAvg =
-    Number.isFinite(dbProductAvg) && dbProductTotal > 0
-      ? Math.round(dbProductAvg * 10) / 10
-      : productReviews.length > 0
-        ? Math.round((productReviews.reduce((s, r) => s + r.rating, 0) / productReviews.length) * 10) / 10
+    hasLoadedProductReviews
+      ? Math.round((productReviews.reduce((s, r) => s + r.rating, 0) / productReviews.length) * 10) / 10
+      : Number.isFinite(dbProductAvg) && dbProductTotal > 0
+        ? Math.round(dbProductAvg * 10) / 10
         : 0;
-  const productRatingTotal = dbProductTotal > 0 ? dbProductTotal : productReviews.length;
+  const productRatingTotal = hasLoadedProductReviews ? productReviews.length : dbProductTotal;
   const userHasProductReview = Boolean(authUser && productReviews.some((r) => r.user_id === authUser.id));
   const productIdForReviewLink = normalizeRouteProductId(id) ?? String(foundProduct?.id ?? "");
 
@@ -1269,9 +1218,7 @@ export default function ProductDetail() {
                               ))}
                             </span>
                           </div>
-                          <p className="mt-1 text-[11px] text-gray-400">
-                            {new Date(r.created_at).toLocaleDateString(undefined, { dateStyle: "medium" })}
-                          </p>
+                          <p className="mt-1 text-[11px] text-gray-400">{formatProductReviewDate(r.created_at)}</p>
                           {r.comment.trim() ? (
                             <p className="mt-2 text-sm leading-relaxed text-gray-700">{r.comment.trim()}</p>
                           ) : null}
@@ -1312,9 +1259,7 @@ export default function ProductDetail() {
                           ))}
                         </span>
                       </div>
-                      <p className="text-[11px] text-gray-400 mt-1">
-                        {new Date(r.created_at).toLocaleDateString(undefined, { dateStyle: "medium" })}
-                      </p>
+                      <p className="text-[11px] text-gray-400 mt-1">{formatProductReviewDate(r.created_at)}</p>
                       {r.comment?.trim() ? (
                         <p className="text-sm text-gray-700 mt-2 leading-relaxed">{r.comment.trim()}</p>
                       ) : null}

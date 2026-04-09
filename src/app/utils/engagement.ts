@@ -1,4 +1,4 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
 
 export async function fetchTotalUnreadMessages(supabase: SupabaseClient): Promise<number> {
   const { data, error } = await supabase.rpc("total_unread_message_count");
@@ -63,6 +63,9 @@ export async function toggleProductLike(
   const { error } = await supabase
     .from("product_likes")
     .insert({ product_id: productId, user_id: userId });
+  if (error?.code === "23505") {
+    return { error: null };
+  }
   return { error: error?.message ?? null };
 }
 
@@ -90,6 +93,30 @@ export async function fetchUserLikesProduct(
     .maybeSingle();
   if (error) return false;
   return Boolean(data);
+}
+
+export function subscribeToProductLikes(
+  supabase: SupabaseClient,
+  productId: number,
+  onLikeCount: (count: number) => void,
+): RealtimeChannel {
+  return supabase
+    .channel(`product-like-count:${productId}`)
+    .on(
+      "postgres_changes",
+      {
+        event: "UPDATE",
+        schema: "public",
+        table: "products",
+        filter: `id=eq.${productId}`,
+      },
+      (payload) => {
+        const raw = (payload.new as { like_count?: unknown })?.like_count;
+        const next = typeof raw === "number" && Number.isFinite(raw) ? raw : Number(raw);
+        if (Number.isFinite(next)) onLikeCount(next);
+      },
+    )
+    .subscribe();
 }
 
 export async function fetchLikedProductIdsForUser(

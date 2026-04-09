@@ -9,7 +9,12 @@ import { ProductCard } from "../components/cards/ProductCard";
 import { ProductCardSkeletonGrid } from "../components/cards/ProductCardSkeleton";
 import { useAuth } from "../context/AuthContext";
 import { useInboxNotifications } from "../context/InboxNotificationsContext";
-import { fetchLikedProductIdsForUser, toggleProductLike } from "../utils/engagement";
+import {
+  fetchLikedProductIdsForUser,
+  fetchProductLikeCount,
+  subscribeToProductLikes,
+  toggleProductLike,
+} from "../utils/engagement";
 import { toast } from "sonner";
 import { SortBar } from "../components/SortBar";
 import { BoostCardBadge } from "../components/BoostBadge";
@@ -45,6 +50,7 @@ export default function Home() {
   const [homeTotalCount, setHomeTotalCount] = useState<number | null>(null);
   const [productLoadError, setProductLoadError] = useState<string | null>(null);
   const [likedProductIds, setLikedProductIds] = useState<Set<number>>(new Set());
+  const [pendingLikeIds, setPendingLikeIds] = useState<Set<number>>(new Set());
   const [commentCounts, setCommentCounts] = useState<Record<string, number>>({});
   const [homeSort, setHomeSort] = useState<ListingSort>("recent");
   const [recentViewedProducts, setRecentViewedProducts] = useState<Array<Record<string, unknown>>>([]);
@@ -66,6 +72,7 @@ export default function Home() {
     const fromRecent = recentViewedProducts.map((p) => Number(p.id)).filter((n) => Number.isFinite(n));
     return [...new Set([...fromGrid, ...fromRecent])];
   }, [products, recentViewedProducts]);
+  const homeCardIdsKey = useMemo(() => homeCardIds.join(","), [homeCardIds]);
 
   const homeRelatedSearches = useMemo(
     () => getRelatedSearchSuggestions(searchQuery),
@@ -84,7 +91,7 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, [authUser?.id, homeCardIds]);
+  }, [authUser?.id, homeCardIdsKey]);
 
   useEffect(() => {
     if (homeCardIds.length === 0) {
@@ -116,22 +123,43 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, [homeCardIds]);
+  }, [homeCardIdsKey]);
+
+  useEffect(() => {
+    if (homeCardIds.length === 0) return;
+    const channels = homeCardIds.map((id) =>
+      subscribeToProductLikes(supabase, id, (count) => {
+        setProducts((prev) =>
+          prev.map((p) => (Number(p.id) === id ? { ...p, like_count: count } : p)),
+        );
+        setRecentViewedProducts((prev) =>
+          prev.map((p) => (Number(p.id) === id ? { ...p, like_count: count } : p)),
+        );
+      }),
+    );
+    return () => {
+      channels.forEach((channel) => {
+        void supabase.removeChannel(channel);
+      });
+    };
+  }, [homeCardIdsKey]);
 
   const onProductLike = useCallback(
     async (e: React.MouseEvent, row: Record<string, unknown>) => {
       e.preventDefault();
       e.stopPropagation();
       if (!authUser?.id) {
-        toast.message("Sign in to like listings");
+        toast.message("Login to like");
         return;
       }
       const id = Number(row.id);
       if (!Number.isFinite(id)) return;
+      if (pendingLikeIds.has(id)) return;
       const liked = likedProductIds.has(id);
       const prevCount = Number(row.like_count ?? 0);
       const nextLiked = !liked;
       const nextCount = nextLiked ? prevCount + 1 : Math.max(0, prevCount - 1);
+      setPendingLikeIds((prev) => new Set(prev).add(id));
       setLikedProductIds((prev) => {
         const n = new Set(prev);
         if (nextLiked) n.add(id);
@@ -140,9 +168,18 @@ export default function Home() {
       });
       setProducts((prev) => prev.map((p) => (Number(p.id) === id ? { ...p, like_count: nextCount } : p)));
       setRecentViewedProducts((prev) => prev.map((p) => (Number(p.id) === id ? { ...p, like_count: nextCount } : p)));
-      const { error } = await toggleProductLike(supabase, id, authUser.id, liked);
-      if (error) {
-        toast.error(error);
+      try {
+        const { error } = await toggleProductLike(supabase, id, authUser.id, liked);
+        if (error) throw new Error(error);
+        const syncedCount = await fetchProductLikeCount(supabase, id);
+        setProducts((prev) => prev.map((p) => (Number(p.id) === id ? { ...p, like_count: syncedCount } : p)));
+        setRecentViewedProducts((prev) =>
+          prev.map((p) => (Number(p.id) === id ? { ...p, like_count: syncedCount } : p)),
+        );
+      } catch (error: unknown) {
+        const message =
+          error instanceof Error && error.message.trim() ? error.message : "Could not update like";
+        toast.error(message);
         setLikedProductIds((prev) => {
           const n = new Set(prev);
           if (liked) n.add(id);
@@ -151,9 +188,15 @@ export default function Home() {
         });
         setProducts((prev) => prev.map((p) => (Number(p.id) === id ? { ...p, like_count: prevCount } : p)));
         setRecentViewedProducts((prev) => prev.map((p) => (Number(p.id) === id ? { ...p, like_count: prevCount } : p)));
+      } finally {
+        setPendingLikeIds((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
       }
     },
-    [authUser?.id, likedProductIds, supabase],
+    [authUser?.id, likedProductIds, pendingLikeIds],
   );
 
   useEffect(() => {
@@ -595,7 +638,7 @@ export default function Home() {
                 No products found yet. Listings with status &quot;active&quot; will appear here.
               </p>
             ) : (
-              <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4">
+              <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 [&>*]:min-h-0">
                 {products.map((product) => {
                   const row = product as Record<string, unknown>;
                   const pid = Number(row.id);
@@ -616,6 +659,7 @@ export default function Home() {
                       likesCount={Number(row.like_count ?? 0)}
                       commentCount={commentCounts[String(product.id)] ?? 0}
                       liked={likedProductIds.has(pid)}
+                      likeDisabled={pendingLikeIds.has(pid)}
                       onLikeClick={(ev) => void onProductLike(ev, row)}
                       topRightBadge={<BoostCardBadge row={row} />}
                     />
@@ -643,7 +687,7 @@ export default function Home() {
           {/* Recently Viewed — persisted in localStorage, synced when you open a product */}
           <div className="mb-6">
             <h2 className="font-semibold text-gray-800 mb-3">Recently Viewed</h2>
-            <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 [&>*]:min-h-0">
               {recentViewedLoading && getRecentProductIds().length > 0 ? (
                 <div className="col-span-full">
                   <ProductCardSkeletonGrid count={Math.min(4, getRecentProductIds().length)} />
@@ -669,6 +713,7 @@ export default function Home() {
                       likesCount={Number(row.like_count ?? 0)}
                       commentCount={commentCounts[String(product.id)] ?? 0}
                       liked={likedProductIds.has(pid)}
+                      likeDisabled={pendingLikeIds.has(pid)}
                       onLikeClick={(ev) => void onProductLike(ev, row)}
                       topRightBadge={<BoostCardBadge row={row} />}
                     />

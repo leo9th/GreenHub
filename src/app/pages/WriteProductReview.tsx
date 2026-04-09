@@ -4,6 +4,7 @@ import { ArrowLeft, Star } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../context/AuthContext";
 import { toast } from "sonner";
+import { isRecoverableReviewQueryError, normalizeReviewProductId } from "../utils/reviews";
 
 const MIN_REVIEW_COMMENT_LENGTH = 10;
 
@@ -19,31 +20,6 @@ type ExistingReview = {
   rating: number;
   comment: string;
 };
-
-function normalizeProductId(value: string | number | null | undefined): string | number | null {
-  if (typeof value === "number") {
-    return Number.isFinite(value) ? value : null;
-  }
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    if (!trimmed) return null;
-    const asNumber = Number(trimmed);
-    return Number.isFinite(asNumber) && String(asNumber) === trimmed ? asNumber : trimmed;
-  }
-  return null;
-}
-
-function isRecoverableReviewQueryError(message: string): boolean {
-  const normalized = message.toLowerCase();
-  return (
-    normalized.includes("invalid input syntax for type") ||
-    normalized.includes("operator does not exist") ||
-    normalized.includes("could not find the") ||
-    normalized.includes("product_reviews") ||
-    normalized.includes("column") ||
-    normalized.includes("schema cache")
-  );
-}
 
 export default function WriteProductReview() {
   const navigate = useNavigate();
@@ -101,7 +77,7 @@ export default function WriteProductReview() {
 
       setSellerName(((prof as { full_name?: string } | null)?.full_name || "Seller").trim());
 
-      const pid = normalizeProductId(row.id);
+      const pid = normalizeReviewProductId(row.id);
       if (pid == null) {
         setProduct(null);
         return;
@@ -165,19 +141,41 @@ export default function WriteProductReview() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!authUser || !product) return;
-    const pid = normalizeProductId(product.id);
+    console.log("[WriteProductReview] submit triggered", {
+      hasAuthUser: Boolean(authUser),
+      hasProduct: Boolean(product),
+      rating,
+      commentLength: comment.trim().length,
+      existingReviewId: existingReview?.id ?? null,
+      routeProductId: productIdParam ?? null,
+    });
+    if (!authUser || !product) {
+      console.warn("[WriteProductReview] submit blocked: missing auth user or product", {
+        hasAuthUser: Boolean(authUser),
+        hasProduct: Boolean(product),
+      });
+      return;
+    }
+    const pid = normalizeReviewProductId(product.id);
     if (pid == null) {
+      console.warn("[WriteProductReview] submit blocked: invalid normalized product ID", {
+        rawProductId: product.id,
+      });
       toast.error("Could not load this product.");
       return;
     }
     if (rating < 1 || rating > 5) {
+      console.warn("[WriteProductReview] submit blocked: invalid rating", { rating });
       toast.error("Choose a star rating from 1 to 5.");
       return;
     }
 
     const trimmed = comment.trim();
     if (!existingReview && trimmed.length < MIN_REVIEW_COMMENT_LENGTH) {
+      console.warn("[WriteProductReview] submit blocked: comment too short", {
+        commentLength: trimmed.length,
+        minLength: MIN_REVIEW_COMMENT_LENGTH,
+      });
       toast.error(`Please write at least ${MIN_REVIEW_COMMENT_LENGTH} characters about your experience.`);
       return;
     }
@@ -185,21 +183,34 @@ export default function WriteProductReview() {
     setSubmitting(true);
     try {
       if (existingReview) {
+        console.log("[WriteProductReview] updating review", {
+          reviewId: existingReview.id,
+          userId: authUser.id,
+          rating,
+          commentLength: trimmed.length,
+        });
         const { error } = await supabase
           .from("product_reviews")
           .update({ rating, comment: trimmed })
           .eq("id", existingReview.id)
           .eq("user_id", authUser.id);
-        if (error) throw error;
+        if (error) {
+          console.error("[WriteProductReview] update failed", error);
+          throw error;
+        }
+        console.log("[WriteProductReview] update succeeded", { reviewId: existingReview.id });
         toast.success("Your review was updated.");
       } else {
-        const { error } = await supabase.from("product_reviews").insert({
+        const insertPayload = {
           product_id: pid,
           user_id: authUser.id,
           rating,
           comment: trimmed,
-        });
+        };
+        console.log("[WriteProductReview] inserting review", insertPayload);
+        const { error } = await supabase.from("product_reviews").insert(insertPayload);
         if (error) {
+          console.error("[WriteProductReview] insert failed", error);
           if (error.code === "23505") {
             toast.error("You already reviewed this product.");
             void load();
@@ -207,11 +218,22 @@ export default function WriteProductReview() {
           }
           throw error;
         }
+        console.log("[WriteProductReview] insert succeeded", {
+          productId: pid,
+          userId: authUser.id,
+        });
         toast.success("Thanks — your review was posted.");
       }
+      console.log("[WriteProductReview] navigating back to product", { productId: product.id });
       navigate(`/products/${product.id}`, { replace: true });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Could not submit review";
+      console.error("[WriteProductReview] submit failed", {
+        error: err,
+        message: msg,
+        productId: product.id,
+        userId: authUser.id,
+      });
       toast.error(msg);
     } finally {
       setSubmitting(false);
@@ -311,11 +333,7 @@ export default function WriteProductReview() {
 
         <button
           type="submit"
-          disabled={
-            rating < 1 ||
-            submitting ||
-            (!existingReview && comment.trim().length < MIN_REVIEW_COMMENT_LENGTH)
-          }
+          disabled={submitting}
           className="w-full rounded-xl bg-[#22c55e] py-3 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
         >
           {submitting ? "Saving…" : existingReview ? "Update review" : "Submit review"}

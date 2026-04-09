@@ -76,11 +76,8 @@ import {
 } from "../components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popover";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "../components/ui/sheet";
-import {
-  toggleProductLike,
-  fetchProductLikeCount,
-  fetchUserLikesProduct,
-} from "../utils/engagement";
+import { useProductLike } from "../hooks/useProductLike";
+import { toE164Ng } from "../utils/phoneE164";
 
 function ChatErrorBoundary({ children }: { children: React.ReactNode }) {
   class Boundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
@@ -193,18 +190,13 @@ function isDuplicateConversationError(err: { code?: string; message?: string }):
 /** Build tel / WhatsApp links from a profile phone string (WhatsApp uses digits only, with simple NG 0→234 normalization). */
 function phoneLinkTargets(raw: string | null): { telHref: string; waHref: string } | null {
   if (!raw?.trim()) return null;
-  const trimmed = raw.trim();
-  const digits = trimmed.replace(/\D/g, "");
-  if (digits.length < 8) return null;
-  const telHref = trimmed.includes("+")
-    ? `tel:${trimmed.replace(/\s/g, "")}`
-    : `tel:${digits}`;
-  let waDigits = digits;
-  if (!waDigits.startsWith("234") && waDigits.startsWith("0") && waDigits.length >= 10 && waDigits.length <= 11) {
-    waDigits = `234${waDigits.slice(1)}`;
-  }
-  const waHref = `https://wa.me/${waDigits}`;
-  return { telHref, waHref };
+  const normalized = toE164Ng(raw.trim());
+  if ("error" in normalized) return null;
+  const waDigits = normalized.e164.replace(/\D/g, "");
+  return {
+    telHref: `tel:${normalized.e164}`,
+    waHref: `https://wa.me/${waDigits}`,
+  };
 }
 
 const CHAT_EMOJI_GROUPS: { id: string; label: string; emojis: string[] }[] = [
@@ -413,9 +405,6 @@ export default function Chat() {
   const [peerPhone, setPeerPhone] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessageRow[]>([]);
   const [stripProduct, setStripProduct] = useState<StripProduct | null>(null);
-  const [reelLiked, setReelLiked] = useState(false);
-  const [reelLikeCount, setReelLikeCount] = useState(0);
-  const [likeBusy, setLikeBusy] = useState(false);
   const [peerFollowing, setPeerFollowing] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
   const [contextClearBusy, setContextClearBusy] = useState(false);
@@ -446,6 +435,19 @@ export default function Chat() {
   }, [productParam]);
 
   const peerFirstName = useMemo(() => peerName.split(/\s+/)[0] || "Member", [peerName]);
+
+  const {
+    liked: reelLiked,
+    likeBusy,
+    likeCount: reelLikeCount,
+    toggleLike: toggleReelLike,
+  } = useProductLike({
+    productId: stripProduct?.id ?? null,
+    initialLikeCount: stripProduct?.like_count ?? 0,
+    userId: authUserId,
+    onAuthRequired: () => toast.message("Login to like"),
+    onError: (message) => toast.error(message),
+  });
 
   const setMessageNode = useCallback((messageId: string, node: HTMLDivElement | null) => {
     if (node) messageRefs.current.set(messageId, node);
@@ -868,58 +870,6 @@ export default function Chat() {
   }, [conversation?.context_product_id]);
 
   useEffect(() => {
-    if (stripProduct == null) {
-      setReelLikeCount(0);
-      return;
-    }
-    setReelLikeCount(stripProduct.like_count);
-  }, [stripProduct]);
-
-  useEffect(() => {
-    if (!stripProduct?.id || !authUserId) {
-      setReelLiked(false);
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
-      const liked = await fetchUserLikesProduct(supabase, stripProduct.id, authUserId);
-      if (!cancelled) setReelLiked(liked);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [stripProduct?.id, authUserId]);
-
-  useEffect(() => {
-    const pid = stripProduct?.id;
-    if (pid == null) return;
-    const ch = supabase
-      .channel(`chat-product-like-count:${pid}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "products",
-          filter: `id=eq.${pid}`,
-        },
-        (payload) => {
-          const n = (payload.new as { like_count?: unknown })?.like_count;
-          const next =
-            typeof n === "number" && Number.isFinite(n) ? n : n != null ? Number(n) || 0 : null;
-          if (next != null) {
-            setReelLikeCount(next);
-            setStripProduct((p) => (p && p.id === pid ? { ...p, like_count: next } : p));
-          }
-        },
-      )
-      .subscribe();
-    return () => {
-      void supabase.removeChannel(ch);
-    };
-  }, [stripProduct?.id]);
-
-  useEffect(() => {
     if (!authUserId || !peerId || peerId === authUserId) {
       setPeerFollowing(false);
       return;
@@ -1187,7 +1137,10 @@ export default function Chat() {
   const openExternalChannel = useCallback(
     (channel: ExternalChannel) => {
       const links = phoneLinkTargets(peerPhone);
-      if (!links) return;
+      if (!links) {
+        toast.message("Seller has not shared a phone number");
+        return;
+      }
       if (channel === "voice") {
         toast.message("Voice calls open outside GreenHub. Call details will not appear in this chat.");
         window.location.href = links.telHref;
@@ -1200,27 +1153,9 @@ export default function Chat() {
   );
 
   const handleProductLikeToggle = useCallback(async () => {
-    if (!authUserId || !stripProduct || likeBusy) return;
-    setLikeBusy(true);
-    const prevLiked = reelLiked;
-    const prevCount = reelLikeCount;
-    const nextLiked = !prevLiked;
-    setReelLiked(nextLiked);
-    setReelLikeCount((c) => Math.max(0, c + (nextLiked ? 1 : -1)));
-    try {
-      const { error } = await toggleProductLike(supabase, stripProduct.id, authUserId, prevLiked);
-      if (error) throw new Error(error);
-      const synced = await fetchProductLikeCount(supabase, stripProduct.id);
-      setReelLikeCount(synced);
-      setStripProduct((p) => (p && p.id === stripProduct.id ? { ...p, like_count: synced } : p));
-    } catch (e: unknown) {
-      setReelLiked(prevLiked);
-      setReelLikeCount(prevCount);
-      toast.error(errorMessage(e, "Could not update like"));
-    } finally {
-      setLikeBusy(false);
-    }
-  }, [authUserId, stripProduct, likeBusy, reelLiked, reelLikeCount]);
+    if (!stripProduct) return;
+    await toggleReelLike();
+  }, [stripProduct, toggleReelLike]);
 
   const toggleFollowPeer = useCallback(async () => {
     if (!authUserId || !peerId || peerId === authUserId || followBusy) return;
@@ -1318,6 +1253,14 @@ export default function Chat() {
     navigate("/settings/blocked-users");
     toast.message("Finish blocking this account from Settings.");
   }, [navigate]);
+
+  const openPeerProfile = useCallback(() => {
+    if (!peerId) {
+      toast.message("Profile is still loading.");
+      return;
+    }
+    navigate(`/profile/${peerId}`);
+  }, [navigate, peerId]);
 
   const runPendingConfirmAction = useCallback(async () => {
     if (!pendingConfirmAction || actionBusy) return;
@@ -1514,10 +1457,11 @@ export default function Chat() {
               </button>
               <button
                 type="button"
-                className="rounded-lg p-2 text-[#25D366] hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
+                className={`rounded-lg p-2 hover:bg-gray-100 ${
+                  peerContactLinks ? "text-[#25D366]" : "text-gray-400"
+                }`}
                 aria-label="Open WhatsApp"
-                title={peerContactLinks ? "Open WhatsApp" : undefined}
-                disabled={!peerContactLinks}
+                title={peerContactLinks ? "Open WhatsApp" : "Seller has not shared a phone number"}
                 onClick={() => openExternalChannel("whatsapp")}
               >
                 <WhatsAppIcon className="h-5 w-5" />
@@ -1566,11 +1510,15 @@ export default function Chat() {
                     Clear chat
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem asChild>
-                    <Link to={`/profile/${peerId}`} className="flex cursor-pointer items-center gap-2">
-                      <User className="h-4 w-4" />
-                      View profile
-                    </Link>
+                  <DropdownMenuItem
+                    className="flex cursor-pointer items-center gap-2"
+                    onSelect={(e) => {
+                      e.preventDefault();
+                      openPeerProfile();
+                    }}
+                  >
+                    <User className="h-4 w-4" />
+                    View profile
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>

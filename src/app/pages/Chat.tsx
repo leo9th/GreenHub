@@ -1455,7 +1455,8 @@ export default function Chat() {
     );
   }
 
-  const peerContactLinks = phoneLinkTargets(peerPhone);
+  const peerPhoneNumber = peerPhone?.trim() || null;
+  const peerContactLinks = phoneLinkTargets(peerPhoneNumber);
   const chatViewportStyle = viewportHeight
     ? ({ ["--chat-viewport-height" as string]: `${viewportHeight}px` } as { [key: string]: string })
     : undefined;
@@ -1499,14 +1500,17 @@ export default function Chat() {
                 <p className="mt-0.5 truncate text-xs text-gray-500">Always-on chat</p>
               </div>
               <button
-                type="button"
-                className="rounded-lg p-2 text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
-                aria-label="Call user"
-                title={peerContactLinks ? "Call user" : undefined}
-                disabled={!peerContactLinks}
-                onClick={() => openExternalChannel("voice")}
+                onClick={() => {
+                  if (peerPhoneNumber) {
+                    window.location.href = `tel:${peerPhoneNumber.replace(/\s/g, "")}`;
+                  } else {
+                    toast.error("Seller has not shared a phone number");
+                  }
+                }}
+                className="p-2 rounded-full hover:bg-gray-100"
+                aria-label="Call seller"
               >
-                <Phone className="h-5 w-5" />
+                <Phone className="w-5 h-5 text-gray-600" />
               </button>
               <button
                 type="button"

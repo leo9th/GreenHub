@@ -371,6 +371,7 @@ export default function Chat() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { user: authUser, loading: authLoading } = useAuth();
+  const authUserId = authUser?.id ?? null;
   const formatPrice = useCurrency();
   const [message, setMessage] = useState("");
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
@@ -417,6 +418,7 @@ export default function Chat() {
   const [loading, setLoading] = useState(true);
   const [sendBusy, setSendBusy] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const conversationId = conversation?.id ?? null;
 
   const {
     search: inboxSearch,
@@ -429,7 +431,7 @@ export default function Chat() {
     unreadByConv: inboxUnreadByConv,
     load: loadInboxList,
     otherPartyUserId: inboxOtherPartyUserId,
-  } = useInboxConversationList(authUser?.id);
+  } = useInboxConversationList(authUserId ?? undefined);
 
   const productParam = searchParams.get("product");
   const validProductId = useMemo(() => {
@@ -494,11 +496,11 @@ export default function Chat() {
 
   const senderLabel = useCallback(
     (senderId: string) => {
-      if (senderId === authUser?.id) return "You";
+      if (senderId === authUserId) return "You";
       if (senderId === peerId) return peerFirstName;
       return "Member";
     },
-    [authUser?.id, peerId, peerFirstName],
+    [authUserId, peerId, peerFirstName],
   );
 
   const selectReply = useCallback(
@@ -574,7 +576,7 @@ export default function Chat() {
     const lastMessageId = lastMessage?.id ?? null;
     const hasNewMessage = lastMessageId !== prev.lastMessageId || messages.length !== prev.count;
     const typingStarted = peerTyping && !prev.peerTyping;
-    const newestIsMine = lastMessage?.sender_id === authUser?.id;
+    const newestIsMine = lastMessage?.sender_id === authUserId;
 
     if (hasNewMessage) {
       if (newestIsMine || isNearBottom) scrollToBottom(prev.count === 0 ? "auto" : "smooth");
@@ -587,7 +589,7 @@ export default function Chat() {
     }
 
     feedStateRef.current = { count: messages.length, lastMessageId, peerTyping };
-  }, [authUser?.id, isNearBottom, messages, peerTyping, scrollToBottom]);
+  }, [authUserId, isNearBottom, messages, peerTyping, scrollToBottom]);
 
   useEffect(() => {
     updateScrollState();
@@ -638,7 +640,7 @@ export default function Chat() {
     const threadId = threadIdParam?.trim() ?? legacyThreadId?.trim();
     const peerFromUrl = peerRouteParam?.trim();
 
-    if (!authUser?.id || (!threadId && !peerFromUrl)) {
+    if (!authUserId || (!threadId && !peerFromUrl)) {
       setConversation(null);
       setLoadError(threadId || peerFromUrl ? null : "Invalid chat link. Open a thread from Messages or Message seller.");
       setLoading(false);
@@ -674,7 +676,7 @@ export default function Chat() {
     setLoading(true);
     setLoadError(null);
     try {
-      const me = authUser.id;
+      const me = authUserId;
       let conv: ConversationRow | null = null;
       let peer: string | null = null;
 
@@ -808,7 +810,7 @@ export default function Chat() {
     } finally {
       setLoading(false);
     }
-  }, [authUser?.id, threadIdParam, peerRouteParam, legacyThreadId, validProductId, navigate]);
+  }, [authUserId, threadIdParam, peerRouteParam, legacyThreadId, validProductId, navigate]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -820,9 +822,9 @@ export default function Chat() {
   }, [authLoading, authUser, navigate, resolveConversation]);
 
   useEffect(() => {
-    if (authLoading || !authUser?.id) return;
+    if (authLoading || !authUserId) return;
     void loadInboxList();
-  }, [authLoading, authUser?.id, loadInboxList]);
+  }, [authLoading, authUserId, loadInboxList]);
 
   useEffect(() => {
     const pid = conversation?.context_product_id;
@@ -868,19 +870,19 @@ export default function Chat() {
   }, [stripProduct]);
 
   useEffect(() => {
-    if (!stripProduct?.id || !authUser?.id) {
+    if (!stripProduct?.id || !authUserId) {
       setReelLiked(false);
       return;
     }
     let cancelled = false;
     void (async () => {
-      const liked = await fetchUserLikesProduct(supabase, stripProduct.id, authUser.id);
+      const liked = await fetchUserLikesProduct(supabase, stripProduct.id, authUserId);
       if (!cancelled) setReelLiked(liked);
     })();
     return () => {
       cancelled = true;
     };
-  }, [stripProduct?.id, authUser?.id]);
+  }, [stripProduct?.id, authUserId]);
 
   useEffect(() => {
     const pid = stripProduct?.id;
@@ -912,7 +914,7 @@ export default function Chat() {
   }, [stripProduct?.id]);
 
   useEffect(() => {
-    if (!authUser?.id || !peerId || peerId === authUser.id) {
+    if (!authUserId || !peerId || peerId === authUserId) {
       setPeerFollowing(false);
       return;
     }
@@ -921,7 +923,7 @@ export default function Chat() {
       const { data, error } = await supabase
         .from("profile_follows")
         .select("follower_id")
-        .eq("follower_id", authUser.id)
+        .eq("follower_id", authUserId)
         .eq("following_id", peerId)
         .maybeSingle();
       if (!cancelled && !error) setPeerFollowing(!!data);
@@ -929,46 +931,47 @@ export default function Chat() {
     return () => {
       cancelled = true;
     };
-  }, [authUser?.id, peerId]);
+  }, [authUserId, peerId]);
 
   useEffect(() => {
-    if (!conversation?.id || !authUser?.id) return;
+    if (!conversationId || !authUserId) return;
     const t = window.setTimeout(() => {
       void (async () => {
-        const { error } = await updateConversationLastRead(supabase, conversation, authUser.id);
+        if (!conversation) return;
+        const { error } = await updateConversationLastRead(supabase, conversation, authUserId);
         if (error) return;
-        void supabase.rpc("mark_message_notifications_read", { p_conversation_id: conversation.id });
-        const readErr = await markConversationMessagesRead(supabase, conversation.id);
+        void supabase.rpc("mark_message_notifications_read", { p_conversation_id: conversationId });
+        const readErr = await markConversationMessagesRead(supabase, conversationId);
         if (readErr.error) console.warn("markConversationMessagesRead:", readErr.error.message);
         const now = new Date().toISOString();
         setConversation((c) =>
           c
             ? {
                 ...c,
-                buyer_last_read_at: c.buyer_id === authUser.id ? now : c.buyer_last_read_at,
-                seller_last_read_at: c.seller_id === authUser.id ? now : c.seller_last_read_at,
+                buyer_last_read_at: c.buyer_id === authUserId ? now : c.buyer_last_read_at,
+                seller_last_read_at: c.seller_id === authUserId ? now : c.seller_last_read_at,
               }
             : c,
         );
       })();
     }, 400);
     return () => clearTimeout(t);
-  }, [conversation?.id, authUser?.id, messages.length]);
+  }, [conversation, conversationId, authUserId, messages.length]);
 
   useEffect(() => {
-    if (!conversation?.id || !authUser?.id) return;
+    if (!conversationId || !authUserId) return;
     const t = window.setTimeout(() => {
       void (async () => {
-        const { error } = await markConversationMessagesDelivered(supabase, conversation.id);
+        const { error } = await markConversationMessagesDelivered(supabase, conversationId);
         if (error) console.warn("markConversationMessagesDelivered:", error.message);
       })();
     }, 300);
     return () => clearTimeout(t);
-  }, [conversation?.id, authUser?.id, messages.length]);
+  }, [conversationId, authUserId, messages.length]);
 
   useEffect(() => {
-    if (!conversation?.id) return;
-    const mid = conversation.id;
+    if (!conversationId) return;
+    const mid = conversationId;
 
     const msgChannel = supabase
       .channel(`chat-messages:${mid}`)
@@ -1039,16 +1042,16 @@ export default function Chat() {
       void supabase.removeChannel(msgChannel);
       void supabase.removeChannel(convChannel);
     };
-  }, [conversation?.id]);
+  }, [conversationId]);
 
   useEffect(() => {
-    if (!conversation?.id || !authUser?.id) return;
-    const ch = supabase.channel(`chat-typing:${conversation.id}`, {
+    if (!conversationId || !authUserId) return;
+    const ch = supabase.channel(`chat-typing:${conversationId}`, {
       config: { broadcast: { self: false } },
     });
     ch.on("broadcast", { event: "typing" }, (p) => {
       const payload = p.payload as { userId?: string };
-      if (payload?.userId === authUser.id) return;
+      if (payload?.userId === authUserId) return;
       setPeerTyping(true);
       if (peerTypingClearRef.current) clearTimeout(peerTypingClearRef.current);
       peerTypingClearRef.current = setTimeout(() => setPeerTyping(false), 2800);
@@ -1062,20 +1065,20 @@ export default function Chat() {
       void supabase.removeChannel(ch);
       if (peerTypingClearRef.current) clearTimeout(peerTypingClearRef.current);
     };
-  }, [conversation?.id, authUser?.id]);
+  }, [conversationId, authUserId]);
 
   const broadcastTyping = useCallback(() => {
-    if (!typingChannelRef.current || !authUser?.id) return;
+    if (!typingChannelRef.current || !authUserId) return;
     void typingChannelRef.current.send({
       type: "broadcast",
       event: "typing",
-      payload: { userId: authUser.id },
+      payload: { userId: authUserId },
     });
-  }, [authUser?.id]);
+  }, [authUserId]);
 
   const handleSend = async () => {
     const text = message.trim();
-    if (!text || !authUser?.id || !conversation) return;
+    if (!text || !authUserId || !conversationId || !conversation) return;
 
     const tempId = `pending-${crypto.randomUUID()}`;
     const replyPreview =
@@ -1088,7 +1091,7 @@ export default function Chat() {
           };
     const optimistic: ChatMessageRow = {
       id: tempId,
-      sender_id: authUser.id,
+      sender_id: authUserId,
       message: text,
       created_at: new Date().toISOString(),
       status: "sent",
@@ -1105,8 +1108,8 @@ export default function Chat() {
       const { data: inserted, error } = await supabase
         .from("chat_messages")
         .insert({
-          conversation_id: conversation.id,
-          sender_id: authUser.id,
+          conversation_id: conversationId,
+          sender_id: authUserId,
           message: text,
           reply_to_id: replyingTo?.id ?? null,
         })
@@ -1191,7 +1194,7 @@ export default function Chat() {
   );
 
   const handleProductLikeToggle = useCallback(async () => {
-    if (!authUser?.id || !stripProduct || likeBusy) return;
+    if (!authUserId || !stripProduct || likeBusy) return;
     setLikeBusy(true);
     const prevLiked = reelLiked;
     const prevCount = reelLikeCount;
@@ -1199,7 +1202,7 @@ export default function Chat() {
     setReelLiked(nextLiked);
     setReelLikeCount((c) => Math.max(0, c + (nextLiked ? 1 : -1)));
     try {
-      const { error } = await toggleProductLike(supabase, stripProduct.id, authUser.id, prevLiked);
+      const { error } = await toggleProductLike(supabase, stripProduct.id, authUserId, prevLiked);
       if (error) throw new Error(error);
       const synced = await fetchProductLikeCount(supabase, stripProduct.id);
       setReelLikeCount(synced);
@@ -1211,24 +1214,24 @@ export default function Chat() {
     } finally {
       setLikeBusy(false);
     }
-  }, [authUser?.id, stripProduct, likeBusy, reelLiked, reelLikeCount]);
+  }, [authUserId, stripProduct, likeBusy, reelLiked, reelLikeCount]);
 
   const toggleFollowPeer = useCallback(async () => {
-    if (!authUser?.id || !peerId || peerId === authUser.id || followBusy) return;
+    if (!authUserId || !peerId || peerId === authUserId || followBusy) return;
     setFollowBusy(true);
     try {
       if (peerFollowing) {
         const { error } = await supabase
           .from("profile_follows")
           .delete()
-          .eq("follower_id", authUser.id)
+          .eq("follower_id", authUserId)
           .eq("following_id", peerId);
         if (error) throw error;
         setPeerFollowing(false);
         toast.success("Unfollowed");
       } else {
         const { error } = await supabase.from("profile_follows").insert({
-          follower_id: authUser.id,
+          follower_id: authUserId,
           following_id: peerId,
         });
         if (error) throw error;
@@ -1240,7 +1243,7 @@ export default function Chat() {
     } finally {
       setFollowBusy(false);
     }
-  }, [authUser?.id, peerId, peerFollowing, followBusy, peerFirstName]);
+  }, [authUserId, peerId, peerFollowing, followBusy, peerFirstName]);
 
   const insertEmoji = useCallback((emoji: string) => {
     const el = composerRef.current;
@@ -1324,7 +1327,11 @@ export default function Chat() {
         setHighlightedMessageId((current) => (current === target.id ? null : current));
         toast.success("Message deleted");
       } else if (pendingConfirmAction.kind === "delete-conversation") {
-        const { error } = await supabase.from("conversations").delete().eq("id", conversation.id);
+        if (!conversationId) {
+          toast.message("Conversation is still loading.");
+          return;
+        }
+        const { error } = await supabase.from("conversations").delete().eq("id", conversationId);
         if (error) throw error;
         toast.success("Conversation deleted");
         navigate("/messages", { replace: true });
@@ -1333,7 +1340,11 @@ export default function Chat() {
         if (messages.length === 0) {
           toast.message("Chat is already empty");
         } else {
-          const { error } = await supabase.from("chat_messages").delete().eq("conversation_id", conversation.id);
+          if (!conversationId) {
+            toast.message("Conversation is still loading.");
+            return;
+          }
+          const { error } = await supabase.from("chat_messages").delete().eq("conversation_id", conversationId);
           if (error) {
             toast.message("Bulk clear is not available in this project yet.");
           } else {
@@ -1350,7 +1361,7 @@ export default function Chat() {
       setActionBusy(false);
       setPendingConfirmAction(null);
     }
-  }, [actionBusy, conversation.id, messages.length, navigate, pendingConfirmAction]);
+  }, [actionBusy, conversationId, messages.length, navigate, pendingConfirmAction]);
 
   const startSwipe = useCallback(
     (msg: ChatMessageRow, pointerType: string | undefined, clientX: number, clientY: number) => {

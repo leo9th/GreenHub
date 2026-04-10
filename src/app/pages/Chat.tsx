@@ -511,7 +511,6 @@ export default function Chat() {
   } | null>(null);
   const [messageReactions, setMessageReactions] = useState<Record<string, string>>({});
   const [selfAvatarUrl, setSelfAvatarUrl] = useState("");
-  const typingBroadcastRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const peerTypingClearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typingChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -736,20 +735,21 @@ export default function Chat() {
   }, [clearPendingLongPress]);
 
   useEffect(() => {
+    let lastRounded: number | null = null;
     const updateViewportHeight = () => {
       const next = Math.round(window.visualViewport?.height ?? window.innerHeight);
+      if (lastRounded !== null && Math.abs(next - lastRounded) < 2) return;
+      lastRounded = next;
       setViewportHeight(next);
     };
 
     updateViewportHeight();
     window.addEventListener("resize", updateViewportHeight);
     window.visualViewport?.addEventListener("resize", updateViewportHeight);
-    window.visualViewport?.addEventListener("scroll", updateViewportHeight);
 
     return () => {
       window.removeEventListener("resize", updateViewportHeight);
       window.visualViewport?.removeEventListener("resize", updateViewportHeight);
-      window.visualViewport?.removeEventListener("scroll", updateViewportHeight);
     };
   }, []);
 
@@ -1204,6 +1204,14 @@ export default function Chat() {
       payload: { userId: authUser.id },
     });
   }, [authUser?.id]);
+
+  useEffect(() => {
+    if (!newMessage.trim()) return;
+    const t = window.setTimeout(() => {
+      broadcastTyping();
+    }, 600);
+    return () => clearTimeout(t);
+  }, [newMessage, broadcastTyping]);
 
   const clearPendingAttachment = useCallback(() => {
     setPendingAttachment((prev) => {
@@ -2099,24 +2107,18 @@ export default function Chat() {
               <input
                 ref={composerRef}
                 type="text"
+                name="chat-message"
                 value={newMessage}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setNewMessage(v);
-                  if (typingBroadcastRef.current) clearTimeout(typingBroadcastRef.current);
-                  typingBroadcastRef.current = setTimeout(() => {
-                    if (v.trim()) broadcastTyping();
-                  }, 600);
-                }}
-                onKeyPress={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    void sendMessage();
-                  }
+                onChange={(e) => setNewMessage(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter") return;
+                  if (e.nativeEvent.isComposing) return;
+                  e.preventDefault();
+                  void sendMessage();
                 }}
                 placeholder="Type a message..."
                 autoComplete="off"
-                disabled={false}
+                enterKeyHint="send"
                 className="message-input min-h-[44px] w-full min-w-0 flex-1 px-4 py-2 rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
               />
               <button

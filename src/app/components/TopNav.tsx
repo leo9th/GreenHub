@@ -6,6 +6,7 @@ import { useInboxNotifications } from "../context/InboxNotificationsContext";
 import { getAvatarUrl } from "../utils/getAvatar";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { supabase } from "../../lib/supabase";
+import { toast } from "sonner";
 import { markAllNotificationsRead, markNotificationReadById } from "../utils/engagement";
 import { formatGreenHubRelative } from "../utils/formatGreenHubTime";
 
@@ -63,8 +64,12 @@ export default function TopNav() {
 
   const markNotificationsAsRead = useCallback(async () => {
     if (!authUser?.id) return;
-    await markAllNotificationsRead(supabase, authUser.id);
+    const { error } = await markAllNotificationsRead(supabase, authUser.id);
     await refreshNotifications();
+    if (error) {
+      toast.error("Could not mark notifications read. Check Supabase notifications RLS.");
+      console.warn("markAllNotificationsRead:", error);
+    }
   }, [authUser?.id, refreshNotifications]);
 
   const openNotification = useCallback(

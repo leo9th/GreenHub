@@ -159,6 +159,39 @@ function phoneLinkTargets(raw: string | null): { telHref: string; waHref: string
   return { telHref, waHref };
 }
 
+/** Conversation / user IDs in routes must be RFC-4122 UUIDs (trimmed). */
+function isValidConversationUUID(id: string): boolean {
+  const t = id.trim();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(t);
+}
+
+/** Migrations use `chat-attachments` (sql) or `chat-images` (image_url migration) — try both. */
+const CHAT_STORAGE_BUCKETS = ["chat-attachments", "chat-images"] as const;
+
+async function uploadChatAttachmentToStorage(
+  path: string,
+  file: File,
+  opts: { cacheControl: string; upsert: boolean; contentType?: string | undefined },
+): Promise<string> {
+  let lastErr: Error | null = null;
+  for (const bucket of CHAT_STORAGE_BUCKETS) {
+    const { error } = await supabase.storage.from(bucket).upload(path, file, opts);
+    if (!error) {
+      const { data } = supabase.storage.from(bucket).getPublicUrl(path);
+      if (data?.publicUrl) return data.publicUrl;
+      lastErr = new Error("Could not get public URL");
+      continue;
+    }
+    const msg = (error.message ?? "").toLowerCase();
+    if (msg.includes("bucket") || msg.includes("not found")) {
+      lastErr = error;
+      continue;
+    }
+    throw error;
+  }
+  throw lastErr ?? new Error("No chat storage bucket found. Create chat-attachments or chat-images in Supabase.");
+}
+
 const CHAT_EMOJI_GROUPS: { id: string; label: string; emojis: string[] }[] = [
   {
     id: "smileys",
@@ -276,7 +309,6 @@ function dayDividerLabel(iso: string): string {
   return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
 }
 
-const CHAT_ATTACH_BUCKET = "chat-attachments";
 const CHAT_ATTACH_MAX_BYTES = 25 * 1024 * 1024;
 /** MIME types + extensions so mobile pickers offer JPG/PNG/WebP, PDF, DOC, DOCX. */
 const CHAT_ATTACH_ACCEPT = [
@@ -455,10 +487,6 @@ export default function Chat() {
   const navigate = useNavigate();
   const { user: authUser, loading: authLoading } = useAuth();
 
-  const isValidUUID = (id: string) => {
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    return uuidRegex.test(id);
-  };
   const formatPrice = useCurrency();
   const [newMessage, setNewMessage] = useState("");
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
@@ -758,7 +786,7 @@ export default function Chat() {
       return;
     }
 
-    if (threadId && !isValidUUID(threadId)) {
+    if (threadId && !isValidConversationUUID(threadId)) {
       // eslint-disable-next-line no-console
       console.error("Invalid conversation ID:", threadId);
       setLoadError("Invalid conversation ID");
@@ -768,7 +796,7 @@ export default function Chat() {
       return;
     }
 
-    if (peerFromUrl && !isValidUUID(peerFromUrl)) {
+    if (peerFromUrl && !isValidConversationUUID(peerFromUrl)) {
       // eslint-disable-next-line no-console
       console.error("Invalid peer user ID:", peerFromUrl);
       setLoadError(
@@ -1265,15 +1293,11 @@ export default function Chat() {
         const ext = file.name.split(".").pop()?.replace(/[^\w.-]/g, "") || "bin";
         const safeExt = ext.length > 16 ? ext.slice(0, 16) : ext;
         const path = `${authUser.id}/${conversation.id}/${crypto.randomUUID()}.${safeExt}`;
-        const { error: upErr } = await supabase.storage.from(CHAT_ATTACH_BUCKET).upload(path, file, {
+        const publicUrl = await uploadChatAttachmentToStorage(path, file, {
           cacheControl: "3600",
           upsert: false,
           contentType: mime || undefined,
         });
-        if (upErr) throw upErr;
-        const { data: pub } = supabase.storage.from(CHAT_ATTACH_BUCKET).getPublicUrl(path);
-        const publicUrl = pub?.publicUrl;
-        if (!publicUrl) throw new Error("Could not get file URL");
 
         if (isChatImageMime(mime)) {
           outgoingImageUrl = publicUrl;
@@ -1284,18 +1308,26 @@ export default function Chat() {
         }
       }
 
-      const { data: inserted, error } = await supabase
-        .from("chat_messages")
-        .insert({
-          conversation_id: conversation.id,
-          sender_id: authUser.id,
-          message: outgoingMessage || (outgoingImageUrl ? "" : ""),
-          image_url: outgoingImageUrl,
-          reply_to_id: replyingTo?.id ?? null,
-          product_id: stripProduct?.id ?? null,
-        })
-        .select("*")
-        .single();
+      const baseRow = {
+        conversation_id: conversation.id,
+        sender_id: authUser.id,
+        message: outgoingMessage || (outgoingImageUrl ? "" : ""),
+        image_url: outgoingImageUrl,
+        reply_to_id: replyingTo?.id ?? null,
+      };
+      const withProduct =
+        stripProduct?.id != null ? { ...baseRow, product_id: stripProduct.id } : baseRow;
+
+      let { data: inserted, error } = await supabase.from("chat_messages").insert(withProduct).select("*").single();
+
+      if (error && stripProduct?.id != null) {
+        const em = (error.message ?? "").toLowerCase();
+        if (em.includes("product_id") || em.includes("schema cache")) {
+          const retry = await supabase.from("chat_messages").insert(baseRow).select("*").single();
+          inserted = retry.data;
+          error = retry.error;
+        }
+      }
 
       if (error) throw error;
       if (inserted) {
@@ -1609,7 +1641,7 @@ export default function Chat() {
                 <h1 className="font-semibold text-gray-800">{peerName}</h1>
                 <p className="mt-0.5 truncate text-xs text-gray-500">Always-on chat</p>
               </div>
-              <DropdownMenu>
+              <DropdownMenu modal={false}>
                 <DropdownMenuTrigger asChild>
                   <button
                     type="button"
@@ -1670,7 +1702,7 @@ export default function Chat() {
                   )}
                 </DropdownMenuContent>
               </DropdownMenu>
-              <DropdownMenu>
+              <DropdownMenu modal={false}>
                 <DropdownMenuTrigger asChild>
                   <button
                     type="button"
@@ -1726,6 +1758,41 @@ export default function Chat() {
           </div>
         </header>
 
+        {stripProduct ? (
+          <div className="relative z-20 flex shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-3 py-3 sm:px-4">
+            <Link
+              to={`/products/${stripProduct.id}`}
+              className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-gray-100 ring-1 ring-black/5"
+              aria-label={`Open listing: ${stripProduct.title}`}
+            >
+              {stripProduct.image ? (
+                <img src={stripProduct.image} alt="" className="h-full w-full object-cover" />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-[10px] text-gray-400">No image</div>
+              )}
+            </Link>
+            <div className="min-w-0 flex-1">
+              <Link
+                to={`/products/${stripProduct.id}`}
+                className="line-clamp-2 text-sm font-semibold text-gray-900 hover:text-emerald-700"
+              >
+                {stripProduct.title}
+              </Link>
+              <p className="mt-0.5 text-sm font-bold text-emerald-600">{formatPrice(stripProduct.price)}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void removeProductContext()}
+              disabled={contextClearBusy}
+              className="shrink-0 rounded-full p-2 text-gray-500 hover:bg-gray-100 disabled:opacity-50"
+              title="Remove listing from this chat"
+              aria-label="Remove listing from chat"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+        ) : null}
+
         <div className="relative z-10 flex min-h-0 flex-1 flex-col">
           {showScrollToLatest ? (
             <div className="pointer-events-none absolute inset-x-0 bottom-4 z-20 flex justify-center px-4">
@@ -1746,40 +1813,6 @@ export default function Chat() {
             onScroll={updateScrollState}
             className="chat-messages min-h-0 flex-1 overflow-y-auto overscroll-y-contain scroll-smooth px-3 py-3 sm:px-4 sm:py-4 [-webkit-overflow-scrolling:touch]"
           >
-            {stripProduct ? (
-              <div className="sticky top-0 z-10 mb-2 border-b border-gray-200 bg-white p-3 flex items-center gap-3">
-                <Link
-                  to={`/products/${stripProduct.id}`}
-                  className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-gray-100 ring-1 ring-black/5"
-                  aria-label={`Open listing: ${stripProduct.title}`}
-                >
-                  {stripProduct.image ? (
-                    <img src={stripProduct.image} alt="" className="h-full w-full object-cover" />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center text-[10px] text-gray-400">No image</div>
-                  )}
-                </Link>
-                <div className="min-w-0 flex-1">
-                  <Link
-                    to={`/products/${stripProduct.id}`}
-                    className="line-clamp-2 text-sm font-semibold text-gray-900 hover:text-emerald-700"
-                  >
-                    {stripProduct.title}
-                  </Link>
-                  <p className="mt-0.5 text-sm font-bold text-emerald-600">{formatPrice(stripProduct.price)}</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => void removeProductContext()}
-                  disabled={contextClearBusy}
-                  className="shrink-0 rounded-full p-2 text-gray-500 hover:bg-gray-100 disabled:opacity-50"
-                  title="Remove listing from this chat"
-                  aria-label="Remove listing from chat"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-            ) : null}
             <div className="flex flex-col pb-1">
               {messages.map((msg, i) => {
                 const messageId = msg.id ?? `msg-${i}-${msg.created_at}`;

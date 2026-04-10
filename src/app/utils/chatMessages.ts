@@ -33,6 +33,10 @@ export const CHAT_MESSAGE_BASE_COLUMNS =
 export const CHAT_MESSAGE_COLUMNS =
   `${CHAT_MESSAGE_BASE_COLUMNS}, reply_to:chat_messages!chat_messages_reply_to_id_fkey(id, sender_id, message, image_url)`;
 
+/** DB has receipts + image_url but not yet `product_id` (migration pending). */
+const CHAT_MESSAGE_BASE_NO_PRODUCT_ID =
+  "id, sender_id, message, created_at, status, delivered_at, read_at, reply_to_id, image_url";
+
 /** Older DBs without `image_url` / full receipt columns — still enough for UI + reply resolution. */
 const CHAT_MESSAGE_CORE_COLUMNS =
   "id, sender_id, message, created_at, status, delivered_at, read_at, reply_to_id";
@@ -119,6 +123,7 @@ export async function fetchChatMessagesForConversation(
     const attempts = [
       CHAT_MESSAGE_COLUMNS,
       CHAT_MESSAGE_BASE_COLUMNS,
+      CHAT_MESSAGE_BASE_NO_PRODUCT_ID,
       CHAT_MESSAGE_CORE_COLUMNS,
       CHAT_MESSAGE_LEGACY_COLUMNS,
       "*",

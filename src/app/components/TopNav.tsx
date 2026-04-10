@@ -7,16 +7,7 @@ import { getAvatarUrl } from "../utils/getAvatar";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { supabase } from "../../lib/supabase";
 import { markNotificationReadById } from "../utils/engagement";
-
-function formatNotifTime(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const diff = Date.now() - d.getTime();
-  if (diff < 60_000) return "Just now";
-  if (diff < 3600_000) return `${Math.floor(diff / 60_000)}m ago`;
-  if (diff < 86400_000) return `${Math.floor(diff / 3600_000)}h ago`;
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
+import { formatGreenHubRelative } from "../utils/formatGreenHubTime";
 
 export default function TopNav() {
   const location = useLocation();
@@ -170,7 +161,7 @@ export default function TopNav() {
                               {notif.title}
                             </h4>
                             <span className="text-[10px] text-gray-400 font-medium shrink-0">
-                              {formatNotifTime(notif.created_at)}
+                              {formatGreenHubRelative(notif.created_at)}
                             </span>
                           </div>
                           <p className="text-xs text-gray-600 line-clamp-2 leading-relaxed">{notif.body}</p>

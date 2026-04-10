@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getAvatarUrl } from "./getAvatar";
+import { formatGreenHubRelative } from "./formatGreenHubTime";
 
 export type NormalizedReviewProductId = string | number;
 
@@ -64,7 +65,7 @@ export function formatProductReviewDate(value: string | null | undefined): strin
   if (!value) return "";
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return "";
-  return parsed.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" });
+  return formatGreenHubRelative(parsed);
 }
 
 async function fetchReviewProfiles(

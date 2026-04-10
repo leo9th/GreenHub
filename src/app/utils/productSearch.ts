@@ -55,6 +55,8 @@ export type ListingFilterOpts = {
   priceRange: string;
   /** Exact `products.car_brand` match when category is vehicles */
   carBrand: string;
+  /** Exact `products.subcategory` match when category is electronics */
+  subcategory: string;
 };
 
 /** Strip LIKE wildcards and trim so user search is safe for ilike patterns */
@@ -115,6 +117,9 @@ export function applyListingFilters(query: any, opts: ListingFilterOpts) {
   }
   if (opts.category === "vehicles" && opts.carBrand && opts.carBrand !== "all") {
     q = q.eq("car_brand", opts.carBrand);
+  }
+  if (opts.category === "electronics" && opts.subcategory && opts.subcategory !== "all") {
+    q = q.eq("subcategory", opts.subcategory);
   }
   return q;
 }
@@ -236,6 +241,7 @@ export async function fetchProductsListingRpc(
     p_category: opts.filterOpts.category === "all" ? null : opts.filterOpts.category,
     p_condition: opts.filterOpts.condition === "all" ? null : opts.filterOpts.condition,
     p_car_brand: opts.filterOpts.carBrand === "all" ? null : opts.filterOpts.carBrand,
+    p_subcategory: opts.filterOpts.subcategory === "all" ? null : opts.filterOpts.subcategory,
     p_state: opts.filterOpts.state === "all" ? null : opts.filterOpts.state,
     p_price_min: pMin,
     p_price_max: pMax,

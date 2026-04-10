@@ -194,7 +194,8 @@ export default function DesignSystem() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-start">
           <div>
             <p className="text-sm text-gray-500 mb-2">Product Card</p>
-            <ProductCard 
+            <ProductCard
+              id="sample-product"
               image="https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?q=80&w=600&auto=format&fit=crop"
               condition="Like New"
               title="iPhone 13 Pro Max - 256GB - Sierra Blue"

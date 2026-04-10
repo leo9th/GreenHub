@@ -143,9 +143,9 @@ export default function Orders() {
 
   const formatOrderLabel = (iso: string | null) => {
     if (!iso) return "—";
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return "—";
-    return d.toLocaleDateString(undefined, { dateStyle: "medium" });
+    const { formatGreenHubRelative } = require("../utils/formatGreenHubTime") as typeof import("../utils/formatGreenHubTime");
+    const s = formatGreenHubRelative(iso);
+    return s || "—";
   };
 
   if (authLoading) {

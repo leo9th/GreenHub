@@ -39,6 +39,7 @@ import {
   normalizeReviewProductId,
   type ProductReviewDisplay,
 } from "../utils/reviews";
+import { formatGreenHubMonthYear, formatGreenHubRelative } from "../utils/formatGreenHubTime";
 
 type ParsedDeliveryOption = { name: string; fee: number; duration: string };
 
@@ -791,7 +792,7 @@ export default function ProductDetail() {
     category: foundProduct.category || "General",
     description: typeof foundProduct.description === "string" ? foundProduct.description : "",
     location: foundProduct.location,
-    postedDate: foundProduct.createdAt ? new Date(foundProduct.createdAt).toLocaleDateString() : "Just now",
+    postedDate: foundProduct.createdAt ? formatGreenHubRelative(foundProduct.createdAt) : "Just now",
     views: typeof foundProduct.views === "number" ? foundProduct.views : Number(foundProduct.views) || 0,
     likes: likeCount,
     seller: {
@@ -806,7 +807,7 @@ export default function ProductDetail() {
       reviews: displaySellerReviewCount,
       verified: sellerIdVerified || sellerTierLower === "crown" || sellerTierLower === "blue",
       memberSince: sellerProfile?.created_at
-        ? new Date(sellerProfile.created_at).toLocaleDateString("en-US", { month: "short", year: "numeric" })
+        ? formatGreenHubMonthYear(sellerProfile.created_at)
         : "—",
       tier: sellerTierRaw || "standard",
     },
@@ -1275,7 +1276,13 @@ export default function ProductDetail() {
             <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200/80 sm:p-5">
               <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">Description</h2>
               {product.description ? (
-                <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">{product.description}</p>
+                <>
+                  {product.description.split("\n\n").map((para, idx) => (
+                    <p key={idx} className="mb-2 text-xs text-gray-600 leading-snug last:mb-0">
+                      {para}
+                    </p>
+                  ))}
+                </>
               ) : (
                 <p className="text-sm text-gray-500">No description provided.</p>
               )}

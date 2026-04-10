@@ -7,6 +7,7 @@ import {
 } from "../utils/chatConversations";
 import { fetchInboxUnreadByConversation } from "../utils/engagement";
 import { useInboxNotifications } from "../context/InboxNotificationsContext";
+import { formatGreenHubRelative } from "../utils/formatGreenHubTime";
 
 export type ProfileLite = {
   id: string;
@@ -19,16 +20,7 @@ export type ConversationRow = ConversationListRow;
 
 export function formatListTime(iso: string | null): string {
   if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const now = new Date();
-  const sameDay =
-    d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
-  if (sameDay) return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-  const diff = now.getTime() - d.getTime();
-  if (diff < 86400000 * 2) return "Yesterday";
-  if (diff < 86400000 * 7) return `${Math.floor(diff / 86400000)} days ago`;
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return formatGreenHubRelative(iso);
 }
 
 export function useInboxConversationList(authUserId: string | undefined) {

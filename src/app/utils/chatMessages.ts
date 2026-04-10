@@ -7,6 +7,7 @@ export type ChatMessageReplyPreview = {
   id: string;
   sender_id: string;
   message: string;
+  image_url?: string | null;
 };
 
 export type ChatMessageRow = {
@@ -19,15 +20,24 @@ export type ChatMessageRow = {
   read_at: string | null;
   reply_to_id: string | null;
   reply_preview: ChatMessageReplyPreview | null;
+  image_url?: string | null;
+  /** Optional listing attached to this message (portrait card in thread) */
+  product_id?: number | null;
   /** Local only: message is being sent to the server */
   client_sending?: boolean;
 };
 
 export const CHAT_MESSAGE_BASE_COLUMNS =
-  "id, sender_id, message, created_at, status, delivered_at, read_at, reply_to_id";
+  "id, sender_id, message, created_at, status, delivered_at, read_at, reply_to_id, image_url, product_id";
 
 export const CHAT_MESSAGE_COLUMNS =
-  `${CHAT_MESSAGE_BASE_COLUMNS}, reply_to:chat_messages!chat_messages_reply_to_id_fkey(id, sender_id, message)`;
+  `${CHAT_MESSAGE_BASE_COLUMNS}, reply_to:chat_messages!chat_messages_reply_to_id_fkey(id, sender_id, message, image_url)`;
+
+/** Older DBs without `image_url` / full receipt columns — still enough for UI + reply resolution. */
+const CHAT_MESSAGE_CORE_COLUMNS =
+  "id, sender_id, message, created_at, status, delivered_at, read_at, reply_to_id";
+
+const CHAT_MESSAGE_LEGACY_COLUMNS = "id, sender_id, message, created_at";
 
 function normalizeReplyPreview(raw: unknown): ChatMessageReplyPreview | null {
   if (!raw) return null;
@@ -39,6 +49,7 @@ function normalizeReplyPreview(raw: unknown): ChatMessageReplyPreview | null {
     id: String(row.id),
     sender_id: String(row.sender_id),
     message: String(row.message ?? ""),
+    image_url: (row.image_url as string | null | undefined) ?? null,
   };
 }
 
@@ -54,6 +65,7 @@ export function resolveChatMessageReplyPreviews(rows: ChatMessageRow[]): ChatMes
         id: target.id,
         sender_id: target.sender_id,
         message: target.message,
+        image_url: target.image_url ?? null,
       },
     };
   });
@@ -77,7 +89,15 @@ export function normalizeChatMessageRow(raw: Record<string, unknown>): ChatMessa
     read_at: (raw.read_at as string | null) ?? null,
     reply_to_id: (raw.reply_to_id as string | null) ?? null,
     reply_preview: replyPreview,
+    image_url: (raw.image_url as string | null | undefined) ?? null,
+    product_id: parseMessageProductId(raw.product_id),
   };
+}
+
+function parseMessageProductId(raw: unknown): number | null {
+  if (raw == null || raw === "") return null;
+  const n = typeof raw === "number" ? raw : Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : null;
 }
 
 /** Outgoing message receipt UI phase (includes optimistic sending). */
@@ -96,21 +116,26 @@ export async function fetchChatMessagesForConversation(
   conversationId: string,
 ): Promise<{ data: ChatMessageRow[]; error: { message: string } | null }> {
   const selectRows = async (table: "chat_messages" | "messages") => {
-    const withReply = await supabase
+    const attempts = [
+      CHAT_MESSAGE_COLUMNS,
+      CHAT_MESSAGE_BASE_COLUMNS,
+      CHAT_MESSAGE_CORE_COLUMNS,
+      CHAT_MESSAGE_LEGACY_COLUMNS,
+      "*",
+    ];
+    let last = await supabase
       .from(table)
-      .select(CHAT_MESSAGE_COLUMNS)
+      .select(attempts[0])
       .eq("conversation_id", conversationId)
       .order("created_at", { ascending: true });
-
-    if (!withReply.error) return withReply;
-
-    const fallback = await supabase
-      .from(table)
-      .select(CHAT_MESSAGE_BASE_COLUMNS)
-      .eq("conversation_id", conversationId)
-      .order("created_at", { ascending: true });
-
-    return fallback;
+    for (let i = 1; i < attempts.length && last.error; i++) {
+      last = await supabase
+        .from(table)
+        .select(attempts[i])
+        .eq("conversation_id", conversationId)
+        .order("created_at", { ascending: true });
+    }
+    return last;
   };
   const q1 = await selectRows("chat_messages");
 

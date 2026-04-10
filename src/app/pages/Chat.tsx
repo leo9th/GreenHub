@@ -7,9 +7,6 @@ import {
   MoreVertical,
   Phone,
   Copy,
-  Check,
-  CheckCheck,
-  Clock,
   MessageCircle,
   Reply,
   Search,
@@ -21,6 +18,9 @@ import {
   ThumbsUp,
   Share2,
   UserPlus,
+  Paperclip,
+  FileText,
+  X,
 } from "lucide-react";
 import { getAvatarUrl } from "../utils/getAvatar";
 import { supabase } from "../../lib/supabase";
@@ -39,8 +39,6 @@ import {
   type ConversationRow,
 } from "../utils/chatConversations";
 import {
-  CHAT_MESSAGE_BASE_COLUMNS,
-  CHAT_MESSAGE_COLUMNS,
   fetchChatMessagesForConversation,
   markConversationMessagesDelivered,
   markConversationMessagesRead,
@@ -54,8 +52,12 @@ import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuLabel,
+  ContextMenuSeparator,
   ContextMenuTrigger,
 } from "../components/ui/context-menu";
+import { MessageBubble } from "../components/chat/MessageBubble";
+import { ChatPortraitProductCard } from "../components/chat/ChatPortraitProductCard";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -76,8 +78,11 @@ import {
 } from "../components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popover";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "../components/ui/sheet";
-import { useProductLike } from "../hooks/useProductLike";
-import { toE164Ng } from "../utils/phoneE164";
+import {
+  toggleProductLike,
+  fetchProductLikeCount,
+  fetchUserLikesProduct,
+} from "../utils/engagement";
 
 function ChatErrorBoundary({ children }: { children: React.ReactNode }) {
   class Boundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
@@ -128,38 +133,6 @@ function ChatErrorBoundary({ children }: { children: React.ReactNode }) {
   return <Boundary>{children}</Boundary>;
 }
 
-function MessageReceiptTicks({ phase }: { phase: "sending" | "sent" | "delivered" | "read" }) {
-  const gray = "text-gray-500";
-  const blue = "text-sky-600";
-  if (phase === "sending") {
-    return (
-      <span className={`inline-flex items-center gap-0.5 ${gray}`} title="Sending">
-        <Clock className="h-3.5 w-3.5" strokeWidth={2} />
-        <Check className="h-3 w-3 opacity-60" strokeWidth={2.5} />
-      </span>
-    );
-  }
-  if (phase === "sent") {
-    return (
-      <span className={gray} title="Sent">
-        <Check className="h-3.5 w-3.5" strokeWidth={2.5} />
-      </span>
-    );
-  }
-  if (phase === "delivered") {
-    return (
-      <span className={gray} title="Delivered">
-        <CheckCheck className="h-3.5 w-3.5" strokeWidth={2.5} />
-      </span>
-    );
-  }
-  return (
-    <span className={blue} title="Read">
-      <CheckCheck className="h-3.5 w-3.5" strokeWidth={2.5} />
-    </span>
-  );
-}
-
 function parseConversationInt(v: unknown): number | null {
   if (v == null) return null;
   const n = typeof v === "number" ? v : Number(v);
@@ -169,11 +142,6 @@ function parseConversationInt(v: unknown): number | null {
 function isUuidLike(value: string | null | undefined): boolean {
   if (!value) return false;
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.trim());
-}
-
-function isInvalidUuidSyntaxError(message: string): boolean {
-  const normalized = message.toLowerCase();
-  return normalized.includes("invalid input syntax for type uuid");
 }
 
 function isDuplicateConversationError(err: { code?: string; message?: string }): boolean {
@@ -190,13 +158,18 @@ function isDuplicateConversationError(err: { code?: string; message?: string }):
 /** Build tel / WhatsApp links from a profile phone string (WhatsApp uses digits only, with simple NG 0→234 normalization). */
 function phoneLinkTargets(raw: string | null): { telHref: string; waHref: string } | null {
   if (!raw?.trim()) return null;
-  const normalized = toE164Ng(raw.trim());
-  if ("error" in normalized) return null;
-  const waDigits = normalized.e164.replace(/\D/g, "");
-  return {
-    telHref: `tel:${normalized.e164}`,
-    waHref: `https://wa.me/${waDigits}`,
-  };
+  const trimmed = raw.trim();
+  const digits = trimmed.replace(/\D/g, "");
+  if (digits.length < 8) return null;
+  const telHref = trimmed.includes("+")
+    ? `tel:${trimmed.replace(/\s/g, "")}`
+    : `tel:${digits}`;
+  let waDigits = digits;
+  if (!waDigits.startsWith("234") && waDigits.startsWith("0") && waDigits.length >= 10 && waDigits.length <= 11) {
+    waDigits = `234${waDigits.slice(1)}`;
+  }
+  const waHref = `https://wa.me/${waDigits}`;
+  return { telHref, waHref };
 }
 
 const CHAT_EMOJI_GROUPS: { id: string; label: string; emojis: string[] }[] = [
@@ -329,12 +302,151 @@ function dayDividerLabel(iso: string): string {
   return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
 }
 
-function messagePreviewText(message: string): string {
+const CHAT_ATTACH_BUCKET = "chat-attachments";
+const CHAT_ATTACH_MAX_BYTES = 25 * 1024 * 1024;
+/** MIME types + extensions so mobile pickers offer JPG/PNG/WebP, PDF, DOC, DOCX. */
+const CHAT_ATTACH_ACCEPT = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".jpg",
+  ".jpeg",
+  ".png",
+  ".webp",
+  ".pdf",
+  ".doc",
+  ".docx",
+].join(",");
+
+function formatChatAttachmentBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(n < 10_240 ? 1 : 0).replace(/\.0$/, "")} KB`;
+  return `${(n / (1024 * 1024)).toFixed(n < 10_485_760 ? 1 : 0).replace(/\.0$/, "")} MB`;
+}
+
+function isChatImageMime(mime: string): boolean {
+  return mime === "image/jpeg" || mime === "image/png" || mime === "image/webp";
+}
+
+/** Browsers often omit `file.type` on Windows; infer from extension. */
+function inferChatAttachmentMime(fileName: string): string {
+  const lower = fileName.toLowerCase();
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".webp")) return "image/webp";
+  if (lower.endsWith(".pdf")) return "application/pdf";
+  if (lower.endsWith(".doc")) return "application/msword";
+  if (lower.endsWith(".docx")) return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  return "";
+}
+
+/** Non-image file messages: caption, then meta line, then URL (last line). */
+function formatChatDocMessage(caption: string, fileName: string, sizeBytes: number, publicUrl: string): string {
+  const meta = `📎 ${fileName} · ${formatChatAttachmentBytes(sizeBytes)}`;
+  const cap = caption.trim();
+  if (cap) return `${cap}\n\n${meta}\n${publicUrl}`;
+  return `${meta}\n${publicUrl}`;
+}
+
+function parseChatDocAttachment(msg: string): { caption: string; fileName?: string; url: string } | null {
+  const lines = msg.split("\n");
+  const metaIdx = lines.findIndex((l) => l.trimStart().startsWith("📎"));
+  if (metaIdx === -1) return null;
+  const urlLine = lines[metaIdx + 1]?.trim() ?? "";
+  if (!/^https?:\/\//i.test(urlLine)) return null;
+  const metaLine = lines[metaIdx].trim();
+  const caption = lines.slice(0, metaIdx).join("\n").trim();
+  const nameMatch = metaLine.match(/^📎\s+(.+?)\s·\s/);
+  return { caption, fileName: nameMatch?.[1]?.trim(), url: urlLine };
+}
+
+function ChatMessageBubbleBody({ msg, mine }: { msg: ChatMessageRow; mine: boolean }) {
+  const doc = !msg.image_url ? parseChatDocAttachment(msg.message) : null;
+  const plainText = (msg.message ?? "").trim();
+
+  if (msg.client_sending && !msg.image_url && !doc?.url && (msg.message ?? "").includes("📎")) {
+    const lines = (msg.message ?? "").split("\n");
+    const metaIdx = lines.findIndex((l) => l.trimStart().startsWith("📎"));
+    const caption = metaIdx > 0 ? lines.slice(0, metaIdx).join("\n").trim() : "";
+    const metaLine = metaIdx >= 0 ? lines[metaIdx].trim() : "";
+    const nameMatch = metaLine.match(/^📎\s+(.+?)\s·\s/);
+    return (
+      <>
+        {caption ? (
+          <div className="mb-2 whitespace-pre-wrap break-words text-[0.9375rem] leading-relaxed">{caption}</div>
+        ) : null}
+        <div
+          className={`inline-flex max-w-full items-center gap-2 rounded-xl px-3 py-2 text-[0.875rem] font-semibold ${
+            mine ? "border border-white/30 bg-white/15 text-white" : "border border-emerald-200 bg-emerald-50/95 text-emerald-900"
+          }`}
+        >
+          <FileText className="h-4 w-4 shrink-0 opacity-90" />
+          <span className="min-w-0 truncate">{nameMatch?.[1]?.trim() ?? "Attachment"}</span>
+          <span className="shrink-0 text-xs font-normal opacity-80">Sending…</span>
+        </div>
+      </>
+    );
+  }
+
+  if (msg.image_url) {
+    return (
+      <>
+        <a
+          href={msg.image_url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={`mb-1 block max-h-64 overflow-hidden rounded-lg ${mine ? "ring-1 ring-white/35" : "ring-1 ring-black/10"}`}
+        >
+          <img src={msg.image_url} alt="" className="max-h-64 w-full object-cover" loading="lazy" />
+        </a>
+        {plainText ? (
+          <div className="whitespace-pre-wrap break-words text-[0.9375rem] leading-relaxed">{msg.message}</div>
+        ) : null}
+      </>
+    );
+  }
+
+  if (doc?.url) {
+    return (
+      <>
+        {doc.caption ? (
+          <div className="mb-2 whitespace-pre-wrap break-words text-[0.9375rem] leading-relaxed">{doc.caption}</div>
+        ) : null}
+        <a
+          href={doc.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={`inline-flex max-w-full items-center gap-2 rounded-xl px-3 py-2 text-[0.875rem] font-semibold ${
+            mine ? "border border-white/30 bg-white/15 text-white" : "border border-emerald-200 bg-emerald-50/95 text-emerald-900"
+          }`}
+        >
+          <FileText className="h-4 w-4 shrink-0 opacity-90" />
+          <span className="min-w-0 truncate">{doc.fileName ?? "Open attachment"}</span>
+        </a>
+      </>
+    );
+  }
+
+  if (plainText) {
+    return <div className="whitespace-pre-wrap break-words text-[0.9375rem] leading-relaxed">{msg.message}</div>;
+  }
+  return null;
+}
+
+function messagePreviewText(message: string, imageUrl?: string | null): string {
   const normalized = message.replace(/\s+/g, " ").trim();
-  return normalized || "Message";
+  if (normalized) return normalized;
+  if (imageUrl) return "Photo";
+  const doc = parseChatDocAttachment(message);
+  if (doc?.url) return doc.fileName ? `📎 ${doc.fileName}` : "Attachment";
+  return "Message";
 }
 
 const MOBILE_REPLY_HOLD_MS = 420;
+const CHAT_REACTION_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🙏"] as const;
 type ExternalChannel = "voice" | "whatsapp";
 
 type StripProduct = {
@@ -368,9 +480,8 @@ export default function Chat() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { user: authUser, loading: authLoading } = useAuth();
-  const authUserId = authUser?.id ?? null;
   const formatPrice = useCurrency();
-  const [message, setMessage] = useState("");
+  const [newMessage, setNewMessage] = useState("");
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
   const [replyingTo, setReplyingTo] = useState<ChatMessageRow | null>(null);
   const [mobileActionMessage, setMobileActionMessage] = useState<ChatMessageRow | null>(null);
@@ -386,6 +497,13 @@ export default function Chat() {
   const messagesScrollerRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef(new Map<string, HTMLDivElement>());
   const composerRef = useRef<HTMLInputElement>(null);
+  const attachInputRef = useRef<HTMLInputElement>(null);
+  const [pendingAttachment, setPendingAttachment] = useState<{
+    file: File;
+    previewUrl?: string;
+  } | null>(null);
+  const [messageReactions, setMessageReactions] = useState<Record<string, string>>({});
+  const [selfAvatarUrl, setSelfAvatarUrl] = useState("");
   const typingBroadcastRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const peerTypingClearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typingChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
@@ -405,6 +523,11 @@ export default function Chat() {
   const [peerPhone, setPeerPhone] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessageRow[]>([]);
   const [stripProduct, setStripProduct] = useState<StripProduct | null>(null);
+  /** Listing rows for messages that include `product_id` (portrait cards in thread). */
+  const [messageProductsById, setMessageProductsById] = useState<Map<number, StripProduct>>(() => new Map());
+  const [reelLiked, setReelLiked] = useState(false);
+  const [reelLikeCount, setReelLikeCount] = useState(0);
+  const [likeBusy, setLikeBusy] = useState(false);
   const [peerFollowing, setPeerFollowing] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
   const [contextClearBusy, setContextClearBusy] = useState(false);
@@ -412,7 +535,6 @@ export default function Chat() {
   const [loading, setLoading] = useState(true);
   const [sendBusy, setSendBusy] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const conversationId = conversation?.id ?? null;
 
   const {
     search: inboxSearch,
@@ -425,7 +547,7 @@ export default function Chat() {
     unreadByConv: inboxUnreadByConv,
     load: loadInboxList,
     otherPartyUserId: inboxOtherPartyUserId,
-  } = useInboxConversationList(authUserId ?? undefined);
+  } = useInboxConversationList(authUser?.id);
 
   const productParam = searchParams.get("product");
   const validProductId = useMemo(() => {
@@ -436,18 +558,20 @@ export default function Chat() {
 
   const peerFirstName = useMemo(() => peerName.split(/\s+/)[0] || "Member", [peerName]);
 
-  const {
-    liked: reelLiked,
-    likeBusy,
-    likeCount: reelLikeCount,
-    toggleLike: toggleReelLike,
-  } = useProductLike({
-    productId: stripProduct?.id ?? null,
-    initialLikeCount: stripProduct?.like_count ?? 0,
-    userId: authUserId,
-    onAuthRequired: () => toast.message("Login to like"),
-    onError: (message) => toast.error(message),
-  });
+  const resolveMessageProductCard = useCallback(
+    (msg: ChatMessageRow): { strip: StripProduct; pricePending: boolean } | null => {
+      const pid = msg.product_id;
+      if (pid == null) return null;
+      const fromMap = messageProductsById.get(pid);
+      if (fromMap) return { strip: fromMap, pricePending: false };
+      if (stripProduct && stripProduct.id === pid) return { strip: stripProduct, pricePending: false };
+      return {
+        strip: { id: pid, title: "Listing", price: 0, image: null, like_count: 0 },
+        pricePending: true,
+      };
+    },
+    [messageProductsById, stripProduct],
+  );
 
   const setMessageNode = useCallback((messageId: string, node: HTMLDivElement | null) => {
     if (node) messageRefs.current.set(messageId, node);
@@ -503,11 +627,11 @@ export default function Chat() {
 
   const senderLabel = useCallback(
     (senderId: string) => {
-      if (senderId === authUserId) return "You";
+      if (senderId === authUser?.id) return "You";
       if (senderId === peerId) return peerFirstName;
       return "Member";
     },
-    [authUserId, peerId, peerFirstName],
+    [authUser?.id, peerId, peerFirstName],
   );
 
   const selectReply = useCallback(
@@ -583,7 +707,7 @@ export default function Chat() {
     const lastMessageId = lastMessage?.id ?? null;
     const hasNewMessage = lastMessageId !== prev.lastMessageId || messages.length !== prev.count;
     const typingStarted = peerTyping && !prev.peerTyping;
-    const newestIsMine = lastMessage?.sender_id === authUserId;
+    const newestIsMine = lastMessage?.sender_id === authUser?.id;
 
     if (hasNewMessage) {
       if (newestIsMine || isNearBottom) scrollToBottom(prev.count === 0 ? "auto" : "smooth");
@@ -596,7 +720,7 @@ export default function Chat() {
     }
 
     feedStateRef.current = { count: messages.length, lastMessageId, peerTyping };
-  }, [authUserId, isNearBottom, messages, peerTyping, scrollToBottom]);
+  }, [authUser?.id, isNearBottom, messages, peerTyping, scrollToBottom]);
 
   useEffect(() => {
     updateScrollState();
@@ -647,7 +771,7 @@ export default function Chat() {
     const threadId = threadIdParam?.trim() ?? legacyThreadId?.trim();
     const peerFromUrl = peerRouteParam?.trim();
 
-    if (!authUserId || (!threadId && !peerFromUrl)) {
+    if (!authUser?.id || (!threadId && !peerFromUrl)) {
       setConversation(null);
       setLoadError(threadId || peerFromUrl ? null : "Invalid chat link. Open a thread from Messages or Message seller.");
       setLoading(false);
@@ -671,18 +795,19 @@ export default function Chat() {
     }
 
     if (peerFromUrl && !isUuidLike(peerFromUrl)) {
-      setLoadError("Unable to start chat. Invalid user ID.");
+      setLoadError(
+        "This user cannot be messaged from this link because the account ID is invalid. Open their profile or listing again and try Chat once more.",
+      );
       setConversation(null);
       setPeerId(null);
       setLoading(false);
-      toast.error("Unable to start chat. Invalid user ID.");
       return;
     }
 
     setLoading(true);
     setLoadError(null);
     try {
-      const me = authUserId;
+      const me = authUser.id;
       let conv: ConversationRow | null = null;
       let peer: string | null = null;
 
@@ -808,17 +933,15 @@ export default function Chat() {
           ? "Messaging tables are not set up yet. Run the Supabase migration for conversations and chat_messages."
           : msg.includes("context_product_id") || msg.includes("buyer_last_read_at")
             ? "Run the latest messaging migration (context product + read receipts) on your Supabase project."
-            : isInvalidUuidSyntaxError(msg)
-              ? "Unable to start chat. Invalid user ID."
             : msg,
       );
-      toast.error(isInvalidUuidSyntaxError(msg) ? "Unable to start chat. Invalid user ID." : msg);
+      toast.error(msg);
       setConversation(null);
       setPeerId(null);
     } finally {
       setLoading(false);
     }
-  }, [authUserId, threadIdParam, peerRouteParam, legacyThreadId, validProductId, navigate]);
+  }, [authUser?.id, threadIdParam, peerRouteParam, legacyThreadId, validProductId, navigate]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -830,9 +953,35 @@ export default function Chat() {
   }, [authLoading, authUser, navigate, resolveConversation]);
 
   useEffect(() => {
-    if (authLoading || !authUserId) return;
+    if (authLoading || !authUser?.id) return;
     void loadInboxList();
-  }, [authLoading, authUserId, loadInboxList]);
+  }, [authLoading, authUser?.id, loadInboxList]);
+
+  useEffect(() => {
+    if (!authUser?.id) {
+      setSelfAvatarUrl("");
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const { data } = await supabase
+        .from("profiles_public")
+        .select("avatar_url, gender, full_name")
+        .eq("id", authUser.id)
+        .maybeSingle();
+      if (cancelled) return;
+      if (!data) {
+        setSelfAvatarUrl(getAvatarUrl(null, null, "You"));
+        return;
+      }
+      const r = data as { avatar_url: string | null; gender: string | null; full_name: string | null };
+      const nm = (r.full_name || "You").trim() || "You";
+      setSelfAvatarUrl(getAvatarUrl(r.avatar_url, r.gender, nm));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [authUser?.id]);
 
   useEffect(() => {
     const pid = conversation?.context_product_id;
@@ -870,7 +1019,100 @@ export default function Chat() {
   }, [conversation?.context_product_id]);
 
   useEffect(() => {
-    if (!authUserId || !peerId || peerId === authUserId) {
+    const ids = new Set<number>();
+    for (const m of messages) {
+      const p = m.product_id;
+      if (p != null) ids.add(p);
+    }
+    if (ids.size === 0) {
+      setMessageProductsById(new Map());
+      return;
+    }
+    const list = [...ids];
+    let cancelled = false;
+    void (async () => {
+      const { data, error } = await supabase
+        .from("products")
+        .select("id, title, price, price_local, image, like_count")
+        .in("id", list);
+      if (cancelled) return;
+      if (error || !data) return;
+      const next = new Map<number, StripProduct>();
+      for (const row of data as Record<string, unknown>[]) {
+        const id = Number(row.id);
+        if (!Number.isFinite(id)) continue;
+        const lcRaw = row.like_count;
+        const likeCount =
+          typeof lcRaw === "number" && Number.isFinite(lcRaw) ? lcRaw : Number(lcRaw) || 0;
+        next.set(id, {
+          id,
+          title: String(row.title ?? "Listing"),
+          price: getProductPrice(row as { price?: unknown; price_local?: unknown }),
+          image: typeof row.image === "string" ? row.image : null,
+          like_count: likeCount,
+        });
+      }
+      setMessageProductsById(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [messages]);
+
+  useEffect(() => {
+    if (stripProduct == null) {
+      setReelLikeCount(0);
+      return;
+    }
+    setReelLikeCount(stripProduct.like_count);
+  }, [stripProduct]);
+
+  useEffect(() => {
+    if (!stripProduct?.id || !authUser?.id) {
+      setReelLiked(false);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const liked = await fetchUserLikesProduct(supabase, stripProduct.id, authUser.id);
+      if (!cancelled) setReelLiked(liked);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [stripProduct?.id, authUser?.id]);
+
+  useEffect(() => {
+    const pid = stripProduct?.id;
+    if (pid == null) return;
+    const ch = supabase
+      .channel(`chat-product-like-count:${pid}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "products",
+          filter: `id=eq.${pid}`,
+        },
+        (payload) => {
+          const n = (payload.new as { like_count?: unknown })?.like_count;
+          const next =
+            typeof n === "number" && Number.isFinite(n) ? n : n != null ? Number(n) || 0 : null;
+          if (next != null) {
+            setReelLikeCount(next);
+            setStripProduct((p) => (p && p.id === pid ? { ...p, like_count: next } : p));
+          }
+        },
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(ch);
+    };
+  }, [stripProduct?.id]);
+
+  useEffect(() => {
+    if (!authUser?.id || !peerId || peerId === authUser.id) {
       setPeerFollowing(false);
       return;
     }
@@ -879,7 +1121,7 @@ export default function Chat() {
       const { data, error } = await supabase
         .from("profile_follows")
         .select("follower_id")
-        .eq("follower_id", authUserId)
+        .eq("follower_id", authUser.id)
         .eq("following_id", peerId)
         .maybeSingle();
       if (!cancelled && !error) setPeerFollowing(!!data);
@@ -887,47 +1129,46 @@ export default function Chat() {
     return () => {
       cancelled = true;
     };
-  }, [authUserId, peerId]);
+  }, [authUser?.id, peerId]);
 
   useEffect(() => {
-    if (!conversationId || !authUserId) return;
+    if (!conversation?.id || !authUser?.id) return;
     const t = window.setTimeout(() => {
       void (async () => {
-        if (!conversation) return;
-        const { error } = await updateConversationLastRead(supabase, conversation, authUserId);
+        const { error } = await updateConversationLastRead(supabase, conversation, authUser.id);
         if (error) return;
-        void supabase.rpc("mark_message_notifications_read", { p_conversation_id: conversationId });
-        const readErr = await markConversationMessagesRead(supabase, conversationId);
+        void supabase.rpc("mark_message_notifications_read", { p_conversation_id: conversation.id });
+        const readErr = await markConversationMessagesRead(supabase, conversation.id);
         if (readErr.error) console.warn("markConversationMessagesRead:", readErr.error.message);
         const now = new Date().toISOString();
         setConversation((c) =>
           c
             ? {
                 ...c,
-                buyer_last_read_at: c.buyer_id === authUserId ? now : c.buyer_last_read_at,
-                seller_last_read_at: c.seller_id === authUserId ? now : c.seller_last_read_at,
+                buyer_last_read_at: c.buyer_id === authUser.id ? now : c.buyer_last_read_at,
+                seller_last_read_at: c.seller_id === authUser.id ? now : c.seller_last_read_at,
               }
             : c,
         );
       })();
     }, 400);
     return () => clearTimeout(t);
-  }, [conversation, conversationId, authUserId, messages.length]);
+  }, [conversation?.id, authUser?.id, messages.length]);
 
   useEffect(() => {
-    if (!conversationId || !authUserId) return;
+    if (!conversation?.id || !authUser?.id) return;
     const t = window.setTimeout(() => {
       void (async () => {
-        const { error } = await markConversationMessagesDelivered(supabase, conversationId);
+        const { error } = await markConversationMessagesDelivered(supabase, conversation.id);
         if (error) console.warn("markConversationMessagesDelivered:", error.message);
       })();
     }, 300);
     return () => clearTimeout(t);
-  }, [conversationId, authUserId, messages.length]);
+  }, [conversation?.id, authUser?.id, messages.length]);
 
   useEffect(() => {
-    if (!conversationId) return;
-    const mid = conversationId;
+    if (!conversation?.id) return;
+    const mid = conversation.id;
 
     const msgChannel = supabase
       .channel(`chat-messages:${mid}`)
@@ -998,16 +1239,16 @@ export default function Chat() {
       void supabase.removeChannel(msgChannel);
       void supabase.removeChannel(convChannel);
     };
-  }, [conversationId]);
+  }, [conversation?.id]);
 
   useEffect(() => {
-    if (!conversationId || !authUserId) return;
-    const ch = supabase.channel(`chat-typing:${conversationId}`, {
+    if (!conversation?.id || !authUser?.id) return;
+    const ch = supabase.channel(`chat-typing:${conversation.id}`, {
       config: { broadcast: { self: false } },
     });
     ch.on("broadcast", { event: "typing" }, (p) => {
       const payload = p.payload as { userId?: string };
-      if (payload?.userId === authUserId) return;
+      if (payload?.userId === authUser.id) return;
       setPeerTyping(true);
       if (peerTypingClearRef.current) clearTimeout(peerTypingClearRef.current);
       peerTypingClearRef.current = setTimeout(() => setPeerTyping(false), 2800);
@@ -1021,22 +1262,54 @@ export default function Chat() {
       void supabase.removeChannel(ch);
       if (peerTypingClearRef.current) clearTimeout(peerTypingClearRef.current);
     };
-  }, [conversationId, authUserId]);
+  }, [conversation?.id, authUser?.id]);
 
   const broadcastTyping = useCallback(() => {
-    if (!typingChannelRef.current || !authUserId) return;
+    if (!typingChannelRef.current || !authUser?.id) return;
     void typingChannelRef.current.send({
       type: "broadcast",
       event: "typing",
-      payload: { userId: authUserId },
+      payload: { userId: authUser.id },
     });
-  }, [authUserId]);
+  }, [authUser?.id]);
 
-  const handleSend = async () => {
-    const text = message.trim();
-    if (!text || !authUserId || !conversationId || !conversation) return;
+  const clearPendingAttachment = useCallback(() => {
+    setPendingAttachment((prev) => {
+      if (prev?.previewUrl) URL.revokeObjectURL(prev.previewUrl);
+      return null;
+    });
+    if (attachInputRef.current) attachInputRef.current.value = "";
+  }, []);
 
-    const tempId = `pending-${crypto.randomUUID()}`;
+  const onAttachmentFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > CHAT_ATTACH_MAX_BYTES) {
+      toast.error(`File is too large (max ${formatChatAttachmentBytes(CHAT_ATTACH_MAX_BYTES)}).`);
+      e.target.value = "";
+      return;
+    }
+    const allowed = CHAT_ATTACH_ACCEPT.split(",").map((s) => s.trim());
+    const effectiveMime = file.type || inferChatAttachmentMime(file.name);
+    if (!effectiveMime || !allowed.includes(effectiveMime)) {
+      toast.error("Use JPG, PNG, WebP, PDF, DOC, or DOCX.");
+      e.target.value = "";
+      return;
+    }
+    setPendingAttachment((prev) => {
+      if (prev?.previewUrl) URL.revokeObjectURL(prev.previewUrl);
+      const previewUrl = isChatImageMime(effectiveMime) ? URL.createObjectURL(file) : undefined;
+      return { file, previewUrl };
+    });
+    e.target.value = "";
+  };
+
+  const sendMessage = async () => {
+    if (sendBusy) return;
+    const text = newMessage.trim();
+    const file = pendingAttachment?.file;
+    if ((!text && !file) || !authUser?.id || !conversation) return;
+
     const replyPreview =
       replyingTo == null
         ? null
@@ -1044,32 +1317,80 @@ export default function Chat() {
             id: replyingTo.id,
             sender_id: replyingTo.sender_id,
             message: replyingTo.message,
+            image_url: replyingTo.image_url ?? null,
           };
+
+    const tempId = `pending-${crypto.randomUUID()}`;
+
+    let optimisticMsg = text;
+    let optimisticImg: string | null = null;
+    if (file) {
+      const mime = file.type || inferChatAttachmentMime(file.name);
+      if (isChatImageMime(mime)) {
+        optimisticImg = pendingAttachment?.previewUrl ?? null;
+      } else {
+        optimisticMsg = text
+          ? `${text}\n\n📎 ${file.name} · ${formatChatAttachmentBytes(file.size)}`
+          : `📎 ${file.name} · ${formatChatAttachmentBytes(file.size)}`;
+      }
+    }
+
     const optimistic: ChatMessageRow = {
       id: tempId,
-      sender_id: authUserId,
-      message: text,
+      sender_id: authUser.id,
+      message: optimisticMsg,
       created_at: new Date().toISOString(),
       status: "sent",
       delivered_at: null,
       read_at: null,
       reply_to_id: replyingTo?.id ?? null,
       reply_preview: replyPreview,
+      image_url: optimisticImg,
+      product_id: stripProduct?.id ?? null,
       client_sending: true,
     };
     setMessages((prev) => resolveChatMessageReplyPreviews([...prev, optimistic]));
 
     setSendBusy(true);
     try {
+      let outgoingMessage = text;
+      let outgoingImageUrl: string | null = null;
+
+      if (file) {
+        const mime = file.type || inferChatAttachmentMime(file.name);
+        const ext = file.name.split(".").pop()?.replace(/[^\w.-]/g, "") || "bin";
+        const safeExt = ext.length > 16 ? ext.slice(0, 16) : ext;
+        const path = `${authUser.id}/${conversation.id}/${crypto.randomUUID()}.${safeExt}`;
+        const { error: upErr } = await supabase.storage.from(CHAT_ATTACH_BUCKET).upload(path, file, {
+          cacheControl: "3600",
+          upsert: false,
+          contentType: mime || undefined,
+        });
+        if (upErr) throw upErr;
+        const { data: pub } = supabase.storage.from(CHAT_ATTACH_BUCKET).getPublicUrl(path);
+        const publicUrl = pub?.publicUrl;
+        if (!publicUrl) throw new Error("Could not get file URL");
+
+        if (isChatImageMime(mime)) {
+          outgoingImageUrl = publicUrl;
+          outgoingMessage = text;
+        } else {
+          outgoingMessage = formatChatDocMessage(text, file.name, file.size, publicUrl);
+          outgoingImageUrl = null;
+        }
+      }
+
       const { data: inserted, error } = await supabase
         .from("chat_messages")
         .insert({
-          conversation_id: conversationId,
-          sender_id: authUserId,
-          message: text,
+          conversation_id: conversation.id,
+          sender_id: authUser.id,
+          message: outgoingMessage || (outgoingImageUrl ? "" : ""),
+          image_url: outgoingImageUrl,
           reply_to_id: replyingTo?.id ?? null,
+          product_id: stripProduct?.id ?? null,
         })
-        .select(CHAT_MESSAGE_BASE_COLUMNS)
+        .select("*")
         .single();
 
       if (error) throw error;
@@ -1088,7 +1409,8 @@ export default function Chat() {
           return resolveChatMessageReplyPreviews([...withoutPending, { ...row, client_sending: false }]);
         });
       }
-      setMessage("");
+      setNewMessage("");
+      clearPendingAttachment();
       cancelReply();
       scrollToBottom("smooth");
     } catch (e: unknown) {
@@ -1097,14 +1419,6 @@ export default function Chat() {
     } finally {
       setSendBusy(false);
     }
-  };
-
-  const onComposerChange = (v: string) => {
-    setMessage(v);
-    if (typingBroadcastRef.current) clearTimeout(typingBroadcastRef.current);
-    typingBroadcastRef.current = setTimeout(() => {
-      if (v.trim()) broadcastTyping();
-    }, 600);
   };
 
   const removeProductContext = useCallback(async () => {
@@ -1137,10 +1451,7 @@ export default function Chat() {
   const openExternalChannel = useCallback(
     (channel: ExternalChannel) => {
       const links = phoneLinkTargets(peerPhone);
-      if (!links) {
-        toast.message("Seller has not shared a phone number");
-        return;
-      }
+      if (!links) return;
       if (channel === "voice") {
         toast.message("Voice calls open outside GreenHub. Call details will not appear in this chat.");
         window.location.href = links.telHref;
@@ -1153,26 +1464,44 @@ export default function Chat() {
   );
 
   const handleProductLikeToggle = useCallback(async () => {
-    if (!stripProduct) return;
-    await toggleReelLike();
-  }, [stripProduct, toggleReelLike]);
+    if (!authUser?.id || !stripProduct || likeBusy) return;
+    setLikeBusy(true);
+    const prevLiked = reelLiked;
+    const prevCount = reelLikeCount;
+    const nextLiked = !prevLiked;
+    setReelLiked(nextLiked);
+    setReelLikeCount((c) => Math.max(0, c + (nextLiked ? 1 : -1)));
+    try {
+      const { error } = await toggleProductLike(supabase, stripProduct.id, authUser.id, prevLiked);
+      if (error) throw new Error(error);
+      const synced = await fetchProductLikeCount(supabase, stripProduct.id);
+      setReelLikeCount(synced);
+      setStripProduct((p) => (p && p.id === stripProduct.id ? { ...p, like_count: synced } : p));
+    } catch (e: unknown) {
+      setReelLiked(prevLiked);
+      setReelLikeCount(prevCount);
+      toast.error(errorMessage(e, "Could not update like"));
+    } finally {
+      setLikeBusy(false);
+    }
+  }, [authUser?.id, stripProduct, likeBusy, reelLiked, reelLikeCount]);
 
   const toggleFollowPeer = useCallback(async () => {
-    if (!authUserId || !peerId || peerId === authUserId || followBusy) return;
+    if (!authUser?.id || !peerId || peerId === authUser.id || followBusy) return;
     setFollowBusy(true);
     try {
       if (peerFollowing) {
         const { error } = await supabase
           .from("profile_follows")
           .delete()
-          .eq("follower_id", authUserId)
+          .eq("follower_id", authUser.id)
           .eq("following_id", peerId);
         if (error) throw error;
         setPeerFollowing(false);
         toast.success("Unfollowed");
       } else {
         const { error } = await supabase.from("profile_follows").insert({
-          follower_id: authUserId,
+          follower_id: authUser.id,
           following_id: peerId,
         });
         if (error) throw error;
@@ -1184,18 +1513,18 @@ export default function Chat() {
     } finally {
       setFollowBusy(false);
     }
-  }, [authUserId, peerId, peerFollowing, followBusy, peerFirstName]);
+  }, [authUser?.id, peerId, peerFollowing, followBusy, peerFirstName]);
 
   const insertEmoji = useCallback((emoji: string) => {
     const el = composerRef.current;
     if (!el) {
-      setMessage((m) => m + emoji);
+      setNewMessage((m) => m + emoji);
       return;
     }
     const start = el.selectionStart ?? el.value.length;
     const end = el.selectionEnd ?? start;
     const next = el.value.slice(0, start) + emoji + el.value.slice(end);
-    setMessage(next);
+    setNewMessage(next);
     requestAnimationFrame(() => {
       el.focus();
       const pos = start + emoji.length;
@@ -1236,6 +1565,10 @@ export default function Chat() {
     }
   }, [closeMobileActions]);
 
+  const applyMessageReaction = useCallback((messageId: string, emoji: string) => {
+    setMessageReactions((prev) => ({ ...prev, [messageId]: emoji }));
+  }, []);
+
   const promptDeleteMessage = useCallback((msg: ChatMessageRow) => {
     closeMobileActions();
     setPendingConfirmAction({ kind: "delete-message", message: msg });
@@ -1254,14 +1587,6 @@ export default function Chat() {
     toast.message("Finish blocking this account from Settings.");
   }, [navigate]);
 
-  const openPeerProfile = useCallback(() => {
-    if (!peerId) {
-      toast.message("Profile is still loading.");
-      return;
-    }
-    navigate(`/profile/${peerId}`);
-  }, [navigate, peerId]);
-
   const runPendingConfirmAction = useCallback(async () => {
     if (!pendingConfirmAction || actionBusy) return;
 
@@ -1276,24 +1601,26 @@ export default function Chat() {
         setHighlightedMessageId((current) => (current === target.id ? null : current));
         toast.success("Message deleted");
       } else if (pendingConfirmAction.kind === "delete-conversation") {
-        if (!conversationId) {
-          toast.message("Conversation is still loading.");
+        const cid = conversation?.id;
+        if (!cid) {
+          toast.error("Conversation is not ready yet.");
           return;
         }
-        const { error } = await supabase.from("conversations").delete().eq("id", conversationId);
+        const { error } = await supabase.from("conversations").delete().eq("id", cid);
         if (error) throw error;
         toast.success("Conversation deleted");
         navigate("/messages", { replace: true });
         return;
       } else if (pendingConfirmAction.kind === "clear-chat") {
+        const cid = conversation?.id;
+        if (!cid) {
+          toast.error("Conversation is not ready yet.");
+          return;
+        }
         if (messages.length === 0) {
           toast.message("Chat is already empty");
         } else {
-          if (!conversationId) {
-            toast.message("Conversation is still loading.");
-            return;
-          }
-          const { error } = await supabase.from("chat_messages").delete().eq("conversation_id", conversationId);
+          const { error } = await supabase.from("chat_messages").delete().eq("conversation_id", cid);
           if (error) {
             toast.message("Bulk clear is not available in this project yet.");
           } else {
@@ -1310,7 +1637,7 @@ export default function Chat() {
       setActionBusy(false);
       setPendingConfirmAction(null);
     }
-  }, [actionBusy, conversationId, messages.length, navigate, pendingConfirmAction]);
+  }, [actionBusy, conversation?.id, messages.length, navigate, pendingConfirmAction]);
 
   const startSwipe = useCallback(
     (msg: ChatMessageRow, pointerType: string | undefined, clientX: number, clientY: number) => {
@@ -1398,8 +1725,7 @@ export default function Chat() {
     );
   }
 
-  const peerPhoneNumber = peerPhone?.trim() || null;
-  const peerContactLinks = phoneLinkTargets(peerPhoneNumber);
+  const peerContactLinks = phoneLinkTargets(peerPhone);
   const chatViewportStyle = viewportHeight
     ? ({ ["--chat-viewport-height" as string]: `${viewportHeight}px` } as { [key: string]: string })
     : undefined;
@@ -1443,25 +1769,21 @@ export default function Chat() {
                 <p className="mt-0.5 truncate text-xs text-gray-500">Always-on chat</p>
               </div>
               <button
-                onClick={() => {
-                  if (peerPhoneNumber) {
-                    window.location.href = `tel:${peerPhoneNumber.replace(/\s/g, "")}`;
-                  } else {
-                    toast.error("Seller has not shared a phone number");
-                  }
-                }}
-                className="p-2 rounded-full hover:bg-gray-100"
-                aria-label="Call seller"
+                type="button"
+                className="rounded-lg p-2 text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label="Call user"
+                title={peerContactLinks ? "Call user" : undefined}
+                disabled={!peerContactLinks}
+                onClick={() => openExternalChannel("voice")}
               >
-                <Phone className="w-5 h-5 text-gray-600" />
+                <Phone className="h-5 w-5" />
               </button>
               <button
                 type="button"
-                className={`rounded-lg p-2 hover:bg-gray-100 ${
-                  peerContactLinks ? "text-[#25D366]" : "text-gray-400"
-                }`}
+                className="rounded-lg p-2 text-[#25D366] hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
                 aria-label="Open WhatsApp"
-                title={peerContactLinks ? "Open WhatsApp" : "Seller has not shared a phone number"}
+                title={peerContactLinks ? "Open WhatsApp" : undefined}
+                disabled={!peerContactLinks}
                 onClick={() => openExternalChannel("whatsapp")}
               >
                 <WhatsAppIcon className="h-5 w-5" />
@@ -1510,15 +1832,11 @@ export default function Chat() {
                     Clear chat
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    className="flex cursor-pointer items-center gap-2"
-                    onSelect={(e) => {
-                      e.preventDefault();
-                      openPeerProfile();
-                    }}
-                  >
-                    <User className="h-4 w-4" />
-                    View profile
+                  <DropdownMenuItem asChild>
+                    <Link to={`/profile/${peerId}`} className="flex cursor-pointer items-center gap-2">
+                      <User className="h-4 w-4" />
+                      View profile
+                    </Link>
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -1557,14 +1875,11 @@ export default function Chat() {
                 const sameNextCluster =
                   !!next && next.sender_id === msg.sender_id && withinMinutes(msg.created_at, next.created_at, 8);
                 const showMeta = !sameNextCluster;
-                const mine = msg.sender_id === authUser.id;
-                const mineTail = mine && !sameNextCluster;
-                const theirsTail = !mine && !sameNextCluster;
+                const mine = msg.sender_id === authUser?.id;
                 const t = new Date(msg.created_at);
                 const timeLabel = Number.isNaN(t.getTime())
                   ? ""
                   : t.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-                const pad = sameCluster ? "px-3 py-1.5" : "p-3";
                 const replyPreview = msg.reply_preview;
                 const quotedSender = replyPreview ? senderLabel(replyPreview.sender_id) : "Original message";
                 const isHighlighted = highlightedMessageId === msg.id;
@@ -1580,12 +1895,12 @@ export default function Chat() {
                     ) : null}
                     <div
                       ref={(node) => setMessageNode(messageId, node)}
-                      className={`scroll-mt-24 flex ${sameCluster ? "mb-0.5" : "mb-2"} ${mine ? "justify-end" : "justify-start"}`}
+                      className={`scroll-mt-24 w-full ${sameCluster ? "mb-0.5" : "mb-2"}`}
                     >
                       <ContextMenu>
                         <ContextMenuTrigger asChild>
                           <div
-                            className="group relative flex max-w-[min(78%,22rem)] touch-manipulation select-none flex-col [touch-action:pan-y] sm:max-w-[75%] [-webkit-touch-callout:none] [-webkit-user-select:none]"
+                            className="group relative touch-manipulation select-none [touch-action:pan-y] [-webkit-touch-callout:none] [-webkit-user-select:none]"
                             onPointerDown={(e) => {
                               handleMessagePointerDown(msg, e.pointerType);
                               startSwipe(msg, e.pointerType, e.clientX, e.clientY);
@@ -1607,7 +1922,7 @@ export default function Chat() {
                               }
                             }}
                           >
-                            <div className="pointer-events-none absolute inset-y-0 left-2 flex items-center">
+                            <div className="pointer-events-none absolute inset-y-0 left-2 z-[5] flex items-center">
                               <div
                                 className={`rounded-full bg-emerald-100 p-2 text-emerald-700 transition ${
                                   swipeOffset > 16 ? "scale-100 opacity-100" : "scale-75 opacity-0"
@@ -1629,72 +1944,62 @@ export default function Chat() {
                               <Reply className="h-3.5 w-3.5" />
                               <span>Reply</span>
                             </button>
-                            <div
-                              className={`${pad} shadow-sm transition ${
-                                mine
-                                  ? mineTail
-                                    ? "rounded-2xl rounded-tr-none bg-[#0084ff] text-white"
-                                    : "rounded-2xl bg-[#0084ff] text-white"
-                                  : theirsTail
-                                    ? "rounded-2xl rounded-tl-none border border-white/75 bg-white/90 text-gray-900 backdrop-blur"
-                                    : "rounded-2xl border border-white/75 bg-white/90 text-gray-900 backdrop-blur"
-                              } ${isHighlighted ? "ring-2 ring-emerald-400 ring-offset-2 ring-offset-emerald-50" : ""}`}
-                              style={swipeOffset > 0 ? { transform: `translateX(${swipeOffset}px)` } : undefined}
-                            >
-                              {replyPreview || msg.reply_to_id ? (
-                                <button
-                                  type="button"
-                                  onClick={() => jumpToMessage(replyPreview?.id ?? msg.reply_to_id)}
-                                  className={`mb-2 block w-full rounded-xl border-l-4 px-3 py-2 text-left transition ${
-                                    mine
-                                      ? "border-white/60 bg-white/18 text-white/95 hover:bg-white/22"
-                                      : "border-emerald-400 bg-emerald-50/90 text-gray-700 hover:bg-emerald-50"
-                                  }`}
-                                  aria-label="Jump to original message"
-                                >
-                                  <p className="truncate text-[11px] font-semibold">{quotedSender}</p>
-                                  <p className="line-clamp-2 text-[12px] leading-snug opacity-90">
-                                    {replyPreview ? messagePreviewText(replyPreview.message) : "Original message unavailable"}
-                                  </p>
-                                </button>
-                              ) : null}
-                              <div className="whitespace-pre-wrap break-words text-[0.9375rem] leading-relaxed">
-                                {msg.message}
-                              </div>
-                            </div>
-                            <div className={`mt-1 flex sm:hidden ${mine ? "justify-end" : "justify-start"}`}>
-                              <button
-                                type="button"
-                                onClick={() => selectReply(msg)}
-                                className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium text-emerald-700 hover:bg-emerald-50"
-                                aria-label={`Reply to ${senderLabel(msg.sender_id)}`}
-                              >
-                                <Reply className="h-3.5 w-3.5" />
-                                Reply
-                              </button>
-                            </div>
-                            {showMeta ? (
-                              <div
-                                className={`mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 px-0.5 ${mine ? "justify-end" : "justify-start"}`}
-                              >
-                                {timeLabel ? (
-                                  <span className="text-[11px] tabular-nums text-gray-500">{timeLabel}</span>
-                                ) : null}
-                                {mine ? (
-                                  <MessageReceiptTicks phase={outgoingReceiptPhase(msg)} />
-                                ) : msg.read_at ? (
-                                  <span
-                                    className="inline-flex items-center gap-0.5 text-sky-600"
-                                    title="You read this message"
+                            <MessageBubble
+                              mine={!!mine}
+                              senderName={mine ? "You" : peerFirstName}
+                              showSenderName={!sameCluster}
+                              timeLabel={timeLabel}
+                              showMeta={showMeta}
+                              receiptPhase={outgoingReceiptPhase(msg)}
+                              showIncomingRead={!mine && !!msg.read_at}
+                              isHighlighted={isHighlighted}
+                              avatarUrl={mine ? selfAvatarUrl || getAvatarUrl(null, null, "You") : peerAvatar}
+                              avatarDisplayName={mine ? "You" : peerName}
+                              showAvatar={!sameCluster}
+                              reaction={messageReactions[msg.id] ?? null}
+                              bubbleTransformStyle={
+                                swipeOffset > 0 ? { transform: `translateX(${swipeOffset}px)` } : undefined
+                              }
+                              belowBubbleSlot={(() => {
+                                const resolved = resolveMessageProductCard(msg);
+                                if (!resolved) return null;
+                                const { strip, pricePending } = resolved;
+                                return (
+                                  <ChatPortraitProductCard
+                                    productId={strip.id}
+                                    title={strip.title}
+                                    priceLabel={pricePending ? "…" : formatPrice(strip.price)}
+                                    imageUrl={strip.image}
+                                  />
+                                );
+                              })()}
+                              replySlot={
+                                replyPreview || msg.reply_to_id ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => jumpToMessage(replyPreview?.id ?? msg.reply_to_id)}
+                                    className={`mb-2 block w-full rounded-xl border-l-4 px-3 py-2 text-left transition ${
+                                      mine
+                                        ? "border-white/60 bg-white/18 text-white/95 hover:bg-white/22"
+                                        : "border-emerald-500/80 bg-white/40 text-gray-900 hover:bg-white/55"
+                                    }`}
+                                    aria-label="Jump to original message"
                                   >
-                                    <CheckCheck className="h-3.5 w-3.5" strokeWidth={2.5} />
-                                  </span>
-                                ) : null}
-                              </div>
-                            ) : null}
+                                    <p className="truncate text-[11px] font-semibold">{quotedSender}</p>
+                                    <p className="line-clamp-2 text-[12px] leading-snug opacity-90">
+                                      {replyPreview
+                                        ? messagePreviewText(replyPreview.message, replyPreview.image_url)
+                                        : "Original message unavailable"}
+                                    </p>
+                                  </button>
+                                ) : null
+                              }
+                            >
+                              <ChatMessageBubbleBody msg={msg} mine={!!mine} />
+                            </MessageBubble>
                           </div>
                         </ContextMenuTrigger>
-                        <ContextMenuContent className="w-40">
+                        <ContextMenuContent className="min-w-[11rem]">
                           <ContextMenuItem
                             onSelect={() => {
                               selectReply(msg);
@@ -1706,7 +2011,7 @@ export default function Chat() {
                           </ContextMenuItem>
                           <ContextMenuItem onSelect={() => void copyMessageText(msg)}>
                             <Copy className="h-4 w-4" />
-                            Copy text
+                            Copy
                           </ContextMenuItem>
                           {mine ? (
                             <ContextMenuItem
@@ -1717,6 +2022,15 @@ export default function Chat() {
                               Delete
                             </ContextMenuItem>
                           ) : null}
+                          <ContextMenuSeparator />
+                          <ContextMenuLabel className="text-xs text-gray-500">Reaction</ContextMenuLabel>
+                          {CHAT_REACTION_EMOJIS.map((em) => (
+                            <ContextMenuItem key={em} onSelect={() => applyMessageReaction(msg.id, em)}>
+                              <span className="text-base leading-none">{em}</span>
+                              <span className="sr-only">React with {em}</span>
+                            </ContextMenuItem>
+                          ))}
+                          <ContextMenuSeparator />
                           <ContextMenuItem onSelect={() => void forwardMessage(msg)}>
                             <Share2 className="h-4 w-4" />
                             Forward
@@ -1873,7 +2187,9 @@ export default function Chat() {
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
                     Replying to {senderLabel(replyingTo.sender_id)}
                   </p>
-                  <p className="truncate text-sm text-emerald-950/80">{messagePreviewText(replyingTo.message)}</p>
+                  <p className="truncate text-sm text-emerald-950/80">
+                    {messagePreviewText(replyingTo.message, replyingTo.image_url)}
+                  </p>
                 </div>
                 <button
                   type="button"
@@ -1885,7 +2201,52 @@ export default function Chat() {
                 </button>
               </div>
               ) : null}
+              <input
+                ref={attachInputRef}
+                type="file"
+                accept={CHAT_ATTACH_ACCEPT}
+                className="hidden"
+                onChange={onAttachmentFileChange}
+              />
+              {pendingAttachment ? (
+                <div className="mb-2 flex items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm">
+                  <div className="flex min-w-0 flex-1 items-center gap-3">
+                    {pendingAttachment.previewUrl ? (
+                      <img
+                        src={pendingAttachment.previewUrl}
+                        alt=""
+                        className="h-12 w-12 shrink-0 rounded-lg object-cover ring-1 ring-black/10"
+                      />
+                    ) : (
+                      <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-white ring-1 ring-black/10">
+                        <FileText className="h-6 w-6 text-gray-500" />
+                      </span>
+                    )}
+                    <div className="min-w-0">
+                      <p className="truncate font-medium text-gray-900">{pendingAttachment.file.name}</p>
+                      <p className="text-xs text-gray-500">{formatChatAttachmentBytes(pendingAttachment.file.size)}</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={clearPendingAttachment}
+                    className="shrink-0 rounded-full p-2 text-gray-500 hover:bg-gray-200"
+                    aria-label="Remove attachment"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : null}
               <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => attachInputRef.current?.click()}
+                className="shrink-0 rounded-full p-2 text-gray-600 hover:bg-gray-100"
+                aria-label="Attach file"
+                title="Attach image, PDF, or Word"
+              >
+                <Paperclip className="h-5 w-5" />
+              </button>
               <Popover open={emojiPickerOpen} onOpenChange={setEmojiPickerOpen}>
                 <PopoverTrigger asChild>
                   <button
@@ -1913,22 +2274,30 @@ export default function Chat() {
               <input
                 ref={composerRef}
                 type="text"
-                value={message}
-                onChange={(e) => onComposerChange(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
+                value={newMessage}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setNewMessage(v);
+                  if (typingBroadcastRef.current) clearTimeout(typingBroadcastRef.current);
+                  typingBroadcastRef.current = setTimeout(() => {
+                    if (v.trim()) broadcastTyping();
+                  }, 600);
+                }}
+                onKeyPress={(e) => {
+                  if (e.key === "Enter") {
                     e.preventDefault();
-                    void handleSend();
+                    void sendMessage();
                   }
                 }}
-                placeholder={replyingTo ? `Reply to ${senderLabel(replyingTo.sender_id)}...` : "General comment..."}
+                placeholder="Type a message..."
                 autoComplete="off"
-                className="message-input min-h-[44px] w-full min-w-0 flex-1 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#22c55e]"
+                disabled={false}
+                className="message-input min-h-[44px] w-full min-w-0 flex-1 px-4 py-2 rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
               />
               <button
                 type="button"
-                onClick={() => void handleSend()}
-                disabled={!message.trim() || sendBusy}
+                onClick={() => void sendMessage()}
+                disabled={(!newMessage.trim() && !pendingAttachment) || sendBusy}
                 className="send-btn shrink-0 rounded-full bg-[#22c55e] p-2.5 text-white disabled:cursor-not-allowed disabled:opacity-50"
                 aria-label="Send"
               >
@@ -1951,7 +2320,9 @@ export default function Chat() {
                 <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
                   {senderLabel(mobileActionMessage.sender_id)}
                 </p>
-                <p className="line-clamp-3">{messagePreviewText(mobileActionMessage.message)}</p>
+                <p className="line-clamp-3">
+                  {messagePreviewText(mobileActionMessage.message, mobileActionMessage.image_url)}
+                </p>
               </div>
               <div className="mt-3 grid gap-2">
                 <button
@@ -1970,6 +2341,24 @@ export default function Chat() {
                   <Copy className="h-4 w-4" />
                   Copy text
                 </button>
+                <div className="flex flex-wrap justify-center gap-2 border-y border-gray-100 py-3">
+                  <span className="w-full text-center text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                    Reaction
+                  </span>
+                  {CHAT_REACTION_EMOJIS.map((em) => (
+                    <button
+                      key={em}
+                      type="button"
+                      className="rounded-full bg-gray-100 px-3 py-2 text-xl leading-none transition hover:bg-emerald-100"
+                      onClick={() => {
+                        applyMessageReaction(mobileActionMessage.id, em);
+                        setMobileActionMessage(null);
+                      }}
+                    >
+                      {em}
+                    </button>
+                  ))}
+                </div>
                 {mobileActionMessage.sender_id === authUser.id ? (
                   <button
                     type="button"

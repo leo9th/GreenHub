@@ -662,7 +662,7 @@ export default function Home() {
                 No products found yet. Listings with status &quot;active&quot; will appear here.
               </p>
             ) : (
-              <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 [&>*]:min-h-0 [&>*]:min-w-0 [&>*]:w-full">
+              <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 [&>*]:h-full [&>*]:min-h-0 [&>*]:min-w-0 [&>*]:w-full">
                 {products.map((product) => {
                   const row = product as Record<string, unknown>;
                   const pid = Number(row.id);
@@ -711,7 +711,7 @@ export default function Home() {
           {/* Recently Viewed — persisted in localStorage, synced when you open a product */}
           <div className="mb-6">
             <h2 className="font-semibold text-gray-800 mb-3">Recently Viewed</h2>
-            <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 [&>*]:min-h-0 [&>*]:min-w-0 [&>*]:w-full">
+            <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 [&>*]:h-full [&>*]:min-h-0 [&>*]:min-w-0 [&>*]:w-full">
               {recentViewedLoading && getRecentProductIds().length > 0 ? (
                 <div className="col-span-full">
                   <ProductCardSkeletonGrid count={Math.min(4, getRecentProductIds().length)} />

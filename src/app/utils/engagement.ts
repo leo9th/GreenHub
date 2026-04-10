@@ -77,8 +77,12 @@ export async function fetchRecentNotifications(
   return data as AppNotificationRow[];
 }
 
-export async function markAllNotificationsRead(supabase: SupabaseClient): Promise<void> {
-  await supabase.from("notifications").update({ read_at: new Date().toISOString() }).is("read_at", null);
+export async function markAllNotificationsRead(supabase: SupabaseClient, userId: string): Promise<void> {
+  await supabase
+    .from("notifications")
+    .update({ read_at: new Date().toISOString() })
+    .eq("user_id", userId)
+    .is("read_at", null);
 }
 
 export async function markNotificationReadById(supabase: SupabaseClient, id: string): Promise<void> {

@@ -15,9 +15,7 @@ import {
   Ban,
   Eraser,
   Smile,
-  ThumbsUp,
   Share2,
-  UserPlus,
   Paperclip,
   FileText,
   X,
@@ -78,12 +76,6 @@ import {
 } from "../components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popover";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "../components/ui/sheet";
-import {
-  toggleProductLike,
-  fetchProductLikeCount,
-  fetchUserLikesProduct,
-} from "../utils/engagement";
-
 function ChatErrorBoundary({ children }: { children: React.ReactNode }) {
   class Boundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
     constructor(props: { children: React.ReactNode }) {
@@ -137,11 +129,6 @@ function parseConversationInt(v: unknown): number | null {
   if (v == null) return null;
   const n = typeof v === "number" ? v : Number(v);
   return Number.isFinite(n) ? n : null;
-}
-
-function isUuidLike(value: string | null | undefined): boolean {
-  if (!value) return false;
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.trim());
 }
 
 function isDuplicateConversationError(err: { code?: string; message?: string }): boolean {
@@ -274,19 +261,6 @@ function dayKey(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
   return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
-}
-
-function formatEngagementCount(n: number): string {
-  if (n >= 1_000_000) {
-    const v = n / 1_000_000;
-    return v >= 10 ? `${Math.round(v)}M` : `${v.toFixed(1).replace(/\.0$/, "")}M`;
-  }
-  if (n >= 10_000) return `${Math.round(n / 1000)}K`;
-  if (n >= 1000) {
-    const v = n / 1000;
-    return `${v.toFixed(1).replace(/\.0$/, "")}K`;
-  }
-  return String(n);
 }
 
 function dayDividerLabel(iso: string): string {
@@ -480,6 +454,11 @@ export default function Chat() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { user: authUser, loading: authLoading } = useAuth();
+
+  const isValidUUID = (id: string) => {
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    return uuidRegex.test(id);
+  };
   const formatPrice = useCurrency();
   const [newMessage, setNewMessage] = useState("");
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
@@ -525,11 +504,6 @@ export default function Chat() {
   const [stripProduct, setStripProduct] = useState<StripProduct | null>(null);
   /** Listing rows for messages that include `product_id` (portrait cards in thread). */
   const [messageProductsById, setMessageProductsById] = useState<Map<number, StripProduct>>(() => new Map());
-  const [reelLiked, setReelLiked] = useState(false);
-  const [reelLikeCount, setReelLikeCount] = useState(0);
-  const [likeBusy, setLikeBusy] = useState(false);
-  const [peerFollowing, setPeerFollowing] = useState(false);
-  const [followBusy, setFollowBusy] = useState(false);
   const [contextClearBusy, setContextClearBusy] = useState(false);
   const [peerTyping, setPeerTyping] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -784,17 +758,19 @@ export default function Chat() {
       return;
     }
 
-    if (threadId && !isUuidLike(threadId)) {
-      setLoadError(
-        "This chat link is invalid. Open the conversation from Messages again so GreenHub can use the correct thread ID.",
-      );
+    if (threadId && !isValidUUID(threadId)) {
+      // eslint-disable-next-line no-console
+      console.error("Invalid conversation ID:", threadId);
+      setLoadError("Invalid conversation ID");
       setConversation(null);
       setPeerId(null);
       setLoading(false);
       return;
     }
 
-    if (peerFromUrl && !isUuidLike(peerFromUrl)) {
+    if (peerFromUrl && !isValidUUID(peerFromUrl)) {
+      // eslint-disable-next-line no-console
+      console.error("Invalid peer user ID:", peerFromUrl);
       setLoadError(
         "This user cannot be messaged from this link because the account ID is invalid. Open their profile or listing again and try Chat once more.",
       );
@@ -1058,78 +1034,6 @@ export default function Chat() {
       cancelled = true;
     };
   }, [messages]);
-
-  useEffect(() => {
-    if (stripProduct == null) {
-      setReelLikeCount(0);
-      return;
-    }
-    setReelLikeCount(stripProduct.like_count);
-  }, [stripProduct]);
-
-  useEffect(() => {
-    if (!stripProduct?.id || !authUser?.id) {
-      setReelLiked(false);
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
-      const liked = await fetchUserLikesProduct(supabase, stripProduct.id, authUser.id);
-      if (!cancelled) setReelLiked(liked);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [stripProduct?.id, authUser?.id]);
-
-  useEffect(() => {
-    const pid = stripProduct?.id;
-    if (pid == null) return;
-    const ch = supabase
-      .channel(`chat-product-like-count:${pid}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "products",
-          filter: `id=eq.${pid}`,
-        },
-        (payload) => {
-          const n = (payload.new as { like_count?: unknown })?.like_count;
-          const next =
-            typeof n === "number" && Number.isFinite(n) ? n : n != null ? Number(n) || 0 : null;
-          if (next != null) {
-            setReelLikeCount(next);
-            setStripProduct((p) => (p && p.id === pid ? { ...p, like_count: next } : p));
-          }
-        },
-      )
-      .subscribe();
-    return () => {
-      void supabase.removeChannel(ch);
-    };
-  }, [stripProduct?.id]);
-
-  useEffect(() => {
-    if (!authUser?.id || !peerId || peerId === authUser.id) {
-      setPeerFollowing(false);
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
-      const { data, error } = await supabase
-        .from("profile_follows")
-        .select("follower_id")
-        .eq("follower_id", authUser.id)
-        .eq("following_id", peerId)
-        .maybeSingle();
-      if (!cancelled && !error) setPeerFollowing(!!data);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [authUser?.id, peerId]);
 
   useEffect(() => {
     if (!conversation?.id || !authUser?.id) return;
@@ -1437,17 +1341,6 @@ export default function Chat() {
     }
   }, [conversation, contextClearBusy]);
 
-  const copyProductLinkToClipboard = useCallback(async () => {
-    if (!stripProduct) return;
-    const url = `${window.location.origin}/products/${stripProduct.id}`;
-    try {
-      await navigator.clipboard.writeText(url);
-      toast.success("Link copied to clipboard");
-    } catch {
-      toast.error("Could not copy link");
-    }
-  }, [stripProduct]);
-
   const openExternalChannel = useCallback(
     (channel: ExternalChannel) => {
       const links = phoneLinkTargets(peerPhone);
@@ -1462,58 +1355,6 @@ export default function Chat() {
     },
     [peerPhone],
   );
-
-  const handleProductLikeToggle = useCallback(async () => {
-    if (!authUser?.id || !stripProduct || likeBusy) return;
-    setLikeBusy(true);
-    const prevLiked = reelLiked;
-    const prevCount = reelLikeCount;
-    const nextLiked = !prevLiked;
-    setReelLiked(nextLiked);
-    setReelLikeCount((c) => Math.max(0, c + (nextLiked ? 1 : -1)));
-    try {
-      const { error } = await toggleProductLike(supabase, stripProduct.id, authUser.id, prevLiked);
-      if (error) throw new Error(error);
-      const synced = await fetchProductLikeCount(supabase, stripProduct.id);
-      setReelLikeCount(synced);
-      setStripProduct((p) => (p && p.id === stripProduct.id ? { ...p, like_count: synced } : p));
-    } catch (e: unknown) {
-      setReelLiked(prevLiked);
-      setReelLikeCount(prevCount);
-      toast.error(errorMessage(e, "Could not update like"));
-    } finally {
-      setLikeBusy(false);
-    }
-  }, [authUser?.id, stripProduct, likeBusy, reelLiked, reelLikeCount]);
-
-  const toggleFollowPeer = useCallback(async () => {
-    if (!authUser?.id || !peerId || peerId === authUser.id || followBusy) return;
-    setFollowBusy(true);
-    try {
-      if (peerFollowing) {
-        const { error } = await supabase
-          .from("profile_follows")
-          .delete()
-          .eq("follower_id", authUser.id)
-          .eq("following_id", peerId);
-        if (error) throw error;
-        setPeerFollowing(false);
-        toast.success("Unfollowed");
-      } else {
-        const { error } = await supabase.from("profile_follows").insert({
-          follower_id: authUser.id,
-          following_id: peerId,
-        });
-        if (error) throw error;
-        setPeerFollowing(true);
-        toast.success(`Following ${peerFirstName}`);
-      }
-    } catch (e: unknown) {
-      toast.error(errorMessage(e, "Could not update follow"));
-    } finally {
-      setFollowBusy(false);
-    }
-  }, [authUser?.id, peerId, peerFollowing, followBusy, peerFirstName]);
 
   const insertEmoji = useCallback((emoji: string) => {
     const el = composerRef.current;
@@ -1768,26 +1609,67 @@ export default function Chat() {
                 <h1 className="font-semibold text-gray-800">{peerName}</h1>
                 <p className="mt-0.5 truncate text-xs text-gray-500">Always-on chat</p>
               </div>
-              <button
-                type="button"
-                className="rounded-lg p-2 text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
-                aria-label="Call user"
-                title={peerContactLinks ? "Call user" : undefined}
-                disabled={!peerContactLinks}
-                onClick={() => openExternalChannel("voice")}
-              >
-                <Phone className="h-5 w-5" />
-              </button>
-              <button
-                type="button"
-                className="rounded-lg p-2 text-[#25D366] hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
-                aria-label="Open WhatsApp"
-                title={peerContactLinks ? "Open WhatsApp" : undefined}
-                disabled={!peerContactLinks}
-                onClick={() => openExternalChannel("whatsapp")}
-              >
-                <WhatsAppIcon className="h-5 w-5" />
-              </button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    className={`rounded-lg p-2 text-gray-600 hover:bg-gray-100 ${peerContactLinks ? "" : "opacity-60"}`}
+                    aria-label={
+                      peerContactLinks
+                        ? `Call or WhatsApp ${peerName}`
+                        : `Contact — ${peerName} (no phone on profile)`
+                    }
+                    title={peerContactLinks ? "Call or WhatsApp" : "View contact options"}
+                  >
+                    <Phone className="h-5 w-5" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-60">
+                  <DropdownMenuLabel className="font-semibold text-gray-900">{peerName}</DropdownMenuLabel>
+                  {peerContactLinks ? (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        className="flex cursor-pointer items-start gap-2 py-2"
+                        onSelect={(e) => {
+                          e.preventDefault();
+                          openExternalChannel("whatsapp");
+                        }}
+                      >
+                        <WhatsAppIcon className="mt-0.5 h-4 w-4 shrink-0 text-[#25D366]" />
+                        <span className="min-w-0 flex-1">
+                          <span className="font-medium text-[#25D366]">WhatsApp</span>
+                          {peerPhone?.trim() ? (
+                            <span className="mt-0.5 block truncate text-xs text-gray-500">{peerPhone.trim()}</span>
+                          ) : null}
+                        </span>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        className="flex cursor-pointer items-start gap-2 py-2"
+                        onSelect={(e) => {
+                          e.preventDefault();
+                          openExternalChannel("voice");
+                        }}
+                      >
+                        <Phone className="mt-0.5 h-4 w-4 shrink-0 text-gray-600" />
+                        <span className="min-w-0 flex-1">
+                          <span className="font-medium text-gray-800">Call</span>
+                          {peerPhone?.trim() ? (
+                            <span className="mt-0.5 block truncate text-xs text-gray-500">{peerPhone.trim()}</span>
+                          ) : null}
+                        </span>
+                      </DropdownMenuItem>
+                    </>
+                  ) : (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem disabled className="text-xs text-gray-500">
+                        No phone number on profile
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
@@ -1864,6 +1746,40 @@ export default function Chat() {
             onScroll={updateScrollState}
             className="chat-messages min-h-0 flex-1 overflow-y-auto overscroll-y-contain scroll-smooth px-3 py-3 sm:px-4 sm:py-4 [-webkit-overflow-scrolling:touch]"
           >
+            {stripProduct ? (
+              <div className="sticky top-0 z-10 mb-2 border-b border-gray-200 bg-white p-3 flex items-center gap-3">
+                <Link
+                  to={`/products/${stripProduct.id}`}
+                  className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-gray-100 ring-1 ring-black/5"
+                  aria-label={`Open listing: ${stripProduct.title}`}
+                >
+                  {stripProduct.image ? (
+                    <img src={stripProduct.image} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-[10px] text-gray-400">No image</div>
+                  )}
+                </Link>
+                <div className="min-w-0 flex-1">
+                  <Link
+                    to={`/products/${stripProduct.id}`}
+                    className="line-clamp-2 text-sm font-semibold text-gray-900 hover:text-emerald-700"
+                  >
+                    {stripProduct.title}
+                  </Link>
+                  <p className="mt-0.5 text-sm font-bold text-emerald-600">{formatPrice(stripProduct.price)}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void removeProductContext()}
+                  disabled={contextClearBusy}
+                  className="shrink-0 rounded-full p-2 text-gray-500 hover:bg-gray-100 disabled:opacity-50"
+                  title="Remove listing from this chat"
+                  aria-label="Remove listing from chat"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            ) : null}
             <div className="flex flex-col pb-1">
               {messages.map((msg, i) => {
                 const messageId = msg.id ?? `msg-${i}-${msg.created_at}`;
@@ -2056,130 +1972,6 @@ export default function Chat() {
           </div>
 
           <div className="chat-composer-stack sticky bottom-0 z-30 shrink-0 border-t border-emerald-100/90 bg-white/96 shadow-[0_-2px_10px_rgba(0,0,0,0.06)] backdrop-blur supports-[backdrop-filter]:bg-white/90 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
-            {stripProduct ? (
-            <div className="product-context border-b border-gray-200 px-3 pt-3 sm:px-4">
-              <div className="relative mx-auto max-w-md overflow-hidden rounded-2xl bg-gray-900 shadow-lg ring-1 ring-black/10">
-                <Link
-                  to={`/products/${stripProduct.id}`}
-                  className="relative block h-[min(220px,42svh)] w-full sm:h-[260px]"
-                  aria-label={`Open listing: ${stripProduct.title}`}
-                >
-                  {stripProduct.image ? (
-                    <img
-                      src={stripProduct.image}
-                      alt=""
-                      className="h-full w-full object-cover"
-                    />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center bg-gray-800 text-sm text-gray-400">
-                      No image
-                    </div>
-                  )}
-                </Link>
-                <div
-                  className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-black/35"
-                  aria-hidden
-                />
-                <button
-                  type="button"
-                  onClick={() => void removeProductContext()}
-                  disabled={contextClearBusy}
-                  className="remove-product absolute left-2.5 top-2.5 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-black/45 text-lg font-light leading-none text-white ring-1 ring-white/35 backdrop-blur-sm transition-colors hover:bg-black/55 disabled:opacity-50"
-                  title="Remove listing from this chat"
-                  aria-label="Remove listing from chat"
-                >
-                  ×
-                </button>
-                <div className="pointer-events-none absolute bottom-24 right-0 top-10 z-20 w-14 sm:bottom-28 sm:top-12">
-                  <div className="pointer-events-auto flex h-full flex-col items-center justify-center gap-5 pr-2 sm:pr-2.5">
-                    <button
-                      type="button"
-                      onClick={() => void handleProductLikeToggle()}
-                      disabled={likeBusy}
-                      className="flex flex-col items-center gap-1 text-white disabled:opacity-50"
-                      aria-label={reelLiked ? "Unlike" : "Like"}
-                    >
-                      <span className="flex h-11 w-11 items-center justify-center rounded-full bg-black/40 ring-1 ring-white/40 shadow-md backdrop-blur-sm transition-transform active:scale-90">
-                        <ThumbsUp
-                          className={`h-5 w-5 ${reelLiked ? "fill-white text-white" : "text-white"}`}
-                          strokeWidth={reelLiked ? 0 : 2.25}
-                        />
-                      </span>
-                      <span className="max-w-[3.25rem] text-center text-[11px] font-bold leading-none tracking-tight drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
-                        {formatEngagementCount(reelLikeCount)}
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={focusComposer}
-                       className="flex flex-col items-center gap-1 text-white"
-                      aria-label="Comment"
-                    >
-                      <span className="flex h-11 w-11 items-center justify-center rounded-full bg-black/40 ring-1 ring-white/40 shadow-md backdrop-blur-sm transition-transform active:scale-90">
-                        <MessageCircle className="h-5 w-5 text-white" strokeWidth={2.25} />
-                      </span>
-                      <span className="max-w-[3.25rem] text-center text-[11px] font-bold leading-none tracking-tight drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
-                        {formatEngagementCount(messages.length)}
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void copyProductLinkToClipboard()}
-                      className="flex flex-col items-center gap-1 text-white"
-                      aria-label="Copy product link"
-                    >
-                      <span className="flex h-11 w-11 items-center justify-center rounded-full bg-black/40 ring-1 ring-white/40 shadow-md backdrop-blur-sm transition-transform active:scale-90">
-                        <Share2 className="h-5 w-5 text-white" strokeWidth={2.25} />
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => navigate("/products")}
-                      className="flex flex-col items-center gap-1 text-white"
-                      aria-label="Search products"
-                    >
-                      <span className="flex h-11 w-11 items-center justify-center rounded-full bg-black/40 ring-1 ring-white/40 shadow-md backdrop-blur-sm transition-transform active:scale-90">
-                        <Search className="h-5 w-5 text-white" strokeWidth={2.25} />
-                      </span>
-                    </button>
-                  </div>
-                </div>
-                <div className="pointer-events-none absolute bottom-0 left-0 right-14 z-10 flex flex-col gap-2 p-3 sm:right-16 sm:p-4">
-                  <div>
-                    <p className="line-clamp-2 text-sm font-semibold leading-snug text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)]">
-                      {stripProduct.title}
-                    </p>
-                    <p className="mt-1 text-sm font-bold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)]">
-                      {formatPrice(stripProduct.price)}
-                    </p>
-                    <Link
-                      to={`/products/${stripProduct.id}`}
-                      className="pointer-events-auto mt-2 inline-block text-xs font-bold uppercase tracking-wide text-white/95 underline decoration-white/60 underline-offset-2 hover:text-white"
-                    >
-                      View listing
-                    </Link>
-                  </div>
-                  <div className="pointer-events-auto border-t border-white/25 pt-2">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-white/80">General comment</p>
-                    <p className="mt-0.5 text-[11px] leading-snug text-white/85">
-                      Your message below goes to {peerFirstName} about this product.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => void toggleFollowPeer()}
-                      disabled={followBusy || peerId === authUser.id}
-                      className="mt-2 inline-flex items-center gap-1.5 rounded-lg border-2 border-white bg-white/10 px-3 py-1.5 text-xs font-bold text-white backdrop-blur-sm transition-colors hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-40"
-                      aria-label={peerFollowing ? "Unfollow" : "Follow seller"}
-                    >
-                      <UserPlus className="h-3.5 w-3.5 shrink-0" strokeWidth={2.5} />
-                      {peerFollowing ? "Following" : "Follow"}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-            ) : null}
-
             <div className="message-input-area px-3 py-3 sm:px-4">
               {replyingTo ? (
               <div className="mb-2 flex items-start justify-between gap-3 rounded-2xl border border-emerald-100 bg-emerald-50/80 px-3 py-2">

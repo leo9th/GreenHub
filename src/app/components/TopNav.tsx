@@ -6,7 +6,7 @@ import { useInboxNotifications } from "../context/InboxNotificationsContext";
 import { getAvatarUrl } from "../utils/getAvatar";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { supabase } from "../../lib/supabase";
-import { markNotificationReadById } from "../utils/engagement";
+import { markAllNotificationsRead, markNotificationReadById } from "../utils/engagement";
 import { formatGreenHubRelative } from "../utils/formatGreenHubTime";
 
 export default function TopNav() {
@@ -60,6 +60,12 @@ export default function TopNav() {
     profile?.gender || authUser?.user_metadata?.gender,
     fullName,
   );
+
+  const markNotificationsAsRead = useCallback(async () => {
+    if (!authUser?.id) return;
+    await markAllNotificationsRead(supabase, authUser.id);
+    await refreshNotifications();
+  }, [authUser?.id, refreshNotifications]);
 
   const openNotification = useCallback(
     async (n: (typeof notifications)[0]) => {
@@ -115,8 +121,12 @@ export default function TopNav() {
               <button
                 type="button"
                 onClick={() => {
-                  setShowNotifications(!showNotifications);
+                  const willOpen = !showNotifications;
+                  setShowNotifications(willOpen);
                   setShowDropdown(false);
+                  if (willOpen) {
+                    void markNotificationsAsRead();
+                  }
                 }}
                 className="relative p-1 outline-none"
                 aria-label="Notifications"

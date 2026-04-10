@@ -109,7 +109,7 @@ export function InboxNotificationsProvider({ children }: { children: ReactNode }
 
   const markAllNotificationsReadAndRefresh = useCallback(async () => {
     if (!user?.id) return;
-    await markAllNotificationsRead(supabase);
+    await markAllNotificationsRead(supabase, user.id);
     await refresh();
   }, [user?.id, refresh]);
 

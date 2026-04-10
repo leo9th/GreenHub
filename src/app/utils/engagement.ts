@@ -1,5 +1,40 @@
 import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
 
+/** Primary key value for `products` / `product_likes.product_id` (numeric id or UUID string). */
+export type ProductPk = string | number;
+
+/**
+ * Coerce route/row product ids for PostgREST: finite numbers, digit strings → number when safe,
+ * otherwise trimmed string (UUID etc.). Avoids `Number(uuid)` → NaN.
+ */
+export function normalizeProductPk(raw: unknown): ProductPk | null {
+  if (raw == null) return null;
+  if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+  if (typeof raw === "string") {
+    const t = raw.trim();
+    if (!t) return null;
+    if (/^\d+$/.test(t)) {
+      const n = Number(t);
+      if (Number.isSafeInteger(n)) return n;
+      return t;
+    }
+    return t;
+  }
+  return null;
+}
+
+/** Stable Set/Map key for a product id (aligns numeric 1 with "1"). */
+export function productLikeSetKey(pk: ProductPk): string {
+  return typeof pk === "number" ? String(pk) : pk.trim();
+}
+
+/** Key for comparing product rows from mixed `unknown` ids. */
+export function productRowKey(raw: unknown): string {
+  const pk = normalizeProductPk(raw);
+  if (pk != null) return productLikeSetKey(pk);
+  return raw == null ? "" : String(raw).trim();
+}
+
 export async function fetchTotalUnreadMessages(supabase: SupabaseClient): Promise<number> {
   const { data, error } = await supabase.rpc("total_unread_message_count");
   if (error) return 0;
@@ -52,12 +87,14 @@ export async function markNotificationReadById(supabase: SupabaseClient, id: str
 
 export async function toggleProductLike(
   supabase: SupabaseClient,
-  productId: number,
+  productId: ProductPk,
   userId: string,
   currentlyLiked: boolean,
 ): Promise<{ error: string | null }> {
+  console.debug("[toggleProductLike]", { productId, userId, currentlyLiked });
   if (currentlyLiked) {
     const { error } = await supabase.from("product_likes").delete().eq("product_id", productId).eq("user_id", userId);
+    if (error) console.debug("[toggleProductLike] delete error", error.message);
     return { error: error?.message ?? null };
   }
   const { error } = await supabase
@@ -66,13 +103,14 @@ export async function toggleProductLike(
   if (error?.code === "23505") {
     return { error: null };
   }
+  if (error) console.debug("[toggleProductLike] insert error", error.message, error);
   return { error: error?.message ?? null };
 }
 
 /** `products.like_count` maintained by triggers on `product_likes`. */
 export async function fetchProductLikeCount(
   supabase: SupabaseClient,
-  productId: number,
+  productId: ProductPk,
 ): Promise<number> {
   const { data, error } = await supabase.from("products").select("like_count").eq("id", productId).maybeSingle();
   if (error || !data) return 0;
@@ -82,7 +120,7 @@ export async function fetchProductLikeCount(
 
 export async function fetchUserLikesProduct(
   supabase: SupabaseClient,
-  productId: number,
+  productId: ProductPk,
   userId: string,
 ): Promise<boolean> {
   const { data, error } = await supabase
@@ -97,11 +135,12 @@ export async function fetchUserLikesProduct(
 
 export function subscribeToProductLikes(
   supabase: SupabaseClient,
-  productId: number,
+  productId: ProductPk,
   onLikeCount: (count: number) => void,
 ): RealtimeChannel {
+  const chId = typeof productId === "number" ? String(productId) : productId;
   return supabase
-    .channel(`product-like-count:${productId}`)
+    .channel(`product-like-count:${chId}`)
     .on(
       "postgres_changes",
       {
@@ -122,8 +161,8 @@ export function subscribeToProductLikes(
 export async function fetchLikedProductIdsForUser(
   supabase: SupabaseClient,
   userId: string,
-  productIds: number[],
-): Promise<Set<number>> {
+  productIds: ProductPk[],
+): Promise<Set<string>> {
   if (productIds.length === 0) return new Set();
   const { data, error } = await supabase
     .from("product_likes")
@@ -131,9 +170,10 @@ export async function fetchLikedProductIdsForUser(
     .eq("user_id", userId)
     .in("product_id", productIds);
   if (error || !data) return new Set();
-  return new Set(
-    (data as { product_id: number }[])
-      .map((r) => Number(r.product_id))
-      .filter((n) => Number.isFinite(n)),
-  );
+  const keys = new Set<string>();
+  for (const r of data as { product_id: string | number }[]) {
+    const pk = normalizeProductPk(r.product_id);
+    if (pk != null) keys.add(productLikeSetKey(pk));
+  }
+  return keys;
 }

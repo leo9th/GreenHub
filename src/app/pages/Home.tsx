@@ -12,8 +12,12 @@ import { useInboxNotifications } from "../context/InboxNotificationsContext";
 import {
   fetchLikedProductIdsForUser,
   fetchProductLikeCount,
+  normalizeProductPk,
+  productLikeSetKey,
+  productRowKey,
   subscribeToProductLikes,
   toggleProductLike,
+  type ProductPk,
 } from "../utils/engagement";
 import { toast } from "sonner";
 import { SortBar } from "../components/SortBar";
@@ -49,8 +53,8 @@ export default function Home() {
   const [isLoadingMoreHome, setIsLoadingMoreHome] = useState(false);
   const [homeTotalCount, setHomeTotalCount] = useState<number | null>(null);
   const [productLoadError, setProductLoadError] = useState<string | null>(null);
-  const [likedProductIds, setLikedProductIds] = useState<Set<number>>(new Set());
-  const [pendingLikeIds, setPendingLikeIds] = useState<Set<number>>(new Set());
+  const [likedProductIds, setLikedProductIds] = useState<Set<string>>(new Set());
+  const [pendingLikeIds, setPendingLikeIds] = useState<Set<string>>(new Set());
   const [commentCounts, setCommentCounts] = useState<Record<string, number>>({});
   const [homeSort, setHomeSort] = useState<ListingSort>("recent");
   const [recentViewedProducts, setRecentViewedProducts] = useState<Array<Record<string, unknown>>>([]);
@@ -68,11 +72,19 @@ export default function Home() {
   );
 
   const homeCardIds = useMemo(() => {
-    const fromGrid = products.map((p) => Number(p.id)).filter((n) => Number.isFinite(n));
-    const fromRecent = recentViewedProducts.map((p) => Number(p.id)).filter((n) => Number.isFinite(n));
-    return [...new Set([...fromGrid, ...fromRecent])];
+    const seen = new Set<string>();
+    const out: ProductPk[] = [];
+    for (const p of [...products, ...recentViewedProducts]) {
+      const pk = normalizeProductPk(p.id);
+      if (pk == null) continue;
+      const k = productLikeSetKey(pk);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(pk);
+    }
+    return out;
   }, [products, recentViewedProducts]);
-  const homeCardIdsKey = useMemo(() => homeCardIds.join(","), [homeCardIds]);
+  const homeCardIdsKey = useMemo(() => homeCardIds.map(productLikeSetKey).join(","), [homeCardIds]);
 
   const homeRelatedSearches = useMemo(
     () => getRelatedSearchSuggestions(searchQuery),
@@ -129,11 +141,12 @@ export default function Home() {
     if (homeCardIds.length === 0) return;
     const channels = homeCardIds.map((id) =>
       subscribeToProductLikes(supabase, id, (count) => {
+        const key = productLikeSetKey(id);
         setProducts((prev) =>
-          prev.map((p) => (Number(p.id) === id ? { ...p, like_count: count } : p)),
+          prev.map((p) => (productRowKey(p.id) === key ? { ...p, like_count: count } : p)),
         );
         setRecentViewedProducts((prev) =>
-          prev.map((p) => (Number(p.id) === id ? { ...p, like_count: count } : p)),
+          prev.map((p) => (productRowKey(p.id) === key ? { ...p, like_count: count } : p)),
         );
       }),
     );
@@ -152,29 +165,36 @@ export default function Home() {
         toast.message("Login to like");
         return;
       }
-      const id = Number(row.id);
-      if (!Number.isFinite(id)) return;
-      if (pendingLikeIds.has(id)) return;
-      const liked = likedProductIds.has(id);
+      const id = normalizeProductPk(row.id);
+      if (id == null) return;
+      const rowKey = productLikeSetKey(id);
+      if (pendingLikeIds.has(rowKey)) return;
+      const liked = likedProductIds.has(rowKey);
       const prevCount = Number(row.like_count ?? 0);
       const nextLiked = !liked;
       const nextCount = nextLiked ? prevCount + 1 : Math.max(0, prevCount - 1);
-      setPendingLikeIds((prev) => new Set(prev).add(id));
+      setPendingLikeIds((prev) => new Set(prev).add(rowKey));
       setLikedProductIds((prev) => {
         const n = new Set(prev);
-        if (nextLiked) n.add(id);
-        else n.delete(id);
+        if (nextLiked) n.add(rowKey);
+        else n.delete(rowKey);
         return n;
       });
-      setProducts((prev) => prev.map((p) => (Number(p.id) === id ? { ...p, like_count: nextCount } : p)));
-      setRecentViewedProducts((prev) => prev.map((p) => (Number(p.id) === id ? { ...p, like_count: nextCount } : p)));
+      setProducts((prev) =>
+        prev.map((p) => (productRowKey(p.id) === rowKey ? { ...p, like_count: nextCount } : p)),
+      );
+      setRecentViewedProducts((prev) =>
+        prev.map((p) => (productRowKey(p.id) === rowKey ? { ...p, like_count: nextCount } : p)),
+      );
       try {
         const { error } = await toggleProductLike(supabase, id, authUser.id, liked);
         if (error) throw new Error(error);
         const syncedCount = await fetchProductLikeCount(supabase, id);
-        setProducts((prev) => prev.map((p) => (Number(p.id) === id ? { ...p, like_count: syncedCount } : p)));
+        setProducts((prev) =>
+          prev.map((p) => (productRowKey(p.id) === rowKey ? { ...p, like_count: syncedCount } : p)),
+        );
         setRecentViewedProducts((prev) =>
-          prev.map((p) => (Number(p.id) === id ? { ...p, like_count: syncedCount } : p)),
+          prev.map((p) => (productRowKey(p.id) === rowKey ? { ...p, like_count: syncedCount } : p)),
         );
       } catch (error: unknown) {
         const message =
@@ -182,16 +202,20 @@ export default function Home() {
         toast.error(message);
         setLikedProductIds((prev) => {
           const n = new Set(prev);
-          if (liked) n.add(id);
-          else n.delete(id);
+          if (liked) n.add(rowKey);
+          else n.delete(rowKey);
           return n;
         });
-        setProducts((prev) => prev.map((p) => (Number(p.id) === id ? { ...p, like_count: prevCount } : p)));
-        setRecentViewedProducts((prev) => prev.map((p) => (Number(p.id) === id ? { ...p, like_count: prevCount } : p)));
+        setProducts((prev) =>
+          prev.map((p) => (productRowKey(p.id) === rowKey ? { ...p, like_count: prevCount } : p)),
+        );
+        setRecentViewedProducts((prev) =>
+          prev.map((p) => (productRowKey(p.id) === rowKey ? { ...p, like_count: prevCount } : p)),
+        );
       } finally {
         setPendingLikeIds((prev) => {
           const next = new Set(prev);
-          next.delete(id);
+          next.delete(rowKey);
           return next;
         });
       }
@@ -638,7 +662,7 @@ export default function Home() {
                 No products found yet. Listings with status &quot;active&quot; will appear here.
               </p>
             ) : (
-              <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 [&>*]:min-h-0">
+              <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 [&>*]:min-h-0 [&>*]:min-w-0 [&>*]:w-full">
                 {products.map((product) => {
                   const row = product as Record<string, unknown>;
                   const pid = Number(row.id);
@@ -658,8 +682,8 @@ export default function Home() {
                       viewsCount={Number(row.views ?? 0)}
                       likesCount={Number(row.like_count ?? 0)}
                       commentCount={commentCounts[String(product.id)] ?? 0}
-                      liked={likedProductIds.has(pid)}
-                      likeDisabled={pendingLikeIds.has(pid)}
+                      liked={likedProductIds.has(productRowKey(product.id))}
+                      likeDisabled={pendingLikeIds.has(productRowKey(product.id))}
                       onLikeClick={(ev) => void onProductLike(ev, row)}
                       topRightBadge={<BoostCardBadge row={row} />}
                     />
@@ -687,7 +711,7 @@ export default function Home() {
           {/* Recently Viewed — persisted in localStorage, synced when you open a product */}
           <div className="mb-6">
             <h2 className="font-semibold text-gray-800 mb-3">Recently Viewed</h2>
-            <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 [&>*]:min-h-0">
+            <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 [&>*]:min-h-0 [&>*]:min-w-0 [&>*]:w-full">
               {recentViewedLoading && getRecentProductIds().length > 0 ? (
                 <div className="col-span-full">
                   <ProductCardSkeletonGrid count={Math.min(4, getRecentProductIds().length)} />
@@ -712,8 +736,8 @@ export default function Home() {
                       viewsCount={Number(row.views ?? 0)}
                       likesCount={Number(row.like_count ?? 0)}
                       commentCount={commentCounts[String(product.id)] ?? 0}
-                      liked={likedProductIds.has(pid)}
-                      likeDisabled={pendingLikeIds.has(pid)}
+                      liked={likedProductIds.has(productRowKey(product.id))}
+                      likeDisabled={pendingLikeIds.has(productRowKey(product.id))}
                       onLikeClick={(ev) => void onProductLike(ev, row)}
                       topRightBadge={<BoostCardBadge row={row} />}
                     />

@@ -30,6 +30,7 @@ import { toast } from "sonner";
 import { BoostDetailBadge } from "../components/BoostBadge";
 import { getAuthSiteOrigin } from "../utils/authSiteUrl";
 import { useProductLike } from "../hooks/useProductLike";
+import { normalizeProductPk } from "../utils/engagement";
 import {
   fetchProductReviewsForProduct,
   formatProductReviewDate,
@@ -301,12 +302,7 @@ export default function ProductDetail() {
   };
 
   const foundProduct = serverProduct;
-  const likeProductId = useMemo(() => {
-    const raw = foundProduct?.id;
-    if (raw == null) return null;
-    const n = typeof raw === "number" ? raw : Number(raw);
-    return Number.isFinite(n) ? n : null;
-  }, [foundProduct?.id]);
+  const likeProductId = useMemo(() => normalizeProductPk(foundProduct?.id), [foundProduct?.id]);
   const initialLikeCount = useMemo(() => {
     const n = Number(foundProduct?.like_count ?? 0);
     return Number.isFinite(n) ? Math.max(0, n) : 0;
@@ -912,7 +908,9 @@ export default function ProductDetail() {
               aria-label={liked ? "Unlike" : "Like"}
             >
               <Heart
-                className={`w-[18px] h-[18px] ${liked ? "fill-red-500 text-red-500" : ""}`}
+                className={`w-[18px] h-[18px] ${liked ? "fill-red-500 text-red-500" : "text-gray-500"}`}
+                fill={liked ? "currentColor" : "none"}
+                strokeWidth={2}
               />
             </button>
           </div>
@@ -1049,8 +1047,13 @@ export default function ProductDetail() {
                 <span>{product.views} views</span>
                 <span className="text-gray-300">·</span>
                 <span className="inline-flex items-center gap-1">
-                  <Heart className={`w-3.5 h-3.5 ${liked ? "fill-red-500 text-red-500" : ""}`} aria-hidden />
-                  {product.likes} likes
+                  <Heart
+                    className={`w-3.5 h-3.5 ${liked ? "fill-red-500 text-red-500" : "text-gray-400"}`}
+                    fill={liked ? "currentColor" : "none"}
+                    strokeWidth={2}
+                    aria-hidden
+                  />
+                  {likeCount} likes
                 </span>
               </div>
             </div>

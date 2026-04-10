@@ -13,8 +13,12 @@ import { SortBar } from "../components/SortBar";
 import {
   fetchLikedProductIdsForUser,
   fetchProductLikeCount,
+  normalizeProductPk,
+  productLikeSetKey,
+  productRowKey,
   subscribeToProductLikes,
   toggleProductLike,
+  type ProductPk,
 } from "../utils/engagement";
 import { BoostCardBadge } from "../components/BoostBadge";
 import {
@@ -325,13 +329,22 @@ export default function Products() {
   const [isLoadingProducts, setIsLoadingProducts] = useState<boolean>(true);
   const [productLoadError, setProductLoadError] = useState<string | null>(null);
   const [commentCounts, setCommentCounts] = useState<Record<string, number>>({});
-  const [likedProductIds, setLikedProductIds] = useState<Set<number>>(new Set());
-  const [pendingLikeIds, setPendingLikeIds] = useState<Set<number>>(new Set());
-  const productIds = useMemo(
-    () => [...new Set(products.map((p) => Number(p.id)).filter((n) => Number.isFinite(n)))],
-    [products],
-  );
-  const productIdsKey = useMemo(() => productIds.join(","), [productIds]);
+  const [likedProductIds, setLikedProductIds] = useState<Set<string>>(new Set());
+  const [pendingLikeIds, setPendingLikeIds] = useState<Set<string>>(new Set());
+  const productIds = useMemo(() => {
+    const seen = new Set<string>();
+    const out: ProductPk[] = [];
+    for (const p of products) {
+      const pk = normalizeProductPk(p.id);
+      if (pk == null) continue;
+      const k = productLikeSetKey(pk);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(pk);
+    }
+    return out;
+  }, [products]);
+  const productIdsKey = useMemo(() => productIds.map(productLikeSetKey).join(","), [productIds]);
   const productIdStrings = useMemo(() => productIds.map(String), [productIds]);
 
   const filterOpts: ListingFilterOpts = useMemo(
@@ -413,8 +426,9 @@ export default function Products() {
     if (productIds.length === 0) return;
     const channels = productIds.map((id) =>
       subscribeToProductLikes(supabase, id, (count) => {
+        const key = productLikeSetKey(id);
         setProducts((prev) =>
-          prev.map((p) => (Number(p.id) === id ? { ...p, like_count: count } : p)),
+          prev.map((p) => (productRowKey(p.id) === key ? { ...p, like_count: count } : p)),
         );
       }),
     );
@@ -435,41 +449,48 @@ export default function Products() {
         toast.message("Login to like");
         return;
       }
-      const id = Number(row.id);
-      if (!Number.isFinite(id)) return;
-      if (pendingLikeIds.has(id)) return;
-      const liked = likedProductIds.has(id);
+      const id = normalizeProductPk(row.id);
+      if (id == null) return;
+      const rowKey = productLikeSetKey(id);
+      if (pendingLikeIds.has(rowKey)) return;
+      const liked = likedProductIds.has(rowKey);
       const prevCount = Number(row.like_count ?? 0);
       const nextLiked = !liked;
       const nextCount = nextLiked ? prevCount + 1 : Math.max(0, prevCount - 1);
-      setPendingLikeIds((prev) => new Set(prev).add(id));
+      setPendingLikeIds((prev) => new Set(prev).add(rowKey));
       setLikedProductIds((prev) => {
         const n = new Set(prev);
-        if (nextLiked) n.add(id);
-        else n.delete(id);
+        if (nextLiked) n.add(rowKey);
+        else n.delete(rowKey);
         return n;
       });
-      setProducts((prev) => prev.map((p) => (Number(p.id) === id ? { ...p, like_count: nextCount } : p)));
+      setProducts((prev) =>
+        prev.map((p) => (productRowKey(p.id) === rowKey ? { ...p, like_count: nextCount } : p)),
+      );
       try {
         const { error } = await toggleProductLike(supabase, id, authUser.id, liked);
         if (error) throw new Error(error);
         const syncedCount = await fetchProductLikeCount(supabase, id);
-        setProducts((prev) => prev.map((p) => (Number(p.id) === id ? { ...p, like_count: syncedCount } : p)));
+        setProducts((prev) =>
+          prev.map((p) => (productRowKey(p.id) === rowKey ? { ...p, like_count: syncedCount } : p)),
+        );
       } catch (error: unknown) {
         const message =
           error instanceof Error && error.message.trim() ? error.message : "Could not update like";
         toast.error(message);
         setLikedProductIds((prev) => {
           const n = new Set(prev);
-          if (liked) n.add(id);
-          else n.delete(id);
+          if (liked) n.add(rowKey);
+          else n.delete(rowKey);
           return n;
         });
-        setProducts((prev) => prev.map((p) => (Number(p.id) === id ? { ...p, like_count: prevCount } : p)));
+        setProducts((prev) =>
+          prev.map((p) => (productRowKey(p.id) === rowKey ? { ...p, like_count: prevCount } : p)),
+        );
       } finally {
         setPendingLikeIds((prev) => {
           const next = new Set(prev);
-          next.delete(id);
+          next.delete(rowKey);
           return next;
         });
       }
@@ -858,7 +879,7 @@ export default function Products() {
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+              <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 [&>*]:min-h-0 [&>*]:min-w-0 [&>*]:w-full">
                 {products.map((product) => {
                   const pid = Number(product.id);
                   const row = product as Record<string, unknown>;
@@ -879,8 +900,8 @@ export default function Products() {
                       viewsCount={Number(product.views ?? 0)}
                       likesCount={Number(product.like_count ?? 0)}
                       commentCount={commentCounts[String(product.id)] ?? 0}
-                      liked={likedProductIds.has(pid)}
-                      likeDisabled={pendingLikeIds.has(pid)}
+                      liked={likedProductIds.has(productRowKey(product.id))}
+                      likeDisabled={pendingLikeIds.has(productRowKey(product.id))}
                       onLikeClick={(ev) => void onProductLike(ev, product)}
                       topRightBadge={<BoostCardBadge row={row} />}
                     />

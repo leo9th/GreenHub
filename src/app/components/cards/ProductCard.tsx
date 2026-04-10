@@ -1,57 +1,59 @@
 import { Link } from "react-router";
 import { Heart, Eye, MessageCircle } from "lucide-react";
-import { Badge } from "../ui/badge";
-import { Card } from "../ui/card";
+import { useCurrency } from "../../hooks/useCurrency";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 
 export interface ProductCardProps {
-  image: string;
-  condition: string;
+  /** Prefer explicit id; falls back to `productId` for existing call sites */
+  id?: string;
   title: string;
   price: number;
+  image?: string;
+  location?: string;
+  condition?: string;
+  href?: string;
+  commentCount?: number;
+  /** @deprecated Ignored — kept so listing pages compile without wide refactors */
   priceDisplay?: string;
-  location: string;
-  rating: number;
+  rating?: number;
   reviews?: number;
   titleAdornment?: ReactNode;
   topRightBadge?: ReactNode;
   deliveryFee?: number;
   productId?: number | string;
-  href?: string;
   viewsCount?: number;
   likesCount?: number;
   liked?: boolean;
-  onLikeClick?: (e: ReactMouseEvent) => void;
   likeDisabled?: boolean;
-  commentCount?: number;
+  onLikeClick?: (e: ReactMouseEvent) => void;
 }
 
 export function ProductCard({
-  image,
-  condition,
+  id,
   title,
   price,
-  priceDisplay,
+  image,
   location,
-  titleAdornment,
-  topRightBadge,
-  productId,
+  condition,
   href,
+  commentCount,
+  productId,
+  topRightBadge,
+  titleAdornment,
   viewsCount,
   likesCount,
   liked,
-  onLikeClick,
   likeDisabled,
-  commentCount,
+  onLikeClick,
 }: ProductCardProps) {
-  const getConditionColor = (cond: string) => {
-    const c = cond.toLowerCase();
-    if (c.includes("like") && c.includes("new")) return "bg-[#86efac] text-gray-800 hover:bg-[#22c55e] hover:text-white";
-    if (c === "new" || c.startsWith("new")) return "bg-[#22c55e] hover:bg-[#16a34a]";
-    if (c.includes("fair")) return "bg-gray-400 hover:bg-gray-500";
-    if (c.includes("good")) return "bg-[#eab308] hover:bg-[#ca8a04]";
-    return "bg-gray-200 text-gray-800";
-  };
+  const formatPrice = useCurrency();
+  const resolvedId =
+    id != null && String(id).trim() !== ""
+      ? String(id)
+      : productId != null
+        ? String(productId)
+        : "";
+  const linkTo = href || (resolvedId ? `/products/${resolvedId}` : "/products");
 
   const hasValidProductId =
     productId != null &&
@@ -59,28 +61,32 @@ export function ProductCard({
 
   const showEngagement =
     hasValidProductId &&
-    (viewsCount !== undefined || likesCount !== undefined || commentCount !== undefined || onLikeClick != null);
+    (viewsCount !== undefined ||
+      likesCount !== undefined ||
+      commentCount !== undefined ||
+      onLikeClick != null);
 
   return (
-    <Card
-      className="grid h-full min-h-0 aspect-[4/5] grid-rows-[minmax(0,4fr)_minmax(0,1fr)] gap-0 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition-shadow duration-200 hover:shadow-lg"
-    >
+    <div className="grid h-full min-h-0 w-full min-w-0 aspect-[4/5] grid-rows-[minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-xl border border-gray-200 bg-white text-gray-900 shadow-sm transition-shadow hover:shadow-md">
       <div className="relative min-h-0 overflow-hidden bg-gray-100 select-none">
-        {href ? (
-          <Link
-            to={href}
-            aria-label={`View ${title}`}
-            className="absolute inset-0 z-10 touch-manipulation"
-          />
-        ) : null}
+        <Link
+          to={linkTo}
+          aria-label={`View ${title}`}
+          className="absolute inset-0 z-10 touch-manipulation"
+        />
         <img
-          src={image}
+          src={image || "https://placehold.co/400x400/png?text=No+Image"}
           alt={title}
           className="h-full w-full object-cover"
+          loading="lazy"
           draggable={false}
         />
-        <Badge className={`absolute left-2 top-2 z-20 ${getConditionColor(condition)}`}>{condition}</Badge>
-        {topRightBadge && <div className="absolute top-2 right-2 z-20">{topRightBadge}</div>}
+        {condition ? (
+          <span className="absolute left-2 top-2 z-20 rounded-full bg-black/60 px-2 py-0.5 text-xs text-white">
+            {condition}
+          </span>
+        ) : null}
+        {topRightBadge ? <div className="absolute right-2 top-2 z-20">{topRightBadge}</div> : null}
         {showEngagement ? (
           <div className="absolute inset-x-2 bottom-2 z-20 flex items-center justify-between gap-2">
             <span className="inline-flex items-center gap-1 rounded-full bg-white/92 px-2 py-1 text-[11px] font-medium text-gray-700 shadow-sm backdrop-blur">
@@ -88,21 +94,14 @@ export function ProductCard({
               <span className="tabular-nums">{viewsCount ?? 0}</span>
             </span>
             <div className="flex items-center gap-1">
-              {href ? (
-                <Link
-                  to={href}
-                  className="inline-flex touch-manipulation items-center gap-1 rounded-full bg-white/92 px-2 py-1 text-[11px] font-medium text-gray-700 shadow-sm backdrop-blur transition-colors hover:bg-white hover:text-[#15803d]"
-                  aria-label="Open product to view comments"
-                >
-                  <MessageCircle className="h-3.5 w-3.5" aria-hidden />
-                  <span className="tabular-nums">{commentCount ?? 0}</span>
-                </Link>
-              ) : (
-                <span className="inline-flex items-center gap-1 rounded-full bg-white/92 px-2 py-1 text-[11px] font-medium text-gray-700 shadow-sm backdrop-blur">
-                  <MessageCircle className="h-3.5 w-3.5" aria-hidden />
-                  <span className="tabular-nums">{commentCount ?? 0}</span>
-                </span>
-              )}
+              <Link
+                to={linkTo}
+                className="inline-flex touch-manipulation items-center gap-1 rounded-full bg-white/92 px-2 py-1 text-[11px] font-medium text-gray-700 shadow-sm backdrop-blur transition-colors hover:bg-white hover:text-[#15803d]"
+                aria-label="Open product to view comments"
+              >
+                <MessageCircle className="h-3.5 w-3.5" aria-hidden />
+                <span className="tabular-nums">{commentCount ?? 0}</span>
+              </Link>
               <button
                 type="button"
                 disabled={likeDisabled || !onLikeClick}
@@ -123,46 +122,41 @@ export function ProductCard({
           </div>
         ) : null}
       </div>
-      <div className="flex min-h-0 flex-col justify-center overflow-hidden px-2.5 py-1.5 sm:px-3 sm:py-2">
-        {href ? (
-          <Link
-            to={href}
-            className="flex min-h-0 touch-manipulation flex-col justify-center gap-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#22c55e] focus-visible:ring-offset-2 focus-visible:ring-offset-white sm:gap-1"
-          >
-            <div className="flex min-h-0 items-start gap-1">
-              <h3 className="line-clamp-2 flex-1 text-[11px] font-medium leading-snug text-gray-900 sm:text-[13px] sm:leading-tight">
+
+      <div className="w-full min-w-0 shrink-0 border-t border-gray-100 bg-white p-6">
+        <Link to={linkTo} className="block min-w-0 touch-manipulation rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[#22c55e] focus-visible:ring-offset-2">
+          <div className="flex flex-col gap-4">
+            <div className="flex items-start gap-2">
+              <h3 className="line-clamp-2 min-w-0 flex-1 text-sm font-semibold leading-snug text-gray-800">
                 {title}
               </h3>
-              {titleAdornment}
+              {titleAdornment ? <span className="shrink-0">{titleAdornment}</span> : null}
             </div>
-            <p className="truncate text-xs font-bold text-[#16a34a] sm:text-sm">
-              {priceDisplay ?? `₦${price.toLocaleString()}`}
-            </p>
+            <p className="m-0 text-base font-bold text-green-600">{formatPrice(price)}</p>
             {location ? (
-              <p className="truncate text-[10px] leading-tight text-gray-500 sm:text-[11px]">
-                {location}
+              <p className="m-0 flex items-center gap-1 text-xs text-gray-600">
+                <svg className="h-3 w-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
+                  />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
+                  />
+                </svg>
+                <span className="truncate">{location}</span>
               </p>
             ) : null}
-          </Link>
-        ) : (
-          <>
-            <div className="flex min-h-0 items-start gap-1">
-              <h3 className="line-clamp-2 flex-1 text-[11px] font-medium leading-snug text-gray-900 sm:text-[13px] sm:leading-tight">
-                {title}
-              </h3>
-              {titleAdornment}
-            </div>
-            <p className="truncate text-xs font-bold text-[#16a34a] sm:text-sm">
-              {priceDisplay ?? `₦${price.toLocaleString()}`}
-            </p>
-            {location ? (
-              <p className="truncate text-[10px] leading-tight text-gray-500 sm:text-[11px]">
-                {location}
-              </p>
-            ) : null}
-          </>
-        )}
+          </div>
+        </Link>
       </div>
-    </Card>
+    </div>
   );
 }
+
+export default ProductCard;

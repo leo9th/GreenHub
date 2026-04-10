@@ -5,9 +5,9 @@ import { getListingAverageRating, getListingReviewCount } from "./listingReviewD
 
 export const MAX_SEARCH_TERM_LENGTH = 120;
 /** Listings page (/products): page size for Supabase `.range()` and numbered pagination */
-export const PRODUCTS_PAGE_SIZE = 12;
+export const PRODUCTS_PAGE_SIZE = 20;
 /** Home featured grid: initial batch and each "Load more" */
-export const HOME_PAGE_SIZE = 8;
+export const HOME_PAGE_SIZE = 20;
 
 /** 1-based page from URL `?page=` (default 1). */
 export function parseListingPageParam(raw: string | null | undefined): number {

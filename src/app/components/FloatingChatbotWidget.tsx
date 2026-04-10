@@ -138,7 +138,7 @@ export default function FloatingChatbotWidget() {
 
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[60] flex justify-end">
-      <div className="pointer-events-auto flex flex-col items-end gap-3 pr-3 pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-5 md:pr-5">
+      <div className="pointer-events-auto flex flex-col items-end gap-3 pr-3 pb-[calc(6.25rem+env(safe-area-inset-bottom,0px))] md:pb-5 md:pr-5">
         {open ? (
           <div
             className="flex h-[min(72vh,520px)] w-[min(100vw-1.5rem,400px)] min-h-[300px] flex-col overflow-hidden rounded-2xl border border-gray-200/90 bg-white shadow-2xl shadow-gray-900/15 ring-1 ring-black/5"

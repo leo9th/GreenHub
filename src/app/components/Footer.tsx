@@ -3,7 +3,7 @@ import { Apple, Play } from "lucide-react";
 
 export default function Footer() {
   return (
-    <footer className="bg-[#22c55e] text-white py-12 mt-12 w-full">
+    <footer className="bg-[#22c55e] dark:bg-emerald-950 dark:border-t dark:border-emerald-900 text-white py-12 mt-12 w-full transition-colors">
       <div className="max-w-7xl mx-auto px-4 md:px-4">
         <div className="grid grid-cols-2 md:grid-cols-5 gap-8 text-white">
           

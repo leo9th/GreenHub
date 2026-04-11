@@ -92,12 +92,12 @@ function ChatErrorBoundary({ children }: { children: React.ReactNode }) {
     render() {
       if (this.state.error) {
         return (
-          <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center px-6 text-center">
-            <div className="mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-red-50 text-red-600 shadow-inner">
+          <div className="min-h-screen bg-gray-50 dark:bg-background flex flex-col items-center justify-center px-6 text-center">
+            <div className="mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-red-50 dark:bg-red-950/50 text-red-600 shadow-inner">
               <MessageCircle className="h-8 w-8" />
             </div>
-            <h2 className="text-lg font-semibold text-gray-900">Chat encountered a problem</h2>
-            <p className="mt-2 max-w-md text-sm text-gray-600">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-foreground">Chat encountered a problem</h2>
+            <p className="mt-2 max-w-md text-sm text-gray-600 dark:text-muted-foreground">
               We couldn&apos;t render this conversation. Please reload or go back to your inbox.
             </p>
             <div className="mt-4 flex gap-3">
@@ -110,7 +110,7 @@ function ChatErrorBoundary({ children }: { children: React.ReactNode }) {
               </button>
               <Link
                 to="/messages"
-                className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                className="rounded-lg border border-gray-200 dark:border-border px-4 py-2 text-sm font-semibold text-gray-700 dark:text-foreground hover:bg-gray-50 dark:hover:bg-muted"
               >
                 Back to messages
               </Link>
@@ -249,7 +249,9 @@ function ChatEmojiPickerContent({ onPick }: { onPick: (emoji: string) => void })
             type="button"
             onClick={() => setTab(i)}
             className={`shrink-0 rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide transition-colors ${
-              i === tab ? "bg-[#22c55e]/15 text-[#15803d]" : "text-gray-500 hover:bg-gray-100"
+              i === tab
+                ? "bg-[#22c55e]/15 text-[#15803d] dark:bg-emerald-900/40 dark:text-emerald-300"
+                : "text-gray-500 hover:bg-gray-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
             }`}
           >
             {g.label}
@@ -262,7 +264,7 @@ function ChatEmojiPickerContent({ onPick }: { onPick: (emoji: string) => void })
             key={`${group.id}-${idx}-${em}`}
             type="button"
             onClick={() => onPick(em)}
-            className="flex h-8 w-8 items-center justify-center rounded-md text-[1.05rem] leading-none hover:bg-gray-100 active:scale-95"
+            className="flex h-8 w-8 items-center justify-center rounded-md text-[1.05rem] leading-none hover:bg-gray-100 dark:hover:bg-zinc-800 active:scale-95"
             aria-label={`Insert emoji ${em}`}
           >
             {em}
@@ -1617,14 +1619,14 @@ export default function Chat() {
 
   if (authLoading || loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center text-sm text-gray-600">Loading…</div>
+      <div className="min-h-screen bg-gray-50 dark:bg-background flex items-center justify-center text-sm text-gray-600 dark:text-muted-foreground">Loading…</div>
     );
   }
 
   if (!authUser) {
     return (
-      <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center px-4 text-center pb-8">
-        <p className="text-gray-800 font-medium mb-2">Please sign in to view this chat.</p>
+      <div className="min-h-screen bg-gray-100 dark:bg-background flex flex-col items-center justify-center px-4 text-center pb-8">
+        <p className="text-gray-800 dark:text-foreground font-medium mb-2">Please sign in to view this chat.</p>
         <button
           type="button"
           onClick={() => navigate("/login")}
@@ -1638,9 +1640,9 @@ export default function Chat() {
 
   if (!conversation || !peerId) {
     return (
-      <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center px-4 text-center pb-8">
-        <p className="text-gray-800 font-medium mb-2">Chat could not be loaded.</p>
-        {loadError ? <p className="text-sm text-gray-600 max-w-md mb-4">{loadError}</p> : null}
+      <div className="min-h-screen bg-gray-100 dark:bg-background flex flex-col items-center justify-center px-4 text-center pb-8">
+        <p className="text-gray-800 dark:text-foreground font-medium mb-2">Chat could not be loaded.</p>
+        {loadError ? <p className="text-sm text-gray-600 dark:text-muted-foreground max-w-md mb-4">{loadError}</p> : null}
         <button
           type="button"
           onClick={() => navigate("/messages")}
@@ -1663,7 +1665,7 @@ export default function Chat() {
 
   const chatPanel = (
     <>
-      <div className="chat-pane relative isolate flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-gradient-to-br from-emerald-50 via-[#eefbf4] to-lime-50">
+      <div className="chat-pane relative isolate flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-gradient-to-br from-emerald-50 via-[#eefbf4] to-lime-50 dark:from-zinc-950 dark:via-emerald-950/35 dark:to-zinc-900">
         <div
           className="pointer-events-none absolute inset-0"
           aria-hidden
@@ -1673,33 +1675,33 @@ export default function Chat() {
           <div className="absolute bottom-0 left-1/3 h-56 w-56 rounded-full bg-emerald-200/20 blur-3xl" />
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(34,197,94,0.14),transparent_34%),radial-gradient(circle_at_bottom_right,rgba(132,204,22,0.12),transparent_30%)]" />
         </div>
-        <header className="chat-header-fixed z-40 shrink-0 border-b border-emerald-100/80 bg-white/95 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-white/88">
+        <header className="chat-header-fixed z-40 shrink-0 border-b border-emerald-100/80 dark:border-emerald-900/50 bg-white/95 dark:bg-zinc-900/95 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-white/88 dark:supports-[backdrop-filter]:bg-zinc-900/88">
           <div className="px-3 py-2.5 sm:px-4">
             <div className="flex items-center gap-2 sm:gap-3">
               <button
                 type="button"
                 onClick={() => navigate("/messages")}
-                className="-ml-2 rounded-lg p-2 hover:bg-gray-100 md:hidden"
+                className="-ml-2 rounded-lg p-2 hover:bg-gray-100 dark:hover:bg-zinc-800 md:hidden"
                 aria-label="Back to conversations"
               >
-                <ArrowLeft className="h-5 w-5 text-gray-700" />
+                <ArrowLeft className="h-5 w-5 text-gray-700 dark:text-zinc-200" />
               </button>
               <div className="relative shrink-0">
                 <img
                   src={peerAvatar || getAvatarUrl(null, null, peerName)}
                   alt=""
-                  className="h-10 w-10 rounded-full bg-gray-100 object-cover"
+                  className="h-10 w-10 rounded-full bg-gray-100 dark:bg-zinc-800 object-cover"
                 />
               </div>
               <div className="min-w-0 flex-1">
-                <h1 className="font-semibold text-gray-800">{peerName}</h1>
-                <p className="mt-0.5 truncate text-xs text-gray-500">Always-on chat</p>
+                <h1 className="font-semibold text-gray-800 dark:text-foreground">{peerName}</h1>
+                <p className="mt-0.5 truncate text-xs text-gray-500 dark:text-muted-foreground">Always-on chat</p>
               </div>
               <DropdownMenu modal={false}>
                 <DropdownMenuTrigger asChild>
                   <button
                     type="button"
-                    className={`rounded-lg p-2 text-gray-600 hover:bg-gray-100 ${peerContactLinks ? "" : "opacity-60"}`}
+                    className={`rounded-lg p-2 text-gray-600 hover:bg-gray-100 dark:text-zinc-300 dark:hover:bg-zinc-800 ${peerContactLinks ? "" : "opacity-60"}`}
                     aria-label={
                       peerContactLinks
                         ? `Call or WhatsApp ${peerName}`
@@ -1711,7 +1713,7 @@ export default function Chat() {
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-60">
-                  <DropdownMenuLabel className="font-semibold text-gray-900">{peerName}</DropdownMenuLabel>
+                  <DropdownMenuLabel className="font-semibold text-gray-900 dark:text-foreground">{peerName}</DropdownMenuLabel>
                   {peerContactLinks ? (
                     <>
                       <DropdownMenuSeparator />
@@ -1760,7 +1762,7 @@ export default function Chat() {
                 <DropdownMenuTrigger asChild>
                   <button
                     type="button"
-                    className="rounded-lg p-2 text-gray-600 hover:bg-gray-100"
+                    className="rounded-lg p-2 text-gray-600 hover:bg-gray-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
                     aria-label="Chat settings"
                   >
                     <MoreVertical className="h-5 w-5" />
@@ -1813,32 +1815,32 @@ export default function Chat() {
         </header>
 
         {stripProduct ? (
-          <div className="relative z-20 flex shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-3 py-3 sm:px-4">
+          <div className="relative z-20 flex shrink-0 items-center gap-3 border-b border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900/90 px-3 py-3 sm:px-4">
             <Link
               to={`/products/${stripProduct.id}`}
-              className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-gray-100 ring-1 ring-black/5"
+              className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-gray-100 dark:bg-zinc-800 ring-1 ring-black/5 dark:ring-white/10"
               aria-label={`Open listing: ${stripProduct.title}`}
             >
               {stripProduct.image ? (
                 <img src={stripProduct.image} alt="" className="h-full w-full object-cover" />
               ) : (
-                <div className="flex h-full w-full items-center justify-center text-[10px] text-gray-400">No image</div>
+                <div className="flex h-full w-full items-center justify-center text-[10px] text-gray-400 dark:text-zinc-500">No image</div>
               )}
             </Link>
             <div className="min-w-0 flex-1">
               <Link
                 to={`/products/${stripProduct.id}`}
-                className="line-clamp-2 text-sm font-semibold text-gray-900 hover:text-emerald-700"
+                className="line-clamp-2 text-sm font-semibold text-gray-900 dark:text-foreground hover:text-emerald-700 dark:hover:text-emerald-400"
               >
                 {stripProduct.title}
               </Link>
-              <p className="mt-0.5 text-sm font-bold text-emerald-600">{formatPrice(stripProduct.price)}</p>
+              <p className="mt-0.5 text-sm font-bold text-emerald-600 dark:text-primary">{formatPrice(stripProduct.price)}</p>
             </div>
             <button
               type="button"
               onClick={() => void removeProductContext()}
               disabled={contextClearBusy}
-              className="shrink-0 rounded-full p-2 text-gray-500 hover:bg-gray-100 disabled:opacity-50"
+              className="shrink-0 rounded-full p-2 text-gray-500 hover:bg-gray-100 dark:text-zinc-400 dark:hover:bg-zinc-800 disabled:opacity-50"
               title="Remove listing from this chat"
               aria-label="Remove listing from chat"
             >
@@ -1854,7 +1856,7 @@ export default function Chat() {
                 <button
                   type="button"
                   onClick={() => scrollToBottom("smooth")}
-                  className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white/95 px-3 py-2 text-sm font-medium text-emerald-700 shadow-lg backdrop-blur hover:bg-white"
+                  className="inline-flex items-center gap-2 rounded-full border border-emerald-200 dark:border-emerald-800 bg-white/95 dark:bg-zinc-900/95 px-3 py-2 text-sm font-medium text-emerald-700 dark:text-emerald-300 shadow-lg backdrop-blur hover:bg-white dark:hover:bg-zinc-800"
                 >
                   <ArrowDown className="h-4 w-4" />
                   {pendingNewMessages > 0 ? `${pendingNewMessages} new ${pendingNewMessages === 1 ? "message" : "messages"}` : "Latest messages"}
@@ -1891,7 +1893,7 @@ export default function Chat() {
                   <Fragment key={messageId}>
                     {showDayDivider ? (
                       <div className="mb-3 flex justify-center">
-                        <span className="rounded-full bg-white/75 px-3 py-1 text-[11px] font-semibold tracking-wide text-gray-600 shadow-sm ring-1 ring-black/5 backdrop-blur">
+                        <span className="rounded-full bg-white/75 dark:bg-zinc-800/90 px-3 py-1 text-[11px] font-semibold tracking-wide text-gray-600 dark:text-zinc-300 shadow-sm ring-1 ring-black/5 dark:ring-white/10 backdrop-blur">
                           {dayDividerLabel(msg.created_at)}
                         </span>
                       </div>
@@ -2045,7 +2047,7 @@ export default function Chat() {
                 );
               })}
               {peerTyping ? (
-                <div className="mb-2 flex items-center gap-2 text-sm italic text-gray-600">
+                <div className="mb-2 flex items-center gap-2 text-sm italic text-gray-600 dark:text-zinc-400">
                   <span className="typing-dots flex gap-1" aria-hidden>
                     <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400 [animation-delay:0ms]" />
                     <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400 [animation-delay:150ms]" />
@@ -2058,22 +2060,22 @@ export default function Chat() {
             </div>
           </div>
 
-          <div className="chat-composer-stack sticky bottom-0 z-30 shrink-0 border-t border-emerald-100/90 bg-white/96 shadow-[0_-2px_10px_rgba(0,0,0,0.06)] backdrop-blur supports-[backdrop-filter]:bg-white/90 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+          <div className="chat-composer-stack sticky bottom-0 z-30 shrink-0 border-t border-emerald-100/90 dark:border-emerald-900/60 bg-white/96 dark:bg-zinc-900/96 shadow-[0_-2px_10px_rgba(0,0,0,0.06)] dark:shadow-[0_-2px_12px_rgba(0,0,0,0.35)] backdrop-blur supports-[backdrop-filter]:bg-white/90 dark:supports-[backdrop-filter]:bg-zinc-900/90 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
             <div className="message-input-area px-3 py-3 sm:px-4">
               {replyingTo ? (
-              <div className="mb-2 flex items-start justify-between gap-3 rounded-2xl border border-emerald-100 bg-emerald-50/80 px-3 py-2">
+              <div className="mb-2 flex items-start justify-between gap-3 rounded-2xl border border-emerald-100 dark:border-emerald-900 bg-emerald-50/80 dark:bg-emerald-950/50 px-3 py-2">
                 <div className="min-w-0">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-400">
                     Replying to {senderLabel(replyingTo.sender_id)}
                   </p>
-                  <p className="truncate text-sm text-emerald-950/80">
+                  <p className="truncate text-sm text-emerald-950/80 dark:text-emerald-100/80">
                     {messagePreviewText(replyingTo.message, replyingTo.image_url)}
                   </p>
                 </div>
                 <button
                   type="button"
                   onClick={cancelReply}
-                  className="shrink-0 rounded-full border border-emerald-200 px-3 py-1.5 text-xs font-medium text-emerald-800 hover:bg-emerald-100"
+                  className="shrink-0 rounded-full border border-emerald-200 dark:border-emerald-800 px-3 py-1.5 text-xs font-medium text-emerald-800 dark:text-emerald-200 hover:bg-emerald-100 dark:hover:bg-emerald-900/60"
                   aria-label="Cancel reply"
                 >
                   Cancel
@@ -2088,7 +2090,7 @@ export default function Chat() {
                 onChange={onAttachmentFileChange}
               />
               {pendingAttachment ? (
-                <div className="mb-2 flex items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm">
+                <div className="mb-2 flex items-center justify-between gap-3 rounded-2xl border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-800/80 px-3 py-2.5 text-sm">
                   <div className="flex min-w-0 flex-1 items-center gap-3">
                     {pendingAttachment.previewUrl ? (
                       <img
@@ -2097,19 +2099,19 @@ export default function Chat() {
                         className="h-12 w-12 shrink-0 rounded-lg object-cover ring-1 ring-black/10"
                       />
                     ) : (
-                      <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-white ring-1 ring-black/10">
-                        <FileText className="h-6 w-6 text-gray-500" />
+                      <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-white dark:bg-zinc-900 ring-1 ring-black/10 dark:ring-white/10">
+                        <FileText className="h-6 w-6 text-gray-500 dark:text-zinc-400" />
                       </span>
                     )}
                     <div className="min-w-0">
-                      <p className="truncate font-medium text-gray-900">{pendingAttachment.file.name}</p>
-                      <p className="text-xs text-gray-500">{formatChatAttachmentBytes(pendingAttachment.file.size)}</p>
+                      <p className="truncate font-medium text-gray-900 dark:text-foreground">{pendingAttachment.file.name}</p>
+                      <p className="text-xs text-gray-500 dark:text-muted-foreground">{formatChatAttachmentBytes(pendingAttachment.file.size)}</p>
                     </div>
                   </div>
                   <button
                     type="button"
                     onClick={clearPendingAttachment}
-                    className="shrink-0 rounded-full p-2 text-gray-500 hover:bg-gray-200"
+                    className="shrink-0 rounded-full p-2 text-gray-500 hover:bg-gray-200 dark:text-zinc-400 dark:hover:bg-zinc-700"
                     aria-label="Remove attachment"
                   >
                     <X className="h-4 w-4" />
@@ -2120,7 +2122,7 @@ export default function Chat() {
               <button
                 type="button"
                 onClick={() => attachInputRef.current?.click()}
-                className="shrink-0 rounded-full p-2 text-gray-600 hover:bg-gray-100"
+                className="shrink-0 rounded-full p-2 text-gray-600 hover:bg-gray-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
                 aria-label="Attach file"
                 title="Attach image, PDF, or Word"
               >
@@ -2130,7 +2132,7 @@ export default function Chat() {
                 <PopoverTrigger asChild>
                   <button
                     type="button"
-                    className="shrink-0 rounded-full p-2 text-gray-600 hover:bg-gray-100"
+                    className="shrink-0 rounded-full p-2 text-gray-600 hover:bg-gray-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
                     aria-label="Emoji"
                   >
                     <Smile className="h-5 w-5" />
@@ -2140,7 +2142,7 @@ export default function Chat() {
                   side="top"
                   align="start"
                   sideOffset={10}
-                  className="z-[70] w-auto border-gray-200 p-2 shadow-lg"
+                  className="z-[70] w-auto border-gray-200 dark:border-border dark:bg-popover p-2 shadow-lg"
                 >
                   <ChatEmojiPickerContent
                     onPick={(em) => {
@@ -2165,13 +2167,13 @@ export default function Chat() {
                 placeholder="Type a message..."
                 autoComplete="off"
                 enterKeyHint="send"
-                className="message-input min-h-[44px] w-full min-w-0 flex-1 px-4 py-2 rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                className="message-input min-h-[44px] w-full min-w-0 flex-1 px-4 py-2 rounded-lg border border-gray-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 dark:text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-green-500"
               />
               <button
                 type="button"
                 onClick={() => void sendMessage()}
                 disabled={(!newMessage.trim() && !pendingAttachment) || sendBusy}
-                className="send-btn shrink-0 rounded-full bg-[#22c55e] p-2.5 text-white disabled:cursor-not-allowed disabled:opacity-50"
+                className="send-btn shrink-0 rounded-full bg-[#22c55e] dark:bg-emerald-600 p-2.5 text-white disabled:cursor-not-allowed disabled:opacity-50"
                 aria-label="Send"
               >
                 <Send className="h-5 w-5" />
@@ -2189,8 +2191,8 @@ export default function Chat() {
           </SheetHeader>
           {mobileActionMessage ? (
             <div className="px-4 pb-2">
-              <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 px-3 py-2 text-sm text-gray-700">
-                <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
+              <div className="rounded-2xl border border-emerald-100 dark:border-emerald-900 bg-emerald-50/70 dark:bg-emerald-950/40 px-3 py-2 text-sm text-gray-700 dark:text-zinc-200">
+                <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-400">
                   {senderLabel(mobileActionMessage.sender_id)}
                 </p>
                 <p className="line-clamp-3">
@@ -2209,20 +2211,20 @@ export default function Chat() {
                 <button
                   type="button"
                   onClick={() => void copyMessageText(mobileActionMessage)}
-                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-800"
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-gray-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-4 py-3 text-sm font-semibold text-gray-800 dark:text-foreground"
                 >
                   <Copy className="h-4 w-4" />
                   Copy text
                 </button>
-                <div className="flex flex-wrap justify-center gap-2 border-y border-gray-100 py-3">
-                  <span className="w-full text-center text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                <div className="flex flex-wrap justify-center gap-2 border-y border-gray-100 dark:border-zinc-700 py-3">
+                  <span className="w-full text-center text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-zinc-400">
                     Reaction
                   </span>
                   {CHAT_REACTION_EMOJIS.map((em) => (
                     <button
                       key={em}
                       type="button"
-                      className="rounded-full bg-gray-100 px-3 py-2 text-xl leading-none transition hover:bg-emerald-100"
+                      className="rounded-full bg-gray-100 dark:bg-zinc-700 px-3 py-2 text-xl leading-none transition hover:bg-emerald-100 dark:hover:bg-emerald-900/50"
                       onClick={() => {
                         applyMessageReaction(mobileActionMessage.id, em);
                         setMobileActionMessage(null);
@@ -2236,7 +2238,7 @@ export default function Chat() {
                   <button
                     type="button"
                     onClick={() => promptDeleteMessage(mobileActionMessage)}
-                    className="flex w-full items-center justify-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700"
+                    className="flex w-full items-center justify-center gap-2 rounded-2xl border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40 px-4 py-3 text-sm font-semibold text-red-700 dark:text-red-400"
                   >
                     <Trash2 className="h-4 w-4" />
                     Delete
@@ -2245,7 +2247,7 @@ export default function Chat() {
                 <button
                   type="button"
                   onClick={() => void forwardMessage(mobileActionMessage)}
-                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-800"
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-gray-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-4 py-3 text-sm font-semibold text-gray-800 dark:text-foreground"
                 >
                   <Share2 className="h-4 w-4" />
                   Forward
@@ -2296,34 +2298,34 @@ export default function Chat() {
 
   const conversationList = (
     <>
-      <div className="shrink-0 border-b border-gray-200 bg-white px-3 py-3">
+      <div className="shrink-0 border-b border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900/90 px-3 py-3">
         <div className="mb-3 flex items-center gap-2">
-          <h1 className="text-lg font-semibold text-gray-800">Messages</h1>
+          <h1 className="text-lg font-semibold text-gray-800 dark:text-foreground">Messages</h1>
         </div>
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
+          <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400 dark:text-zinc-500" />
           <input
             type="search"
             value={inboxSearch}
             onChange={(e) => setInboxSearch(e.target.value)}
             placeholder="Search conversations..."
-            className="w-full rounded-lg bg-gray-100 py-2 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-[#22c55e]"
+            className="w-full rounded-lg bg-gray-100 dark:bg-zinc-800 dark:text-foreground py-2 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-[#22c55e]"
           />
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-white">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-white dark:bg-zinc-900/50">
         {inboxLoadError ? (
-          <div className="px-4 py-8 text-center text-sm text-red-600">{inboxLoadError}</div>
+          <div className="px-4 py-8 text-center text-sm text-red-600 dark:text-red-400">{inboxLoadError}</div>
         ) : inboxLoading ? (
-          <div className="px-4 py-12 text-center text-sm text-gray-600">Loading conversations…</div>
+          <div className="px-4 py-12 text-center text-sm text-gray-600 dark:text-muted-foreground">Loading conversations…</div>
         ) : inboxFiltered.length === 0 ? (
           <div className="px-4 py-12 text-center">
-            <div className="mx-auto mb-4 flex h-24 w-24 items-center justify-center rounded-full bg-gray-100">
-              <MessageCircle className="h-12 w-12 text-gray-400" />
+            <div className="mx-auto mb-4 flex h-24 w-24 items-center justify-center rounded-full bg-gray-100 dark:bg-zinc-800">
+              <MessageCircle className="h-12 w-12 text-gray-400 dark:text-zinc-500" />
             </div>
-            <h3 className="mb-2 text-lg font-semibold text-gray-800">No messages yet</h3>
-            <p className="mb-6 text-sm text-gray-600">
+            <h3 className="mb-2 text-lg font-semibold text-gray-800 dark:text-foreground">No messages yet</h3>
+            <p className="mb-6 text-sm text-gray-600 dark:text-muted-foreground">
               Start chatting with sellers about products you&apos;re interested in
             </p>
             <Link
@@ -2334,7 +2336,7 @@ export default function Chat() {
             </Link>
           </div>
         ) : (
-          <div className="divide-y divide-gray-100">
+          <div className="divide-y divide-gray-100 dark:divide-zinc-800">
             {inboxFiltered.map((row) => {
               const oid = inboxOtherPartyUserId(row);
               if (!oid) return null;
@@ -2348,30 +2350,30 @@ export default function Chat() {
                 <Link
                   key={row.id}
                   to={`/messages/c/${row.id}`}
-                  className={`flex items-center gap-3 border-b border-gray-50 p-3 transition-colors hover:bg-gray-50 sm:p-4 ${
-                    active ? "bg-emerald-50/80 hover:bg-emerald-50" : ""
+                  className={`flex items-center gap-3 border-b border-gray-50 dark:border-zinc-800 p-3 transition-colors hover:bg-gray-50 dark:hover:bg-zinc-800/80 sm:p-4 ${
+                    active ? "bg-emerald-50/80 hover:bg-emerald-50 dark:bg-emerald-950/40 dark:hover:bg-emerald-950/50" : ""
                   }`}
                 >
                   <div className="relative shrink-0">
-                    <img src={avatar} alt="" className="h-12 w-12 rounded-full bg-gray-100 object-cover sm:h-14 sm:w-14" />
+                    <img src={avatar} alt="" className="h-12 w-12 rounded-full bg-gray-100 dark:bg-zinc-800 object-cover sm:h-14 sm:w-14" />
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="mb-1 flex items-start justify-between gap-2">
-                      <h3 className="font-semibold text-gray-800">{name}</h3>
+                      <h3 className="font-semibold text-gray-800 dark:text-foreground">{name}</h3>
                       <span className="ml-2 flex shrink-0 items-center gap-1.5">
                         {(inboxUnreadByConv.get(row.id) ?? 0) > 0 ? (
                           <span className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-[#22c55e] px-1 text-[10px] font-bold text-white">
                             {inboxUnreadByConv.get(row.id)! > 99 ? "99+" : inboxUnreadByConv.get(row.id)}
                           </span>
                         ) : null}
-                        <span className="text-xs text-gray-500">{formatListTime(row.last_message_at)}</span>
+                        <span className="text-xs text-gray-500 dark:text-muted-foreground">{formatListTime(row.last_message_at)}</span>
                       </span>
                     </div>
                     {aboutProduct ? (
                       <p className="mb-0.5 truncate text-xs font-medium text-[#16a34a]">Re: {aboutProduct}</p>
                     ) : null}
                     <p
-                      className={`line-clamp-2 text-sm ${row.last_message ? "text-gray-700" : "italic text-gray-400"}`}
+                      className={`line-clamp-2 text-sm ${row.last_message ? "text-gray-700 dark:text-zinc-300" : "italic text-gray-400 dark:text-zinc-500"}`}
                     >
                       {row.last_message || "No messages yet — say hello"}
                     </p>
@@ -2388,11 +2390,11 @@ export default function Chat() {
   return (
     <ChatErrorBoundary>
       <div
-        className="h-[calc(var(--chat-viewport-height,100dvh)-4rem)] overflow-hidden bg-[linear-gradient(180deg,#f0fdf4_0%,#f8fafc_22%,#f7fee7_100%)]"
+        className="h-[calc(var(--chat-viewport-height,100dvh)-4rem)] overflow-hidden bg-[linear-gradient(180deg,#f0fdf4_0%,#f8fafc_22%,#f7fee7_100%)] dark:bg-[linear-gradient(180deg,#0c120f_0%,#0f172a_40%,#0c120f_100%)]"
         style={chatShellStyle}
       >
         <div className={`mx-auto grid w-full max-w-[1100px] grid-cols-1 md:grid-cols-[minmax(260px,1fr)_minmax(0,2fr)] ${shellHeight}`}>
-          <aside className={`hidden min-h-0 flex-col border-r border-emerald-100 bg-white/95 backdrop-blur md:flex ${shellHeight}`}>
+          <aside className={`hidden min-h-0 flex-col border-r border-emerald-100 dark:border-emerald-900/50 bg-white/95 dark:bg-zinc-900/95 backdrop-blur md:flex ${shellHeight}`}>
             {conversationList}
           </aside>
 

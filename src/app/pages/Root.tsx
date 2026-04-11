@@ -51,7 +51,7 @@ export default function Root() {
     !hideNavOnPaths.some((path) => location.pathname.startsWith(path)) && !isMessageThread;
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div className="min-h-screen bg-gray-50 dark:bg-background flex flex-col transition-colors duration-200">
       <main className={`flex-1 ${showBottomNav ? "pb-28 md:pb-0" : ""}`}>
         <TopNav />
         <Outlet />
@@ -61,7 +61,7 @@ export default function Root() {
       {!hideFloatingChatbot ? <FloatingChatbotWidget /> : null}
 
       {showBottomNav && (
-        <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+        <nav className="fixed bottom-0 left-0 right-0 bg-white dark:bg-zinc-900 border-t border-gray-200 dark:border-zinc-800 z-50 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] dark:shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.25)]">
           <div className="flex items-center justify-center gap-2 sm:gap-3 px-2 sm:px-3 h-16 max-w-7xl mx-auto w-full">
             <BottomActionCard
               to="/products"
@@ -112,7 +112,7 @@ function BottomActionCard({ to, icon, label, bg, border }: any) {
   return (
     <Link to={to} className={`flex-1 flex flex-col items-center justify-center h-[52px] rounded-lg border ${bg} ${border} hover:opacity-80 transition-opacity`}>
       {icon}
-      <span className="text-[10px] sm:text-xs font-semibold text-gray-800 mt-0.5">{label}</span>
+      <span className="text-[10px] sm:text-xs font-semibold text-gray-800 dark:text-zinc-200 mt-0.5">{label}</span>
     </Link>
   );
 }

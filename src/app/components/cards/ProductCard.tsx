@@ -64,10 +64,10 @@ export function ProductCard({
   return (
     <Link
       to={linkTo}
-      className="flex h-full min-h-0 w-full flex-col overflow-hidden rounded-xl bg-white shadow-sm transition hover:shadow-md"
+      className="flex h-full min-h-0 w-full flex-col overflow-hidden rounded-xl border border-transparent bg-white shadow-sm transition hover:shadow-md dark:border-border dark:bg-card"
     >
       {/* Image ~75% of card height visually; fixed px so thumbnails stay large in narrow grids */}
-      <div className="relative h-[160px] w-full shrink-0 overflow-hidden bg-gray-100 md:h-[200px]">
+      <div className="relative h-[160px] w-full shrink-0 overflow-hidden bg-gray-100 dark:bg-muted md:h-[200px]">
         <img
           src={image || "https://placehold.co/400x400/png?text=No+Image"}
           alt={title}
@@ -100,11 +100,11 @@ export function ProductCard({
       </div>
 
       {/* Footer — below image, compact spacing */}
-      <div className="flex shrink-0 flex-col gap-1 border-t border-gray-100 bg-white px-3 py-2">
-        <h3 className="line-clamp-2 text-sm font-semibold leading-snug text-gray-800">{title}</h3>
-        <p className="text-base font-bold leading-tight text-green-600">{formatPrice(price)}</p>
+      <div className="flex shrink-0 flex-col gap-1 border-t border-gray-100 dark:border-border bg-white dark:bg-card px-3 py-2">
+        <h3 className="line-clamp-2 text-sm font-semibold leading-snug text-gray-800 dark:text-card-foreground">{title}</h3>
+        <p className="text-base font-bold leading-tight text-green-600 dark:text-primary">{formatPrice(price)}</p>
         {location ? (
-          <p className="flex items-center gap-1 text-xs text-gray-500">
+          <p className="flex items-center gap-1 text-xs text-gray-500 dark:text-muted-foreground">
             <span>📍</span> {location}
           </p>
         ) : null}

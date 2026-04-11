@@ -26,6 +26,20 @@
       <meta property="twitter:title" content="GreenHub - Buy & Sell in Nigeria" />
       <meta property="twitter:description" content="GreenHub is Nigeria's premier C2C marketplace to buy and sell electronics, fashion, and goods securely." />
       <meta property="twitter:image" content="/favicon.svg" />
+
+      <script>
+        (function () {
+          try {
+            var k = "greenhub-theme";
+            var s = localStorage.getItem(k);
+            var dark;
+            if (s === "dark") dark = true;
+            else if (s === "light") dark = false;
+            else dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+            document.documentElement.classList.toggle("dark", dark);
+          } catch (e) {}
+        })();
+      </script>
     </head>
 
     <body>

@@ -10,6 +10,8 @@ export type ChatMessageReplyPreview = {
   image_url?: string | null;
 };
 
+export type ChatReactionSummary = { emoji: string; count: number };
+
 export type ChatMessageRow = {
   id: string;
   sender_id: string;
@@ -200,4 +202,45 @@ export async function markConversationMessagesRead(
   });
   if (error) return { error: { message: error.message } };
   return { error: null };
+}
+
+export type MessageReactionsState = {
+  summaries: ChatReactionSummary[];
+  myEmoji: string | null;
+};
+
+/** Load emoji reactions for a set of message ids (aggregated per emoji). */
+export async function fetchMessageReactions(
+  supabase: SupabaseClient,
+  conversationId: string,
+  messageIds: string[],
+  currentUserId: string | null,
+): Promise<{ byMessage: Record<string, MessageReactionsState>; error: { message: string } | null }> {
+  if (messageIds.length === 0) return { byMessage: {}, error: null };
+  const { data, error } = await supabase
+    .from("chat_message_reactions")
+    .select("message_id, emoji, user_id")
+    .eq("conversation_id", conversationId)
+    .in("message_id", messageIds);
+  if (error) return { byMessage: {}, error: { message: error.message } };
+
+  type Acc = { counts: Record<string, number>; myEmoji: string | null };
+  const accByMessage: Record<string, Acc> = {};
+  for (const row of data ?? []) {
+    const mid = String((row as { message_id: string }).message_id);
+    const emoji = String((row as { emoji: string }).emoji);
+    const uid = String((row as { user_id: string }).user_id);
+    if (!accByMessage[mid]) accByMessage[mid] = { counts: {}, myEmoji: null };
+    accByMessage[mid].counts[emoji] = (accByMessage[mid].counts[emoji] ?? 0) + 1;
+    if (currentUserId && uid === currentUserId) accByMessage[mid].myEmoji = emoji;
+  }
+
+  const byMessage: Record<string, MessageReactionsState> = {};
+  for (const mid of Object.keys(accByMessage)) {
+    const { counts, myEmoji } = accByMessage[mid];
+    const summaries = Object.entries(counts).map(([emoji, count]) => ({ emoji, count }));
+    summaries.sort((a, b) => b.count - a.count || a.emoji.localeCompare(b.emoji));
+    byMessage[mid] = { summaries, myEmoji };
+  }
+  return { byMessage, error: null };
 }

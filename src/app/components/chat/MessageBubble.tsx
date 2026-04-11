@@ -1,5 +1,8 @@
-import React from "react";
+import React, { useCallback, useRef } from "react";
 import { Check, CheckCheck, Clock } from "lucide-react";
+
+const REACTION_LONG_PRESS_MS = 520;
+const REACTION_MOVE_CANCEL_PX = 14;
 
 export type ReceiptPhase = "sending" | "sent" | "delivered" | "read";
 
@@ -74,9 +77,14 @@ export type MessageBubbleProps = {
   children: React.ReactNode;
   /** Rendered directly under the bubble (e.g. product card) */
   belowBubbleSlot?: React.ReactNode;
-  reaction?: string | null;
+  /** Aggregated emoji reactions below the bubble */
+  reactions?: { emoji: string; count: number }[] | null;
   bubbleTransformStyle?: React.CSSProperties;
   edited?: boolean;
+  /** Long-press (touch or primary mouse button) opens reaction picker in parent */
+  onRequestReactionPicker?: () => void;
+  /** When true, long-press is disabled (e.g. multi-select mode) */
+  reactionInteractionDisabled?: boolean;
 };
 
 export function MessageBubble({
@@ -91,16 +99,93 @@ export function MessageBubble({
   replySlot,
   children,
   belowBubbleSlot,
-  reaction,
+  reactions,
   bubbleTransformStyle,
   edited,
+  onRequestReactionPicker,
+  reactionInteractionDisabled,
 }: MessageBubbleProps) {
+  const lpTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lpStartRef = useRef({ x: 0, y: 0 });
+
+  const clearLongPress = useCallback(() => {
+    if (lpTimerRef.current) {
+      clearTimeout(lpTimerRef.current);
+      lpTimerRef.current = null;
+    }
+  }, []);
+
+  const onReactionPointerDown = useCallback(
+    (e: React.PointerEvent) => {
+      if (!onRequestReactionPicker || reactionInteractionDisabled) {
+        // eslint-disable-next-line no-console
+        console.log("[MessageBubble] pointerDown skipped", {
+          hasCallback: !!onRequestReactionPicker,
+          reactionInteractionDisabled: !!reactionInteractionDisabled,
+        });
+        return;
+      }
+      if (e.button !== 0) return;
+      clearLongPress();
+      lpStartRef.current = { x: e.clientX, y: e.clientY };
+      // eslint-disable-next-line no-console
+      console.log("[MessageBubble] long-press timer started", { pointerType: e.pointerType });
+      try {
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+      } catch {
+        /* noop */
+      }
+      lpTimerRef.current = window.setTimeout(() => {
+        lpTimerRef.current = null;
+        // eslint-disable-next-line no-console
+        console.log("Long press detected");
+        // eslint-disable-next-line no-console
+        console.log("[MessageBubble] calling onRequestReactionPicker");
+        onRequestReactionPicker();
+      }, REACTION_LONG_PRESS_MS);
+    },
+    [reactionInteractionDisabled, onRequestReactionPicker, clearLongPress],
+  );
+
+  const onReactionPointerMove = useCallback(
+    (e: React.PointerEvent) => {
+      if (!lpTimerRef.current) return;
+      if (
+        Math.abs(e.clientX - lpStartRef.current.x) > REACTION_MOVE_CANCEL_PX ||
+        Math.abs(e.clientY - lpStartRef.current.y) > REACTION_MOVE_CANCEL_PX
+      ) {
+        // eslint-disable-next-line no-console
+        console.log("[MessageBubble] long-press cancelled (moved too far)");
+        clearLongPress();
+      }
+    },
+    [clearLongPress],
+  );
+
+  const onReactionPointerEnd = useCallback(
+    (e: React.PointerEvent) => {
+      try {
+        (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+      } catch {
+        /* noop */
+      }
+      clearLongPress();
+    },
+    [clearLongPress],
+  );
+
   const bubbleClass = mine
     ? "relative z-[1] rounded-2xl rounded-br-sm bg-emerald-500 text-white shadow-sm dark:bg-emerald-600"
     : "relative z-[1] rounded-2xl rounded-bl-sm bg-gray-200 text-gray-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-100";
 
   return (
-    <div className={`flex w-full min-w-0 ${mine ? "justify-end" : "justify-start"}`}>
+    <div
+      className={`flex w-full min-w-0 touch-manipulation ${mine ? "justify-end" : "justify-start"}`}
+      onPointerDown={onReactionPointerDown}
+      onPointerMove={onReactionPointerMove}
+      onPointerUp={onReactionPointerEnd}
+      onPointerCancel={onReactionPointerEnd}
+    >
       <div
         className={`flex min-w-0 max-w-[min(92%,26rem)] flex-col sm:max-w-[min(85%,28rem)] ${mine ? "items-end" : "items-start"}`}
         style={bubbleTransformStyle}
@@ -126,13 +211,24 @@ export function MessageBubble({
           {belowBubbleSlot}
         </div>
 
-        {reaction ? (
-          <span
-            className="mt-0.5 rounded-full bg-white px-1.5 py-0.5 text-base shadow-sm ring-1 ring-gray-200/80 dark:bg-zinc-800 dark:ring-zinc-600"
-            title="Reaction"
+        {reactions?.length ? (
+          <div
+            className={`mt-1 flex max-w-full flex-wrap gap-1 ${mine ? "justify-end" : "justify-start"}`}
+            aria-label="Reactions"
           >
-            {reaction}
-          </span>
+            {reactions.map(({ emoji, count }) => (
+              <span
+                key={emoji}
+                className="inline-flex items-center gap-0.5 rounded-full bg-white px-1.5 py-0.5 text-sm shadow-sm ring-1 ring-gray-200/80 dark:bg-zinc-800 dark:ring-zinc-600"
+                title={`${count} reaction${count === 1 ? "" : "s"}`}
+              >
+                <span className="leading-none">{emoji}</span>
+                {count > 1 ? (
+                  <span className="text-[10px] font-semibold tabular-nums text-gray-600 dark:text-zinc-300">{count}</span>
+                ) : null}
+              </span>
+            ))}
+          </div>
         ) : null}
 
         {showMeta ? (

@@ -4,11 +4,14 @@ import {
   ArrowDown,
   ArrowLeft,
   Ban,
+  BadgeCheck,
+  Calendar,
   Check,
   Copy,
   Eraser,
   ImagePlus,
   Loader2,
+  MapPin,
   MessageCircle,
   Mic,
   MoreVertical,
@@ -19,9 +22,11 @@ import {
   Send,
   Share2,
   Smile,
+  Star,
   Trash2,
   User,
   X,
+  Zap,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "../../../lib/supabase";
@@ -43,12 +48,14 @@ import {
 import {
   CHAT_MESSAGE_BASE_COLUMNS,
   fetchChatMessagesForConversation,
+  fetchMessageReactions,
   markConversationMessagesDelivered,
   markConversationMessagesRead,
   normalizeChatMessageRow,
   outgoingReceiptPhase,
   resolveChatMessageReplyPreviews,
   type ChatMessageRow,
+  type MessageReactionsState,
 } from "../../utils/chatMessages";
 import {
   AlertDialog,
@@ -126,8 +133,8 @@ const CHAT_EMOJI_GRID: string[] = [
   "✅",
 ];
 
-const LONG_PRESS_MS = 550;
-const LONG_PRESS_MOVE_CANCEL_PX = 14;
+/** Long-press menu: quick reactions (persisted in `chat_message_reactions`). */
+const CHAT_QUICK_REACTION_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🙏"] as const;
 
 function parseConversationInt(v: unknown): number | null {
   if (v == null) return null;
@@ -195,6 +202,69 @@ function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** Average ms from each message you sent until the peer's next reply (1:1 chat). */
+function averagePeerReplyDelayMs(messages: ChatMessageRow[], peerId: string, myId: string): number | null {
+  const sorted = [...messages]
+    .filter((m) => !String(m.id).startsWith("pending-"))
+    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+  const deltas: number[] = [];
+  for (let i = 0; i < sorted.length; i++) {
+    if (sorted[i].sender_id !== myId) continue;
+    const t0 = new Date(sorted[i].created_at).getTime();
+    if (Number.isNaN(t0)) continue;
+    for (let j = i + 1; j < sorted.length; j++) {
+      if (sorted[j].sender_id === peerId) {
+        const t1 = new Date(sorted[j].created_at).getTime();
+        if (!Number.isNaN(t1) && t1 >= t0) deltas.push(t1 - t0);
+        break;
+      }
+      if (sorted[j].sender_id === myId) break;
+    }
+  }
+  if (deltas.length === 0) return null;
+  return deltas.reduce((a, b) => a + b, 0) / deltas.length;
+}
+
+function formatAvgResponseLabel(ms: number): string {
+  const minutes = ms / 60000;
+  if (minutes < 1) return "Replies in ~1 min";
+  if (minutes < 60) return `Replies in ~${Math.max(1, Math.round(minutes))} min`;
+  const hours = minutes / 60;
+  if (hours < 24) {
+    const rounded = Math.round(hours * 10) / 10;
+    if (rounded <= 1.2) return "Replies in ~1 hour";
+    return `Replies in ~${rounded} hours`;
+  }
+  const days = minutes / (60 * 24);
+  const d = Math.max(1, Math.round(days * 10) / 10);
+  return `Replies in ~${d} day${d >= 2 ? "s" : ""}`;
+}
+
+function formatLocationLine(state: string | null, lga: string | null): string | null {
+  const s = state?.trim() || "";
+  const l = lga?.trim() || "";
+  if (l && s) return `${l}, ${s}`;
+  if (s) return s;
+  if (l) return l;
+  return null;
+}
+
+function formatMemberSince(iso: string | null): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+}
+
+const PEER_ACTIVE_MS = 5 * 60 * 1000;
+
+function isLastActiveWithin(iso: string | null, ms: number): boolean {
+  if (!iso) return false;
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return false;
+  return Date.now() - t <= ms;
 }
 
 function messagePreviewText(message: string, imageUrl?: string | null): string {
@@ -279,9 +349,15 @@ export default function ChatWorkspace() {
   const [conversation, setConversation] = useState<ConversationRow | null>(null);
   const [peerId, setPeerId] = useState<string | null>(null);
   const [peerName, setPeerName] = useState("Member");
-  const [peerAvatar, setPeerAvatar] = useState("");
   const [peerPhone, setPeerPhone] = useState<string | null>(null);
-  const [peerOnline, setPeerOnline] = useState(false);
+  const [peerVerified, setPeerVerified] = useState(false);
+  const [peerRating, setPeerRating] = useState<number | null>(null);
+  const [peerReviewCount, setPeerReviewCount] = useState(0);
+  const [peerLocationLabel, setPeerLocationLabel] = useState<string | null>(null);
+  const [peerMemberSince, setPeerMemberSince] = useState<string | null>(null);
+  const [peerLastActive, setPeerLastActive] = useState<string | null>(null);
+  const [peerPresenceTick, setPeerPresenceTick] = useState(0);
+  const [peerResponseMs, setPeerResponseMs] = useState<number | null>(null);
   const [messages, setMessages] = useState<ChatMessageRow[]>([]);
   const [stripProduct, setStripProduct] = useState<StripProduct | null>(null);
   const [messageProductsById, setMessageProductsById] = useState<Map<number, StripProduct>>(() => new Map());
@@ -303,20 +379,21 @@ export default function ChatWorkspace() {
   const voiceHoldRef = useRef(false);
 
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
+  /** Radix ContextMenu steals touch long-press on phones; only wrap on md+ so MessageBubble long-press works on mobile. */
+  const [useDesktopContextMenu, setUseDesktopContextMenu] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches,
+  );
 
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
+  const [reactionByMessage, setReactionByMessage] = useState<Record<string, MessageReactionsState>>({});
+  const [reactionSheetMsg, setReactionSheetMsg] = useState<ChatMessageRow | null>(null);
+  const threadMessagesRef = useRef<ChatMessageRow[]>([]);
   const draftTextareaRef = useRef<HTMLTextAreaElement>(null);
   const peerHeaderRef = useRef<HTMLElement | null>(null);
-  const [peerHeaderHeight, setPeerHeaderHeight] = useState(72);
-  const longPressRef = useRef<{
-    timer: ReturnType<typeof setTimeout> | null;
-    msgId: string | null;
-    startX: number;
-    startY: number;
-  }>({ timer: null, msgId: null, startX: 0, startY: 0 });
-
+  /** Default taller than the old single-row header so mobile spacer does not overlap extra rows before measure. */
+  const [peerHeaderHeight, setPeerHeaderHeight] = useState(168);
   const {
     search: inboxSearch,
     setSearch: setInboxSearch,
@@ -338,6 +415,11 @@ export default function ChatWorkspace() {
   }, [productParam]);
 
   const peerFirstName = useMemo(() => peerName.split(/\s+/)[0] || "Member", [peerName]);
+
+  const peerActiveByProfile = useMemo(
+    () => isLastActiveWithin(peerLastActive, PEER_ACTIVE_MS),
+    [peerLastActive, peerPresenceTick],
+  );
 
   const resolveMessageProductCard = useCallback(
     (msg: ChatMessageRow): { strip: StripProduct; pricePending: boolean } | null => {
@@ -376,16 +458,120 @@ export default function ChatWorkspace() {
     if (near) setPendingBelow(0);
   }, []);
 
-  /** Mobile: peer header is `fixed`; keep layout spacer in sync when search row expands. */
+  useEffect(() => {
+    threadMessagesRef.current = messages;
+  }, [messages]);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 768px)");
+    const apply = () => setUseDesktopContextMenu(mq.matches);
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
+
+  const refreshReactions = useCallback(async () => {
+    if (!conversation?.id || !authUser?.id) return;
+    const ids = threadMessagesRef.current.map((m) => m.id).filter((id) => !String(id).startsWith("pending-"));
+    if (ids.length === 0) {
+      setReactionByMessage({});
+      return;
+    }
+    const { byMessage, error } = await fetchMessageReactions(supabase, conversation.id, ids, authUser.id);
+    if (error) {
+      const m = error.message.toLowerCase();
+      if (!m.includes("does not exist") && !m.includes("schema cache") && !m.includes("relation")) {
+        console.warn("[chat_message_reactions]", error.message);
+      }
+      return;
+    }
+    setReactionByMessage(byMessage);
+  }, [conversation?.id, authUser?.id]);
+
+  const messageIdsKey = useMemo(() => messages.map((m) => m.id).join(","), [messages]);
+
+  useEffect(() => {
+    void refreshReactions();
+  }, [messageIdsKey, refreshReactions]);
+
+  const applyQuickReaction = useCallback(
+    async (msg: ChatMessageRow, emoji: string) => {
+      if (!conversation?.id || !authUser?.id) return;
+      if (String(msg.id).startsWith("pending-")) return;
+      const mine = reactionByMessage[msg.id]?.myEmoji;
+      try {
+        if (mine === emoji) {
+          const { error } = await supabase
+            .from("chat_message_reactions")
+            .delete()
+            .eq("message_id", msg.id)
+            .eq("user_id", authUser.id);
+          if (error) throw error;
+        } else {
+          const { error } = await supabase.from("chat_message_reactions").upsert(
+            {
+              conversation_id: conversation.id,
+              message_id: msg.id,
+              user_id: authUser.id,
+              emoji,
+            },
+            { onConflict: "message_id,user_id" },
+          );
+          if (error) throw error;
+        }
+        setReactionSheetMsg(null);
+        await refreshReactions();
+      } catch (e: unknown) {
+        toast.error(errorMessage(e, "Could not save reaction"));
+      }
+    },
+    [conversation?.id, authUser?.id, reactionByMessage, refreshReactions],
+  );
+
+  /** Mobile: peer header is `fixed`; spacer must match real height or message list covers rows 2–4. */
   useLayoutEffect(() => {
     const el = peerHeaderRef.current;
     if (!el) return;
-    const measure = () => setPeerHeaderHeight(Math.ceil(el.getBoundingClientRect().height));
+    const measure = () => {
+      const rect = el.getBoundingClientRect().height;
+      const block = el.offsetHeight;
+      const h = Math.max(Math.ceil(rect), block, 1);
+      setPeerHeaderHeight((prev) => (prev === h ? prev : h));
+    };
     measure();
-    const ro = new ResizeObserver(measure);
+    let cancelled = false;
+    requestAnimationFrame(() => {
+      if (cancelled) return;
+      measure();
+      requestAnimationFrame(() => {
+        if (cancelled) return;
+        measure();
+      });
+    });
+    const ro = new ResizeObserver(() => {
+      requestAnimationFrame(measure);
+    });
     ro.observe(el);
-    return () => ro.disconnect();
-  }, [searchOpen, peerName, conversation?.id]);
+    window.addEventListener("resize", measure);
+    return () => {
+      cancelled = true;
+      ro.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [
+    searchOpen,
+    peerName,
+    conversation?.id,
+    peerVerified,
+    peerRating,
+    peerReviewCount,
+    peerLocationLabel,
+    peerMemberSince,
+    peerResponseMs,
+    peerLastActive,
+    peerTyping,
+    peerPresenceTick,
+  ]);
 
   /** Avoid tying shell height to visualViewport.height — it shrinks with the mobile keyboard and collapses the sticky chat header. */
   useLayoutEffect(() => {
@@ -502,32 +688,56 @@ export default function ChatWorkspace() {
       setConversation(conv);
       setPeerId(peer);
 
+      setPeerVerified(false);
+      setPeerRating(null);
+      setPeerReviewCount(0);
+      setPeerLocationLabel(null);
+      setPeerMemberSince(null);
+      setPeerLastActive(null);
+      setPeerResponseMs(null);
+
+      const profileSel =
+        "full_name, avatar_url, gender, phone, state, lga, created_at, last_active";
+
+      const pubPromise = supabase.from("profiles_public").select(profileSel).eq("id", peer).maybeSingle();
+      const verPromise = supabase.from("seller_verification").select("id").eq("seller_id", peer).limit(1).maybeSingle();
+      const revPromise = supabase.from("seller_reviews").select("rating").eq("seller_id", peer);
+
+      const [pubRes, verRes, revRes] = await Promise.all([pubPromise, verPromise, revPromise]);
+
       let prof: Record<string, unknown> | null = null;
-      const pub = await supabase
-        .from("profiles_public")
-        .select("full_name, avatar_url, gender, phone")
-        .eq("id", peer)
-        .maybeSingle();
-      if (!pub.error && pub.data) prof = pub.data as Record<string, unknown>;
+      if (!pubRes.error && pubRes.data) prof = pubRes.data as Record<string, unknown>;
       else {
-        const fb = await supabase
-          .from("profiles")
-          .select("full_name, avatar_url, gender, phone")
-          .eq("id", peer)
-          .maybeSingle();
+        const fb = await supabase.from("profiles").select(profileSel).eq("id", peer).maybeSingle();
         if (!fb.error && fb.data) prof = fb.data as Record<string, unknown>;
       }
 
       if (prof) {
         const name = (prof.full_name as string)?.trim() || "Member";
         setPeerName(name);
-        setPeerAvatar(getAvatarUrl(prof.avatar_url as string | null, prof.gender as string | null, name));
         const phoneRaw = prof.phone;
         setPeerPhone(typeof phoneRaw === "string" && phoneRaw.trim() ? phoneRaw.trim() : null);
+        const st = typeof prof.state === "string" ? prof.state : null;
+        const lga = typeof prof.lga === "string" ? prof.lga : null;
+        setPeerLocationLabel(formatLocationLine(st, lga));
+        const created = typeof prof.created_at === "string" ? prof.created_at : null;
+        setPeerMemberSince(formatMemberSince(created));
+        const la = typeof prof.last_active === "string" ? prof.last_active : null;
+        setPeerLastActive(la);
       } else {
         setPeerName("Member");
-        setPeerAvatar(getAvatarUrl(null, null, "Member"));
         setPeerPhone(null);
+      }
+
+      if (!verRes.error && verRes.data) setPeerVerified(true);
+
+      if (!revRes.error && revRes.data?.length) {
+        const rows = revRes.data as { rating: number | string }[];
+        const ratings = rows.map((r) => Number(r.rating)).filter((n) => Number.isFinite(n) && n > 0);
+        setPeerReviewCount(ratings.length);
+        if (ratings.length > 0) {
+          setPeerRating(Math.round((ratings.reduce((a, b) => a + b, 0) / ratings.length) * 10) / 10);
+        }
       }
 
       const { data: msgs, error: mErr } = await fetchChatMessagesForConversation(supabase, conv.id);
@@ -537,6 +747,8 @@ export default function ChatWorkspace() {
       setSelectionMode(false);
       setSelectedIds([]);
       setEmojiPickerOpen(false);
+      setReactionByMessage({});
+      setReactionSheetMsg(null);
       setMessages(msgs);
     } catch (e: unknown) {
       console.error(e);
@@ -695,6 +907,9 @@ export default function ChatWorkspace() {
         },
         (payload) => {
           const row = normalizeChatMessageRow(payload.new as Record<string, unknown>);
+          if (peerId && row.sender_id === peerId && row.created_at) {
+            setPeerLastActive(row.created_at);
+          }
           setMessages((prev) => {
             if (prev.some((m) => m.id === row.id)) return resolveChatMessageReplyPreviews(prev);
             const cleaned =
@@ -742,6 +957,18 @@ export default function ChatWorkspace() {
           setMessages((prev) => prev.filter((m) => m.id !== oldRow.id));
         },
       )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "chat_message_reactions",
+          filter: `conversation_id=eq.${mid}`,
+        },
+        () => {
+          void refreshReactions();
+        },
+      )
       .subscribe();
 
     const convChannel = supabase
@@ -775,7 +1002,7 @@ export default function ChatWorkspace() {
       void supabase.removeChannel(msgChannel);
       void supabase.removeChannel(convChannel);
     };
-  }, [conversation?.id, authUser?.id]);
+  }, [conversation?.id, authUser?.id, peerId, refreshReactions]);
 
   const upsertTyping = useCallback(
     async (isTyping: boolean) => {
@@ -863,35 +1090,30 @@ export default function ChatWorkspace() {
   }, [authUser?.id]);
 
   useEffect(() => {
-    if (!peerId) return;
-    void supabase
-      .from("user_status")
-      .select("is_online, last_seen")
-      .eq("user_id", peerId)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (!data) return;
-        const seen = data.last_seen ? new Date(data.last_seen).getTime() : 0;
-        const fresh = Date.now() - seen < 90000;
-        setPeerOnline(!!data.is_online && fresh);
-      });
+    if (!authUser?.id || !peerId) {
+      setPeerResponseMs(null);
+      return;
+    }
+    setPeerResponseMs(averagePeerReplyDelayMs(messages, peerId, authUser.id));
+  }, [messages, peerId, authUser?.id]);
 
+  useEffect(() => {
+    if (!peerId) return;
     const ch = supabase
-      .channel(`peer-status:${peerId}`)
+      .channel(`peer-profile-la:${peerId}`)
       .on(
         "postgres_changes",
         {
-          event: "*",
+          event: "UPDATE",
           schema: "public",
-          table: "user_status",
-          filter: `user_id=eq.${peerId}`,
+          table: "profiles",
+          filter: `id=eq.${peerId}`,
         },
         (payload) => {
-          const row = payload.new as { is_online?: boolean; last_seen?: string };
-          if (!row) return;
-          const seen = row.last_seen ? new Date(row.last_seen).getTime() : 0;
-          const fresh = Date.now() - seen < 90000;
-          setPeerOnline(!!row.is_online && fresh);
+          const row = payload.new as { last_active?: string | null };
+          if (row?.last_active && typeof row.last_active === "string") {
+            setPeerLastActive(row.last_active);
+          }
         },
       )
       .subscribe();
@@ -899,6 +1121,13 @@ export default function ChatWorkspace() {
       void supabase.removeChannel(ch);
     };
   }, [peerId]);
+
+  /** Re-evaluate "Active now" when the 5-minute window can expire without a profile push. */
+  useEffect(() => {
+    if (!peerLastActive) return;
+    const t = window.setInterval(() => setPeerPresenceTick((n) => n + 1), 15000);
+    return () => clearInterval(t);
+  }, [peerLastActive]);
 
   useEffect(() => {
     if (!messages.length) return;
@@ -1187,63 +1416,22 @@ export default function ChatWorkspace() {
 
   const suppressNextRowClickRef = useRef(false);
 
-  const clearLongPressTimer = useCallback(() => {
-    const t = longPressRef.current.timer;
-    if (t) clearTimeout(t);
-    longPressRef.current = { timer: null, msgId: null, startX: 0, startY: 0 };
+  const openReactionPickerForMessage = useCallback((msg: ChatMessageRow) => {
+    // eslint-disable-next-line no-console
+    console.log("[ChatWorkspace] openReactionPickerForMessage called", { messageId: msg.id });
+    if (String(msg.id).startsWith("pending-")) {
+      // eslint-disable-next-line no-console
+      console.log("[ChatWorkspace] openReactionPickerForMessage skipped (pending message)");
+      return;
+    }
+    suppressNextRowClickRef.current = true;
+    window.setTimeout(() => {
+      suppressNextRowClickRef.current = false;
+    }, 450);
+    setReactionSheetMsg(msg);
+    // eslint-disable-next-line no-console
+    console.log("[ChatWorkspace] setReactionSheetMsg dispatched");
   }, []);
-
-  const onMessagePointerDown = useCallback(
-    (msgId: string, e: React.PointerEvent) => {
-      if (selectionMode) return;
-      if (e.button !== 0) return;
-      longPressRef.current = {
-        timer: window.setTimeout(() => {
-          longPressRef.current.timer = null;
-          suppressNextRowClickRef.current = true;
-          window.setTimeout(() => {
-            suppressNextRowClickRef.current = false;
-          }, 450);
-          enterSelectionWith(msgId);
-        }, LONG_PRESS_MS),
-        msgId,
-        startX: e.clientX,
-        startY: e.clientY,
-      };
-      try {
-        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-      } catch {
-        /* noop */
-      }
-    },
-    [selectionMode, enterSelectionWith],
-  );
-
-  const onMessagePointerMove = useCallback(
-    (e: React.PointerEvent) => {
-      const lp = longPressRef.current;
-      if (!lp.timer || !lp.msgId) return;
-      if (
-        Math.abs(e.clientX - lp.startX) > LONG_PRESS_MOVE_CANCEL_PX ||
-        Math.abs(e.clientY - lp.startY) > LONG_PRESS_MOVE_CANCEL_PX
-      ) {
-        clearLongPressTimer();
-      }
-    },
-    [clearLongPressTimer],
-  );
-
-  const onMessagePointerUp = useCallback(
-    (e: React.PointerEvent) => {
-      try {
-        (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-      } catch {
-        /* noop */
-      }
-      clearLongPressTimer();
-    },
-    [clearLongPressTimer],
-  );
 
   const onMessageRowClick = useCallback(
     (msg: ChatMessageRow) => {
@@ -1432,7 +1620,7 @@ export default function ChatWorkspace() {
   const peerContactLinks = phoneLinkTargets(peerPhone);
   const chatShellStyle = {
     ...(viewportHeight ? { ["--chat-viewport-height" as string]: `${viewportHeight}px` } : {}),
-    ["--chat-header-height" as string]: "72px",
+    ["--chat-header-height" as string]: `${peerHeaderHeight}px`,
   } as React.CSSProperties;
 
   const filteredThreadSearch = useMemo(() => {
@@ -1581,66 +1769,49 @@ export default function ChatWorkspace() {
         <header
           ref={peerHeaderRef}
           className={cn(
-            "shrink-0 border-b border-emerald-200/90 bg-white shadow-md dark:border-emerald-800/80 dark:bg-zinc-900",
+            "shrink-0 overflow-visible border-b border-emerald-200/90 bg-white shadow-md dark:border-emerald-800/80 dark:bg-zinc-900",
             "max-md:fixed max-md:left-0 max-md:right-0 max-md:top-16 max-md:z-40",
             "md:sticky md:top-16 md:z-30",
           )}
         >
           <div className="px-3 py-2.5 sm:px-4">
-            <div className="flex items-center gap-2 sm:gap-3">
+            <div className="flex items-start gap-2 sm:gap-3">
               <button
                 type="button"
                 onClick={() => navigate("/messages")}
-                className="-ml-2 rounded-lg p-2 hover:bg-gray-100 dark:hover:bg-zinc-800 md:hidden"
+                className="-ml-2 shrink-0 rounded-lg p-2 hover:bg-gray-100 dark:hover:bg-zinc-800"
                 aria-label="Back"
               >
                 <ArrowLeft className="h-5 w-5 text-gray-700 dark:text-zinc-200" />
               </button>
-              <div className="relative shrink-0">
-                <img
-                  src={peerAvatar || getAvatarUrl(null, null, peerName)}
-                  alt=""
-                  className="h-10 w-10 rounded-full object-cover ring-2 ring-white/80 dark:ring-zinc-700"
-                />
-              </div>
-              <div className="min-w-0 flex-1">
-                <h1 className="truncate font-semibold leading-tight text-gray-900 dark:text-zinc-100">{peerName}</h1>
-                <div className="mt-0.5 flex items-center gap-2">
-                  <span
-                    className={`h-2 w-2 shrink-0 rounded-full ${
-                      peerTyping || peerOnline ? "bg-emerald-500" : "bg-zinc-400 dark:bg-zinc-500"
-                    }`}
-                    title={peerTyping ? "Typing" : peerOnline ? "Online" : "Offline"}
-                    aria-hidden
-                  />
-                  <p className="truncate text-xs text-gray-500 dark:text-muted-foreground">
-                    {peerTyping ? `${peerFirstName} is typing…` : peerOnline ? "Active now" : "Offline"}
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSearchOpen((v) => !v)}
-                className="rounded-lg p-2 text-gray-600 hover:bg-gray-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                aria-label="Search in chat"
-              >
-                <Search className="h-5 w-5" />
-              </button>
+              <h1 className="min-w-0 flex-1 text-lg font-bold leading-snug tracking-tight text-gray-900 dark:text-zinc-100 sm:text-xl">
+                <span className="line-clamp-2 break-words">{peerName}</span>
+              </h1>
               <DropdownMenu modal={false}>
                 <DropdownMenuTrigger asChild>
                   <button
                     type="button"
-                    className={`rounded-lg p-2 text-gray-600 hover:bg-gray-100 dark:hover:bg-zinc-800 ${peerContactLinks ? "" : "opacity-60"}`}
-                    aria-label="Contact"
+                    className="shrink-0 rounded-lg p-2 text-gray-600 hover:bg-gray-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                    aria-label="Chat options"
                   >
-                    <Phone className="h-5 w-5" />
+                    <MoreVertical className="h-5 w-5" />
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-60">
-                  <DropdownMenuLabel>{peerName}</DropdownMenuLabel>
+                  <DropdownMenuLabel className="line-clamp-2">{peerName}</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className="cursor-pointer gap-2"
+                    onSelect={(e) => {
+                      e.preventDefault();
+                      setSearchOpen((v) => !v);
+                    }}
+                  >
+                    <Search className="h-4 w-4" />
+                    Search in chat
+                  </DropdownMenuItem>
                   {peerContactLinks ? (
                     <>
-                      <DropdownMenuSeparator />
                       <DropdownMenuItem
                         className="cursor-pointer gap-2"
                         onSelect={(e) => {
@@ -1663,23 +1834,10 @@ export default function ChatWorkspace() {
                       </DropdownMenuItem>
                     </>
                   ) : (
-                    <>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem disabled className="text-xs">
-                        No phone on profile
-                      </DropdownMenuItem>
-                    </>
+                    <DropdownMenuItem disabled className="text-xs">
+                      No phone on profile
+                    </DropdownMenuItem>
                   )}
-                </DropdownMenuContent>
-              </DropdownMenu>
-              <DropdownMenu modal={false}>
-                <DropdownMenuTrigger asChild>
-                  <button type="button" className="rounded-lg p-2 hover:bg-gray-100 dark:hover:bg-zinc-800" aria-label="More">
-                    <MoreVertical className="h-5 w-5" />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuLabel>Chat</DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
                     onSelect={(e) => {
@@ -1719,6 +1877,65 @@ export default function ChatWorkspace() {
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
+
+            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-700 dark:text-zinc-200">
+              {peerVerified ? (
+                <span className="inline-flex items-center gap-1 font-medium text-emerald-700 dark:text-emerald-400">
+                  <BadgeCheck className="h-4 w-4 shrink-0" aria-hidden />
+                  Verified
+                </span>
+              ) : null}
+              {peerReviewCount > 0 && peerRating != null ? (
+                <span className="inline-flex items-center gap-1">
+                  <Star className="h-3.5 w-3.5 shrink-0 fill-amber-400 text-amber-500" aria-hidden />
+                  <span className="font-medium tabular-nums">{peerRating.toFixed(1)}</span>
+                  <span className="text-gray-500 dark:text-zinc-400">({peerReviewCount})</span>
+                </span>
+              ) : (
+                <span className="text-xs text-gray-500 dark:text-zinc-500">No reviews yet</span>
+              )}
+            </div>
+
+            {(peerLocationLabel || peerMemberSince) && (
+              <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-600 dark:text-zinc-400">
+                {peerLocationLabel ? (
+                  <span className="inline-flex min-w-0 items-center gap-1">
+                    <MapPin className="h-3.5 w-3.5 shrink-0 text-gray-400" aria-hidden />
+                    <span className="break-words">{peerLocationLabel}</span>
+                  </span>
+                ) : null}
+                {peerMemberSince ? (
+                  <span className="inline-flex items-center gap-1">
+                    <Calendar className="h-3.5 w-3.5 shrink-0 text-gray-400" aria-hidden />
+                    Member since {peerMemberSince}
+                  </span>
+                ) : null}
+              </div>
+            )}
+
+            <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs">
+              <span className="inline-flex min-w-0 items-start gap-1.5 text-gray-700 dark:text-zinc-300">
+                <Zap className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" aria-hidden />
+                <span>
+                  {peerResponseMs != null
+                    ? formatAvgResponseLabel(peerResponseMs)
+                    : "Typical reply: not enough chat history yet"}
+                </span>
+              </span>
+              <span className="inline-flex items-center gap-2 text-gray-600 dark:text-zinc-400">
+                <span
+                  className={cn(
+                    "h-2 w-2 shrink-0 rounded-full",
+                    peerTyping ? "bg-amber-500" : peerActiveByProfile ? "bg-emerald-500" : "bg-zinc-400 dark:bg-zinc-500",
+                  )}
+                  title={peerTyping ? "Typing" : peerActiveByProfile ? "Active" : "Offline"}
+                  aria-hidden
+                />
+                <span className="whitespace-nowrap">
+                  {peerTyping ? `${peerFirstName} is typing…` : peerActiveByProfile ? "Active now" : "Offline"}
+                </span>
+              </span>
+            </div>
             {searchOpen ? (
               <div className="mt-2 flex items-center gap-2 rounded-xl border border-emerald-100 bg-white/90 px-3 py-2 dark:border-emerald-900 dark:bg-zinc-800/90">
                 <Search className="h-4 w-4 shrink-0 text-gray-400" />
@@ -1749,7 +1966,11 @@ export default function ChatWorkspace() {
           </div>
         </header>
         {/* Reserves space for fixed header on small screens (header is out of flow when fixed). */}
-        <div className="max-md:shrink-0 md:hidden" style={{ height: peerHeaderHeight }} aria-hidden />
+        <div
+          className="max-md:shrink-0 md:hidden"
+          style={{ minHeight: peerHeaderHeight, height: peerHeaderHeight }}
+          aria-hidden
+        />
 
         {stripProduct ? (
           <div className="relative z-20 flex shrink-0 items-center gap-3 border-b border-gray-200 bg-white/95 px-3 py-3 dark:border-zinc-700 dark:bg-zinc-900/90 sm:px-4">
@@ -1823,93 +2044,103 @@ export default function ChatWorkspace() {
                 const isHighlighted = highlightedMessageId === msg.id;
                 const productCard = resolveMessageProductCard(msg);
 
+                const reactionPickerDisabled = selectionMode || String(msg.id).startsWith("pending-");
+
+                const messageBubbleEl = (
+                  <MessageBubble
+                    mine={mine}
+                    senderName={mine ? "You" : peerFirstName}
+                    showSenderName={!sameCluster}
+                    timeLabel={timeLabel}
+                    showMeta={showMeta}
+                    receiptPhase={outgoingReceiptPhase(msg)}
+                    showIncomingRead={!mine && !!msg.read_at}
+                    isHighlighted={isHighlighted}
+                    edited={!!msg.edited}
+                    reactions={reactionByMessage[msg.id]?.summaries ?? null}
+                    onRequestReactionPicker={
+                      reactionPickerDisabled ? undefined : () => openReactionPickerForMessage(msg)
+                    }
+                    reactionInteractionDisabled={!!reactionPickerDisabled}
+                    replySlot={
+                      replyPreview || msg.reply_to_id ? (
+                        <button
+                          type="button"
+                          onPointerDown={(e) => e.stopPropagation()}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (selectionMode) {
+                              toggleMessageSelected(msg.id);
+                              return;
+                            }
+                            jumpToMessage(replyPreview?.id ?? msg.reply_to_id);
+                          }}
+                          className={`mb-2 block w-full rounded-xl border-l-4 px-3 py-2 text-left transition ${
+                            mine
+                              ? "border-white/60 bg-white/18 text-white/95 hover:bg-white/22"
+                              : "border-emerald-500/80 bg-white/40 text-gray-900 hover:bg-white/55"
+                          }`}
+                        >
+                          <p className="truncate text-[11px] font-semibold">{quotedSender}</p>
+                          <p className="line-clamp-2 text-[12px] leading-snug opacity-90">
+                            {replyPreview
+                              ? messagePreviewText(replyPreview.message, replyPreview.image_url)
+                              : "Original message"}
+                          </p>
+                        </button>
+                      ) : null
+                    }
+                    belowBubbleSlot={
+                      productCard ? (
+                        <ChatPortraitProductCard
+                          productId={productCard.strip.id}
+                          title={productCard.strip.title}
+                          priceLabel={productCard.pricePending ? "…" : formatPrice(productCard.strip.price)}
+                          imageUrl={productCard.strip.image}
+                          disableLink={selectionMode}
+                        />
+                      ) : null
+                    }
+                  >
+                    <div className="space-y-2">
+                      {msg.image_url ? (
+                        <img
+                          src={msg.image_url}
+                          alt=""
+                          className="max-h-64 max-w-full rounded-lg object-cover"
+                          loading="lazy"
+                          onPointerDown={(e) => !selectionMode && e.stopPropagation()}
+                          onClick={(e) => !selectionMode && e.stopPropagation()}
+                        />
+                      ) : null}
+                      {msg.media_url ? (
+                        <audio
+                          src={msg.media_url}
+                          controls
+                          className="max-w-[min(100%,280px)]"
+                          preload="metadata"
+                          onPointerDown={(e) => !selectionMode && e.stopPropagation()}
+                          onClick={(e) => !selectionMode && e.stopPropagation()}
+                        />
+                      ) : null}
+                      {msg.message?.trim() ? (
+                        <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{msg.message}</p>
+                      ) : null}
+                      {msg.client_sending ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] opacity-80">
+                          <Loader2 className="h-3 w-3 animate-spin" /> Sending…
+                        </span>
+                      ) : null}
+                    </div>
+                  </MessageBubble>
+                );
+
                 const rowBody = (
                   <div
                     className="touch-manipulation min-w-0 flex-1"
-                    onPointerDown={(e) => onMessagePointerDown(msg.id, e)}
-                    onPointerMove={onMessagePointerMove}
-                    onPointerUp={onMessagePointerUp}
-                    onPointerCancel={onMessagePointerUp}
                     onClick={() => onMessageRowClick(msg)}
                   >
-                    <MessageBubble
-                      mine={mine}
-                      senderName={mine ? "You" : peerFirstName}
-                      showSenderName={!sameCluster}
-                      timeLabel={timeLabel}
-                      showMeta={showMeta}
-                      receiptPhase={outgoingReceiptPhase(msg)}
-                      showIncomingRead={!mine && !!msg.read_at}
-                      isHighlighted={isHighlighted}
-                      edited={!!msg.edited}
-                      replySlot={
-                        replyPreview || msg.reply_to_id ? (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (selectionMode) {
-                                toggleMessageSelected(msg.id);
-                                return;
-                              }
-                              jumpToMessage(replyPreview?.id ?? msg.reply_to_id);
-                            }}
-                            className={`mb-2 block w-full rounded-xl border-l-4 px-3 py-2 text-left transition ${
-                              mine
-                                ? "border-white/60 bg-white/18 text-white/95 hover:bg-white/22"
-                                : "border-emerald-500/80 bg-white/40 text-gray-900 hover:bg-white/55"
-                            }`}
-                          >
-                            <p className="truncate text-[11px] font-semibold">{quotedSender}</p>
-                            <p className="line-clamp-2 text-[12px] leading-snug opacity-90">
-                              {replyPreview
-                                ? messagePreviewText(replyPreview.message, replyPreview.image_url)
-                                : "Original message"}
-                            </p>
-                          </button>
-                        ) : null
-                      }
-                      belowBubbleSlot={
-                        productCard ? (
-                          <ChatPortraitProductCard
-                            productId={productCard.strip.id}
-                            title={productCard.strip.title}
-                            priceLabel={productCard.pricePending ? "…" : formatPrice(productCard.strip.price)}
-                            imageUrl={productCard.strip.image}
-                            disableLink={selectionMode}
-                          />
-                        ) : null
-                      }
-                    >
-                      <div className="space-y-2">
-                        {msg.image_url ? (
-                          <img
-                            src={msg.image_url}
-                            alt=""
-                            className="max-h-64 max-w-full rounded-lg object-cover"
-                            loading="lazy"
-                            onClick={(e) => !selectionMode && e.stopPropagation()}
-                          />
-                        ) : null}
-                        {msg.media_url ? (
-                          <audio
-                            src={msg.media_url}
-                            controls
-                            className="max-w-[min(100%,280px)]"
-                            preload="metadata"
-                            onClick={(e) => !selectionMode && e.stopPropagation()}
-                          />
-                        ) : null}
-                        {msg.message?.trim() ? (
-                          <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{msg.message}</p>
-                        ) : null}
-                        {msg.client_sending ? (
-                          <span className="inline-flex items-center gap-1 text-[11px] opacity-80">
-                            <Loader2 className="h-3 w-3 animate-spin" /> Sending…
-                          </span>
-                        ) : null}
-                      </div>
-                    </MessageBubble>
+                    {messageBubbleEl}
                   </div>
                 );
 
@@ -1955,10 +2186,19 @@ export default function ChatWorkspace() {
                       ) : null}
                       {selectionMode ? (
                         rowBody
-                      ) : (
+                      ) : useDesktopContextMenu ? (
                         <ContextMenu>
                           <ContextMenuTrigger asChild>{rowBody}</ContextMenuTrigger>
                           <ContextMenuContent>
+                            <ContextMenuItem
+                              onSelect={() => {
+                                enterSelectionWith(msg.id);
+                              }}
+                            >
+                              <Check className="mr-2 h-4 w-4" />
+                              Select messages
+                            </ContextMenuItem>
+                            <ContextMenuSeparator />
                             <ContextMenuItem
                               onSelect={() => {
                                 setReplyingTo(msg);
@@ -1997,6 +2237,8 @@ export default function ChatWorkspace() {
                             </ContextMenuItem>
                           </ContextMenuContent>
                         </ContextMenu>
+                      ) : (
+                        rowBody
                       )}
                     </div>
                   </Fragment>
@@ -2109,6 +2351,38 @@ export default function ChatWorkspace() {
                 >
                   <ImagePlus className="h-6 w-6" />
                 </button>
+                <Popover open={emojiPickerOpen} onOpenChange={setEmojiPickerOpen}>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      className="shrink-0 rounded-full p-2 text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950/50"
+                      aria-label="Insert emoji"
+                      title="Emoji"
+                    >
+                      <Smile className="h-6 w-6" strokeWidth={2} />
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    side="top"
+                    align="start"
+                    sideOffset={8}
+                    className="w-[min(100vw-2rem,20rem)] touch-manipulation p-2"
+                  >
+                    <div className="grid max-h-[min(50vh,16rem)] grid-cols-6 gap-1 overflow-y-auto overscroll-contain sm:grid-cols-8">
+                      {CHAT_EMOJI_GRID.map((emoji) => (
+                        <button
+                          key={emoji}
+                          type="button"
+                          className="flex h-11 w-11 items-center justify-center rounded-lg text-xl transition hover:bg-emerald-50 active:scale-95 dark:hover:bg-zinc-800"
+                          onClick={() => insertEmoji(emoji)}
+                          aria-label={`Insert ${emoji}`}
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  </PopoverContent>
+                </Popover>
                 <button
                   type="button"
                   onClick={() => void sendProductCard()}
@@ -2119,54 +2393,20 @@ export default function ChatWorkspace() {
                 >
                   <Package className="h-6 w-6" />
                 </button>
-                <div className="relative min-h-[44px] min-w-0 flex-1">
-                  <textarea
-                    ref={draftTextareaRef}
-                    value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        void sendMessage();
-                      }
-                    }}
-                    rows={1}
-                    placeholder="Message…"
-                    className="min-h-[44px] w-full resize-none rounded-2xl border border-gray-200 bg-white py-2.5 pl-3 pr-12 text-sm outline-none ring-emerald-500/30 focus:ring-2 dark:border-zinc-600 dark:bg-zinc-800 dark:text-foreground"
-                  />
-                  <Popover open={emojiPickerOpen} onOpenChange={setEmojiPickerOpen}>
-                    <PopoverTrigger asChild>
-                      <button
-                        type="button"
-                        className="absolute bottom-1.5 right-1.5 z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-emerald-600 hover:bg-emerald-50 active:scale-95 dark:text-emerald-400 dark:hover:bg-zinc-700/80"
-                        aria-label="Insert emoji"
-                        title="Emoji"
-                      >
-                        <Smile className="h-6 w-6" strokeWidth={2} />
-                      </button>
-                    </PopoverTrigger>
-                    <PopoverContent
-                      side="top"
-                      align="end"
-                      sideOffset={8}
-                      className="w-[min(100vw-2rem,20rem)] touch-manipulation p-2"
-                    >
-                      <div className="grid max-h-[min(50vh,16rem)] grid-cols-6 gap-1 overflow-y-auto overscroll-contain sm:grid-cols-8">
-                        {CHAT_EMOJI_GRID.map((emoji) => (
-                          <button
-                            key={emoji}
-                            type="button"
-                            className="flex h-11 w-11 items-center justify-center rounded-lg text-xl transition hover:bg-emerald-50 active:scale-95 dark:hover:bg-zinc-800"
-                            onClick={() => insertEmoji(emoji)}
-                            aria-label={`Insert ${emoji}`}
-                          >
-                            {emoji}
-                          </button>
-                        ))}
-                      </div>
-                    </PopoverContent>
-                  </Popover>
-                </div>
+                <textarea
+                  ref={draftTextareaRef}
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      void sendMessage();
+                    }
+                  }}
+                  rows={1}
+                  placeholder="Message…"
+                  className="min-h-[44px] min-w-0 flex-1 resize-none rounded-2xl border border-gray-200 bg-white px-3 py-2.5 text-sm outline-none ring-emerald-500/30 focus:ring-2 dark:border-zinc-600 dark:bg-zinc-800 dark:text-foreground"
+                />
                 <button
                   type="button"
                   onPointerDown={onMicPointerDown}
@@ -2191,6 +2431,34 @@ export default function ChatWorkspace() {
         </div>
       </div>
 
+      <Sheet open={reactionSheetMsg != null} onOpenChange={(open) => !open && setReactionSheetMsg(null)}>
+        <SheetContent
+          side="bottom"
+          className="rounded-t-3xl px-0 pb-[max(1rem,env(safe-area-inset-bottom))]"
+          onOpenAutoFocus={(e) => e.preventDefault()}
+        >
+          <SheetHeader className="px-4 pb-2">
+            <SheetTitle>Reaction</SheetTitle>
+            <SheetDescription>Choose an emoji — long press a message to open this.</SheetDescription>
+          </SheetHeader>
+          {reactionSheetMsg ? (
+            <div className="flex flex-wrap items-center justify-center gap-3 px-4 pb-6 pt-2">
+              {CHAT_QUICK_REACTION_EMOJIS.map((emoji) => (
+                <button
+                  key={emoji}
+                  type="button"
+                  className="flex h-14 w-14 items-center justify-center rounded-2xl text-3xl transition hover:bg-emerald-50 active:scale-95 dark:hover:bg-zinc-800"
+                  onClick={() => void applyQuickReaction(reactionSheetMsg, emoji)}
+                  aria-label={`React with ${emoji}`}
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </SheetContent>
+      </Sheet>
+
       <Sheet open={mobileSheetMsg != null} onOpenChange={(open) => !open && setMobileSheetMsg(null)}>
         <SheetContent side="bottom" className="rounded-t-3xl px-0 pb-[max(1rem,env(safe-area-inset-bottom))]">
           <SheetHeader className="px-4 pb-2">
@@ -2199,6 +2467,17 @@ export default function ChatWorkspace() {
           </SheetHeader>
           {mobileSheetMsg ? (
             <div className="grid gap-2 px-4">
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => {
+                  enterSelectionWith(mobileSheetMsg.id);
+                  setMobileSheetMsg(null);
+                }}
+              >
+                <Check className="mr-2 h-4 w-4" />
+                Select messages
+              </Button>
               <Button
                 className="w-full"
                 onClick={() => {

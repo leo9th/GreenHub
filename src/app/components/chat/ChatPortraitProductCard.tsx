@@ -8,18 +8,26 @@ type ChatPortraitProductCardProps = {
   imageUrl: string | null;
   /** Shown on image (e.g. condition) */
   badge?: ReactNode;
+  /** When true, shows the tile without navigation (e.g. multi-select mode). */
+  disableLink?: boolean;
 };
 
 /**
  * Narrow portrait listing tile (Temu-style): tall image, bold orange price, compact title.
  */
-export function ChatPortraitProductCard({ productId, title, priceLabel, imageUrl, badge }: ChatPortraitProductCardProps) {
-  return (
-    <Link
-      to={`/products/${productId}`}
-      className="mt-1.5 flex w-[7.75rem] flex-col overflow-hidden rounded-xl border border-orange-100/90 bg-white shadow-[0_1px_4px_rgba(0,0,0,0.08)] ring-1 ring-black/[0.04] transition hover:border-orange-200 hover:shadow-md sm:w-[8.5rem]"
-      aria-label={`Open listing: ${title}`}
-    >
+export function ChatPortraitProductCard({
+  productId,
+  title,
+  priceLabel,
+  imageUrl,
+  badge,
+  disableLink,
+}: ChatPortraitProductCardProps) {
+  const shellClass =
+    "mt-1.5 flex w-[7.75rem] flex-col overflow-hidden rounded-xl border border-orange-100/90 bg-white shadow-[0_1px_4px_rgba(0,0,0,0.08)] ring-1 ring-black/[0.04] transition hover:border-orange-200 hover:shadow-md sm:w-[8.5rem]";
+
+  const inner = (
+    <>
       <div className="relative aspect-[3/4] w-full shrink-0 overflow-hidden bg-[#f3f4f6]">
         <img
           src={imageUrl || "https://placehold.co/300x400/png?text=No+image"}
@@ -38,6 +46,24 @@ export function ChatPortraitProductCard({ productId, title, priceLabel, imageUrl
         <p className="line-clamp-2 min-h-[2.25rem] text-[11px] font-medium leading-snug text-[#222]">{title}</p>
         <p className="text-[13px] font-extrabold leading-tight tracking-tight text-[#fb7701]">{priceLabel}</p>
       </div>
+    </>
+  );
+
+  if (disableLink) {
+    return (
+      <div className={shellClass} aria-label={`Listing: ${title}`}>
+        {inner}
+      </div>
+    );
+  }
+
+  return (
+    <Link
+      to={`/products/${productId}`}
+      className={shellClass}
+      aria-label={`Open listing: ${title}`}
+    >
+      {inner}
     </Link>
   );
 }

@@ -4,6 +4,7 @@ import {
   ArrowDown,
   ArrowLeft,
   Ban,
+  Check,
   Copy,
   Eraser,
   ImagePlus,
@@ -16,6 +17,8 @@ import {
   Reply,
   Search,
   Send,
+  Share2,
+  Smile,
   Trash2,
   User,
   X,
@@ -80,13 +83,51 @@ import {
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "../ui/sheet";
+import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import { Button } from "../ui/button";
+import { cn } from "../ui/utils";
 import { MessageBubble } from "./MessageBubble";
 import { ChatPortraitProductCard } from "./ChatPortraitProductCard";
 
 const CHAT_MEDIA_BUCKETS = ["chat-media", "chat-images", "chat-attachments"] as const;
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
 const MAX_VOICE_BYTES = 5 * 1024 * 1024;
+
+const CHAT_EMOJI_GRID: string[] = [
+  "😀",
+  "😃",
+  "😄",
+  "😁",
+  "😅",
+  "😂",
+  "🤣",
+  "😊",
+  "😍",
+  "🥰",
+  "😘",
+  "😉",
+  "😎",
+  "🤔",
+  "👍",
+  "👎",
+  "🙏",
+  "👏",
+  "🔥",
+  "❤️",
+  "💯",
+  "✨",
+  "🎉",
+  "😢",
+  "😭",
+  "😡",
+  "🤝",
+  "💬",
+  "📎",
+  "✅",
+];
+
+const LONG_PRESS_MS = 550;
+const LONG_PRESS_MOVE_CANCEL_PX = 14;
 
 function parseConversationInt(v: unknown): number | null {
   if (v == null) return null;
@@ -178,6 +219,7 @@ type StripProduct = {
 
 type PendingConfirm =
   | { kind: "delete-message"; message: ChatMessageRow }
+  | { kind: "bulk-delete-messages"; messageIds: string[] }
   | { kind: "delete-conversation" }
   | { kind: "clear-chat" }
   | null;
@@ -240,7 +282,6 @@ export default function ChatWorkspace() {
   const [peerAvatar, setPeerAvatar] = useState("");
   const [peerPhone, setPeerPhone] = useState<string | null>(null);
   const [peerOnline, setPeerOnline] = useState(false);
-  const [selfAvatarUrl, setSelfAvatarUrl] = useState("");
   const [messages, setMessages] = useState<ChatMessageRow[]>([]);
   const [stripProduct, setStripProduct] = useState<StripProduct | null>(null);
   const [messageProductsById, setMessageProductsById] = useState<Map<number, StripProduct>>(() => new Map());
@@ -262,6 +303,19 @@ export default function ChatWorkspace() {
   const voiceHoldRef = useRef(false);
 
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
+
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
+  const draftTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const peerHeaderRef = useRef<HTMLElement | null>(null);
+  const [peerHeaderHeight, setPeerHeaderHeight] = useState(72);
+  const longPressRef = useRef<{
+    timer: ReturnType<typeof setTimeout> | null;
+    msgId: string | null;
+    startX: number;
+    startY: number;
+  }>({ timer: null, msgId: null, startX: 0, startY: 0 });
 
   const {
     search: inboxSearch,
@@ -322,9 +376,41 @@ export default function ChatWorkspace() {
     if (near) setPendingBelow(0);
   }, []);
 
+  /** Mobile: peer header is `fixed`; keep layout spacer in sync when search row expands. */
   useLayoutEffect(() => {
+    const el = peerHeaderRef.current;
+    if (!el) return;
+    const measure = () => setPeerHeaderHeight(Math.ceil(el.getBoundingClientRect().height));
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [searchOpen, peerName, conversation?.id]);
+
+  /** Avoid tying shell height to visualViewport.height — it shrinks with the mobile keyboard and collapses the sticky chat header. */
+  useLayoutEffect(() => {
+    const lastLayoutInnerRef = { current: window.innerHeight };
     const vv = window.visualViewport;
-    const apply = () => setViewportHeight(vv?.height ?? window.innerHeight);
+
+    const apply = () => {
+      const inner = window.innerHeight;
+      const visibleH = vv?.height ?? inner;
+      const typingInDraft = document.activeElement === draftTextareaRef.current;
+      // Do not shrink the chat shell to `visualViewport.height` when the keyboard opens — that collapses the sticky header.
+      // iOS: `inner` often stays large while `visibleH` drops. Android: both can drop while typing — only then compare to last stable height.
+      const likelyObscured =
+        visibleH < inner * 0.88 ||
+        (typingInDraft && visibleH < lastLayoutInnerRef.current * 0.82);
+
+      if (likelyObscured) {
+        setViewportHeight(lastLayoutInnerRef.current);
+        return;
+      }
+
+      lastLayoutInnerRef.current = inner;
+      setViewportHeight(inner);
+    };
+
     apply();
     vv?.addEventListener("resize", apply);
     window.addEventListener("resize", apply);
@@ -448,6 +534,9 @@ export default function ChatWorkspace() {
       if (mErr) throw new Error(mErr.message);
       setReplyingTo(null);
       setHighlightedMessageId(null);
+      setSelectionMode(false);
+      setSelectedIds([]);
+      setEmojiPickerOpen(false);
       setMessages(msgs);
     } catch (e: unknown) {
       console.error(e);
@@ -478,32 +567,6 @@ export default function ChatWorkspace() {
     if (authLoading || !authUser?.id) return;
     void loadInboxList();
   }, [authLoading, authUser?.id, loadInboxList]);
-
-  useEffect(() => {
-    if (!authUser?.id) {
-      setSelfAvatarUrl("");
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
-      const { data } = await supabase
-        .from("profiles_public")
-        .select("avatar_url, gender, full_name")
-        .eq("id", authUser.id)
-        .maybeSingle();
-      if (cancelled) return;
-      if (!data) {
-        setSelfAvatarUrl(getAvatarUrl(null, null, "You"));
-        return;
-      }
-      const r = data as { avatar_url: string | null; gender: string | null; full_name: string | null };
-      const nm = (r.full_name || "You").trim() || "You";
-      setSelfAvatarUrl(getAvatarUrl(r.avatar_url, r.gender, nm));
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [authUser?.id]);
 
   useEffect(() => {
     const pid = conversation?.context_product_id;
@@ -1107,6 +1170,173 @@ export default function ChatWorkspace() {
     }
   }, []);
 
+  const exitSelectionMode = useCallback(() => {
+    setSelectionMode(false);
+    setSelectedIds([]);
+  }, []);
+
+  const toggleMessageSelected = useCallback((id: string) => {
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }, []);
+
+  const enterSelectionWith = useCallback((id: string) => {
+    setSelectionMode(true);
+    setSelectedIds([id]);
+    setReplyingTo(null);
+  }, []);
+
+  const suppressNextRowClickRef = useRef(false);
+
+  const clearLongPressTimer = useCallback(() => {
+    const t = longPressRef.current.timer;
+    if (t) clearTimeout(t);
+    longPressRef.current = { timer: null, msgId: null, startX: 0, startY: 0 };
+  }, []);
+
+  const onMessagePointerDown = useCallback(
+    (msgId: string, e: React.PointerEvent) => {
+      if (selectionMode) return;
+      if (e.button !== 0) return;
+      longPressRef.current = {
+        timer: window.setTimeout(() => {
+          longPressRef.current.timer = null;
+          suppressNextRowClickRef.current = true;
+          window.setTimeout(() => {
+            suppressNextRowClickRef.current = false;
+          }, 450);
+          enterSelectionWith(msgId);
+        }, LONG_PRESS_MS),
+        msgId,
+        startX: e.clientX,
+        startY: e.clientY,
+      };
+      try {
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+      } catch {
+        /* noop */
+      }
+    },
+    [selectionMode, enterSelectionWith],
+  );
+
+  const onMessagePointerMove = useCallback(
+    (e: React.PointerEvent) => {
+      const lp = longPressRef.current;
+      if (!lp.timer || !lp.msgId) return;
+      if (
+        Math.abs(e.clientX - lp.startX) > LONG_PRESS_MOVE_CANCEL_PX ||
+        Math.abs(e.clientY - lp.startY) > LONG_PRESS_MOVE_CANCEL_PX
+      ) {
+        clearLongPressTimer();
+      }
+    },
+    [clearLongPressTimer],
+  );
+
+  const onMessagePointerUp = useCallback(
+    (e: React.PointerEvent) => {
+      try {
+        (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+      } catch {
+        /* noop */
+      }
+      clearLongPressTimer();
+    },
+    [clearLongPressTimer],
+  );
+
+  const onMessageRowClick = useCallback(
+    (msg: ChatMessageRow) => {
+      if (suppressNextRowClickRef.current) {
+        suppressNextRowClickRef.current = false;
+        return;
+      }
+      if (selectionMode) {
+        toggleMessageSelected(msg.id);
+        return;
+      }
+      setReplyingTo(msg);
+      setHighlightedMessageId(msg.id);
+      window.setTimeout(() => setHighlightedMessageId(null), 800);
+    },
+    [selectionMode, toggleMessageSelected],
+  );
+
+  const insertEmoji = useCallback((emoji: string) => {
+    setEmojiPickerOpen(false);
+    const el = draftTextareaRef.current;
+    setDraft((d) => {
+      const start = el?.selectionStart ?? d.length;
+      const end = el?.selectionEnd ?? d.length;
+      const next = d.slice(0, start) + emoji + d.slice(end);
+      const pos = start + emoji.length;
+      requestAnimationFrame(() => {
+        const ta = draftTextareaRef.current;
+        if (!ta) return;
+        ta.focus();
+        try {
+          ta.setSelectionRange(pos, pos);
+        } catch {
+          /* noop */
+        }
+      });
+      return next;
+    });
+  }, []);
+
+  const selectedMessagesTextBlock = useMemo(() => {
+    const texts = messages
+      .filter((m) => selectedIds.includes(m.id))
+      .map((m) => m.message?.trim() ?? "")
+      .filter(Boolean);
+    return texts.join("\n\n");
+  }, [messages, selectedIds]);
+
+  const bulkCopySelected = useCallback(async () => {
+    if (!selectedMessagesTextBlock) {
+      toast.message("Nothing to copy");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(selectedMessagesTextBlock);
+      toast.success("Copied");
+    } catch {
+      toast.error("Could not copy");
+    }
+  }, [selectedMessagesTextBlock]);
+
+  const bulkForwardSelected = useCallback(async () => {
+    if (!selectedMessagesTextBlock) {
+      toast.message("Nothing to forward");
+      return;
+    }
+    try {
+      if (typeof navigator.share === "function") {
+        await navigator.share({ text: selectedMessagesTextBlock });
+      } else {
+        await navigator.clipboard.writeText(selectedMessagesTextBlock);
+        toast.success("Copied for forwarding");
+      }
+    } catch {
+      /* user cancelled share or share failed */
+    }
+  }, [selectedMessagesTextBlock]);
+
+  const bulkDeleteSelected = useCallback(() => {
+    if (!authUser?.id) return;
+    const ownDeletable = messages.filter(
+      (m) =>
+        selectedIds.includes(m.id) &&
+        m.sender_id === authUser.id &&
+        !String(m.id).startsWith("pending-"),
+    );
+    if (!ownDeletable.length) {
+      toast.message("No messages you can delete in this selection.");
+      return;
+    }
+    setPendingConfirm({ kind: "bulk-delete-messages", messageIds: ownDeletable.map((m) => m.id) });
+  }, [authUser?.id, messages, selectedIds]);
+
   const deleteMessage = useCallback((msg: ChatMessageRow) => {
     setMobileSheetMsg(null);
     setPendingConfirm({ kind: "delete-message", message: msg });
@@ -1123,6 +1353,18 @@ export default function ChatWorkspace() {
         setMessages((prev) => prev.filter((m) => m.id !== target.id));
         setReplyingTo((c) => (c?.id === target.id ? null : c));
         toast.success("Message deleted");
+      } else if (pendingConfirm.kind === "bulk-delete-messages") {
+        const ids = pendingConfirm.messageIds;
+        for (const id of ids) {
+          const { error } = await supabase.from("chat_messages").delete().eq("id", id);
+          if (error) throw error;
+        }
+        const idSet = new Set(ids);
+        setMessages((prev) => prev.filter((m) => !idSet.has(m.id)));
+        setReplyingTo((c) => (c && idSet.has(c.id) ? null : c));
+        setSelectedIds([]);
+        setSelectionMode(false);
+        toast.success(ids.length === 1 ? "Message deleted" : `${ids.length} messages deleted`);
       } else if (pendingConfirm.kind === "delete-conversation") {
         const cid = conversation?.id;
         if (!cid) {
@@ -1335,7 +1577,15 @@ export default function ChatWorkspace() {
           <div className="absolute bottom-10 right-0 h-64 w-64 rounded-full bg-cyan-400/20 blur-3xl dark:bg-cyan-500/10" />
         </div>
 
-        <header className="relative z-40 shrink-0 border-b border-emerald-100/80 bg-white/95 shadow-sm backdrop-blur dark:border-emerald-900/50 dark:bg-zinc-900/95">
+        {/* Mobile: fixed below TopNav so it stays visible while typing / scrolling; md+: sticky in column. */}
+        <header
+          ref={peerHeaderRef}
+          className={cn(
+            "shrink-0 border-b border-emerald-200/90 bg-white shadow-md dark:border-emerald-800/80 dark:bg-zinc-900",
+            "max-md:fixed max-md:left-0 max-md:right-0 max-md:top-16 max-md:z-40",
+            "md:sticky md:top-16 md:z-30",
+          )}
+        >
           <div className="px-3 py-2.5 sm:px-4">
             <div className="flex items-center gap-2 sm:gap-3">
               <button
@@ -1352,18 +1602,21 @@ export default function ChatWorkspace() {
                   alt=""
                   className="h-10 w-10 rounded-full object-cover ring-2 ring-white/80 dark:ring-zinc-700"
                 />
-                {peerOnline ? (
-                  <span
-                    className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white bg-emerald-500 dark:border-zinc-900"
-                    title="Online"
-                  />
-                ) : null}
               </div>
               <div className="min-w-0 flex-1">
-                <h1 className="truncate font-semibold text-gray-800 dark:text-foreground">{peerName}</h1>
-                <p className="truncate text-xs text-gray-500 dark:text-muted-foreground">
-                  {peerTyping ? `${peerFirstName} is typing…` : peerOnline ? "Online" : "Messenger"}
-                </p>
+                <h1 className="truncate font-semibold leading-tight text-gray-900 dark:text-zinc-100">{peerName}</h1>
+                <div className="mt-0.5 flex items-center gap-2">
+                  <span
+                    className={`h-2 w-2 shrink-0 rounded-full ${
+                      peerTyping || peerOnline ? "bg-emerald-500" : "bg-zinc-400 dark:bg-zinc-500"
+                    }`}
+                    title={peerTyping ? "Typing" : peerOnline ? "Online" : "Offline"}
+                    aria-hidden
+                  />
+                  <p className="truncate text-xs text-gray-500 dark:text-muted-foreground">
+                    {peerTyping ? `${peerFirstName} is typing…` : peerOnline ? "Active now" : "Offline"}
+                  </p>
+                </div>
               </div>
               <button
                 type="button"
@@ -1495,6 +1748,8 @@ export default function ChatWorkspace() {
             ) : null}
           </div>
         </header>
+        {/* Reserves space for fixed header on small screens (header is out of flow when fixed). */}
+        <div className="max-md:shrink-0 md:hidden" style={{ height: peerHeaderHeight }} aria-hidden />
 
         {stripProduct ? (
           <div className="relative z-20 flex shrink-0 items-center gap-3 border-b border-gray-200 bg-white/95 px-3 py-3 dark:border-zinc-700 dark:bg-zinc-900/90 sm:px-4">
@@ -1568,6 +1823,96 @@ export default function ChatWorkspace() {
                 const isHighlighted = highlightedMessageId === msg.id;
                 const productCard = resolveMessageProductCard(msg);
 
+                const rowBody = (
+                  <div
+                    className="touch-manipulation min-w-0 flex-1"
+                    onPointerDown={(e) => onMessagePointerDown(msg.id, e)}
+                    onPointerMove={onMessagePointerMove}
+                    onPointerUp={onMessagePointerUp}
+                    onPointerCancel={onMessagePointerUp}
+                    onClick={() => onMessageRowClick(msg)}
+                  >
+                    <MessageBubble
+                      mine={mine}
+                      senderName={mine ? "You" : peerFirstName}
+                      showSenderName={!sameCluster}
+                      timeLabel={timeLabel}
+                      showMeta={showMeta}
+                      receiptPhase={outgoingReceiptPhase(msg)}
+                      showIncomingRead={!mine && !!msg.read_at}
+                      isHighlighted={isHighlighted}
+                      edited={!!msg.edited}
+                      replySlot={
+                        replyPreview || msg.reply_to_id ? (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (selectionMode) {
+                                toggleMessageSelected(msg.id);
+                                return;
+                              }
+                              jumpToMessage(replyPreview?.id ?? msg.reply_to_id);
+                            }}
+                            className={`mb-2 block w-full rounded-xl border-l-4 px-3 py-2 text-left transition ${
+                              mine
+                                ? "border-white/60 bg-white/18 text-white/95 hover:bg-white/22"
+                                : "border-emerald-500/80 bg-white/40 text-gray-900 hover:bg-white/55"
+                            }`}
+                          >
+                            <p className="truncate text-[11px] font-semibold">{quotedSender}</p>
+                            <p className="line-clamp-2 text-[12px] leading-snug opacity-90">
+                              {replyPreview
+                                ? messagePreviewText(replyPreview.message, replyPreview.image_url)
+                                : "Original message"}
+                            </p>
+                          </button>
+                        ) : null
+                      }
+                      belowBubbleSlot={
+                        productCard ? (
+                          <ChatPortraitProductCard
+                            productId={productCard.strip.id}
+                            title={productCard.strip.title}
+                            priceLabel={productCard.pricePending ? "…" : formatPrice(productCard.strip.price)}
+                            imageUrl={productCard.strip.image}
+                            disableLink={selectionMode}
+                          />
+                        ) : null
+                      }
+                    >
+                      <div className="space-y-2">
+                        {msg.image_url ? (
+                          <img
+                            src={msg.image_url}
+                            alt=""
+                            className="max-h-64 max-w-full rounded-lg object-cover"
+                            loading="lazy"
+                            onClick={(e) => !selectionMode && e.stopPropagation()}
+                          />
+                        ) : null}
+                        {msg.media_url ? (
+                          <audio
+                            src={msg.media_url}
+                            controls
+                            className="max-w-[min(100%,280px)]"
+                            preload="metadata"
+                            onClick={(e) => !selectionMode && e.stopPropagation()}
+                          />
+                        ) : null}
+                        {msg.message?.trim() ? (
+                          <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{msg.message}</p>
+                        ) : null}
+                        {msg.client_sending ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] opacity-80">
+                            <Loader2 className="h-3 w-3 animate-spin" /> Sending…
+                          </span>
+                        ) : null}
+                      </div>
+                    </MessageBubble>
+                  </div>
+                );
+
                 return (
                   <Fragment key={msg.id}>
                     {showDayDivider ? (
@@ -1582,133 +1927,77 @@ export default function ChatWorkspace() {
                         if (node) messageRefs.current.set(msg.id, node);
                         else messageRefs.current.delete(msg.id);
                       }}
-                      className={`w-full ${sameCluster ? "mb-0.5" : "mb-2"}`}
+                      className={cn(
+                        "flex w-full items-start gap-1 sm:gap-2",
+                        sameCluster ? "mb-0.5" : "mb-2",
+                      )}
                     >
-                      <ContextMenu>
-                        <ContextMenuTrigger asChild>
-                          <div
-                            className="touch-manipulation"
-                            onClick={() => {
-                              setReplyingTo(msg);
-                              setHighlightedMessageId(msg.id);
-                              window.setTimeout(() => setHighlightedMessageId(null), 800);
-                            }}
-                          >
-                            <MessageBubble
-                              mine={mine}
-                              senderName={mine ? "You" : peerFirstName}
-                              showSenderName={!sameCluster}
-                              timeLabel={timeLabel}
-                              showMeta={showMeta}
-                              receiptPhase={outgoingReceiptPhase(msg)}
-                              showIncomingRead={!mine && !!msg.read_at}
-                              isHighlighted={isHighlighted}
-                              avatarUrl={mine ? selfAvatarUrl || getAvatarUrl(null, null, "You") : peerAvatar}
-                              avatarDisplayName={mine ? "You" : peerName}
-                              showAvatar={!sameCluster}
-                              edited={!!msg.edited}
-                              replySlot={
-                                replyPreview || msg.reply_to_id ? (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      jumpToMessage(replyPreview?.id ?? msg.reply_to_id);
-                                    }}
-                                    className={`mb-2 block w-full rounded-xl border-l-4 px-3 py-2 text-left transition ${
-                                      mine
-                                        ? "border-white/60 bg-white/18 text-white/95 hover:bg-white/22"
-                                        : "border-emerald-500/80 bg-white/40 text-gray-900 hover:bg-white/55"
-                                    }`}
-                                  >
-                                    <p className="truncate text-[11px] font-semibold">{quotedSender}</p>
-                                    <p className="line-clamp-2 text-[12px] leading-snug opacity-90">
-                                      {replyPreview
-                                        ? messagePreviewText(replyPreview.message, replyPreview.image_url)
-                                        : "Original message"}
-                                    </p>
-                                  </button>
-                                ) : null
-                              }
-                              belowBubbleSlot={
-                                productCard ? (
-                                  <ChatPortraitProductCard
-                                    productId={productCard.strip.id}
-                                    title={productCard.strip.title}
-                                    priceLabel={productCard.pricePending ? "…" : formatPrice(productCard.strip.price)}
-                                    imageUrl={productCard.strip.image}
-                                  />
-                                ) : null
-                              }
-                            >
-                              <div className="space-y-2">
-                                {msg.image_url ? (
-                                  <img
-                                    src={msg.image_url}
-                                    alt=""
-                                    className="max-h-64 max-w-full rounded-lg object-cover"
-                                    loading="lazy"
-                                  />
-                                ) : null}
-                                {msg.media_url ? (
-                                  <audio
-                                    src={msg.media_url}
-                                    controls
-                                    className="max-w-[min(100%,280px)]"
-                                    preload="metadata"
-                                  />
-                                ) : null}
-                                {msg.message?.trim() ? (
-                                  <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{msg.message}</p>
-                                ) : null}
-                                {msg.client_sending ? (
-                                  <span className="inline-flex items-center gap-1 text-[11px] opacity-80">
-                                    <Loader2 className="h-3 w-3 animate-spin" /> Sending…
-                                  </span>
-                                ) : null}
-                              </div>
-                            </MessageBubble>
-                          </div>
-                        </ContextMenuTrigger>
-                        <ContextMenuContent>
-                          <ContextMenuItem
-                            onSelect={() => {
-                              setReplyingTo(msg);
-                              jumpToMessage(msg.id);
-                            }}
-                          >
-                            <Reply className="mr-2 h-4 w-4" />
-                            Reply
-                          </ContextMenuItem>
-                          <ContextMenuItem onSelect={() => void copyText(msg)}>
-                            <Copy className="mr-2 h-4 w-4" />
-                            Copy
-                          </ContextMenuItem>
-                          {mine ? (
+                      {selectionMode ? (
+                        <button
+                          type="button"
+                          role="checkbox"
+                          aria-checked={selectedIds.includes(msg.id)}
+                          aria-label={selectedIds.includes(msg.id) ? "Deselect message" : "Select message"}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleMessageSelected(msg.id);
+                          }}
+                          className={cn(
+                            "mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border transition active:scale-[0.97]",
+                            selectedIds.includes(msg.id)
+                              ? "border-emerald-500 bg-emerald-500 text-white shadow-sm dark:border-emerald-400"
+                              : "border-gray-300 bg-white/90 text-gray-600 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200",
+                          )}
+                        >
+                          {selectedIds.includes(msg.id) ? <Check className="h-5 w-5" strokeWidth={2.5} /> : null}
+                        </button>
+                      ) : null}
+                      {selectionMode ? (
+                        rowBody
+                      ) : (
+                        <ContextMenu>
+                          <ContextMenuTrigger asChild>{rowBody}</ContextMenuTrigger>
+                          <ContextMenuContent>
                             <ContextMenuItem
                               onSelect={() => {
-                                setEditTarget(msg);
-                                setEditText(msg.message || "");
+                                setReplyingTo(msg);
+                                jumpToMessage(msg.id);
                               }}
                             >
-                              Edit
+                              <Reply className="mr-2 h-4 w-4" />
+                              Reply
                             </ContextMenuItem>
-                          ) : null}
-                          {mine ? (
-                            <ContextMenuItem
-                              className="text-red-600"
-                              onSelect={() => setPendingConfirm({ kind: "delete-message", message: msg })}
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Delete
+                            <ContextMenuItem onSelect={() => void copyText(msg)}>
+                              <Copy className="mr-2 h-4 w-4" />
+                              Copy
                             </ContextMenuItem>
-                          ) : null}
-                          <ContextMenuSeparator />
-                          <ContextMenuItem onSelect={() => setMobileSheetMsg(msg)} className="md:hidden">
-                            More…
-                          </ContextMenuItem>
-                        </ContextMenuContent>
-                      </ContextMenu>
+                            {mine ? (
+                              <ContextMenuItem
+                                onSelect={() => {
+                                  setEditTarget(msg);
+                                  setEditText(msg.message || "");
+                                }}
+                              >
+                                Edit
+                              </ContextMenuItem>
+                            ) : null}
+                            {mine ? (
+                              <ContextMenuItem
+                                className="text-red-600"
+                                onSelect={() => setPendingConfirm({ kind: "delete-message", message: msg })}
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Delete
+                              </ContextMenuItem>
+                            ) : null}
+                            <ContextMenuSeparator />
+                            <ContextMenuItem onSelect={() => setMobileSheetMsg(msg)} className="md:hidden">
+                              More…
+                            </ContextMenuItem>
+                          </ContextMenuContent>
+                        </ContextMenu>
+                      )}
                     </div>
                   </Fragment>
                 );
@@ -1735,6 +2024,54 @@ export default function ChatWorkspace() {
           ) : null}
 
           <div className="relative z-30 shrink-0 border-t border-emerald-100/90 bg-white/96 pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-[0_-2px_10px_rgba(0,0,0,0.06)] backdrop-blur dark:border-emerald-900/60 dark:bg-zinc-900/96 dark:shadow-[0_-2px_12px_rgba(0,0,0,0.35)]">
+            {selectionMode ? (
+              <div className="flex flex-wrap items-center gap-2 border-b border-emerald-100/80 bg-emerald-50/50 px-3 py-2.5 dark:border-emerald-900/50 dark:bg-emerald-950/40">
+                <span className="min-h-[44px] flex-1 content-center text-sm font-semibold text-emerald-900 dark:text-emerald-100">
+                  {selectedIds.length} selected
+                </span>
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="min-h-[44px] min-w-[44px] touch-manipulation px-3"
+                    onClick={() => void bulkCopySelected()}
+                  >
+                    <Copy className="mr-1.5 h-4 w-4" />
+                    Copy
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="min-h-[44px] min-w-[44px] touch-manipulation px-3"
+                    onClick={() => void bulkForwardSelected()}
+                  >
+                    <Share2 className="mr-1.5 h-4 w-4" />
+                    Forward
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="sm"
+                    className="min-h-[44px] min-w-[44px] touch-manipulation px-3"
+                    onClick={bulkDeleteSelected}
+                  >
+                    <Trash2 className="mr-1.5 h-4 w-4" />
+                    Delete
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    className="min-h-[44px] min-w-[44px] touch-manipulation px-3"
+                    onClick={exitSelectionMode}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : null}
             <div className="px-3 py-3 sm:px-4">
               {replyingTo ? (
                 <div className="mb-2 flex items-start justify-between gap-3 rounded-2xl border border-emerald-100 bg-emerald-50/80 px-3 py-2 dark:border-emerald-900 dark:bg-emerald-950/50">
@@ -1757,7 +2094,12 @@ export default function ChatWorkspace() {
                 </div>
               ) : null}
 
-              <div className="flex flex-wrap items-end gap-2">
+              <div
+                className={cn(
+                  "flex flex-wrap items-end gap-2",
+                  selectionMode && "pointer-events-none select-none opacity-45",
+                )}
+              >
                 <input ref={attachInputRef} type="file" accept="image/*" className="hidden" onChange={onPickImage} />
                 <button
                   type="button"
@@ -1777,19 +2119,54 @@ export default function ChatWorkspace() {
                 >
                   <Package className="h-6 w-6" />
                 </button>
-                <textarea
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      void sendMessage();
-                    }
-                  }}
-                  rows={1}
-                  placeholder="Message…"
-                  className="min-h-[44px] flex-1 resize-none rounded-2xl border border-gray-200 bg-white px-3 py-2.5 text-sm outline-none ring-emerald-500/30 focus:ring-2 dark:border-zinc-600 dark:bg-zinc-800 dark:text-foreground"
-                />
+                <div className="relative min-h-[44px] min-w-0 flex-1">
+                  <textarea
+                    ref={draftTextareaRef}
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        void sendMessage();
+                      }
+                    }}
+                    rows={1}
+                    placeholder="Message…"
+                    className="min-h-[44px] w-full resize-none rounded-2xl border border-gray-200 bg-white py-2.5 pl-3 pr-12 text-sm outline-none ring-emerald-500/30 focus:ring-2 dark:border-zinc-600 dark:bg-zinc-800 dark:text-foreground"
+                  />
+                  <Popover open={emojiPickerOpen} onOpenChange={setEmojiPickerOpen}>
+                    <PopoverTrigger asChild>
+                      <button
+                        type="button"
+                        className="absolute bottom-1.5 right-1.5 z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-emerald-600 hover:bg-emerald-50 active:scale-95 dark:text-emerald-400 dark:hover:bg-zinc-700/80"
+                        aria-label="Insert emoji"
+                        title="Emoji"
+                      >
+                        <Smile className="h-6 w-6" strokeWidth={2} />
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent
+                      side="top"
+                      align="end"
+                      sideOffset={8}
+                      className="w-[min(100vw-2rem,20rem)] touch-manipulation p-2"
+                    >
+                      <div className="grid max-h-[min(50vh,16rem)] grid-cols-6 gap-1 overflow-y-auto overscroll-contain sm:grid-cols-8">
+                        {CHAT_EMOJI_GRID.map((emoji) => (
+                          <button
+                            key={emoji}
+                            type="button"
+                            className="flex h-11 w-11 items-center justify-center rounded-lg text-xl transition hover:bg-emerald-50 active:scale-95 dark:hover:bg-zinc-800"
+                            onClick={() => insertEmoji(emoji)}
+                            aria-label={`Insert ${emoji}`}
+                          >
+                            {emoji}
+                          </button>
+                        ))}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                </div>
                 <button
                   type="button"
                   onPointerDown={onMicPointerDown}
@@ -1872,16 +2249,20 @@ export default function ChatWorkspace() {
             <AlertDialogTitle>
               {pendingConfirm?.kind === "delete-message"
                 ? "Delete message?"
-                : pendingConfirm?.kind === "delete-conversation"
-                  ? "Delete conversation?"
-                  : "Clear chat?"}
+                : pendingConfirm?.kind === "bulk-delete-messages"
+                  ? `Delete ${pendingConfirm.messageIds.length} message${pendingConfirm.messageIds.length === 1 ? "" : "s"}?`
+                  : pendingConfirm?.kind === "delete-conversation"
+                    ? "Delete conversation?"
+                    : "Clear chat?"}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {pendingConfirm?.kind === "delete-message"
                 ? "This removes the message for everyone in the thread."
-                : pendingConfirm?.kind === "delete-conversation"
-                  ? "This deletes the conversation and returns you to the inbox."
-                  : "This removes all messages in this chat."}
+                : pendingConfirm?.kind === "bulk-delete-messages"
+                  ? "This removes the selected messages you sent for everyone in the thread."
+                  : pendingConfirm?.kind === "delete-conversation"
+                    ? "This deletes the conversation and returns you to the inbox."
+                    : "This removes all messages in this chat."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

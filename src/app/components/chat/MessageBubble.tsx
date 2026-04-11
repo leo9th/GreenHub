@@ -1,6 +1,5 @@
 import React from "react";
 import { Check, CheckCheck, Clock } from "lucide-react";
-import { getAvatarUrl } from "../../utils/getAvatar";
 
 export type ReceiptPhase = "sending" | "sent" | "delivered" | "read";
 
@@ -36,7 +35,7 @@ export function MessageReceiptTicks({ phase }: { phase: ReceiptPhase }) {
   );
 }
 
-/** Small tail pointing toward the avatar (left = received, right = sent). */
+/** Small tail on the bubble corner (no avatars — tail points to thread edge). */
 function BubbleTail({ mine }: { mine: boolean }) {
   if (mine) {
     return (
@@ -62,7 +61,7 @@ function BubbleTail({ mine }: { mine: boolean }) {
 
 export type MessageBubbleProps = {
   mine: boolean;
-  /** Shown above bubble (e.g. peer name for received, “You” optional for sent) */
+  /** Shown above bubble (e.g. peer name for received, “You” for sent) */
   senderName: string;
   showSenderName: boolean;
   timeLabel: string;
@@ -71,19 +70,12 @@ export type MessageBubbleProps = {
   /** Incoming message was read by current user (optional blue ticks on their bubble) */
   showIncomingRead?: boolean;
   isHighlighted: boolean;
-  avatarUrl: string;
-  avatarDisplayName: string;
-  /** First message in a cluster shows avatar + name; continuation messages hide avatar for cleaner thread */
-  showAvatar: boolean;
   replySlot: React.ReactNode;
   children: React.ReactNode;
-  /** Rendered directly under the bubble (e.g. product card), still aligned with the bubble column */
+  /** Rendered directly under the bubble (e.g. product card) */
   belowBubbleSlot?: React.ReactNode;
-  /** Reaction emoji shown under bubble (local UI) */
   reaction?: string | null;
-  /** Swipe-to-reply transform (applied to bubble column only) */
   bubbleTransformStyle?: React.CSSProperties;
-  /** Shown after timestamp when the message was edited */
   edited?: boolean;
 };
 
@@ -96,9 +88,6 @@ export function MessageBubble({
   receiptPhase,
   showIncomingRead,
   isHighlighted,
-  avatarUrl,
-  avatarDisplayName,
-  showAvatar,
   replySlot,
   children,
   belowBubbleSlot,
@@ -111,27 +100,15 @@ export function MessageBubble({
     : "relative z-[1] rounded-2xl rounded-bl-sm bg-gray-200 text-gray-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-100";
 
   return (
-    <div
-      className={`flex max-w-[min(92%,28rem)] min-w-0 items-end gap-2 ${mine ? "ml-auto flex-row-reverse" : "mr-auto flex-row"}`}
-    >
-      <div className={`flex shrink-0 flex-col ${showAvatar ? "" : "w-8 shrink-0"}`}>
-        {showAvatar ? (
-          <img
-            src={avatarUrl || getAvatarUrl(null, null, avatarDisplayName)}
-            alt=""
-            className="h-8 w-8 rounded-full bg-gray-100 object-cover ring-1 ring-black/5 dark:bg-zinc-800 dark:ring-white/10"
-          />
-        ) : (
-          <span className="block h-8 w-8 shrink-0" aria-hidden />
-        )}
-      </div>
-
+    <div className={`flex w-full min-w-0 ${mine ? "justify-end" : "justify-start"}`}>
       <div
-        className={`flex min-w-0 max-w-[min(78%,22rem)] flex-col sm:max-w-[75%] ${mine ? "items-end" : "items-start"}`}
+        className={`flex min-w-0 max-w-[min(92%,26rem)] flex-col sm:max-w-[min(85%,28rem)] ${mine ? "items-end" : "items-start"}`}
         style={bubbleTransformStyle}
       >
         {showSenderName ? (
-          <span className="mb-0.5 max-w-full truncate px-1 text-[11px] font-semibold text-gray-500 dark:text-zinc-400">{senderName}</span>
+          <span className="mb-0.5 max-w-full truncate px-1 text-[11px] font-semibold text-gray-500 dark:text-zinc-400">
+            {senderName}
+          </span>
         ) : null}
 
         <div className="relative w-full min-w-0">

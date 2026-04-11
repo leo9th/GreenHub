@@ -20,6 +20,7 @@ import {
 import { toast } from "sonner";
 import { useAuth, type UserProfile } from "../context/AuthContext";
 import { getAvatarUrl } from "../utils/getAvatar";
+import { VerifiedBadge } from "../components/VerifiedBadge";
 import { supabase } from "../../lib/supabase";
 import { useCurrency } from "../hooks/useCurrency";
 import { getProductPrice } from "../utils/getProductPrice";
@@ -583,7 +584,10 @@ export default function Profile() {
               alt=""
               className="mx-auto h-24 w-24 rounded-full border border-gray-100 object-cover shadow-md ring-4 ring-gray-50 lg:mx-0"
             />
-            <h2 className="mt-4 text-xl font-semibold text-gray-900 lg:text-2xl">{displayName}</h2>
+            <h2 className="mt-4 flex flex-wrap items-center justify-center gap-1.5 text-xl font-semibold text-gray-900 lg:justify-start lg:text-2xl">
+              <span>{displayName}</span>
+              {verificationLabel === "approved" ? <VerifiedBadge title="Verified seller" size="md" /> : null}
+            </h2>
 
             <div className="mt-1.5 flex items-center justify-center gap-2 text-xs text-gray-500 lg:justify-start">
               {profileOnline ? (

@@ -4,7 +4,6 @@ import {
   ArrowDown,
   ArrowLeft,
   Ban,
-  BadgeCheck,
   Calendar,
   Check,
   Copy,
@@ -95,6 +94,7 @@ import { Button } from "../ui/button";
 import { cn } from "../ui/utils";
 import { MessageBubble } from "./MessageBubble";
 import { ChatPortraitProductCard } from "./ChatPortraitProductCard";
+import { VerifiedBadge } from "../VerifiedBadge";
 
 const CHAT_MEDIA_BUCKETS = ["chat-media", "chat-images", "chat-attachments"] as const;
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
@@ -349,6 +349,8 @@ export default function ChatWorkspace() {
   const [conversation, setConversation] = useState<ConversationRow | null>(null);
   const [peerId, setPeerId] = useState<string | null>(null);
   const [peerName, setPeerName] = useState("Member");
+  const [peerAvatarUrl, setPeerAvatarUrl] = useState<string | null>(null);
+  const [peerGender, setPeerGender] = useState<string | null>(null);
   const [peerPhone, setPeerPhone] = useState<string | null>(null);
   const [peerVerified, setPeerVerified] = useState(false);
   const [peerRating, setPeerRating] = useState<number | null>(null);
@@ -415,6 +417,11 @@ export default function ChatWorkspace() {
   }, [productParam]);
 
   const peerFirstName = useMemo(() => peerName.split(/\s+/)[0] || "Member", [peerName]);
+
+  const peerAvatarDisplay = useMemo(
+    () => getAvatarUrl(peerAvatarUrl, peerGender, peerName),
+    [peerAvatarUrl, peerGender, peerName],
+  );
 
   const peerActiveByProfile = useMemo(
     () => isLastActiveWithin(peerLastActive, PEER_ACTIVE_MS),
@@ -499,8 +506,10 @@ export default function ChatWorkspace() {
       if (!conversation?.id || !authUser?.id) return;
       if (String(msg.id).startsWith("pending-")) return;
       const mine = reactionByMessage[msg.id]?.myEmoji;
+      const emojiNorm = emoji.trim().slice(0, 32);
+      if (!emojiNorm) return;
       try {
-        if (mine === emoji) {
+        if (mine === emojiNorm) {
           const { error } = await supabase
             .from("chat_message_reactions")
             .delete()
@@ -508,16 +517,29 @@ export default function ChatWorkspace() {
             .eq("user_id", authUser.id);
           if (error) throw error;
         } else {
-          const { error } = await supabase.from("chat_message_reactions").upsert(
-            {
+          const { data: existing, error: selErr } = await supabase
+            .from("chat_message_reactions")
+            .select("id")
+            .eq("message_id", msg.id)
+            .eq("user_id", authUser.id)
+            .maybeSingle();
+          if (selErr) throw selErr;
+          if (existing) {
+            const { error: upErr } = await supabase
+              .from("chat_message_reactions")
+              .update({ emoji: emojiNorm })
+              .eq("message_id", msg.id)
+              .eq("user_id", authUser.id);
+            if (upErr) throw upErr;
+          } else {
+            const { error: insErr } = await supabase.from("chat_message_reactions").insert({
               conversation_id: conversation.id,
               message_id: msg.id,
               user_id: authUser.id,
-              emoji,
-            },
-            { onConflict: "message_id,user_id" },
-          );
-          if (error) throw error;
+              emoji: emojiNorm,
+            });
+            if (insErr) throw insErr;
+          }
         }
         setReactionSheetMsg(null);
         await refreshReactions();
@@ -563,6 +585,8 @@ export default function ChatWorkspace() {
     peerName,
     conversation?.id,
     peerVerified,
+    peerAvatarUrl,
+    peerGender,
     peerRating,
     peerReviewCount,
     peerLocationLabel,
@@ -715,6 +739,10 @@ export default function ChatWorkspace() {
       if (prof) {
         const name = (prof.full_name as string)?.trim() || "Member";
         setPeerName(name);
+        const av = prof.avatar_url;
+        setPeerAvatarUrl(typeof av === "string" && av.trim() ? av.trim() : null);
+        const g = prof.gender;
+        setPeerGender(typeof g === "string" ? g : null);
         const phoneRaw = prof.phone;
         setPeerPhone(typeof phoneRaw === "string" && phoneRaw.trim() ? phoneRaw.trim() : null);
         const st = typeof prof.state === "string" ? prof.state : null;
@@ -726,6 +754,8 @@ export default function ChatWorkspace() {
         setPeerLastActive(la);
       } else {
         setPeerName("Member");
+        setPeerAvatarUrl(null);
+        setPeerGender(null);
         setPeerPhone(null);
       }
 
@@ -1784,9 +1814,19 @@ export default function ChatWorkspace() {
               >
                 <ArrowLeft className="h-5 w-5 text-gray-700 dark:text-zinc-200" />
               </button>
-              <h1 className="min-w-0 flex-1 text-lg font-bold leading-snug tracking-tight text-gray-900 dark:text-zinc-100 sm:text-xl">
-                <span className="line-clamp-2 break-words">{peerName}</span>
-              </h1>
+              <img
+                src={peerAvatarDisplay}
+                alt=""
+                className="h-11 w-11 shrink-0 rounded-full object-cover ring-2 ring-emerald-100 dark:ring-zinc-700"
+              />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5">
+                  <h1 className="min-w-0 flex-1 text-lg font-bold leading-snug tracking-tight text-gray-900 dark:text-zinc-100 sm:text-xl">
+                    <span className="line-clamp-2 break-words">{peerName}</span>
+                  </h1>
+                  {peerVerified ? <VerifiedBadge title="Verified seller" size="md" className="mt-0.5" /> : null}
+                </div>
+              </div>
               <DropdownMenu modal={false}>
                 <DropdownMenuTrigger asChild>
                   <button
@@ -1879,12 +1919,6 @@ export default function ChatWorkspace() {
             </div>
 
             <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-700 dark:text-zinc-200">
-              {peerVerified ? (
-                <span className="inline-flex items-center gap-1 font-medium text-emerald-700 dark:text-emerald-400">
-                  <BadgeCheck className="h-4 w-4 shrink-0" aria-hidden />
-                  Verified
-                </span>
-              ) : null}
               {peerReviewCount > 0 && peerRating != null ? (
                 <span className="inline-flex items-center gap-1">
                   <Star className="h-3.5 w-3.5 shrink-0 fill-amber-400 text-amber-500" aria-hidden />

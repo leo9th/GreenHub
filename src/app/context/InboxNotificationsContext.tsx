@@ -22,7 +22,7 @@ type InboxNotificationsContextValue = {
   notifications: AppNotificationRow[];
   notificationUnreadCount: number;
   refresh: () => Promise<void>;
-  markAllNotificationsReadAndRefresh: () => Promise<void>;
+  markAllNotificationsReadAndRefresh: () => Promise<{ error: string | null }>;
 };
 
 const InboxNotificationsContext = createContext<InboxNotificationsContextValue | null>(null);
@@ -108,12 +108,19 @@ export function InboxNotificationsProvider({ children }: { children: ReactNode }
   }, [user?.id, refresh]);
 
   const markAllNotificationsReadAndRefresh = useCallback(async () => {
-    if (!user?.id) return;
+    if (!user?.id) return { error: null };
+    const now = new Date().toISOString();
+    setNotifications((prev) =>
+      prev.map((n) => (n.read_at == null ? { ...n, read_at: now } : n)),
+    );
     const { error } = await markAllNotificationsRead(supabase, user.id);
     if (error) {
       console.warn("markAllNotificationsRead:", error);
+      await refresh();
+      return { error };
     }
     await refresh();
+    return { error: null };
   }, [user?.id, refresh]);
 
   const notificationUnreadCount = useMemo(
@@ -145,7 +152,7 @@ export function useInboxNotifications(): InboxNotificationsContextValue {
       notifications: [],
       notificationUnreadCount: 0,
       refresh: async () => {},
-      markAllNotificationsReadAndRefresh: async () => {},
+      markAllNotificationsReadAndRefresh: async () => ({ error: null }),
     };
   }
   return ctx;

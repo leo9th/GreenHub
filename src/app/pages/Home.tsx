@@ -33,6 +33,7 @@ import {
 } from "../utils/productSearch";
 import { getRelatedSearchSuggestions } from "../utils/searchSuggestions";
 import { getProductThumbnailUrl } from "../utils/productImages";
+import { useVerifiedSellerIds } from "../hooks/useVerifiedSellerIds";
 import { getRecentProductIds, RECENT_VIEWED_EVENT } from "../utils/recentlyViewedProducts";
 
 export default function Home() {
@@ -90,6 +91,12 @@ export default function Home() {
     () => getRelatedSearchSuggestions(searchQuery),
     [searchQuery],
   );
+
+  const productsForVerification = useMemo(
+    () => [...products, ...recentViewedProducts],
+    [products, recentViewedProducts],
+  );
+  const verifiedSellerIds = useVerifiedSellerIds(supabase, productsForVerification);
 
   useEffect(() => {
     if (!authUser?.id || homeCardIds.length === 0) {
@@ -666,6 +673,7 @@ export default function Home() {
                 {products.map((product) => {
                   const row = product as Record<string, unknown>;
                   const pid = Number(row.id);
+                  const sid = row.seller_id != null ? String(row.seller_id) : "";
                   return (
                     <ProductCard
                       key={String(product.id)}
@@ -673,6 +681,7 @@ export default function Home() {
                       image={getProductThumbnailUrl(row)}
                       condition={String((product as { condition?: string }).condition ?? "Good")}
                       title={String((product as { title?: string }).title ?? "")}
+                      sellerVerified={Boolean(sid && verifiedSellerIds.has(sid))}
                       price={Number((product as { price?: number }).price) || 0}
                       priceDisplay={formatPrice(Number((product as { price?: number }).price) || 0)}
                       location={String((product as { location?: string }).location ?? "")}
@@ -720,6 +729,7 @@ export default function Home() {
                 recentViewedProducts.map((product) => {
                   const row = product as Record<string, unknown>;
                   const pid = Number(row.id);
+                  const sid = row.seller_id != null ? String(row.seller_id) : "";
                   return (
                     <ProductCard
                       key={String(product.id)}
@@ -727,6 +737,7 @@ export default function Home() {
                       image={getProductThumbnailUrl(row)}
                       condition={String((product as { condition?: string }).condition ?? "Good")}
                       title={String((product as { title?: string }).title ?? "")}
+                      sellerVerified={Boolean(sid && verifiedSellerIds.has(sid))}
                       price={Number((product as { price?: number }).price) || 0}
                       priceDisplay={formatPrice(Number((product as { price?: number }).price) || 0)}
                       location={String((product as { location?: string }).location ?? "")}

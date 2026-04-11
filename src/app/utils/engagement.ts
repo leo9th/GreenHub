@@ -81,12 +81,16 @@ export async function markAllNotificationsRead(
   supabase: SupabaseClient,
   userId: string,
 ): Promise<{ error: string | null }> {
+  const { error: rpcError } = await supabase.rpc("mark_all_notifications_read");
+  if (!rpcError) return { error: null };
+
   const { error } = await supabase
     .from("notifications")
     .update({ read_at: new Date().toISOString() })
     .eq("user_id", userId)
     .is("read_at", null);
-  return { error: error?.message ?? null };
+  if (!error) return { error: null };
+  return { error: error.message ?? rpcError.message ?? null };
 }
 
 export async function markNotificationReadById(supabase: SupabaseClient, id: string): Promise<void> {

@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from "react";
-import { ArrowLeft, Camera, User, Mail, Phone, MapPin, Save } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { useNavigate } from "react-router";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../../lib/supabase";
+import { getAvatarUrl } from "../utils/getAvatar";
 
 const ALLOWED_GENDERS = ["Male", "Female", "Prefer not to say"] as const;
 type AllowedGender = (typeof ALLOWED_GENDERS)[number];
@@ -17,7 +18,7 @@ export default function ProfileEdit() {
   const { profile, user: authUser } = useAuth();
 
   const [isLoading, setIsLoading] = useState(false);
-  const [profileImage, setProfileImage] = useState("https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200");
+  const [profileImage, setProfileImage] = useState<string>(() => getAvatarUrl(null, null, "Member"));
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [formData, setFormData] = useState({
     name: "",
@@ -44,21 +45,27 @@ export default function ProfileEdit() {
         showPhoneOnProfile: Boolean(profile?.show_phone_on_profile),
         showEmailOnProfile: Boolean(profile?.show_email_on_profile),
       });
-      if (profile?.avatar_url || authUser?.user_metadata?.avatar_url) {
-        setProfileImage(profile?.avatar_url || authUser?.user_metadata?.avatar_url);
+      const av = profile?.avatar_url || (authUser?.user_metadata?.avatar_url as string | undefined);
+      if (av && typeof av === "string" && av.trim()) {
+        setProfileImage(av.trim());
+      } else {
+        const nm = profile?.full_name || authUser?.user_metadata?.full_name || "Member";
+        const g = normalizeGender(profile?.gender || authUser?.user_metadata?.gender);
+        setProfileImage(getAvatarUrl(null, g, nm));
       }
     }
   }, [profile, authUser]);
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      // Store real file for backend processing
-      setSelectedFile(file);
-      // Create a local object URL to preview the passport/profile image immediately
-      const imageUrl = URL.createObjectURL(file);
-      setProfileImage(imageUrl);
+    if (!file) return;
+    if (!file.type.startsWith("image/")) return;
+    if (file.size > 5 * 1024 * 1024) {
+      alert("Image must be 5 MB or smaller.");
+      return;
     }
+    setSelectedFile(file);
+    setProfileImage(URL.createObjectURL(file));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -67,28 +74,32 @@ export default function ProfileEdit() {
     setIsLoading(true);
 
     try {
-      let finalAvatarUrl = profileImage;
       const normalizedGender = normalizeGender(formData.gender);
 
-      // If user provided a tangible image file, push to Supabase storage
-      if (selectedFile) {
-        const fileExt = selectedFile.name.split('.').pop();
-        const fileName = `${authUser.id}-${Math.random().toString(36).substring(7)}.${fileExt}`;
-        
-        const { error: uploadError } = await supabase.storage
-          .from('avatars')
-          .upload(fileName, selectedFile);
-          
-        if (uploadError) {
-          throw new Error('Failed to upload image. Please try again.');
-        }
+      let finalAvatarUrl: string | null =
+        (profile?.avatar_url as string | undefined)?.trim() ||
+        (authUser?.user_metadata?.avatar_url as string | undefined)?.trim() ||
+        null;
 
-        // Successfully stored, now fetch public string URL
-        const { data: { publicUrl } } = supabase.storage
-          .from('avatars')
-          .getPublicUrl(fileName);
-          
-        finalAvatarUrl = publicUrl;
+      if (selectedFile) {
+        const ext = (selectedFile.name.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
+        const storagePath = `${authUser.id}/${crypto.randomUUID()}.${ext}`;
+        const { error: uploadError } = await supabase.storage
+          .from("avatars")
+          .upload(storagePath, selectedFile, {
+            contentType: selectedFile.type || "image/jpeg",
+            upsert: true,
+          });
+        if (uploadError) {
+          throw new Error(uploadError.message || "Failed to upload image.");
+        }
+        const { data: pub } = supabase.storage.from("avatars").getPublicUrl(storagePath);
+        finalAvatarUrl = pub.publicUrl;
+      } else if (!finalAvatarUrl || profileImage.startsWith("blob:") || profileImage.startsWith("data:")) {
+        finalAvatarUrl =
+          (profile?.avatar_url as string | undefined)?.trim() ||
+          (authUser?.user_metadata?.avatar_url as string | undefined)?.trim() ||
+          null;
       }
 
       // Update auth meta data
@@ -100,10 +111,10 @@ export default function ProfileEdit() {
           auto_reply: formData.autoReply,
           bio: formData.bio.trim() || undefined,
           gender: normalizedGender,
-          avatar_url: finalAvatarUrl !== "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200" ? finalAvatarUrl : null,
-        }
+          avatar_url: finalAvatarUrl,
+        },
       });
-      
+
       // Upsert into profile table
       await supabase.from("profiles").upsert({
         id: authUser.id,
@@ -114,7 +125,7 @@ export default function ProfileEdit() {
         auto_reply: formData.autoReply,
         bio: formData.bio.trim() || null,
         gender: normalizedGender,
-        avatar_url: finalAvatarUrl !== "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200" ? finalAvatarUrl : null,
+        avatar_url: finalAvatarUrl,
         updated_at: new Date().toISOString(),
         show_phone_on_profile: formData.showPhoneOnProfile,
         show_email_on_profile: formData.showEmailOnProfile,

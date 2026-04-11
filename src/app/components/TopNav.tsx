@@ -18,7 +18,7 @@ import { getAvatarUrl } from "../utils/getAvatar";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { supabase } from "../../lib/supabase";
 import { toast } from "sonner";
-import { markAllNotificationsRead, markNotificationReadById } from "../utils/engagement";
+import { markNotificationReadById } from "../utils/engagement";
 import { formatGreenHubRelative } from "../utils/formatGreenHubTime";
 import { useTheme } from "../context/ThemeContext";
 
@@ -80,15 +80,10 @@ export default function TopNav() {
     fullName,
   );
 
-  const markNotificationsAsRead = useCallback(async () => {
-    if (!authUser?.id) return;
-    const { error } = await markAllNotificationsRead(supabase, authUser.id);
-    await refreshNotifications();
-    if (error) {
-      toast.error("Could not mark notifications read. Check Supabase notifications RLS.");
-      console.warn("markAllNotificationsRead:", error);
-    }
-  }, [authUser?.id, refreshNotifications]);
+  const notifyMarkAllReadError = useCallback((error: string) => {
+    toast.error("Could not mark notifications read. Check Supabase notifications RLS.");
+    console.warn("markAllNotificationsRead:", error);
+  }, []);
 
   const openNotification = useCallback(
     async (n: (typeof notifications)[0]) => {
@@ -223,13 +218,13 @@ export default function TopNav() {
               <button
                 type="button"
                 onClick={() => {
+                  void markAllNotificationsReadAndRefresh().then(({ error }) => {
+                    if (error) notifyMarkAllReadError(error);
+                  });
                   const willOpen = !showNotifications;
                   setShowNotifications(willOpen);
                   setShowDropdown(false);
                   setMobileMenuOpen(false);
-                  if (willOpen) {
-                    void markNotificationsAsRead();
-                  }
                 }}
                 className="relative flex p-1 outline-none"
                 aria-label="Notifications"
@@ -247,7 +242,11 @@ export default function TopNav() {
                     <button
                       type="button"
                       className="text-[11px] text-[#22c55e] hover:underline font-bold uppercase tracking-wider"
-                      onClick={() => void markAllNotificationsReadAndRefresh()}
+                      onClick={() =>
+                        void markAllNotificationsReadAndRefresh().then(({ error }) => {
+                          if (error) notifyMarkAllReadError(error);
+                        })
+                      }
                     >
                       Mark read
                     </button>

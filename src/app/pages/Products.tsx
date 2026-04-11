@@ -34,6 +34,7 @@ import {
 } from "../utils/productSearch";
 import { getRelatedSearchSuggestions } from "../utils/searchSuggestions";
 import { getProductThumbnailUrl } from "../utils/productImages";
+import { useVerifiedSellerIds } from "../hooks/useVerifiedSellerIds";
 
 const conditions = ["New", "Like New", "Good Fair"];
 const priceRanges = [
@@ -331,6 +332,7 @@ export default function Products() {
   const [commentCounts, setCommentCounts] = useState<Record<string, number>>({});
   const [likedProductIds, setLikedProductIds] = useState<Set<string>>(new Set());
   const [pendingLikeIds, setPendingLikeIds] = useState<Set<string>>(new Set());
+  const verifiedSellerIds = useVerifiedSellerIds(supabase, products);
   const productIds = useMemo(() => {
     const seen = new Set<string>();
     const out: ProductPk[] = [];
@@ -883,6 +885,7 @@ export default function Products() {
                 {products.map((product) => {
                   const pid = Number(product.id);
                   const row = product as Record<string, unknown>;
+                  const sid = row.seller_id != null ? String(row.seller_id) : "";
                   return (
                     <ProductCard
                       key={String(product.id)}
@@ -891,6 +894,7 @@ export default function Products() {
                       condition={String(product.condition ?? "Good")}
                       title={String(product.title ?? "")}
                       titleAdornment={getTierIcon(String(product.sellerTier ?? ""))}
+                      sellerVerified={Boolean(sid && verifiedSellerIds.has(sid))}
                       price={Number(product.price) || 0}
                       priceDisplay={formatPrice(Number(product.price) || 0)}
                       location={String(product.location ?? "")}

@@ -1,6 +1,7 @@
 import { Link } from "react-router";
 import { useCurrency } from "../../hooks/useCurrency";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
+import { VerifiedBadge } from "../VerifiedBadge";
 
 /**
  * Listing card — image uses fixed height (mobile/desktop); footer is below (no overlap).
@@ -26,6 +27,8 @@ export interface ProductCardProps {
   priceDisplay?: string;
   rating?: number;
   reviews?: number;
+  /** Approved ID verification for listing seller */
+  sellerVerified?: boolean;
   titleAdornment?: ReactNode;
   topRightBadge?: ReactNode;
   deliveryFee?: number;
@@ -48,6 +51,7 @@ export function ProductCard({
   viewsCount,
   likeCount,
   likesCount,
+  sellerVerified,
 }: ProductCardProps) {
   const formatPrice = useCurrency();
   const resolvedId =
@@ -101,7 +105,10 @@ export function ProductCard({
 
       {/* Footer — below image, compact spacing */}
       <div className="flex shrink-0 flex-col gap-1 border-t border-gray-100 dark:border-border bg-white dark:bg-card px-3 py-2">
-        <h3 className="line-clamp-2 text-sm font-semibold leading-snug text-gray-800 dark:text-card-foreground">{title}</h3>
+        <h3 className="flex items-start gap-1 text-sm font-semibold leading-snug text-gray-800 dark:text-card-foreground">
+          <span className="line-clamp-2 min-w-0 flex-1">{title}</span>
+          {sellerVerified ? <VerifiedBadge title="Verified seller" size="sm" className="mt-0.5 shrink-0" /> : null}
+        </h3>
         <p className="text-base font-bold leading-tight text-green-600 dark:text-primary">{formatPrice(price)}</p>
         {location ? (
           <p className="flex items-center gap-1 text-xs text-gray-500 dark:text-muted-foreground">

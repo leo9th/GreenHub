@@ -28,6 +28,7 @@ import { getProductThumbnailUrl, parseProductImagesFromRow } from "../utils/prod
 import { recordProductView } from "../utils/recentlyViewedProducts";
 import { toast } from "sonner";
 import { BoostDetailBadge } from "../components/BoostBadge";
+import { VerifiedBadge } from "../components/VerifiedBadge";
 import { getAuthSiteOrigin } from "../utils/authSiteUrl";
 import { useProductLike } from "../hooks/useProductLike";
 import { normalizeProductPk } from "../utils/engagement";
@@ -1077,12 +1078,13 @@ export default function ProductDetail() {
                       ) : null}
                       {product.seller.name}
                     </span>
-                    {product.seller.verified ? (
-                      <BadgeCheck className="w-4 h-4 text-[#16a34a] fill-emerald-100 shrink-0" title="Verified seller" />
-                    ) : sellerTierLower === "crown" ? (
-                      <BadgeCheck className="w-4 h-4 text-amber-500 fill-amber-400 shrink-0" title="Crown verified" />
-                    ) : sellerTierLower === "blue" ? (
-                      <BadgeCheck className="w-4 h-4 text-blue-500 fill-blue-400 shrink-0" title="Blue verified" />
+                    {sellerIdVerified ? (
+                      <VerifiedBadge title="Verified seller" size="md" className="shrink-0" />
+                    ) : null}
+                    {!sellerIdVerified && sellerTierLower === "crown" ? (
+                      <BadgeCheck className="w-4 h-4 text-amber-500 fill-amber-400 shrink-0" title="Crown tier" />
+                    ) : !sellerIdVerified && sellerTierLower === "blue" ? (
+                      <BadgeCheck className="w-4 h-4 text-blue-500 fill-blue-400 shrink-0" title="Blue tier" />
                     ) : null}
                   </div>
                   <p className="text-sm text-gray-600 mt-1">

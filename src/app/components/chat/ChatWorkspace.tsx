@@ -38,6 +38,7 @@ import {
   type ConversationRow,
 } from "../../utils/chatConversations";
 import {
+  CHAT_MESSAGE_BASE_COLUMNS,
   fetchChatMessagesForConversation,
   markConversationMessagesDelivered,
   markConversationMessagesRead,
@@ -949,9 +950,9 @@ export default function ChatWorkspace() {
             media_url: mediaUrl,
             product_id: productId,
           })
-          .select(
-            "id, sender_id, message, created_at, status, delivered_at, read_at, reply_to_id, image_url, media_url, edited, product_id, reply_to:chat_messages!chat_messages_reply_to_id_fkey(id, sender_id, message, image_url)",
-          )
+          // Plain columns only — embedding `reply_to:...!chat_messages_reply_to_id_fkey` often causes
+          // PostgREST 400 (PGRST204) if FK name/cache differs; reply previews are resolved client-side.
+          .select(CHAT_MESSAGE_BASE_COLUMNS)
           .single();
 
         if (error) throw error;
@@ -962,7 +963,11 @@ export default function ChatWorkspace() {
           ),
         );
       } catch (e: unknown) {
-        console.error(e);
+        console.error("[chat_messages insert]", e);
+        if (e && typeof e === "object" && "code" in e) {
+          const pe = e as { code?: string; message?: string; details?: string; hint?: string };
+          console.error("PostgREST:", pe.code, pe.message, pe.details, pe.hint);
+        }
         toast.error(errorMessage(e, "Message not sent"));
         setMessages((prev) => prev.filter((m) => !String(m.id).startsWith("pending-")));
       } finally {

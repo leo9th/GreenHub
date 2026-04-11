@@ -33,18 +33,15 @@ export type ChatMessageRow = {
 export const CHAT_MESSAGE_BASE_COLUMNS =
   "id, sender_id, message, created_at, status, delivered_at, read_at, reply_to_id, image_url, media_url, edited, product_id";
 
-export const CHAT_MESSAGE_COLUMNS = `${CHAT_MESSAGE_BASE_COLUMNS}, reply_to:chat_messages!chat_messages_reply_to_id_fkey(id, sender_id, message, image_url)`;
+/** Flat select only — no `reply_to` embed (avoids PGRST204 self-FK relationship errors). Use resolveChatMessageReplyPreviews(). */
+export const CHAT_MESSAGE_COLUMNS = CHAT_MESSAGE_BASE_COLUMNS;
 
 /** DB without newer columns — fallback selects. */
 const CHAT_MESSAGE_BASE_NO_MEDIA_EDIT =
   "id, sender_id, message, created_at, status, delivered_at, read_at, reply_to_id, image_url, product_id";
 
-const CHAT_MESSAGE_COLUMNS_NO_MEDIA_EDIT = `${CHAT_MESSAGE_BASE_NO_MEDIA_EDIT}, reply_to:chat_messages!chat_messages_reply_to_id_fkey(id, sender_id, message, image_url)`;
-
 const CHAT_MESSAGE_BASE_NO_PRODUCT_ID =
   "id, sender_id, message, created_at, status, delivered_at, read_at, reply_to_id, image_url, media_url, edited";
-
-const CHAT_MESSAGE_COLUMNS_NO_PRODUCT_ID = `${CHAT_MESSAGE_BASE_NO_PRODUCT_ID}, reply_to:chat_messages!chat_messages_reply_to_id_fkey(id, sender_id, message, image_url)`;
 
 const CHAT_MESSAGE_CORE_COLUMNS =
   "id, sender_id, message, created_at, status, delivered_at, read_at, reply_to_id";
@@ -132,10 +129,8 @@ export async function fetchChatMessagesForConversation(
   conversationId: string,
 ): Promise<{ data: ChatMessageRow[]; error: { message: string } | null }> {
   const selectRows = async (table: "chat_messages" | "messages") => {
+    // No reply_to embeds — they often cause PGRST204/400 if FK hint or schema cache differs.
     const attempts = [
-      CHAT_MESSAGE_COLUMNS,
-      CHAT_MESSAGE_COLUMNS_NO_MEDIA_EDIT,
-      CHAT_MESSAGE_COLUMNS_NO_PRODUCT_ID,
       CHAT_MESSAGE_BASE_COLUMNS,
       CHAT_MESSAGE_BASE_NO_MEDIA_EDIT,
       CHAT_MESSAGE_BASE_NO_PRODUCT_ID,

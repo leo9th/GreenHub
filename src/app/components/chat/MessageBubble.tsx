@@ -83,6 +83,8 @@ export type MessageBubbleProps = {
   reaction?: string | null;
   /** Swipe-to-reply transform (applied to bubble column only) */
   bubbleTransformStyle?: React.CSSProperties;
+  /** Shown after timestamp when the message was edited */
+  edited?: boolean;
 };
 
 export function MessageBubble({
@@ -102,6 +104,7 @@ export function MessageBubble({
   belowBubbleSlot,
   reaction,
   bubbleTransformStyle,
+  edited,
 }: MessageBubbleProps) {
   const bubbleClass = mine
     ? "relative z-[1] rounded-2xl rounded-br-sm bg-emerald-500 text-white shadow-sm dark:bg-emerald-600"
@@ -161,6 +164,9 @@ export function MessageBubble({
           >
             {timeLabel ? (
               <span className="text-[11px] tabular-nums text-gray-500 dark:text-zinc-400">{timeLabel}</span>
+            ) : null}
+            {edited ? (
+              <span className="text-[10px] font-medium text-gray-400 dark:text-zinc-500">edited</span>
             ) : null}
             {mine ? <MessageReceiptTicks phase={receiptPhase} /> : null}
             {!mine && showIncomingRead ? (

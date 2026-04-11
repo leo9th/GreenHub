@@ -21,6 +21,9 @@ export type ChatMessageRow = {
   reply_to_id: string | null;
   reply_preview: ChatMessageReplyPreview | null;
   image_url?: string | null;
+  /** Voice or other non-image media */
+  media_url?: string | null;
+  edited?: boolean;
   /** Optional listing attached to this message (portrait card in thread) */
   product_id?: number | null;
   /** Local only: message is being sent to the server */
@@ -28,19 +31,21 @@ export type ChatMessageRow = {
 };
 
 export const CHAT_MESSAGE_BASE_COLUMNS =
+  "id, sender_id, message, created_at, status, delivered_at, read_at, reply_to_id, image_url, media_url, edited, product_id";
+
+export const CHAT_MESSAGE_COLUMNS = `${CHAT_MESSAGE_BASE_COLUMNS}, reply_to:chat_messages!chat_messages_reply_to_id_fkey(id, sender_id, message, image_url)`;
+
+/** DB without newer columns — fallback selects. */
+const CHAT_MESSAGE_BASE_NO_MEDIA_EDIT =
   "id, sender_id, message, created_at, status, delivered_at, read_at, reply_to_id, image_url, product_id";
 
-export const CHAT_MESSAGE_COLUMNS =
-  `${CHAT_MESSAGE_BASE_COLUMNS}, reply_to:chat_messages!chat_messages_reply_to_id_fkey(id, sender_id, message, image_url)`;
+const CHAT_MESSAGE_COLUMNS_NO_MEDIA_EDIT = `${CHAT_MESSAGE_BASE_NO_MEDIA_EDIT}, reply_to:chat_messages!chat_messages_reply_to_id_fkey(id, sender_id, message, image_url)`;
 
-/** DB has receipts + image_url but not yet `product_id` (migration pending). */
 const CHAT_MESSAGE_BASE_NO_PRODUCT_ID =
-  "id, sender_id, message, created_at, status, delivered_at, read_at, reply_to_id, image_url";
+  "id, sender_id, message, created_at, status, delivered_at, read_at, reply_to_id, image_url, media_url, edited";
 
-/** Same reply embed as CHAT_MESSAGE_COLUMNS, without `product_id` (avoids 400 when column not migrated). */
 const CHAT_MESSAGE_COLUMNS_NO_PRODUCT_ID = `${CHAT_MESSAGE_BASE_NO_PRODUCT_ID}, reply_to:chat_messages!chat_messages_reply_to_id_fkey(id, sender_id, message, image_url)`;
 
-/** Older DBs without `image_url` / full receipt columns — still enough for UI + reply resolution. */
 const CHAT_MESSAGE_CORE_COLUMNS =
   "id, sender_id, message, created_at, status, delivered_at, read_at, reply_to_id";
 
@@ -86,6 +91,8 @@ export function normalizeChatMessageRow(raw: Record<string, unknown>): ChatMessa
     normalizeReplyPreview(raw.reply_preview) ??
     normalizeReplyPreview(raw.reply_to) ??
     normalizeReplyPreview(raw.replied_message);
+  const editedRaw = raw.edited;
+  const edited = editedRaw === true || editedRaw === "true";
   return {
     id: String(raw.id),
     sender_id: String(raw.sender_id),
@@ -97,6 +104,8 @@ export function normalizeChatMessageRow(raw: Record<string, unknown>): ChatMessa
     reply_to_id: (raw.reply_to_id as string | null) ?? null,
     reply_preview: replyPreview,
     image_url: (raw.image_url as string | null | undefined) ?? null,
+    media_url: (raw.media_url as string | null | undefined) ?? null,
+    edited,
     product_id: parseMessageProductId(raw.product_id),
   };
 }
@@ -116,7 +125,7 @@ export function outgoingReceiptPhase(msg: ChatMessageRow): "sending" | "sent" | 
 }
 
 /**
- * Load thread messages. Tries `chat_messages` first; some projects use table name `messages`.
+ * Load thread messages from `chat_messages` (or legacy `messages` table name).
  */
 export async function fetchChatMessagesForConversation(
   supabase: SupabaseClient,
@@ -125,8 +134,10 @@ export async function fetchChatMessagesForConversation(
   const selectRows = async (table: "chat_messages" | "messages") => {
     const attempts = [
       CHAT_MESSAGE_COLUMNS,
+      CHAT_MESSAGE_COLUMNS_NO_MEDIA_EDIT,
       CHAT_MESSAGE_COLUMNS_NO_PRODUCT_ID,
       CHAT_MESSAGE_BASE_COLUMNS,
+      CHAT_MESSAGE_BASE_NO_MEDIA_EDIT,
       CHAT_MESSAGE_BASE_NO_PRODUCT_ID,
       CHAT_MESSAGE_CORE_COLUMNS,
       CHAT_MESSAGE_LEGACY_COLUMNS,

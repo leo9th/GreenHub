@@ -723,6 +723,13 @@ export default function Chat() {
     feedStateRef.current = { count: messages.length, lastMessageId, peerTyping };
   }, [authUser?.id, isNearBottom, messages, peerTyping, scrollToBottom]);
 
+  /** Keeps the thread pinned to latest after any message list change (debug / send UX). */
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages]);
+
   useEffect(() => {
     updateScrollState();
   }, [messages.length, peerTyping, updateScrollState]);
@@ -1245,10 +1252,41 @@ export default function Chat() {
   };
 
   const sendMessage = async () => {
-    if (sendBusy) return;
+    // eslint-disable-next-line no-console
+    console.log("[Chat] sendMessage called", {
+      newMessagePreview: newMessage.slice(0, 120),
+      newMessageLen: newMessage.length,
+      conversationId: conversation?.id ?? null,
+      hasAuth: !!authUser?.id,
+      hasConversation: !!conversation,
+      sendBusy,
+      hasPendingFile: !!pendingAttachment?.file,
+    });
+
+    if (sendBusy) {
+      // eslint-disable-next-line no-console
+      console.log("[Chat] sendMessage exit: sendBusy");
+      return;
+    }
     const text = newMessage.trim();
     const file = pendingAttachment?.file;
-    if ((!text && !file) || !authUser?.id || !conversation) return;
+    if (!text && !file) {
+      // eslint-disable-next-line no-console
+      console.log("[Chat] sendMessage exit: empty message and no attachment");
+      return;
+    }
+    if (!authUser?.id) {
+      // eslint-disable-next-line no-console
+      console.warn("[Chat] sendMessage exit: not signed in");
+      toast.error("Sign in to send messages.");
+      return;
+    }
+    if (!conversation) {
+      // eslint-disable-next-line no-console
+      console.warn("[Chat] sendMessage exit: no conversation row");
+      toast.error("Chat is not ready. Refresh the page and try again.");
+      return;
+    }
 
     const replyPreview =
       replyingTo == null
@@ -1336,6 +1374,14 @@ export default function Chat() {
           error = retry.error;
         }
       }
+
+      // eslint-disable-next-line no-console
+      console.log("[Chat] chat_messages insert", {
+        ok: !error,
+        error: error?.message ?? null,
+        code: error?.code ?? null,
+        insertedId: inserted && typeof inserted === "object" && "id" in inserted ? (inserted as { id: string }).id : null,
+      });
 
       if (error) throw error;
       if (inserted) {

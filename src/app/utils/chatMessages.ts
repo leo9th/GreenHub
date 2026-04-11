@@ -37,6 +37,9 @@ export const CHAT_MESSAGE_COLUMNS =
 const CHAT_MESSAGE_BASE_NO_PRODUCT_ID =
   "id, sender_id, message, created_at, status, delivered_at, read_at, reply_to_id, image_url";
 
+/** Same reply embed as CHAT_MESSAGE_COLUMNS, without `product_id` (avoids 400 when column not migrated). */
+const CHAT_MESSAGE_COLUMNS_NO_PRODUCT_ID = `${CHAT_MESSAGE_BASE_NO_PRODUCT_ID}, reply_to:chat_messages!chat_messages_reply_to_id_fkey(id, sender_id, message, image_url)`;
+
 /** Older DBs without `image_url` / full receipt columns — still enough for UI + reply resolution. */
 const CHAT_MESSAGE_CORE_COLUMNS =
   "id, sender_id, message, created_at, status, delivered_at, read_at, reply_to_id";
@@ -122,6 +125,7 @@ export async function fetchChatMessagesForConversation(
   const selectRows = async (table: "chat_messages" | "messages") => {
     const attempts = [
       CHAT_MESSAGE_COLUMNS,
+      CHAT_MESSAGE_COLUMNS_NO_PRODUCT_ID,
       CHAT_MESSAGE_BASE_COLUMNS,
       CHAT_MESSAGE_BASE_NO_PRODUCT_ID,
       CHAT_MESSAGE_CORE_COLUMNS,

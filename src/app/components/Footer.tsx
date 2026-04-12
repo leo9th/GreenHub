@@ -50,6 +50,7 @@ export default function Footer() {
           <div>
             <h3 className="font-bold text-lg mb-4">Support</h3>
             <ul className="space-y-3 text-sm">
+              <li><Link to="/contact" className="hover:underline">Contact us</Link></li>
               <li><a href="mailto:support@greenhub.ng" className="hover:underline">support@greenhub.ng</a></li>
               <li><a href="https://wa.me/2348125221542" className="hover:underline">+234 812 522 1542 (WhatsApp/Tel)</a></li>
               <li><Link to="/faq" className="hover:underline">FAQ</Link></li>

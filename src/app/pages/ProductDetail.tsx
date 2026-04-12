@@ -1,4 +1,12 @@
-import { useState, useEffect, useCallback, useMemo, useRef, type TouchEvent } from "react";
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+  type TouchEvent as ReactTouchEvent,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import useEmblaCarousel from "embla-carousel-react";
 import { Link, useParams, useNavigate } from "react-router";
 import {
@@ -293,7 +301,10 @@ export default function ProductDetail() {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   /** Mobile-only: reduces scroll by showing one section at a time. Desktop shows full stack. */
   const [mobileDetailTab, setMobileDetailTab] = useState<"details" | "seller" | "reviews" | "about">("details");
-  const galleryTouchStartX = useRef<number | null>(null);
+  const galleryTouchStartRef = useRef<{ x: number; y: number } | null>(null);
+  /** Second tap within window → double-tap to like (mobile). */
+  const galleryDoubleTapRef = useRef<{ t: number; x: number; y: number } | null>(null);
+  const [heartPopSeq, setHeartPopSeq] = useState(0);
   const [sellerProfile, setSellerProfile] = useState<SellerProfileRow | null>(null);
   const [sellerReviewAvg, setSellerReviewAvg] = useState(0);
   const [sellerReviewCount, setSellerReviewCount] = useState(0);
@@ -818,6 +829,17 @@ export default function ProductDetail() {
 
   const galleryImages = parseProductImagesFromRow(foundProduct as { image?: unknown; images?: unknown });
 
+  const handleImageDoubleLike = async () => {
+    if (!galleryImages.length) return;
+    if (likeBusy) return;
+    setHeartPopSeq((n) => n + 1);
+    const wasLiked = liked;
+    const ok = await toggleProductLikeState();
+    if (ok) {
+      toast.message(wasLiked ? "Unliked" : "Liked!");
+    }
+  };
+
   const sellerDisplayName =
     sellerProfile?.full_name?.trim() ||
     (sellerInfoReady ? "Seller" : "…");
@@ -902,20 +924,52 @@ export default function ProductDetail() {
     setCurrentImageIndex((prev) => (prev === product.images.length - 1 ? 0 : prev + 1));
   };
 
-  const onGalleryTouchStart = (e: TouchEvent) => {
-    galleryTouchStartX.current = e.touches[0]?.clientX ?? null;
+  const onGalleryTouchStart = (e: ReactTouchEvent<HTMLDivElement>) => {
+    const t = e.touches[0];
+    if (!t) return;
+    galleryTouchStartRef.current = { x: t.clientX, y: t.clientY };
   };
 
-  const onGalleryTouchEnd = (e: TouchEvent) => {
-    const start = galleryTouchStartX.current;
-    galleryTouchStartX.current = null;
-    if (start == null || product.images.length <= 1) return;
-    const end = e.changedTouches[0]?.clientX;
-    if (end == null) return;
-    const dx = end - start;
-    if (Math.abs(dx) < 48) return;
-    if (dx > 0) handlePrevImage();
-    else handleNextImage();
+  const onGalleryTouchEnd = (e: ReactTouchEvent<HTMLDivElement>) => {
+    const start = galleryTouchStartRef.current;
+    galleryTouchStartRef.current = null;
+    const touch = e.changedTouches[0];
+    if (!start || !touch) return;
+
+    const dx = touch.clientX - start.x;
+    const dy = touch.clientY - start.y;
+
+    if (product.images.length > 1 && Math.abs(dx) >= 48) {
+      galleryDoubleTapRef.current = null;
+      if (dx > 0) handlePrevImage();
+      else handleNextImage();
+      return;
+    }
+
+    if (Math.abs(dx) > 18 || Math.abs(dy) > 18) {
+      galleryDoubleTapRef.current = null;
+      return;
+    }
+
+    const now = Date.now();
+    const prev = galleryDoubleTapRef.current;
+    if (
+      prev &&
+      now - prev.t < 340 &&
+      Math.abs(touch.clientX - prev.x) < 50 &&
+      Math.abs(touch.clientY - prev.y) < 50
+    ) {
+      galleryDoubleTapRef.current = null;
+      void handleImageDoubleLike();
+      return;
+    }
+    galleryDoubleTapRef.current = { t: now, x: touch.clientX, y: touch.clientY };
+  };
+
+  const onMainImageDoubleClick = (ev: ReactMouseEvent<HTMLImageElement>) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    void handleImageDoubleLike();
   };
 
   const handleShare = async () => {
@@ -995,8 +1049,9 @@ export default function ProductDetail() {
                     <img
                       src={product.images[currentImageIndex]}
                       alt={product.title}
-                      className="absolute inset-0 w-full h-full object-cover select-none"
+                      className="absolute inset-0 z-0 w-full h-full cursor-default object-cover select-none"
                       draggable={false}
+                      onDoubleClick={onMainImageDoubleClick}
                     />
                   ) : (
                     <div
@@ -1006,6 +1061,15 @@ export default function ProductDetail() {
                       No image
                     </div>
                   )}
+                  {heartPopSeq > 0 ? (
+                    <div
+                      key={heartPopSeq}
+                      className="gh-heart-pop pointer-events-none absolute left-1/2 top-1/2 z-[6]"
+                      aria-hidden
+                    >
+                      <Heart className="h-[4.25rem] w-[4.25rem] fill-red-500 text-red-500 drop-shadow-lg" strokeWidth={1.5} />
+                    </div>
+                  ) : null}
                 {product.images.length > 1 && (
                   <>
                     <button

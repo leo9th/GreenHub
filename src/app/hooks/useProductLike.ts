@@ -85,12 +85,12 @@ export function useProductLike({
     };
   }, [normalizedProductId]);
 
-  const toggleLike = useCallback(async () => {
+  const toggleLike = useCallback(async (): Promise<boolean> => {
     const pid = normalizedProductId;
-    if (!pid || likeBusy) return;
+    if (!pid || likeBusy) return false;
     if (!userId) {
       onAuthRequired?.();
-      return;
+      return false;
     }
 
     const previousLiked = liked;
@@ -114,11 +114,13 @@ export function useProductLike({
       const syncedCount = await fetchProductLikeCount(supabase, pid);
       setLikeCount(Math.max(0, syncedCount));
       console.debug("[useProductLike] toggle ok", { productId: pid, syncedCount });
+      return true;
     } catch (error: unknown) {
       console.debug("[useProductLike] toggle error", error);
       setLiked(previousLiked);
       setLikeCount(previousCount);
       onError?.(toErrorMessage(error, "Could not update like"));
+      return false;
     } finally {
       setLikeBusy(false);
     }

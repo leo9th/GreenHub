@@ -51,6 +51,7 @@ import NotFound from "./pages/NotFound";
 import WorkersBrowse from "./pages/workers/WorkersBrowse";
 import WorkerProfileDetail from "./pages/workers/WorkerProfileDetail";
 import WorkerProfileRegister from "./pages/workers/WorkerProfileRegister";
+import Contact from "./pages/Contact";
 
 function LegacySellRouteRedirect() {
   return <Navigate to="/seller/products/new" replace />;
@@ -62,10 +63,6 @@ function LegacyHelpRedirect() {
 
 function LegacySupportRedirect() {
   return <Navigate to="/messages" replace />;
-}
-
-function LegacyContactRedirect() {
-  return <Navigate to="/about" replace />;
 }
 
 function LegacySettingsRedirect() {
@@ -170,7 +167,7 @@ export const router = createBrowserRouter([
       { path: "admin/reports", Component: LegacyAdminRedirect },
       { path: "help", Component: LegacyHelpRedirect },
       { path: "support", Component: LegacySupportRedirect },
-      { path: "contact", Component: LegacyContactRedirect },
+      { path: "contact", Component: Contact },
       { path: "*", Component: NotFound },
     ],
   },

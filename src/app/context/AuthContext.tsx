@@ -9,6 +9,8 @@ export interface UserProfile {
   email?: string | null;
   phone?: string | null;
   avatar_url?: string | null;
+  /** Optional banner image on profile (public URL). */
+  cover_url?: string | null;
   gender?: string | null;
   state?: string | null;
   lga?: string | null;

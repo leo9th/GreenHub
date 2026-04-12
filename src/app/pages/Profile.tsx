@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import {
   ArrowLeft,
@@ -14,7 +14,9 @@ import {
   Shield,
   ShieldAlert,
   Clock,
+  Camera,
 } from "lucide-react";
+import { toast } from "sonner";
 import { useAuth, type UserProfile } from "../context/AuthContext";
 import { getAvatarUrl } from "../utils/getAvatar";
 import { VerifiedBadge } from "../components/VerifiedBadge";
@@ -24,6 +26,8 @@ import { useCurrency } from "../hooks/useCurrency";
 import { getProductPrice } from "../utils/getProductPrice";
 import { isOnlineFromLastActive, formatLastSeen } from "../utils/presence";
 import { FollowButton } from "../components/FollowButton";
+import { cn } from "../components/ui/utils";
+import { validateProfileImageFile, uploadProfileImage } from "../utils/profileMediaUpload";
 
 type TabId = "products" | "reviews" | "about" | "contact";
 
@@ -151,6 +155,13 @@ export default function Profile() {
   const [followerCount, setFollowerCount] = useState(0);
   const [followingCount, setFollowingCount] = useState(0);
 
+  const avatarFileInputRef = useRef<HTMLInputElement>(null);
+  const coverFileInputRef = useRef<HTMLInputElement>(null);
+  const [pendingAvatar, setPendingAvatar] = useState<{ file: File; preview: string } | null>(null);
+  const [pendingCover, setPendingCover] = useState<{ file: File; preview: string } | null>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [uploadingCover, setUploadingCover] = useState(false);
+
   const displayName =
     viewProfile?.full_name?.trim() ||
     (isOwnProfile ? authUser?.user_metadata?.full_name : null)?.trim() ||
@@ -161,6 +172,25 @@ export default function Profile() {
     viewProfile?.gender || (isOwnProfile ? authUser?.user_metadata?.gender : null),
     displayName,
   );
+
+  const avatarDisplayed = pendingAvatar?.preview ?? avatar;
+
+  const coverFromProfile = (viewProfile as { cover_url?: string | null } | null)?.cover_url?.trim() || null;
+  const coverDisplayed = pendingCover?.preview ?? coverFromProfile;
+
+  const clearPendingAvatar = useCallback(() => {
+    setPendingAvatar((current) => {
+      if (current?.preview.startsWith("blob:")) URL.revokeObjectURL(current.preview);
+      return null;
+    });
+  }, []);
+
+  const clearPendingCover = useCallback(() => {
+    setPendingCover((current) => {
+      if (current?.preview.startsWith("blob:")) URL.revokeObjectURL(current.preview);
+      return null;
+    });
+  }, []);
 
   const locationLabel = useMemo(() => {
     const state = viewProfile?.state?.trim();
@@ -256,13 +286,13 @@ export default function Profile() {
         }
       } else {
         const fullSel =
-          "id, full_name, avatar_url, gender, bio, state, lga, created_at, updated_at, last_active, phone, public_email, is_verified_advertiser";
+          "id, full_name, avatar_url, cover_url, gender, bio, state, lga, created_at, updated_at, last_active, phone, public_email, is_verified_advertiser";
         let pub = await supabase.from("profiles_public").select(fullSel).eq("id", targetUserId).maybeSingle();
 
         if (pub.error && isSchemaOrMissingRelationError(pub.error)) {
           pub = await supabase
             .from("profiles_public")
-            .select("id, full_name, avatar_url, gender, bio, state, lga, created_at, updated_at, is_verified_advertiser")
+            .select("id, full_name, avatar_url, cover_url, gender, bio, state, lga, created_at, updated_at, is_verified_advertiser")
             .eq("id", targetUserId)
             .maybeSingle();
         }
@@ -277,7 +307,7 @@ export default function Profile() {
         } else {
           const { data: fb, error: fbErr } = await supabase
             .from("profiles")
-            .select("id, full_name, avatar_url, gender, bio, state, lga, created_at, updated_at, last_active, is_verified_advertiser")
+            .select("id, full_name, avatar_url, cover_url, gender, bio, state, lga, created_at, updated_at, last_active, is_verified_advertiser")
             .eq("id", targetUserId)
             .maybeSingle();
           if (fbErr && fbErr.code !== "PGRST116" && !isBenignReadError(fbErr)) {
@@ -515,6 +545,83 @@ export default function Profile() {
 
   const profileOnline = isOnlineFromLastActive(viewProfile?.last_active);
 
+  const handleAvatarFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    const msg = validateProfileImageFile(file);
+    if (msg) {
+      toast.error(msg);
+      return;
+    }
+    clearPendingAvatar();
+    setPendingAvatar({ file, preview: URL.createObjectURL(file) });
+  };
+
+  const handleCoverFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    const msg = validateProfileImageFile(file);
+    if (msg) {
+      toast.error(msg);
+      return;
+    }
+    clearPendingCover();
+    setPendingCover({ file, preview: URL.createObjectURL(file) });
+  };
+
+  const commitAvatar = async () => {
+    if (!authUser || !pendingAvatar) return;
+    const msg = validateProfileImageFile(pendingAvatar.file);
+    if (msg) {
+      toast.error(msg);
+      return;
+    }
+    setUploadingAvatar(true);
+    try {
+      const publicUrl = await uploadProfileImage(supabase, authUser.id, pendingAvatar.file, "avatar");
+      const { error } = await supabase
+        .from("profiles")
+        .update({ avatar_url: publicUrl, updated_at: new Date().toISOString() })
+        .eq("id", authUser.id);
+      if (error) throw error;
+      await supabase.auth.updateUser({ data: { avatar_url: publicUrl } });
+      setViewProfile((prev) => (prev ? { ...prev, avatar_url: publicUrl } : prev));
+      clearPendingAvatar();
+      toast.success("Profile photo updated");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Could not upload photo");
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
+  const commitCover = async () => {
+    if (!authUser || !pendingCover) return;
+    const msg = validateProfileImageFile(pendingCover.file);
+    if (msg) {
+      toast.error(msg);
+      return;
+    }
+    setUploadingCover(true);
+    try {
+      const publicUrl = await uploadProfileImage(supabase, authUser.id, pendingCover.file, "cover");
+      const { error } = await supabase
+        .from("profiles")
+        .update({ cover_url: publicUrl, updated_at: new Date().toISOString() })
+        .eq("id", authUser.id);
+      if (error) throw error;
+      setViewProfile((prev) => (prev ? { ...prev, cover_url: publicUrl } : prev));
+      clearPendingCover();
+      toast.success("Cover photo updated");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Could not upload cover");
+    } finally {
+      setUploadingCover(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-100 pb-28">
       <header className="sticky top-0 z-40 border-b border-gray-200 bg-white">
@@ -534,12 +641,121 @@ export default function Profile() {
         ) : null}
 
         <div className="lg:flex lg:items-start lg:gap-8">
-          <div className="rounded-2xl bg-white p-5 text-center shadow-sm ring-1 ring-gray-200/80 sm:p-6 lg:sticky lg:top-20 lg:w-80 lg:shrink-0 lg:text-left">
-            <img
-              src={avatar}
-              alt=""
-              className="mx-auto h-24 w-24 rounded-full border border-gray-100 object-cover shadow-md ring-4 ring-gray-50 lg:mx-0"
-            />
+          <div className="overflow-hidden rounded-2xl bg-white text-center shadow-sm ring-1 ring-gray-200/80 lg:sticky lg:top-20 lg:w-80 lg:shrink-0 lg:text-left">
+            {isOwnProfile || coverDisplayed ? (
+              <div className="relative h-32 w-full bg-gradient-to-br from-slate-200 via-gray-100 to-emerald-50 sm:h-36">
+                {coverDisplayed ? (
+                  <img src={coverDisplayed} alt="" className="absolute inset-0 h-full w-full object-cover" />
+                ) : null}
+                {isOwnProfile ? (
+                  <>
+                    <input
+                      ref={coverFileInputRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      className="hidden"
+                      onChange={handleCoverFileChange}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => coverFileInputRef.current?.click()}
+                      disabled={uploadingCover}
+                      className="absolute bottom-2 right-2 inline-flex items-center gap-1 rounded-full bg-black/45 px-2.5 py-1 text-[11px] font-medium text-white shadow-sm backdrop-blur-sm hover:bg-black/55 disabled:opacity-50"
+                    >
+                      <Camera className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                      {pendingCover ? "Preview" : coverDisplayed ? "Change cover" : "Add cover"}
+                    </button>
+                    {pendingCover ? (
+                      <div className="absolute bottom-2 left-2 flex gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => void commitCover()}
+                          disabled={uploadingCover}
+                          className="inline-flex items-center gap-1 rounded-lg bg-[#22c55e] px-2.5 py-1 text-[11px] font-semibold text-white disabled:opacity-50"
+                        >
+                          {uploadingCover ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
+                          {uploadingCover ? "Saving…" : "Save cover"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={clearPendingCover}
+                          disabled={uploadingCover}
+                          className="rounded-lg bg-white/95 px-2.5 py-1 text-[11px] font-medium text-gray-800 shadow-sm"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : null}
+                  </>
+                ) : null}
+              </div>
+            ) : null}
+
+            <div
+              className={cn(
+                "px-5 pb-5 pt-5 text-center sm:px-6 sm:pb-6 lg:text-left",
+                (isOwnProfile || coverDisplayed) && "-mt-11 pt-1",
+              )}
+            >
+              <div className={cn((isOwnProfile || coverDisplayed) && "flex justify-center lg:justify-start")}>
+                <div className="relative mx-auto w-24 shrink-0 lg:mx-0">
+                  <img
+                    src={avatarDisplayed}
+                    alt=""
+                    className="mx-auto h-24 w-24 rounded-full border border-gray-100 bg-white object-cover shadow-md ring-4 ring-white lg:mx-0"
+                  />
+                  {uploadingAvatar ? (
+                    <div className="absolute inset-0 flex items-center justify-center rounded-full bg-white/65">
+                      <Loader2 className="h-7 w-7 animate-spin text-[#22c55e]" aria-hidden />
+                    </div>
+                  ) : null}
+                  {isOwnProfile ? (
+                    <>
+                      <input
+                        ref={avatarFileInputRef}
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        className="hidden"
+                        onChange={handleAvatarFileChange}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => avatarFileInputRef.current?.click()}
+                        disabled={uploadingAvatar}
+                        className="absolute inset-0 cursor-pointer rounded-full hover:ring-4 hover:ring-[#22c55e]/20 focus:outline-none focus-visible:ring-4 focus-visible:ring-[#22c55e]/35 disabled:cursor-not-allowed"
+                        aria-label="Change profile photo"
+                      />
+                    </>
+                  ) : null}
+                </div>
+              </div>
+              {isOwnProfile && pendingAvatar ? (
+                <div className="mt-3 flex flex-wrap justify-center gap-2 lg:justify-start">
+                  <button
+                    type="button"
+                    onClick={() => void commitAvatar()}
+                    disabled={uploadingAvatar}
+                    className="inline-flex items-center justify-center rounded-lg bg-[#22c55e] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                  >
+                    {uploadingAvatar ? (
+                      <>
+                        <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" aria-hidden />
+                        Saving…
+                      </>
+                    ) : (
+                      "Save photo"
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={clearPendingAvatar}
+                    disabled={uploadingAvatar}
+                    className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : null}
             <h2 className="mt-4 flex flex-wrap items-center justify-center gap-1.5 text-xl font-semibold text-gray-900 lg:justify-start lg:text-2xl">
               <span>{displayName}</span>
               {verificationLabel === "approved" ? <VerifiedBadge title="Verified seller" size="md" /> : null}
@@ -654,6 +870,7 @@ export default function Profile() {
                   </Link>
                 </div>
               )}
+            </div>
             </div>
           </div>
 

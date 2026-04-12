@@ -42,6 +42,8 @@ export interface ProductCardProps {
   sellerId?: string;
   /** Loaded follower count for `sellerId` (omit until loaded). */
   sellerFollowerCount?: number;
+  /** Seller display name from profiles (optional). */
+  sellerName?: string;
 }
 
 export function ProductCard({
@@ -62,6 +64,7 @@ export function ProductCard({
   verifiedAdvertiser,
   sellerId,
   sellerFollowerCount,
+  sellerName,
 }: ProductCardProps) {
   const formatPrice = useCurrency();
   const navigate = useNavigate();
@@ -146,6 +149,19 @@ export function ProductCard({
           <p className="flex items-center gap-1 text-xs text-gray-500 dark:text-muted-foreground">
             <span>📍</span> {location}
           </p>
+        ) : null}
+        {sellerId ? (
+          <button
+            type="button"
+            className="w-full text-left text-xs font-medium text-[#15803d] hover:underline dark:text-emerald-400"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              navigate(`/profile/${sellerId}`);
+            }}
+          >
+            Seller · {sellerName?.trim() || "View profile"}
+          </button>
         ) : null}
       </div>
     </Link>

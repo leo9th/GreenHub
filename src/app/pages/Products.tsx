@@ -34,7 +34,7 @@ import {
 } from "../utils/productSearch";
 import { getRelatedSearchSuggestions } from "../utils/searchSuggestions";
 import { getProductThumbnailUrl } from "../utils/productImages";
-import { fetchProfileFollowerCountsForUsers } from "../utils/profileFollowCounts";
+import { fetchProfileDisplayNamesForUsers, fetchProfileFollowerCountsForUsers } from "../utils/profileFollowCounts";
 import { useVerifiedSellerIds } from "../hooks/useVerifiedSellerIds";
 import { useVerifiedAdvertiserIds } from "../hooks/useVerifiedAdvertiserIds";
 
@@ -333,6 +333,7 @@ export default function Products() {
   const [productLoadError, setProductLoadError] = useState<string | null>(null);
   const [commentCounts, setCommentCounts] = useState<Record<string, number>>({});
   const [sellerFollowerCounts, setSellerFollowerCounts] = useState<Record<string, number>>({});
+  const [sellerDisplayNames, setSellerDisplayNames] = useState<Record<string, string>>({});
   const [likedProductIds, setLikedProductIds] = useState<Set<string>>(new Set());
   const [pendingLikeIds, setPendingLikeIds] = useState<Set<string>>(new Set());
   const verifiedSellerIds = useVerifiedSellerIds(supabase, products);
@@ -377,6 +378,37 @@ export default function Products() {
       ].join("|"),
     [urlSearch, selectedCategory, selectedCarBrand, selectedCondition, selectedState, priceRange, sortBy],
   );
+
+  const listingSellerIdsKey = useMemo(() => {
+    const seen = new Set<string>();
+    for (const p of products) {
+      const sid = (p as Record<string, unknown>).seller_id;
+      if (sid != null && String(sid).trim() !== "") seen.add(String(sid));
+    }
+    return [...seen].sort().join(",");
+  }, [products]);
+
+  useEffect(() => {
+    const ids = listingSellerIdsKey.split(",").filter(Boolean);
+    if (ids.length === 0) {
+      setSellerFollowerCounts({});
+      setSellerDisplayNames({});
+      return;
+    }
+    let cancelled = false;
+    void Promise.all([
+      fetchProfileFollowerCountsForUsers(supabase, ids),
+      fetchProfileDisplayNamesForUsers(supabase, ids),
+    ]).then(([counts, names]) => {
+      if (!cancelled) {
+        setSellerFollowerCounts(counts);
+        setSellerDisplayNames(names);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [listingSellerIdsKey]);
 
   useEffect(() => {
     setSearchInput(urlSearch);
@@ -913,6 +945,9 @@ export default function Products() {
                       likeDisabled={pendingLikeIds.has(productRowKey(product.id))}
                       onLikeClick={(ev) => void onProductLike(ev, product)}
                       topRightBadge={<BoostCardBadge row={row} />}
+                      sellerId={sid || undefined}
+                      sellerFollowerCount={sid ? sellerFollowerCounts[sid] : undefined}
+                      sellerName={sid ? sellerDisplayNames[sid] : undefined}
                     />
                   );
                 })}

@@ -36,7 +36,7 @@ import { getProductThumbnailUrl } from "../utils/productImages";
 import { useVerifiedSellerIds } from "../hooks/useVerifiedSellerIds";
 import { useVerifiedAdvertiserIds } from "../hooks/useVerifiedAdvertiserIds";
 import { getRecentProductIds, RECENT_VIEWED_EVENT } from "../utils/recentlyViewedProducts";
-import { fetchProfileFollowerCountsForUsers } from "../utils/profileFollowCounts";
+import { fetchProfileDisplayNamesForUsers, fetchProfileFollowerCountsForUsers } from "../utils/profileFollowCounts";
 
 export default function Home() {
   const navigate = useNavigate();
@@ -60,6 +60,7 @@ export default function Home() {
   const [pendingLikeIds, setPendingLikeIds] = useState<Set<string>>(new Set());
   const [commentCounts, setCommentCounts] = useState<Record<string, number>>({});
   const [sellerFollowerCounts, setSellerFollowerCounts] = useState<Record<string, number>>({});
+  const [sellerDisplayNames, setSellerDisplayNames] = useState<Record<string, string>>({});
   const [homeSort, setHomeSort] = useState<ListingSort>("recent");
   const [recentViewedProducts, setRecentViewedProducts] = useState<Array<Record<string, unknown>>>([]);
   const [recentViewedLoading, setRecentViewedLoading] = useState(() => getRecentProductIds().length > 0);
@@ -116,11 +117,18 @@ export default function Home() {
     const ids = listingSellerIdsKey.split(",").filter(Boolean);
     if (ids.length === 0) {
       setSellerFollowerCounts({});
+      setSellerDisplayNames({});
       return;
     }
     let cancelled = false;
-    void fetchProfileFollowerCountsForUsers(supabase, ids).then((map) => {
-      if (!cancelled) setSellerFollowerCounts(map);
+    void Promise.all([
+      fetchProfileFollowerCountsForUsers(supabase, ids),
+      fetchProfileDisplayNamesForUsers(supabase, ids),
+    ]).then(([counts, names]) => {
+      if (!cancelled) {
+        setSellerFollowerCounts(counts);
+        setSellerDisplayNames(names);
+      }
     });
     return () => {
       cancelled = true;
@@ -727,6 +735,7 @@ export default function Home() {
                       topRightBadge={<BoostCardBadge row={row} />}
                       sellerId={sid || undefined}
                       sellerFollowerCount={sid ? sellerFollowerCounts[sid] : undefined}
+                      sellerName={sid ? sellerDisplayNames[sid] : undefined}
                     />
                   );
                 })}
@@ -786,6 +795,7 @@ export default function Home() {
                       topRightBadge={<BoostCardBadge row={row} />}
                       sellerId={sid || undefined}
                       sellerFollowerCount={sid ? sellerFollowerCounts[sid] : undefined}
+                      sellerName={sid ? sellerDisplayNames[sid] : undefined}
                     />
                   );
                 })

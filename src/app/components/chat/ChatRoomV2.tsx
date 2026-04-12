@@ -1,6 +1,6 @@
 import React, { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
-import { ArrowLeft, Eraser, Flag, Loader2, MoreVertical, Pencil, Pin, Trash2, UserCheck, UserPlus } from "lucide-react";
+import { ArrowLeft, Eraser, Flag, Loader2, MoreVertical, Pencil, Pin, Trash2, User, UserCheck, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../context/AuthContext";
@@ -49,6 +49,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
 import {
@@ -1450,12 +1451,29 @@ export default function ChatRoomV2() {
               <ArrowLeft className="h-6 w-6" />
             </Link>
           </Button>
-          <img src={peerAvatarDisplay} alt="" className="h-10 w-10 shrink-0 rounded-full object-cover" />
+          {peerId ? (
+            <Link
+              to={`/profile/${peerId}`}
+              className="h-10 w-10 shrink-0 rounded-full ring-1 ring-black/5 hover:opacity-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#22c55e] dark:ring-white/10"
+              aria-label={`View ${peerName}'s profile`}
+            >
+              <img src={peerAvatarDisplay} alt="" className="h-10 w-10 rounded-full object-cover" />
+            </Link>
+          ) : (
+            <img src={peerAvatarDisplay} alt="" className="h-10 w-10 shrink-0 rounded-full object-cover" />
+          )}
           <div className="min-w-0 flex-1">
-            <p className="truncate font-semibold text-gray-900 dark:text-zinc-100">{peerName}</p>
-            <p className="truncate text-xs text-gray-600 dark:text-zinc-400">
-              {statusLabel || "\u00a0"}
-            </p>
+            {peerId ? (
+              <Link
+                to={`/profile/${peerId}`}
+                className="block truncate font-semibold text-gray-900 hover:underline dark:text-zinc-100"
+              >
+                {peerName}
+              </Link>
+            ) : (
+              <p className="truncate font-semibold text-gray-900 dark:text-zinc-100">{peerName}</p>
+            )}
+            <p className="truncate text-xs text-gray-600 dark:text-zinc-400">{statusLabel || "\u00a0"}</p>
           </div>
           <Button
             type="button"
@@ -1493,6 +1511,15 @@ export default function ChatRoomV2() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
+              {peerId ? (
+                <DropdownMenuItem asChild>
+                  <Link to={`/profile/${peerId}`} className="flex cursor-pointer items-center gap-2">
+                    <User className="h-4 w-4" />
+                    View profile
+                  </Link>
+                </DropdownMenuItem>
+              ) : null}
+              {peerId ? <DropdownMenuSeparator /> : null}
               <DropdownMenuItem
                 onSelect={(e) => {
                   e.preventDefault();

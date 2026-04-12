@@ -37,3 +37,24 @@ export async function fetchProfileFollowerCountsForUsers(
   );
   return out;
 }
+
+/** Batch display names for listing grids (profiles_public). */
+export async function fetchProfileDisplayNamesForUsers(
+  supabase: SupabaseClient,
+  userIds: string[],
+): Promise<Record<string, string>> {
+  const unique = [...new Set(userIds.map((id) => String(id).trim()).filter(Boolean))];
+  const out: Record<string, string> = {};
+  if (unique.length === 0) return out;
+  const { data, error } = await supabase.from("profiles_public").select("id, full_name").in("id", unique);
+  if (error) {
+    console.warn("fetchProfileDisplayNamesForUsers:", error.message);
+    return out;
+  }
+  for (const row of (data ?? []) as { id?: string; full_name?: string | null }[]) {
+    if (!row.id) continue;
+    const name = row.full_name?.trim();
+    if (name) out[row.id] = name;
+  }
+  return out;
+}

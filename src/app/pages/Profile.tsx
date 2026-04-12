@@ -966,14 +966,25 @@ export default function Profile() {
                           {listingProductReviews.map((r) => (
                             <li key={r.id} className="rounded-xl bg-gray-50/80 p-4 ring-1 ring-gray-100">
                               <div className="flex items-start gap-3">
-                                <img
-                                  src={r.reviewer_avatar}
-                                  alt=""
-                                  className="h-10 w-10 shrink-0 rounded-full object-cover ring-1 ring-gray-100"
-                                />
+                                <Link
+                                  to={`/profile/${r.user_id}`}
+                                  className="h-10 w-10 shrink-0 rounded-full ring-1 ring-gray-100 hover:opacity-90"
+                                  aria-label={`View ${r.reviewer_name}'s profile`}
+                                >
+                                  <img
+                                    src={r.reviewer_avatar}
+                                    alt=""
+                                    className="h-10 w-10 rounded-full object-cover"
+                                  />
+                                </Link>
                                 <div className="min-w-0 flex-1">
                                   <div className="flex flex-wrap items-center justify-between gap-2">
-                                    <span className="text-sm font-medium text-gray-900">{r.reviewer_name}</span>
+                                    <Link
+                                      to={`/profile/${r.user_id}`}
+                                      className="text-sm font-medium text-gray-900 hover:underline"
+                                    >
+                                      {r.reviewer_name}
+                                    </Link>
                                     <StarRow value={r.rating} max={5} />
                                   </div>
                                   <Link
@@ -1007,7 +1018,12 @@ export default function Profile() {
                           {reviews.map((r) => (
                             <article key={r.id} className="rounded-xl bg-gray-50/80 p-4 ring-1 ring-gray-100">
                               <div className="flex items-center justify-between gap-2">
-                                <p className="text-sm font-semibold text-gray-900">{r.reviewer_name}</p>
+                                <Link
+                                  to={`/profile/${r.reviewer_id}`}
+                                  className="text-sm font-semibold text-gray-900 hover:underline"
+                                >
+                                  {r.reviewer_name}
+                                </Link>
                                 <StarRow value={r.rating} max={5} />
                               </div>
                               <p className="mt-1 text-xs text-gray-400">

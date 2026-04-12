@@ -1914,36 +1914,56 @@ export default function ChatWorkspace() {
                 row.context_product_id != null ? inboxProductTitles.get(row.context_product_id) : undefined;
               const active = conversation?.id === row.id;
               return (
-                <Link
+                <div
                   key={row.id}
-                  to={`/messages/c/${row.id}`}
-                  className={`flex items-center gap-3 border-b border-gray-50 p-3 transition-colors hover:bg-gray-50 dark:border-zinc-800 dark:hover:bg-zinc-800/80 sm:p-4 ${
+                  className={`flex items-center gap-3 border-b border-gray-50 p-3 dark:border-zinc-800 sm:p-4 ${
                     active ? "bg-emerald-50/80 dark:bg-emerald-950/40" : ""
                   }`}
                 >
-                  <img src={avatar} alt="" className="h-12 w-12 shrink-0 rounded-full object-cover sm:h-14 sm:w-14" />
+                  <Link
+                    to={`/profile/${oid}`}
+                    className="shrink-0 rounded-full ring-offset-2 hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#22c55e]"
+                    aria-label={`View ${name}'s profile`}
+                  >
+                    <img src={avatar} alt="" className="h-12 w-12 rounded-full object-cover sm:h-14 sm:w-14" />
+                  </Link>
                   <div className="min-w-0 flex-1">
                     <div className="mb-1 flex items-start justify-between gap-2">
-                      <h3 className="font-semibold text-gray-800 dark:text-foreground">{name}</h3>
-                      <span className="ml-2 flex shrink-0 items-center gap-1.5">
+                      <Link
+                        to={`/profile/${oid}`}
+                        className="min-w-0 truncate font-semibold text-gray-800 hover:underline dark:text-foreground"
+                      >
+                        {name}
+                      </Link>
+                      <Link
+                        to={`/messages/c/${row.id}`}
+                        className="ml-2 flex shrink-0 items-center gap-1.5 text-gray-500 hover:text-gray-700 dark:hover:text-zinc-300"
+                      >
                         {(inboxUnreadByConv.get(row.id) ?? 0) > 0 ? (
                           <span className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-[#22c55e] px-1 text-[10px] font-bold text-white">
                             {inboxUnreadByConv.get(row.id)! > 99 ? "99+" : inboxUnreadByConv.get(row.id)}
                           </span>
                         ) : null}
-                        <span className="text-xs text-gray-500">{formatListTime(row.last_message_at)}</span>
-                      </span>
+                        <span className="text-xs">{formatListTime(row.last_message_at)}</span>
+                      </Link>
                     </div>
-                    {aboutProduct ? (
-                      <p className="mb-0.5 truncate text-xs font-medium text-[#16a34a]">Re: {aboutProduct}</p>
-                    ) : null}
-                    <p
-                      className={`line-clamp-2 text-sm ${row.last_message ? "text-gray-700 dark:text-zinc-300" : "italic text-gray-400"}`}
+                    <Link
+                      to={`/messages/c/${row.id}`}
+                      className={`block rounded-xl py-0.5 transition-colors hover:bg-gray-50/80 dark:hover:bg-zinc-800/50 ${
+                        active ? "" : ""
+                      }`}
                     >
-                      {row.last_message || "No messages yet — say hello"}
-                    </p>
+                      {aboutProduct ? (
+                        <p className="mb-0.5 truncate text-xs font-medium text-[#16a34a]">Re: {aboutProduct}</p>
+                      ) : null}
+                      <p
+                        className={`line-clamp-2 text-sm ${row.last_message ? "text-gray-700 dark:text-zinc-300" : "italic text-gray-400"}`}
+                      >
+                        {row.last_message || "No messages yet — say hello"}
+                      </p>
+                    </Link>
                   </div>
-                </Link>
+                </div>
               );
             })}
           </div>
@@ -2047,14 +2067,39 @@ export default function ChatWorkspace() {
               >
                 <ArrowLeft className="h-6 w-6 text-gray-800 dark:text-zinc-100" />
               </button>
-              <img
-                src={peerAvatarDisplay}
-                alt=""
-                className="h-10 w-10 shrink-0 rounded-full bg-gray-200 object-cover ring-2 ring-white dark:ring-zinc-700"
-              />
+              {peerId ? (
+                <Link
+                  to={`/profile/${peerId}`}
+                  className="shrink-0 rounded-full ring-2 ring-white ring-offset-0 hover:opacity-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#22c55e] dark:ring-zinc-700"
+                  aria-label={`View ${peerName}'s profile`}
+                >
+                  <img
+                    src={peerAvatarDisplay}
+                    alt=""
+                    className="h-10 w-10 rounded-full bg-gray-200 object-cover"
+                  />
+                </Link>
+              ) : (
+                <img
+                  src={peerAvatarDisplay}
+                  alt=""
+                  className="h-10 w-10 shrink-0 rounded-full bg-gray-200 object-cover ring-2 ring-white dark:ring-zinc-700"
+                />
+              )}
               <div className="min-w-0 flex-1">
                 <div className="flex min-w-0 items-center gap-1">
-                  <h1 className="min-w-0 truncate text-base font-bold leading-tight text-gray-900 dark:text-zinc-100">{peerName}</h1>
+                  {peerId ? (
+                    <Link
+                      to={`/profile/${peerId}`}
+                      className="min-w-0 flex-1 truncate text-base font-bold leading-tight text-gray-900 hover:underline dark:text-zinc-100"
+                    >
+                      {peerName}
+                    </Link>
+                  ) : (
+                    <h1 className="min-w-0 flex-1 truncate text-base font-bold leading-tight text-gray-900 dark:text-zinc-100">
+                      {peerName}
+                    </h1>
+                  )}
                   <button
                     type="button"
                     className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-gray-700 hover:bg-black/[0.06] disabled:opacity-50 dark:text-zinc-200 dark:hover:bg-white/10"

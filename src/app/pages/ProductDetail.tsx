@@ -1319,53 +1319,106 @@ export default function ProductDetail() {
               )}
             >
               <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3">Seller</h2>
-              <div className="flex items-start gap-3">
-                <img
-                  src={product.seller.avatar}
-                  alt=""
-                  className="w-12 h-12 rounded-full object-cover bg-gray-100 shrink-0 ring-1 ring-gray-100"
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1 flex-wrap">
-                    <span className="relative font-semibold text-gray-900 inline-flex items-center gap-1.5">
-                      {sellerOnline ? (
-                        <span className="relative flex h-2 w-2 shrink-0" title="Online now">
-                          <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60 animate-ping" />
-                          <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500 ring-2 ring-white" />
-                        </span>
+              {sellerPeerId ? (
+                <Link
+                  to={`/profile/${sellerPeerId}`}
+                  className="flex items-start gap-3 rounded-xl p-1 -m-1 transition-colors hover:bg-gray-50/90"
+                >
+                  <img
+                    src={product.seller.avatar}
+                    alt=""
+                    className="w-12 h-12 rounded-full object-cover bg-gray-100 shrink-0 ring-1 ring-gray-100"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1 flex-wrap">
+                      <span className="relative font-semibold text-gray-900 inline-flex items-center gap-1.5">
+                        {sellerOnline ? (
+                          <span className="relative flex h-2 w-2 shrink-0" title="Online now">
+                            <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60 animate-ping" />
+                            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500 ring-2 ring-white" />
+                          </span>
+                        ) : null}
+                        {product.seller.name}
+                      </span>
+                      {sellerIdVerified ? (
+                        <VerifiedBadge title="Verified seller" size="md" className="shrink-0" />
                       ) : null}
-                      {product.seller.name}
-                    </span>
-                    {sellerIdVerified ? (
-                      <VerifiedBadge title="Verified seller" size="md" className="shrink-0" />
-                    ) : null}
-                    {sellerVerifiedAdvertiser ? <VerifiedAdvertiserBadge size="md" /> : null}
-                    {!sellerIdVerified && sellerTierLower === "crown" ? (
-                      <BadgeCheck className="w-4 h-4 text-amber-500 fill-amber-400 shrink-0" title="Crown tier" />
-                    ) : !sellerIdVerified && sellerTierLower === "blue" ? (
-                      <BadgeCheck className="w-4 h-4 text-blue-500 fill-blue-400 shrink-0" title="Blue tier" />
+                      {sellerVerifiedAdvertiser ? <VerifiedAdvertiserBadge size="md" /> : null}
+                      {!sellerIdVerified && sellerTierLower === "crown" ? (
+                        <BadgeCheck className="w-4 h-4 text-amber-500 fill-amber-400 shrink-0" title="Crown tier" />
+                      ) : !sellerIdVerified && sellerTierLower === "blue" ? (
+                        <BadgeCheck className="w-4 h-4 text-blue-500 fill-blue-400 shrink-0" title="Blue tier" />
+                      ) : null}
+                    </div>
+                    <p className="text-sm text-gray-600 mt-1">
+                      <Star className="w-3.5 h-3.5 inline text-amber-400 fill-amber-400 align-[-2px] mr-0.5" aria-hidden />
+                      {product.seller.reviews > 0 ? (
+                        <>
+                          {product.seller.rating}
+                          <span className="text-gray-500">
+                            {" "}
+                            ({product.seller.reviews} {product.seller.reviews === 1 ? "review" : "reviews"})
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-gray-500">No reviews yet</span>
+                      )}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1.5">Member since {product.seller.memberSince}</p>
+                    {!sellerOnline && sellerProfile?.last_active ? (
+                      <p className="text-[11px] text-gray-400 mt-1">{formatLastSeen(sellerProfile.last_active)}</p>
                     ) : null}
                   </div>
-                  <p className="text-sm text-gray-600 mt-1">
-                    <Star className="w-3.5 h-3.5 inline text-amber-400 fill-amber-400 align-[-2px] mr-0.5" aria-hidden />
-                    {product.seller.reviews > 0 ? (
-                      <>
-                        {product.seller.rating}
-                        <span className="text-gray-500">
-                          {" "}
-                          ({product.seller.reviews} {product.seller.reviews === 1 ? "review" : "reviews"})
-                        </span>
-                      </>
-                    ) : (
-                      <span className="text-gray-500">No reviews yet</span>
-                    )}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-1.5">Member since {product.seller.memberSince}</p>
-                  {!sellerOnline && sellerProfile?.last_active ? (
-                    <p className="text-[11px] text-gray-400 mt-1">{formatLastSeen(sellerProfile.last_active)}</p>
-                  ) : null}
+                </Link>
+              ) : (
+                <div className="flex items-start gap-3">
+                  <img
+                    src={product.seller.avatar}
+                    alt=""
+                    className="w-12 h-12 rounded-full object-cover bg-gray-100 shrink-0 ring-1 ring-gray-100"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1 flex-wrap">
+                      <span className="relative font-semibold text-gray-900 inline-flex items-center gap-1.5">
+                        {sellerOnline ? (
+                          <span className="relative flex h-2 w-2 shrink-0" title="Online now">
+                            <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60 animate-ping" />
+                            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500 ring-2 ring-white" />
+                          </span>
+                        ) : null}
+                        {product.seller.name}
+                      </span>
+                      {sellerIdVerified ? (
+                        <VerifiedBadge title="Verified seller" size="md" className="shrink-0" />
+                      ) : null}
+                      {sellerVerifiedAdvertiser ? <VerifiedAdvertiserBadge size="md" /> : null}
+                      {!sellerIdVerified && sellerTierLower === "crown" ? (
+                        <BadgeCheck className="w-4 h-4 text-amber-500 fill-amber-400 shrink-0" title="Crown tier" />
+                      ) : !sellerIdVerified && sellerTierLower === "blue" ? (
+                        <BadgeCheck className="w-4 h-4 text-blue-500 fill-blue-400 shrink-0" title="Blue tier" />
+                      ) : null}
+                    </div>
+                    <p className="text-sm text-gray-600 mt-1">
+                      <Star className="w-3.5 h-3.5 inline text-amber-400 fill-amber-400 align-[-2px] mr-0.5" aria-hidden />
+                      {product.seller.reviews > 0 ? (
+                        <>
+                          {product.seller.rating}
+                          <span className="text-gray-500">
+                            {" "}
+                            ({product.seller.reviews} {product.seller.reviews === 1 ? "review" : "reviews"})
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-gray-500">No reviews yet</span>
+                      )}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1.5">Member since {product.seller.memberSince}</p>
+                    {!sellerOnline && sellerProfile?.last_active ? (
+                      <p className="text-[11px] text-gray-400 mt-1">{formatLastSeen(sellerProfile.last_active)}</p>
+                    ) : null}
+                  </div>
                 </div>
-              </div>
+              )}
               <div className="mt-4 flex flex-col gap-2">
                 <div className="flex gap-2 items-stretch">
                   {canMessageSeller ? (
@@ -1472,14 +1525,25 @@ export default function ProductDetail() {
                   {productReviews.map((r) => (
                     <li key={r.id} className="rounded-xl bg-gray-50/90 p-3 ring-1 ring-gray-100">
                       <div className="flex items-start gap-3">
-                        <img
-                          src={r.reviewer_avatar}
-                          alt=""
-                          className="h-10 w-10 shrink-0 rounded-full bg-gray-100 object-cover ring-1 ring-gray-100"
-                        />
+                        <Link
+                          to={`/profile/${r.user_id}`}
+                          className="shrink-0 rounded-full ring-1 ring-gray-100 hover:opacity-90"
+                          aria-label={`View ${r.reviewer_name}'s profile`}
+                        >
+                          <img
+                            src={r.reviewer_avatar}
+                            alt=""
+                            className="h-10 w-10 rounded-full bg-gray-100 object-cover"
+                          />
+                        </Link>
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center justify-between gap-2">
-                            <span className="text-sm font-medium text-gray-900">{r.reviewer_name}</span>
+                            <Link
+                              to={`/profile/${r.user_id}`}
+                              className="text-sm font-medium text-gray-900 hover:underline"
+                            >
+                              {r.reviewer_name}
+                            </Link>
                             <span className="flex shrink-0 items-center gap-0.5" aria-hidden>
                               {Array.from({ length: 5 }, (_, i) => (
                                 <Star
@@ -1525,7 +1589,12 @@ export default function ProductDetail() {
                   {sellerReviewsPreview.map((r) => (
                     <li key={r.id} className="rounded-xl bg-gray-50/90 ring-1 ring-gray-100 p-3">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-sm font-medium text-gray-900">{r.reviewer_name}</span>
+                        <Link
+                          to={`/profile/${r.reviewer_id}`}
+                          className="text-sm font-medium text-gray-900 hover:underline"
+                        >
+                          {r.reviewer_name}
+                        </Link>
                         <span className="flex items-center gap-0.5 shrink-0" aria-hidden>
                           {Array.from({ length: 5 }, (_, i) => (
                             <Star

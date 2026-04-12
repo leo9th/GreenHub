@@ -880,6 +880,9 @@ export default function ProductDetail() {
   const sellerTelHref = sellerPhoneRaw ? `tel:${sellerPhoneRaw.replace(/\s/g, "")}` : "";
   const whatsappDigits = sellerPhoneRaw.replace(/\D/g, "");
   const whatsappHref = whatsappDigits ? `https://wa.me/${whatsappDigits}` : "";
+  /** When the seller has no phone on profile, fall back to GreenHub support (same as footer). */
+  const supportTelHref = "tel:+2348125221542";
+  const callHref = sellerTelHref || supportTelHref;
 
   const dbProductAvg = foundProduct?.average_rating != null ? Number(foundProduct.average_rating) : NaN;
   const dbProductTotal = Number(foundProduct?.total_reviews ?? 0);
@@ -1022,35 +1025,76 @@ export default function ProductDetail() {
           </div>
 
           <div className="space-y-4 pt-6 md:col-span-7 md:pt-0 lg:col-span-7">
-            <div
-              className="md:hidden -mx-1 mb-2 flex gap-1 overflow-x-auto pb-1 px-1 [-webkit-overflow-scrolling:touch]"
-              role="tablist"
-              aria-label="Listing sections"
-            >
-              {(
-                [
-                  ["details", "Details"],
-                  ["seller", "Seller"],
-                  ["reviews", "Reviews"],
-                  ["about", "About"],
-                ] as const
-              ).map(([id, label]) => (
-                <button
-                  key={id}
-                  type="button"
-                  role="tab"
-                  aria-selected={mobileDetailTab === id}
-                  onClick={() => setMobileDetailTab(id)}
-                  className={cn(
-                    "shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors",
-                    mobileDetailTab === id
-                      ? "bg-[#15803d] text-white shadow-sm"
-                      : "bg-gray-100 text-gray-700 hover:bg-gray-200",
-                  )}
+            <div className="md:hidden -mx-1 mb-2 flex items-center gap-1.5 px-1">
+              <div
+                className="flex min-w-0 flex-1 gap-1 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch]"
+                role="tablist"
+                aria-label="Listing sections"
+              >
+                {(
+                  [
+                    ["details", "Details"],
+                    ["seller", "Seller"],
+                    ["reviews", "Reviews"],
+                    ["about", "About"],
+                  ] as const
+                ).map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    role="tab"
+                    aria-selected={mobileDetailTab === id}
+                    onClick={() => setMobileDetailTab(id)}
+                    className={cn(
+                      "shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors",
+                      mobileDetailTab === id
+                        ? "bg-[#15803d] text-white shadow-sm"
+                        : "bg-gray-100 text-gray-700 hover:bg-gray-200",
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div
+                className="flex shrink-0 items-center gap-1 border-l border-gray-200 pl-2"
+                role="group"
+                aria-label="Contact"
+              >
+                <Link
+                  to={canMessageSeller ? `/messages/u/${sellerPeerId}?product=${product.id}` : "/messages"}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#15803d]/30 bg-white text-[#15803d] shadow-sm transition hover:bg-[#15803d] hover:text-white"
+                  title="Chat about this listing"
+                  aria-label="Chat about this listing"
                 >
-                  {label}
-                </button>
-              ))}
+                  <MessageCircle className="h-[18px] w-[18px]" strokeWidth={2} aria-hidden />
+                </Link>
+                <a
+                  href={callHref}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#15803d]/30 bg-white text-[#15803d] shadow-sm transition hover:bg-[#15803d] hover:text-white"
+                  title={sellerTelHref ? "Call seller" : "Call GreenHub support"}
+                  aria-label={sellerTelHref ? "Call seller" : "Call GreenHub support"}
+                >
+                  <Phone className="h-[18px] w-[18px]" strokeWidth={2} aria-hidden />
+                </a>
+              </div>
+            </div>
+
+            <div className="mb-3 hidden items-center justify-end gap-2 md:flex" role="group" aria-label="Contact">
+              <Link
+                to={canMessageSeller ? `/messages/u/${sellerPeerId}?product=${product.id}` : "/messages"}
+                className="inline-flex items-center gap-2 rounded-full border border-[#15803d]/30 bg-white px-3 py-1.5 text-sm font-semibold text-[#15803d] shadow-sm transition hover:bg-[#15803d] hover:text-white"
+              >
+                <MessageCircle className="h-4 w-4 shrink-0" aria-hidden />
+                Chat
+              </Link>
+              <a
+                href={callHref}
+                className="inline-flex items-center gap-2 rounded-full border border-[#15803d]/30 bg-white px-3 py-1.5 text-sm font-semibold text-[#15803d] shadow-sm transition hover:bg-[#15803d] hover:text-white"
+              >
+                <Phone className="h-4 w-4 shrink-0" aria-hidden />
+                Call
+              </a>
             </div>
 
             <div

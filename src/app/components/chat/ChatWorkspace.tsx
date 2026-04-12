@@ -2,7 +2,6 @@ import React, { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useR
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import {
   ArrowDown,
-  ArrowLeft,
   Ban,
   ChevronDown,
   Copy,
@@ -11,7 +10,6 @@ import {
   Loader2,
   Pencil,
   MessageCircle,
-  MoreVertical,
   Package,
   Pin,
   Reply,
@@ -120,6 +118,8 @@ import { ReportUserDialog } from "./ReportUserDialog";
 import { MessageInfoDialog } from "./MessageInfoDialog";
 import { MessageBubble } from "./MessageBubble";
 import { MessageMenuV2, MESSAGE_QUICK_REACTIONS } from "./MessageMenuV2";
+import { ChatPeerHeaderModern } from "./ChatPeerHeaderModern";
+import { fetchProfileFollowerCount } from "../../utils/profileFollowCounts";
 
 const CHAT_MEDIA_BUCKETS = ["chat-media", "chat-images", "chat-attachments"] as const;
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
@@ -368,6 +368,7 @@ export default function ChatWorkspace() {
   const [reportOpen, setReportOpen] = useState(false);
   const [isFollowingPeer, setIsFollowingPeer] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
+  const [peerFollowerCount, setPeerFollowerCount] = useState<number | null>(null);
   /** Hide listing strip locally (X); resets when listing changes */
   const [productStripDismissed, setProductStripDismissed] = useState(false);
   const [reactionByMessage, setReactionByMessage] = useState<Record<string, MessageReactionsState>>({});
@@ -590,6 +591,7 @@ export default function ChatWorkspace() {
     productStripDismissed,
     mobileProductStripCollapsed,
     isFollowingPeer,
+    peerFollowerCount,
   ]);
 
   /** Avoid tying shell height to visualViewport.height — it shrinks with the mobile keyboard and collapses the sticky chat header. */
@@ -896,6 +898,20 @@ export default function ChatWorkspace() {
       cancelled = true;
     };
   }, [authUser?.id, peerId]);
+
+  useEffect(() => {
+    if (!peerId) {
+      setPeerFollowerCount(null);
+      return;
+    }
+    let cancelled = false;
+    void fetchProfileFollowerCount(supabase, peerId).then((n) => {
+      if (!cancelled) setPeerFollowerCount(n);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [peerId]);
 
   useEffect(() => {
     const ids = new Set<number>();
@@ -2057,192 +2073,126 @@ export default function ChatWorkspace() {
               </div>
             </div>
           ) : null}
-          <div className="px-2 py-2 sm:px-3">
-            <div className="flex min-h-[52px] items-center gap-1.5 sm:gap-2">
-              <button
-                type="button"
-                onClick={() => navigate("/messages")}
-                className="flex h-11 min-w-[44px] shrink-0 items-center justify-center rounded-full hover:bg-black/[0.05] dark:hover:bg-white/10"
-                aria-label="Back"
-              >
-                <ArrowLeft className="h-6 w-6 text-gray-800 dark:text-zinc-100" />
-              </button>
-              {peerId ? (
-                <Link
-                  to={`/profile/${peerId}`}
-                  className="shrink-0 rounded-full ring-2 ring-white ring-offset-0 hover:opacity-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#22c55e] dark:ring-zinc-700"
-                  aria-label={`View ${peerName}'s profile`}
-                >
-                  <img
-                    src={peerAvatarDisplay}
-                    alt=""
-                    className="h-10 w-10 rounded-full bg-gray-200 object-cover"
-                  />
-                </Link>
-              ) : (
-                <img
-                  src={peerAvatarDisplay}
-                  alt=""
-                  className="h-10 w-10 shrink-0 rounded-full bg-gray-200 object-cover ring-2 ring-white dark:ring-zinc-700"
-                />
-              )}
-              <div className="min-w-0 flex-1">
-                <div className="flex min-w-0 items-center gap-1">
-                  {peerId ? (
-                    <Link
-                      to={`/profile/${peerId}`}
-                      className="min-w-0 flex-1 truncate text-base font-bold leading-tight text-gray-900 hover:underline dark:text-zinc-100"
-                    >
-                      {peerName}
-                    </Link>
-                  ) : (
-                    <h1 className="min-w-0 flex-1 truncate text-base font-bold leading-tight text-gray-900 dark:text-zinc-100">
-                      {peerName}
-                    </h1>
-                  )}
-                  <button
-                    type="button"
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-gray-700 hover:bg-black/[0.06] disabled:opacity-50 dark:text-zinc-200 dark:hover:bg-white/10"
-                    disabled={followBusy}
-                    title={isFollowingPeer ? "Unfollow" : "Follow"}
-                    aria-label={isFollowingPeer ? "Unfollow" : "Follow"}
-                    onClick={() => void toggleFollowPeer()}
-                  >
-                    {isFollowingPeer ? (
-                      <UserCheck className="h-[1.15rem] w-[1.15rem]" strokeWidth={2.25} />
-                    ) : (
-                      <UserPlus className="h-[1.15rem] w-[1.15rem]" strokeWidth={2.25} />
-                    )}
-                  </button>
-                </div>
-                <p className="mt-0.5 flex items-center gap-1.5 text-xs text-gray-600 dark:text-zinc-400">
-                  <span
-                    className={cn(
-                      "h-2 w-2 shrink-0 rounded-full",
-                      peerTyping ? "bg-amber-500" : peerActiveByProfile ? "bg-[#25D366]" : "bg-gray-400",
-                    )}
-                    aria-hidden
-                  />
-                  {peerTyping ? (
-                    <span>typing…</span>
-                  ) : peerActiveByProfile ? (
-                    <span className="text-[#16a34a] dark:text-[#4ade80]">Online</span>
-                  ) : peerLastActive ? (
-                    <span className="truncate">Last seen {formatListTime(peerLastActive)}</span>
-                  ) : (
-                    <span>Offline</span>
-                  )}
-                </p>
-              </div>
-              <button
-                type="button"
-                className="flex h-11 min-w-[44px] shrink-0 items-center justify-center rounded-full hover:bg-black/[0.05] dark:hover:bg-white/10"
-                aria-label="Clear chat"
-                title="Clear chat"
-                onClick={() => setPendingConfirm({ kind: "clear-chat" })}
-              >
-                <Trash2 className="h-5 w-5 text-gray-700 dark:text-zinc-200" />
-              </button>
-              <button
-                type="button"
-                disabled={!lastOwnMessageToEdit}
-                className="flex h-11 min-w-[44px] shrink-0 items-center justify-center rounded-full hover:bg-black/[0.05] disabled:opacity-35 dark:hover:bg-white/10"
-                aria-label="Edit last message"
-                title={lastOwnMessageToEdit ? "Edit your last message" : "No recent message to edit"}
-                onClick={() => lastOwnMessageToEdit && startEdit(lastOwnMessageToEdit)}
-              >
-                <Pencil className="h-5 w-5 text-gray-700 dark:text-zinc-200" />
-              </button>
-              <button
-                type="button"
-                className="flex h-11 min-w-[44px] shrink-0 items-center justify-center rounded-full hover:bg-black/[0.05] dark:hover:bg-white/10"
-                aria-label="Search in chat"
-                onClick={() => setSearchOpen((v) => !v)}
-              >
-                <Search className="h-5 w-5 text-gray-700 dark:text-zinc-200" />
-              </button>
-              <DropdownMenu modal={false}>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    type="button"
-                    className="flex h-11 min-w-[44px] shrink-0 items-center justify-center rounded-full hover:bg-black/[0.05] dark:hover:bg-white/10"
-                    aria-label="More options"
-                  >
-                    <MoreVertical className="h-5 w-5 text-gray-700 dark:text-zinc-200" />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
-                  {peerMemberSince ? (
-                    <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
-                      Member since {peerMemberSince}
-                    </DropdownMenuLabel>
-                  ) : null}
-                  <DropdownMenuSeparator />
+          <ChatPeerHeaderModern
+            peerId={peerId}
+            peerName={peerName}
+            avatarSrc={peerAvatarDisplay}
+            followerCount={peerFollowerCount}
+            lastSeenShort={
+              peerTyping || peerActiveByProfile ? null : peerLastActive ? formatListTime(peerLastActive) : null
+            }
+            isTyping={peerTyping}
+            isOnline={false}
+            isActiveNow={peerActiveByProfile}
+            onBack={() => navigate("/messages")}
+            className={cn(
+              stripProductSourceId != null ? "border-t border-[#d1d7db] dark:border-zinc-700" : "",
+              "bg-[#f0f2f5]/95 dark:bg-zinc-900/95",
+            )}
+            menu={
+              <>
+                {peerMemberSince ? (
+                  <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+                    Member since {peerMemberSince}
+                  </DropdownMenuLabel>
+                ) : null}
+                {peerMemberSince ? <DropdownMenuSeparator /> : null}
+                {peerId ? (
                   <DropdownMenuItem asChild>
                     <Link to={`/profile/${peerId}`} className="flex cursor-pointer items-center gap-2">
                       <User className="h-4 w-4" />
                       View profile
                     </Link>
                   </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onSelect={(e) => {
-                      e.preventDefault();
-                      setPendingConfirm({ kind: "clear-chat" });
-                    }}
-                  >
-                    <Eraser className="mr-2 h-4 w-4" />
-                    Clear chat
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onSelect={(e) => {
-                      e.preventDefault();
-                      setReportOpen(true);
-                    }}
-                  >
-                    <Flag className="mr-2 h-4 w-4" />
-                    Report / Scammer alert
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onSelect={(e) => {
-                      e.preventDefault();
-                      navigate("/settings/blocked-users");
-                      toast.message("Finish blocking from Settings.");
-                    }}
-                  >
-                    <Ban className="mr-2 h-4 w-4" />
-                    Block user
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-            {searchOpen ? (
-              <div className="mt-2 flex items-center gap-2 rounded-xl border border-emerald-100 bg-white/90 px-3 py-2 dark:border-emerald-900 dark:bg-zinc-800/90">
-                <Search className="h-4 w-4 shrink-0 text-gray-400" />
-                <input
-                  value={threadSearch}
-                  onChange={(e) => setThreadSearch(e.target.value)}
-                  placeholder="Search in conversation…"
-                  className="min-w-0 flex-1 bg-transparent text-sm outline-none dark:text-foreground"
-                />
-                <span className="text-xs text-gray-500">
-                  {threadSearch.trim() ? `${filteredThreadSearch.length} match` : ""}
-                </span>
-                <button
-                  type="button"
-                  className="text-xs font-medium text-emerald-600"
-                  onClick={() => {
-                    const q = threadSearch.trim().toLowerCase();
-                    if (!q) return;
-                    const hit = messages.find((m) => (m.message || "").toLowerCase().includes(q));
-                    if (hit) jumpToMessage(hit.id);
-                    else toast.message("No matches");
+                ) : null}
+                <DropdownMenuItem
+                  disabled={followBusy}
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    void toggleFollowPeer();
                   }}
                 >
-                  Jump
-                </button>
-              </div>
-            ) : null}
-          </div>
+                  {isFollowingPeer ? <UserCheck className="mr-2 h-4 w-4" /> : <UserPlus className="mr-2 h-4 w-4" />}
+                  {isFollowingPeer ? "Unfollow" : "Follow"}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    setPendingConfirm({ kind: "clear-chat" });
+                  }}
+                >
+                  <Eraser className="mr-2 h-4 w-4" />
+                  Clear chat
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    setSearchOpen((v) => !v);
+                  }}
+                >
+                  <Search className="mr-2 h-4 w-4" />
+                  Search in chat
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={!lastOwnMessageToEdit}
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    if (lastOwnMessageToEdit) startEdit(lastOwnMessageToEdit);
+                  }}
+                >
+                  <Pencil className="mr-2 h-4 w-4" />
+                  Edit last message
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    setReportOpen(true);
+                  }}
+                >
+                  <Flag className="mr-2 h-4 w-4" />
+                  Report / Scammer alert
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    navigate("/settings/blocked-users");
+                    toast.message("Finish blocking from Settings.");
+                  }}
+                >
+                  <Ban className="mr-2 h-4 w-4" />
+                  Block user
+                </DropdownMenuItem>
+              </>
+            }
+          />
+          {searchOpen ? (
+            <div className="flex items-center gap-2 border-t border-emerald-100/80 bg-white/90 px-3 py-2 dark:border-emerald-900 dark:bg-zinc-800/90 sm:px-4">
+              <Search className="h-4 w-4 shrink-0 text-gray-400" />
+              <input
+                value={threadSearch}
+                onChange={(e) => setThreadSearch(e.target.value)}
+                placeholder="Search in conversation…"
+                className="min-w-0 flex-1 bg-transparent text-sm outline-none dark:text-foreground"
+              />
+              <span className="text-xs text-gray-500">
+                {threadSearch.trim() ? `${filteredThreadSearch.length} match` : ""}
+              </span>
+              <button
+                type="button"
+                className="text-xs font-medium text-emerald-600"
+                onClick={() => {
+                  const q = threadSearch.trim().toLowerCase();
+                  if (!q) return;
+                  const hit = messages.find((m) => (m.message || "").toLowerCase().includes(q));
+                  if (hit) jumpToMessage(hit.id);
+                  else toast.message("No matches");
+                }}
+              >
+                Jump
+              </button>
+            </div>
+          ) : null}
         </header>
         {/* Reserves space for fixed header on small screens (header is out of flow when fixed). */}
         <div

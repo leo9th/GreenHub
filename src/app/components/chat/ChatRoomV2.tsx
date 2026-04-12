@@ -1,11 +1,11 @@
 import React, { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
-import { ArrowLeft, Eraser, Flag, Loader2, MoreVertical, Pencil, Pin, Trash2, User, UserCheck, UserPlus } from "lucide-react";
+import { Ban, Eraser, Flag, Loader2, Pencil, Pin, Trash2, User, UserCheck, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../context/AuthContext";
 import { useCurrency } from "../../hooks/useCurrency";
-import { useInboxConversationList } from "../../hooks/useInboxConversationList";
+import { formatListTime, useInboxConversationList } from "../../hooks/useInboxConversationList";
 import { getAvatarUrl } from "../../utils/getAvatar";
 import { getProductPrice } from "../../utils/getProductPrice";
 import {
@@ -46,11 +46,11 @@ import {
 } from "../../utils/chatMessages";
 import { Button } from "../ui/button";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
 } from "../ui/dropdown-menu";
 import {
   ContextMenu,
@@ -86,6 +86,8 @@ import { ReportUserDialog } from "./ReportUserDialog";
 import { MessageInfoDialog } from "./MessageInfoDialog";
 import { MessageBubbleV2 } from "./MessageBubbleV2";
 import { MessageMenuV2, MESSAGE_QUICK_REACTIONS } from "./MessageMenuV2";
+import { ChatPeerHeaderModern } from "./ChatPeerHeaderModern";
+import { fetchProfileFollowerCount } from "../../utils/profileFollowCounts";
 
 const CHAT_MEDIA_BUCKETS = ["chat-media", "chat-images", "chat-attachments"] as const;
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
@@ -249,6 +251,7 @@ export default function ChatRoomV2() {
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
   const [isFollowingPeer, setIsFollowingPeer] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
+  const [peerFollowerCount, setPeerFollowerCount] = useState<number | null>(null);
 
   const [editOpen, setEditOpen] = useState(false);
   const [editText, setEditText] = useState("");
@@ -294,16 +297,6 @@ export default function ChatRoomV2() {
     () => isLastActiveWithin(peerLastActive, PEER_ACTIVE_MS),
     [peerLastActive, peerPresenceTick],
   );
-
-  const statusLabel = useMemo(() => {
-    if (peerOnline) return "online";
-    if (peerActiveByProfile) return "Active now";
-    if (peerLastActive) {
-      const t = new Date(peerLastActive);
-      if (!Number.isNaN(t.getTime())) return `Last seen ${t.toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" })}`;
-    }
-    return "";
-  }, [peerOnline, peerActiveByProfile, peerLastActive]);
 
   const resolveMessageProductCard = useCallback(
     (msg: ChatMessageRow): { strip: StripProduct; pricePending: boolean } | null => {
@@ -447,7 +440,7 @@ export default function ChatRoomV2() {
       ro.disconnect();
       window.removeEventListener("resize", measure);
     };
-  }, [peerName, conversation?.id, stripProduct, listingStripLoading, statusLabel]);
+  }, [peerName, conversation?.id, stripProduct, listingStripLoading, peerFollowerCount, peerLastActive, peerOnline, peerActiveByProfile]);
 
   useLayoutEffect(() => {
     const lastLayoutInnerRef = { current: window.innerHeight };
@@ -655,6 +648,20 @@ export default function ChatRoomV2() {
       cancelled = true;
     };
   }, [authUser?.id, peerId]);
+
+  useEffect(() => {
+    if (!peerId) {
+      setPeerFollowerCount(null);
+      return;
+    }
+    let cancelled = false;
+    void fetchProfileFollowerCount(supabase, peerId).then((n) => {
+      if (!cancelled) setPeerFollowerCount(n);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [peerId]);
 
   useEffect(() => {
     const ids = new Set<number>();
@@ -1437,120 +1444,105 @@ export default function ChatRoomV2() {
 
   return (
     <div style={chatShellStyle} className={`flex ${shellHeight} min-h-0 flex-col bg-[#e5ddd5] dark:bg-zinc-950`}>
-      <header
+      <div
         ref={peerHeaderRef}
         className={cn(
-          "shrink-0 border-b border-[#d1d7db] bg-[#f0f2f5] shadow-sm dark:border-zinc-700 dark:bg-zinc-900",
+          "shrink-0",
           "max-md:fixed max-md:left-0 max-md:right-0 max-md:top-16 max-md:z-40",
           "md:sticky md:top-16 md:z-30",
         )}
       >
-        <div className="flex items-center gap-2 px-2 py-2 sm:px-3">
-          <Button variant="ghost" size="icon" className="shrink-0" asChild>
-            <Link to="/messages" aria-label="Back">
-              <ArrowLeft className="h-6 w-6" />
-            </Link>
-          </Button>
-          {peerId ? (
-            <Link
-              to={`/profile/${peerId}`}
-              className="h-10 w-10 shrink-0 rounded-full ring-1 ring-black/5 hover:opacity-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#22c55e] dark:ring-white/10"
-              aria-label={`View ${peerName}'s profile`}
-            >
-              <img src={peerAvatarDisplay} alt="" className="h-10 w-10 rounded-full object-cover" />
-            </Link>
-          ) : (
-            <img src={peerAvatarDisplay} alt="" className="h-10 w-10 shrink-0 rounded-full object-cover" />
-          )}
-          <div className="min-w-0 flex-1">
+      <ChatPeerHeaderModern
+        peerId={peerId}
+        peerName={peerName}
+        avatarSrc={peerAvatarDisplay}
+        followerCount={peerFollowerCount}
+        lastSeenShort={
+          peerOnline || peerActiveByProfile ? null : peerLastActive ? formatListTime(peerLastActive) : null
+        }
+        isTyping={false}
+        isOnline={peerOnline}
+        isActiveNow={peerActiveByProfile}
+        onBack={() => navigate("/messages")}
+        menu={
+          <>
             {peerId ? (
-              <Link
-                to={`/profile/${peerId}`}
-                className="block truncate font-semibold text-gray-900 hover:underline dark:text-zinc-100"
-              >
-                {peerName}
-              </Link>
-            ) : (
-              <p className="truncate font-semibold text-gray-900 dark:text-zinc-100">{peerName}</p>
-            )}
-            <p className="truncate text-xs text-gray-600 dark:text-zinc-400">{statusLabel || "\u00a0"}</p>
-          </div>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="shrink-0 text-gray-700 hover:bg-black/[0.06] dark:text-zinc-200 dark:hover:bg-white/10"
-            aria-label="Clear chat"
-            title="Clear chat"
-            onClick={() => setPendingClear({ kind: "clear-chat" })}
-          >
-            <Trash2 className="h-5 w-5" aria-hidden />
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            disabled={!lastOwnMessageToEdit}
-            className="shrink-0 text-gray-700 hover:bg-black/[0.06] disabled:opacity-35 dark:text-zinc-200 dark:hover:bg-white/10"
-            aria-label="Edit last message"
-            title={lastOwnMessageToEdit ? "Edit your last message" : "No recent message to edit"}
-            onClick={() => lastOwnMessageToEdit && startEdit(lastOwnMessageToEdit)}
-          >
-            <Pencil className="h-5 w-5" aria-hidden />
-          </Button>
-          <DropdownMenu modal={false}>
-            <DropdownMenuTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="shrink-0 text-gray-700 hover:bg-black/[0.06] dark:text-zinc-200 dark:hover:bg-white/10"
-                aria-label="More options"
-              >
-                <MoreVertical className="h-5 w-5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              {peerId ? (
-                <DropdownMenuItem asChild>
-                  <Link to={`/profile/${peerId}`} className="flex cursor-pointer items-center gap-2">
-                    <User className="h-4 w-4" />
-                    View profile
-                  </Link>
-                </DropdownMenuItem>
-              ) : null}
-              {peerId ? <DropdownMenuSeparator /> : null}
-              <DropdownMenuItem
-                onSelect={(e) => {
-                  e.preventDefault();
-                  setReportOpen(true);
-                }}
-              >
-                <Flag className="mr-2 h-4 w-4" />
-                Report / Scammer alert
+              <DropdownMenuItem asChild>
+                <Link to={`/profile/${peerId}`} className="flex cursor-pointer items-center gap-2">
+                  <User className="h-4 w-4" />
+                  View profile
+                </Link>
               </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            disabled={followBusy}
-            onClick={() => void toggleFollowPeer()}
-            className="shrink-0 gap-1"
-          >
-            {isFollowingPeer ? (
-              <>
-                <UserCheck className="h-4 w-4" /> Following
-              </>
-            ) : (
-              <>
-                <UserPlus className="h-4 w-4" /> Follow
-              </>
-            )}
-          </Button>
-        </div>
+            ) : null}
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger className="gap-2">
+                <Eraser className="h-4 w-4" />
+                Clear chat
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent>
+                <DropdownMenuItem
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    setPendingClear({ kind: "clear-chat" });
+                  }}
+                >
+                  Clear for me
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    setPendingClear({ kind: "clear-chat-both" });
+                  }}
+                >
+                  Clear for both
+                </DropdownMenuItem>
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+            <DropdownMenuItem
+              disabled={!lastOwnMessageToEdit}
+              onSelect={(e) => {
+                e.preventDefault();
+                if (lastOwnMessageToEdit) startEdit(lastOwnMessageToEdit);
+              }}
+            >
+              <Pencil className="mr-2 h-4 w-4" />
+              Edit last message
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={followBusy}
+              onSelect={(e) => {
+                e.preventDefault();
+                void toggleFollowPeer();
+              }}
+            >
+              {isFollowingPeer ? <UserCheck className="mr-2 h-4 w-4" /> : <UserPlus className="mr-2 h-4 w-4" />}
+              {isFollowingPeer ? "Unfollow" : "Follow"}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onSelect={(e) => {
+                e.preventDefault();
+                navigate("/settings/blocked-users");
+                toast.message("Finish blocking from Settings.");
+              }}
+            >
+              <Ban className="mr-2 h-4 w-4" />
+              Block user
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={(e) => {
+                e.preventDefault();
+                setReportOpen(true);
+              }}
+            >
+              <Flag className="mr-2 h-4 w-4" />
+              Report / Scammer alert
+            </DropdownMenuItem>
+          </>
+        }
+      />
 
+      <div className="border-t border-[#d1d7db] bg-[#f0f2f5] dark:border-zinc-700 dark:bg-zinc-900">
         {stripProductSourceId != null && listingStripLoading && !stripProduct ? (
           <div className="border-t border-[#d1d7db] px-3 py-2 dark:border-zinc-700" aria-busy>
             <div className="flex animate-pulse gap-3">
@@ -1580,7 +1572,8 @@ export default function ChatRoomV2() {
             </p>
           </div>
         ) : null}
-      </header>
+      </div>
+      </div>
 
       <div
         className="max-md:shrink-0 md:hidden"

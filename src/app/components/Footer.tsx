@@ -1,5 +1,8 @@
 import { Link } from "react-router";
-import { Apple, Play } from "lucide-react";
+import { Apple, MessageCircle, Phone, Play } from "lucide-react";
+
+const SUPPORT_TEL_DISPLAY = "+234 812 522 1542";
+const SUPPORT_TEL_HREF = "tel:+2348125221542";
 
 export default function Footer() {
   return (
@@ -9,7 +12,27 @@ export default function Footer() {
           
           {/* Column 1 */}
           <div>
-            <h3 className="font-bold text-lg mb-4">About us</h3>
+            <div className="flex flex-wrap items-center gap-3 mb-4">
+              <h3 className="font-bold text-lg">About us</h3>
+              <span className="inline-flex items-center gap-2" aria-label="Quick contact">
+                <Link
+                  to="/messages"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/15 ring-1 ring-white/30 hover:bg-white/25 transition-colors"
+                  title="Messages"
+                  aria-label="Open messages"
+                >
+                  <MessageCircle className="h-5 w-5" aria-hidden />
+                </Link>
+                <a
+                  href={SUPPORT_TEL_HREF}
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/15 ring-1 ring-white/30 hover:bg-white/25 transition-colors"
+                  title={`Call ${SUPPORT_TEL_DISPLAY}`}
+                  aria-label={`Call support ${SUPPORT_TEL_DISPLAY}`}
+                >
+                  <Phone className="h-5 w-5" aria-hidden />
+                </a>
+              </span>
+            </div>
             <ul className="space-y-3 text-sm">
               <li><Link to="/about" className="hover:underline">About GreenHub</Link></li>
               <li><Link to="/apply" className="hover:underline">Apply for Job</Link></li>

@@ -34,6 +34,7 @@ import {
 import { getRelatedSearchSuggestions } from "../utils/searchSuggestions";
 import { getProductThumbnailUrl } from "../utils/productImages";
 import { useVerifiedSellerIds } from "../hooks/useVerifiedSellerIds";
+import { useVerifiedAdvertiserIds } from "../hooks/useVerifiedAdvertiserIds";
 import { getRecentProductIds, RECENT_VIEWED_EVENT } from "../utils/recentlyViewedProducts";
 
 export default function Home() {
@@ -97,6 +98,7 @@ export default function Home() {
     [products, recentViewedProducts],
   );
   const verifiedSellerIds = useVerifiedSellerIds(supabase, productsForVerification);
+  const verifiedAdvertiserIds = useVerifiedAdvertiserIds(supabase, productsForVerification);
 
   useEffect(() => {
     if (!authUser?.id || homeCardIds.length === 0) {
@@ -682,6 +684,7 @@ export default function Home() {
                       condition={String((product as { condition?: string }).condition ?? "Good")}
                       title={String((product as { title?: string }).title ?? "")}
                       sellerVerified={Boolean(sid && verifiedSellerIds.has(sid))}
+                      verifiedAdvertiser={Boolean(sid && verifiedAdvertiserIds.has(sid))}
                       price={Number((product as { price?: number }).price) || 0}
                       priceDisplay={formatPrice(Number((product as { price?: number }).price) || 0)}
                       location={String((product as { location?: string }).location ?? "")}
@@ -738,6 +741,7 @@ export default function Home() {
                       condition={String((product as { condition?: string }).condition ?? "Good")}
                       title={String((product as { title?: string }).title ?? "")}
                       sellerVerified={Boolean(sid && verifiedSellerIds.has(sid))}
+                      verifiedAdvertiser={Boolean(sid && verifiedAdvertiserIds.has(sid))}
                       price={Number((product as { price?: number }).price) || 0}
                       priceDisplay={formatPrice(Number((product as { price?: number }).price) || 0)}
                       location={String((product as { location?: string }).location ?? "")}

@@ -1846,6 +1846,89 @@ export default function ChatWorkspace() {
             "md:sticky md:top-16 md:z-30",
           )}
         >
+          {stripProduct ? (
+            <div className="shrink-0 border-b border-emerald-200/80 bg-emerald-50/90 dark:border-emerald-800/60 dark:bg-emerald-950/40">
+              {mobileProductStripCollapsed ? (
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 px-3 py-2.5 text-left md:hidden sm:px-4"
+                  onClick={() => setMobileProductStripCollapsed(false)}
+                  aria-expanded={false}
+                  aria-controls="chat-product-strip-details"
+                >
+                  <ChevronDown className="h-4 w-4 shrink-0 -rotate-90 text-emerald-800 dark:text-emerald-300" aria-hidden />
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-900 dark:text-zinc-100">
+                    {stripProduct.title}
+                  </span>
+                  <span className="shrink-0 rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-medium text-gray-700 dark:bg-zinc-800 dark:text-zinc-300">
+                    {stripProduct.condition ?? "—"}
+                  </span>
+                </button>
+              ) : null}
+
+              <div
+                id="chat-product-strip-details"
+                className={cn(
+                  "relative flex items-start gap-3 px-3 py-2.5 sm:px-4",
+                  mobileProductStripCollapsed ? "hidden md:flex" : "flex",
+                )}
+              >
+                <button
+                  type="button"
+                  className="absolute right-14 top-2 z-10 rounded-full p-1.5 text-gray-600 hover:bg-white/80 dark:hover:bg-zinc-800 md:hidden"
+                  aria-label="Hide listing details"
+                  onClick={() => setMobileProductStripCollapsed(true)}
+                >
+                  <ChevronDown className="h-4 w-4 rotate-180" aria-hidden />
+                </button>
+                <a
+                  href={`/products/${stripProduct.id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="relative flex min-w-0 flex-1 gap-3 pr-10 no-underline md:pr-0"
+                >
+                  <span className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-gray-100 ring-1 ring-black/5 dark:bg-zinc-800">
+                    {stripProduct.image ? (
+                      <img src={stripProduct.image} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      <span className="flex h-full w-full items-center justify-center text-[10px] text-gray-400">
+                        No image
+                      </span>
+                    )}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="mb-0.5 flex flex-wrap items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-emerald-800 dark:text-emerald-300/90">
+                      <Package className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                      Discussing this listing
+                      {peerVerified ? <VerifiedBadge title="Verified seller" size="sm" /> : null}
+                    </span>
+                    <span className="line-clamp-2 text-sm font-semibold text-gray-900 hover:text-emerald-700 dark:text-foreground">
+                      {stripProduct.title}
+                    </span>
+                    <span className="mt-0.5 block text-sm font-bold text-emerald-600">{formatPrice(stripProduct.price)}</span>
+                    <span className="mt-1 block text-xs text-gray-700 dark:text-zinc-400">
+                      Condition:{" "}
+                      <span className="font-medium text-gray-900 dark:text-zinc-200">{stripProduct.condition ?? "—"}</span>
+                    </span>
+                    <span className="mt-0.5 block text-xs text-gray-600 dark:text-zinc-500">
+                      {peerResponseMs != null
+                        ? formatAvgResponseLabel(peerResponseMs)
+                        : "Typical reply: not enough chat history yet"}
+                    </span>
+                  </span>
+                </a>
+                <button
+                  type="button"
+                  onClick={() => void removeProductContext()}
+                  disabled={contextClearBusy}
+                  className="shrink-0 rounded-full p-2 text-gray-500 hover:bg-white/80 disabled:opacity-50 dark:hover:bg-zinc-800"
+                  aria-label="Remove listing from chat"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+          ) : null}
           <div className="px-3 py-2.5 sm:px-4">
             <div className="flex items-start gap-2 sm:gap-3">
               <button
@@ -2040,90 +2123,6 @@ export default function ChatWorkspace() {
               </div>
             ) : null}
           </div>
-
-          {stripProduct ? (
-            <div className="shrink-0 border-t border-emerald-200/80 bg-emerald-50/90 dark:border-emerald-800/60 dark:bg-emerald-950/40">
-              {mobileProductStripCollapsed ? (
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-2 px-3 py-2.5 text-left md:hidden sm:px-4"
-                  onClick={() => setMobileProductStripCollapsed(false)}
-                  aria-expanded={false}
-                  aria-controls="chat-product-strip-details"
-                >
-                  <ChevronDown className="h-4 w-4 shrink-0 -rotate-90 text-emerald-800 dark:text-emerald-300" aria-hidden />
-                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-900 dark:text-zinc-100">
-                    {stripProduct.title}
-                  </span>
-                  <span className="shrink-0 rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-medium text-gray-700 dark:bg-zinc-800 dark:text-zinc-300">
-                    {stripProduct.condition ?? "—"}
-                  </span>
-                </button>
-              ) : null}
-
-              <div
-                id="chat-product-strip-details"
-                className={cn(
-                  "relative flex items-start gap-3 px-3 py-2.5 sm:px-4",
-                  mobileProductStripCollapsed ? "hidden md:flex" : "flex",
-                )}
-              >
-                <button
-                  type="button"
-                  className="absolute right-14 top-2 z-10 rounded-full p-1.5 text-gray-600 hover:bg-white/80 dark:hover:bg-zinc-800 md:hidden"
-                  aria-label="Hide listing details"
-                  onClick={() => setMobileProductStripCollapsed(true)}
-                >
-                  <ChevronDown className="h-4 w-4 rotate-180" aria-hidden />
-                </button>
-                <a
-                  href={`/products/${stripProduct.id}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="relative flex min-w-0 flex-1 gap-3 pr-10 no-underline md:pr-0"
-                >
-                  <span className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-gray-100 ring-1 ring-black/5 dark:bg-zinc-800">
-                    {stripProduct.image ? (
-                      <img src={stripProduct.image} alt="" className="h-full w-full object-cover" />
-                    ) : (
-                      <span className="flex h-full w-full items-center justify-center text-[10px] text-gray-400">
-                        No image
-                      </span>
-                    )}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="mb-0.5 flex flex-wrap items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-emerald-800 dark:text-emerald-300/90">
-                      <Package className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                      Discussing this listing
-                      {peerVerified ? <VerifiedBadge title="Verified seller" size="sm" /> : null}
-                    </span>
-                    <span className="line-clamp-2 text-sm font-semibold text-gray-900 hover:text-emerald-700 dark:text-foreground">
-                      {stripProduct.title}
-                    </span>
-                    <span className="mt-0.5 block text-sm font-bold text-emerald-600">{formatPrice(stripProduct.price)}</span>
-                    <span className="mt-1 block text-xs text-gray-700 dark:text-zinc-400">
-                      Condition:{" "}
-                      <span className="font-medium text-gray-900 dark:text-zinc-200">{stripProduct.condition ?? "—"}</span>
-                    </span>
-                    <span className="mt-0.5 block text-xs text-gray-600 dark:text-zinc-500">
-                      {peerResponseMs != null
-                        ? formatAvgResponseLabel(peerResponseMs)
-                        : "Typical reply: not enough chat history yet"}
-                    </span>
-                  </span>
-                </a>
-                <button
-                  type="button"
-                  onClick={() => void removeProductContext()}
-                  disabled={contextClearBusy}
-                  className="shrink-0 rounded-full p-2 text-gray-500 hover:bg-white/80 disabled:opacity-50 dark:hover:bg-zinc-800"
-                  aria-label="Remove listing from chat"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-            </div>
-          ) : null}
         </header>
         {/* Reserves space for fixed header on small screens (header is out of flow when fixed). */}
         <div

@@ -21,6 +21,7 @@ import { toast } from "sonner";
 import { useAuth, type UserProfile } from "../context/AuthContext";
 import { getAvatarUrl } from "../utils/getAvatar";
 import { VerifiedBadge } from "../components/VerifiedBadge";
+import { VerifiedAdvertiserBadge } from "../components/VerifiedAdvertiserBadge";
 import { supabase } from "../../lib/supabase";
 import { useCurrency } from "../hooks/useCurrency";
 import { getProductPrice } from "../utils/getProductPrice";
@@ -260,13 +261,13 @@ export default function Profile() {
         }
       } else {
         const fullSel =
-          "id, full_name, avatar_url, gender, bio, state, lga, created_at, updated_at, last_active, phone, public_email";
+          "id, full_name, avatar_url, gender, bio, state, lga, created_at, updated_at, last_active, phone, public_email, is_verified_advertiser";
         let pub = await supabase.from("profiles_public").select(fullSel).eq("id", targetUserId).maybeSingle();
 
         if (pub.error && isSchemaOrMissingRelationError(pub.error)) {
           pub = await supabase
             .from("profiles_public")
-            .select("id, full_name, avatar_url, gender, bio, state, lga, created_at, updated_at")
+            .select("id, full_name, avatar_url, gender, bio, state, lga, created_at, updated_at, is_verified_advertiser")
             .eq("id", targetUserId)
             .maybeSingle();
         }
@@ -281,7 +282,7 @@ export default function Profile() {
         } else {
           const { data: fb, error: fbErr } = await supabase
             .from("profiles")
-            .select("id, full_name, avatar_url, gender, bio, state, lga, created_at, updated_at, last_active")
+            .select("id, full_name, avatar_url, gender, bio, state, lga, created_at, updated_at, last_active, is_verified_advertiser")
             .eq("id", targetUserId)
             .maybeSingle();
           if (fbErr && fbErr.code !== "PGRST116" && !isBenignReadError(fbErr)) {
@@ -587,6 +588,9 @@ export default function Profile() {
             <h2 className="mt-4 flex flex-wrap items-center justify-center gap-1.5 text-xl font-semibold text-gray-900 lg:justify-start lg:text-2xl">
               <span>{displayName}</span>
               {verificationLabel === "approved" ? <VerifiedBadge title="Verified seller" size="md" /> : null}
+              {(viewProfile as { is_verified_advertiser?: boolean | null })?.is_verified_advertiser ? (
+                <VerifiedAdvertiserBadge size="md" />
+              ) : null}
             </h2>
 
             <div className="mt-1.5 flex items-center justify-center gap-2 text-xs text-gray-500 lg:justify-start">

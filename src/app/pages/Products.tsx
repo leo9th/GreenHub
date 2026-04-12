@@ -35,6 +35,7 @@ import {
 import { getRelatedSearchSuggestions } from "../utils/searchSuggestions";
 import { getProductThumbnailUrl } from "../utils/productImages";
 import { useVerifiedSellerIds } from "../hooks/useVerifiedSellerIds";
+import { useVerifiedAdvertiserIds } from "../hooks/useVerifiedAdvertiserIds";
 
 const conditions = ["New", "Like New", "Good Fair"];
 const priceRanges = [
@@ -333,6 +334,7 @@ export default function Products() {
   const [likedProductIds, setLikedProductIds] = useState<Set<string>>(new Set());
   const [pendingLikeIds, setPendingLikeIds] = useState<Set<string>>(new Set());
   const verifiedSellerIds = useVerifiedSellerIds(supabase, products);
+  const verifiedAdvertiserIds = useVerifiedAdvertiserIds(supabase, products);
   const productIds = useMemo(() => {
     const seen = new Set<string>();
     const out: ProductPk[] = [];
@@ -895,6 +897,7 @@ export default function Products() {
                       title={String(product.title ?? "")}
                       titleAdornment={getTierIcon(String(product.sellerTier ?? ""))}
                       sellerVerified={Boolean(sid && verifiedSellerIds.has(sid))}
+                      verifiedAdvertiser={Boolean(sid && verifiedAdvertiserIds.has(sid))}
                       price={Number(product.price) || 0}
                       priceDisplay={formatPrice(Number(product.price) || 0)}
                       location={String(product.location ?? "")}

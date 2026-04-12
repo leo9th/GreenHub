@@ -29,6 +29,7 @@ import { recordProductView } from "../utils/recentlyViewedProducts";
 import { toast } from "sonner";
 import { BoostDetailBadge } from "../components/BoostBadge";
 import { VerifiedBadge } from "../components/VerifiedBadge";
+import { VerifiedAdvertiserBadge } from "../components/VerifiedAdvertiserBadge";
 import { getAuthSiteOrigin } from "../utils/authSiteUrl";
 import { useProductLike } from "../hooks/useProductLike";
 import { normalizeProductPk } from "../utils/engagement";
@@ -143,6 +144,7 @@ type SellerProfileRow = {
   created_at: string | null;
   phone?: string | null;
   last_active?: string | null;
+  is_verified_advertiser?: boolean | null;
 };
 
 type SellerReviewPreview = {
@@ -286,6 +288,7 @@ export default function ProductDetail() {
   const [sellerReviewCount, setSellerReviewCount] = useState(0);
   const [sellerReviewsPreview, setSellerReviewsPreview] = useState<SellerReviewPreview[]>([]);
   const [sellerIdVerified, setSellerIdVerified] = useState(false);
+  const [sellerVerifiedAdvertiser, setSellerVerifiedAdvertiser] = useState(false);
   const [sellerInfoReady, setSellerInfoReady] = useState(false);
   const [phoneMenuOpen, setPhoneMenuOpen] = useState(false);
   const phoneMenuRef = useRef<HTMLDivElement>(null);
@@ -624,6 +627,7 @@ export default function ProductDetail() {
       setSellerReviewCount(0);
       setSellerReviewsPreview([]);
       setSellerIdVerified(false);
+      setSellerVerifiedAdvertiser(false);
       setSellerInfoReady(true);
       return;
     }
@@ -635,7 +639,7 @@ export default function ProductDetail() {
       const [profRes, ratingsRes, previewRes, verRes] = await Promise.all([
         supabase
           .from("profiles")
-          .select("id, full_name, avatar_url, gender, state, lga, created_at, phone, last_active")
+          .select("id, full_name, avatar_url, gender, state, lga, created_at, phone, last_active, is_verified_advertiser")
           .eq("id", idStr)
           .maybeSingle(),
         supabase.from("seller_reviews").select("rating").eq("seller_id", idStr),
@@ -657,7 +661,7 @@ export default function ProductDetail() {
       if (!prof) {
         const pub = await supabase
           .from("profiles_public")
-          .select("id, full_name, avatar_url, gender, state, lga, created_at, last_active, phone")
+          .select("id, full_name, avatar_url, gender, state, lga, created_at, last_active, phone, is_verified_advertiser")
           .eq("id", idStr)
           .maybeSingle();
         if (cancelled) return;
@@ -666,6 +670,7 @@ export default function ProductDetail() {
 
       if (cancelled) return;
       setSellerProfile(prof);
+      setSellerVerifiedAdvertiser(Boolean(prof && (prof as SellerProfileRow).is_verified_advertiser));
 
       const ratingRows = (ratingsRes.data ?? []) as { rating: number }[];
       const rErr = ratingsRes.error;
@@ -1132,6 +1137,7 @@ export default function ProductDetail() {
                     {sellerIdVerified ? (
                       <VerifiedBadge title="Verified seller" size="md" className="shrink-0" />
                     ) : null}
+                    {sellerVerifiedAdvertiser ? <VerifiedAdvertiserBadge size="md" /> : null}
                     {!sellerIdVerified && sellerTierLower === "crown" ? (
                       <BadgeCheck className="w-4 h-4 text-amber-500 fill-amber-400 shrink-0" title="Crown tier" />
                     ) : !sellerIdVerified && sellerTierLower === "blue" ? (

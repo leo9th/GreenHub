@@ -4,29 +4,25 @@ import {
   ArrowDown,
   ArrowLeft,
   Ban,
-  Calendar,
-  Check,
   ChevronDown,
   Copy,
   Eraser,
   ImagePlus,
   Loader2,
-  MapPin,
   MessageCircle,
   Mic,
   MoreVertical,
   Package,
-  Phone,
   Reply,
   Search,
   Send,
   Share2,
   Smile,
-  Star,
   Trash2,
   User,
+  UserCheck,
+  UserPlus,
   X,
-  Zap,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "../../../lib/supabase";
@@ -36,7 +32,6 @@ import { formatListTime, useInboxConversationList } from "../../hooks/useInboxCo
 import { getAvatarUrl } from "../../utils/getAvatar";
 import { getProductPrice } from "../../utils/getProductPrice";
 import {
-  clearConversationContextProduct,
   fetchConversationById,
   findConversationByPair,
   insertConversationPair,
@@ -48,14 +43,12 @@ import {
 import {
   CHAT_MESSAGE_BASE_COLUMNS,
   fetchChatMessagesForConversation,
-  fetchMessageReactions,
   markConversationMessagesDelivered,
   markConversationMessagesRead,
   normalizeChatMessageRow,
   outgoingReceiptPhase,
   resolveChatMessageReplyPreviews,
   type ChatMessageRow,
-  type MessageReactionsState,
 } from "../../utils/chatMessages";
 import {
   AlertDialog,
@@ -71,16 +64,8 @@ import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
-  ContextMenuSeparator,
   ContextMenuTrigger,
 } from "../ui/context-menu";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "../ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -95,7 +80,6 @@ import { Button } from "../ui/button";
 import { cn } from "../ui/utils";
 import { MessageBubble } from "./MessageBubble";
 import { ChatPortraitProductCard } from "./ChatPortraitProductCard";
-import { VerifiedBadge } from "../VerifiedBadge";
 
 const CHAT_MEDIA_BUCKETS = ["chat-media", "chat-images", "chat-attachments"] as const;
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
@@ -134,9 +118,6 @@ const CHAT_EMOJI_GRID: string[] = [
   "✅",
 ];
 
-/** Long-press menu: quick reactions (persisted in `chat_message_reactions`). */
-const CHAT_QUICK_REACTION_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🙏"] as const;
-
 function parseConversationInt(v: unknown): number | null {
   if (v == null) return null;
   const n = typeof v === "number" ? v : Number(v);
@@ -152,27 +133,6 @@ function isDuplicateConversationError(err: { code?: string; message?: string }):
 function isValidConversationUUID(id: string): boolean {
   const t = id.trim();
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(t);
-}
-
-function phoneLinkTargets(raw: string | null): { telHref: string; waHref: string } | null {
-  if (!raw?.trim()) return null;
-  const trimmed = raw.trim();
-  const digits = trimmed.replace(/\D/g, "");
-  if (digits.length < 8) return null;
-  const telHref = trimmed.includes("+") ? `tel:${trimmed.replace(/\s/g, "")}` : `tel:${digits}`;
-  let waDigits = digits;
-  if (!waDigits.startsWith("234") && waDigits.startsWith("0") && waDigits.length >= 10 && waDigits.length <= 11) {
-    waDigits = `234${waDigits.slice(1)}`;
-  }
-  return { telHref, waHref: `https://wa.me/${waDigits}` };
-}
-
-function WhatsAppIcon({ className = "h-5 w-5" }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden className={className} fill="currentColor">
-      <path d="M19.05 4.94A9.9 9.9 0 0 0 12 2a9.96 9.96 0 0 0-8.61 14.96L2 22l5.2-1.36A10 10 0 1 0 19.05 4.94ZM12 20.15a8.14 8.14 0 0 1-4.15-1.13l-.3-.18-3.09.81.83-3.01-.2-.31A8.13 8.13 0 1 1 12 20.15Zm4.46-6.1c-.24-.12-1.43-.7-1.65-.78-.22-.08-.38-.12-.54.12-.16.24-.62.78-.76.94-.14.16-.28.18-.52.06-.24-.12-1.01-.37-1.92-1.19-.71-.63-1.19-1.41-1.33-1.65-.14-.24-.02-.37.1-.49.11-.11.24-.28.36-.42.12-.14.16-.24.24-.4.08-.16.04-.3-.02-.42-.06-.12-.54-1.29-.74-1.77-.2-.47-.4-.4-.54-.41h-.46c-.16 0-.42.06-.64.3-.22.24-.84.82-.84 2s.86 2.32.98 2.48c.12.16 1.69 2.58 4.1 3.62.57.25 1.02.4 1.36.51.57.18 1.09.16 1.5.1.46-.07 1.43-.58 1.63-1.14.2-.56.2-1.04.14-1.14-.06-.1-.22-.16-.46-.28Z" />
-    </svg>
-  );
 }
 
 function dayKey(iso: string): string {
@@ -203,68 +163,6 @@ function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-/** Average ms from each message you sent until the peer's next reply (1:1 chat). */
-function averagePeerReplyDelayMs(messages: ChatMessageRow[], peerId: string, myId: string): number | null {
-  const sorted = [...messages]
-    .filter((m) => !String(m.id).startsWith("pending-"))
-    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-  const deltas: number[] = [];
-  for (let i = 0; i < sorted.length; i++) {
-    if (sorted[i].sender_id !== myId) continue;
-    const t0 = new Date(sorted[i].created_at).getTime();
-    if (Number.isNaN(t0)) continue;
-    for (let j = i + 1; j < sorted.length; j++) {
-      if (sorted[j].sender_id === peerId) {
-        const t1 = new Date(sorted[j].created_at).getTime();
-        if (!Number.isNaN(t1) && t1 >= t0) deltas.push(t1 - t0);
-        break;
-      }
-      if (sorted[j].sender_id === myId) break;
-    }
-  }
-  if (deltas.length === 0) return null;
-  return deltas.reduce((a, b) => a + b, 0) / deltas.length;
-}
-
-function formatAvgResponseLabel(ms: number): string {
-  const minutes = ms / 60000;
-  if (minutes < 1) return "Replies in ~1 min";
-  if (minutes < 60) return `Replies in ~${Math.max(1, Math.round(minutes))} min`;
-  const hours = minutes / 60;
-  if (hours < 24) {
-    const rounded = Math.round(hours * 10) / 10;
-    if (rounded <= 1.2) return "Replies in ~1 hour";
-    return `Replies in ~${rounded} hours`;
-  }
-  const days = minutes / (60 * 24);
-  const d = Math.max(1, Math.round(days * 10) / 10);
-  return `Replies in ~${d} day${d >= 2 ? "s" : ""}`;
-}
-
-/** Compact line for chat header (tooltip uses full `formatAvgResponseLabel`). */
-function formatAvgResponseLabelShort(ms: number): string {
-  const minutes = ms / 60000;
-  if (minutes < 1) return "~1 min";
-  if (minutes < 60) return `~${Math.max(1, Math.round(minutes))} min`;
-  const hours = minutes / 60;
-  if (hours < 24) {
-    const rounded = Math.round(hours * 10) / 10;
-    return rounded <= 1.2 ? "~1 hr" : `~${rounded} hr`;
-  }
-  const days = minutes / (60 * 24);
-  const d = Math.max(1, Math.round(days * 10) / 10);
-  return `~${d}d`;
-}
-
-function formatLocationLine(state: string | null, lga: string | null): string | null {
-  const s = state?.trim() || "";
-  const l = lga?.trim() || "";
-  if (l && s) return `${l}, ${s}`;
-  if (s) return s;
-  if (l) return l;
-  return null;
 }
 
 function formatMemberSince(iso: string | null): string | null {
@@ -306,7 +204,6 @@ type StripProduct = {
 
 type PendingConfirm =
   | { kind: "delete-message"; message: ChatMessageRow }
-  | { kind: "bulk-delete-messages"; messageIds: string[] }
   | { kind: "delete-conversation" }
   | { kind: "clear-chat" }
   | null;
@@ -353,8 +250,6 @@ export default function ChatWorkspace() {
   const [threadSearch, setThreadSearch] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [mobileSheetMsg, setMobileSheetMsg] = useState<ChatMessageRow | null>(null);
-  const [editTarget, setEditTarget] = useState<ChatMessageRow | null>(null);
-  const [editText, setEditText] = useState("");
 
   const atBottomRef = useRef(true);
   const [showJumpBottom, setShowJumpBottom] = useState(false);
@@ -369,15 +264,10 @@ export default function ChatWorkspace() {
   const [peerName, setPeerName] = useState("Member");
   const [peerAvatarUrl, setPeerAvatarUrl] = useState<string | null>(null);
   const [peerGender, setPeerGender] = useState<string | null>(null);
-  const [peerPhone, setPeerPhone] = useState<string | null>(null);
   const [peerVerified, setPeerVerified] = useState(false);
-  const [peerRating, setPeerRating] = useState<number | null>(null);
-  const [peerReviewCount, setPeerReviewCount] = useState(0);
-  const [peerLocationLabel, setPeerLocationLabel] = useState<string | null>(null);
   const [peerMemberSince, setPeerMemberSince] = useState<string | null>(null);
   const [peerLastActive, setPeerLastActive] = useState<string | null>(null);
   const [peerPresenceTick, setPeerPresenceTick] = useState(0);
-  const [peerResponseMs, setPeerResponseMs] = useState<number | null>(null);
   const [messages, setMessages] = useState<ChatMessageRow[]>([]);
   const [stripProduct, setStripProduct] = useState<StripProduct | null>(null);
   /** True while fetching listing row for the header strip (`context_product_id` / `?product=`). */
@@ -385,7 +275,6 @@ export default function ChatWorkspace() {
   /** Mobile only: when true, listing strip is minimized to one row (tap to expand). */
   const [mobileProductStripCollapsed, setMobileProductStripCollapsed] = useState(false);
   const [messageProductsById, setMessageProductsById] = useState<Map<number, StripProduct>>(() => new Map());
-  const [contextClearBusy, setContextClearBusy] = useState(false);
   const [peerTyping, setPeerTyping] = useState(false);
   const [loading, setLoading] = useState(true);
   const [sendBusy, setSendBusy] = useState(false);
@@ -408,11 +297,11 @@ export default function ChatWorkspace() {
     () => typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches,
   );
 
-  const [selectionMode, setSelectionMode] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
-  const [reactionByMessage, setReactionByMessage] = useState<Record<string, MessageReactionsState>>({});
-  const [reactionSheetMsg, setReactionSheetMsg] = useState<ChatMessageRow | null>(null);
+  const [isFollowingPeer, setIsFollowingPeer] = useState(false);
+  const [followBusy, setFollowBusy] = useState(false);
+  /** Hide listing strip locally (X); resets when listing changes */
+  const [productStripDismissed, setProductStripDismissed] = useState(false);
   const threadMessagesRef = useRef<ChatMessageRow[]>([]);
   const draftTextareaRef = useRef<HTMLTextAreaElement>(null);
   const peerHeaderRef = useRef<HTMLElement | null>(null);
@@ -501,79 +390,6 @@ export default function ChatWorkspace() {
     return () => mq.removeEventListener("change", apply);
   }, []);
 
-  const refreshReactions = useCallback(async () => {
-    if (!conversation?.id || !authUser?.id) return;
-    const ids = threadMessagesRef.current.map((m) => m.id).filter((id) => !String(id).startsWith("pending-"));
-    if (ids.length === 0) {
-      setReactionByMessage({});
-      return;
-    }
-    const { byMessage, error } = await fetchMessageReactions(supabase, conversation.id, ids, authUser.id);
-    if (error) {
-      const m = error.message.toLowerCase();
-      if (!m.includes("does not exist") && !m.includes("schema cache") && !m.includes("relation")) {
-        console.warn("[chat_message_reactions]", error.message);
-      }
-      return;
-    }
-    setReactionByMessage(byMessage);
-  }, [conversation?.id, authUser?.id]);
-
-  const messageIdsKey = useMemo(() => messages.map((m) => m.id).join(","), [messages]);
-
-  useEffect(() => {
-    void refreshReactions();
-  }, [messageIdsKey, refreshReactions]);
-
-  const applyQuickReaction = useCallback(
-    async (msg: ChatMessageRow, emoji: string) => {
-      if (!conversation?.id || !authUser?.id) return;
-      if (String(msg.id).startsWith("pending-")) return;
-      const mine = reactionByMessage[msg.id]?.myEmoji?.trim() ?? null;
-      const emojiNorm = emoji.trim().slice(0, 32);
-      if (!emojiNorm) return;
-      try {
-        if (mine === emojiNorm) {
-          const { error } = await supabase
-            .from("chat_message_reactions")
-            .delete()
-            .eq("message_id", msg.id)
-            .eq("user_id", authUser.id);
-          if (error) throw error;
-        } else {
-          const { data: existing, error: selErr } = await supabase
-            .from("chat_message_reactions")
-            .select("id")
-            .eq("message_id", msg.id)
-            .eq("user_id", authUser.id)
-            .maybeSingle();
-          if (selErr) throw selErr;
-          if (existing) {
-            const { error: upErr } = await supabase
-              .from("chat_message_reactions")
-              .update({ emoji: emojiNorm })
-              .eq("message_id", msg.id)
-              .eq("user_id", authUser.id);
-            if (upErr) throw upErr;
-          } else {
-            const { error: insErr } = await supabase.from("chat_message_reactions").insert({
-              conversation_id: conversation.id,
-              message_id: msg.id,
-              user_id: authUser.id,
-              emoji: emojiNorm,
-            });
-            if (insErr) throw insErr;
-          }
-        }
-        setReactionSheetMsg(null);
-        await refreshReactions();
-      } catch (e: unknown) {
-        toast.error(errorMessage(e, "Could not save reaction"));
-      }
-    },
-    [conversation?.id, authUser?.id, reactionByMessage, refreshReactions],
-  );
-
   /** Mobile: peer header is `fixed`; spacer must match real height or message list covers rows 2–4. */
   useLayoutEffect(() => {
     const el = peerHeaderRef.current;
@@ -611,16 +427,14 @@ export default function ChatWorkspace() {
     peerVerified,
     peerAvatarUrl,
     peerGender,
-    peerRating,
-    peerReviewCount,
-    peerLocationLabel,
     peerMemberSince,
-    peerResponseMs,
     peerLastActive,
     peerTyping,
     peerPresenceTick,
     stripProduct,
+    productStripDismissed,
     mobileProductStripCollapsed,
+    isFollowingPeer,
   ]);
 
   /** Avoid tying shell height to visualViewport.height — it shrinks with the mobile keyboard and collapses the sticky chat header. */
@@ -751,21 +565,16 @@ export default function ChatWorkspace() {
       setPeerId(peer);
 
       setPeerVerified(false);
-      setPeerRating(null);
-      setPeerReviewCount(0);
-      setPeerLocationLabel(null);
       setPeerMemberSince(null);
       setPeerLastActive(null);
-      setPeerResponseMs(null);
 
       const profileSel =
         "full_name, avatar_url, gender, phone, state, lga, created_at, last_active";
 
       const pubPromise = supabase.from("profiles_public").select(profileSel).eq("id", peer).maybeSingle();
       const verPromise = supabase.from("seller_verification").select("id").eq("seller_id", peer).limit(1).maybeSingle();
-      const revPromise = supabase.from("seller_reviews").select("rating").eq("seller_id", peer);
 
-      const [pubRes, verRes, revRes] = await Promise.all([pubPromise, verPromise, revPromise]);
+      const [pubRes, verRes] = await Promise.all([pubPromise, verPromise]);
 
       let prof: Record<string, unknown> | null = null;
       if (!pubRes.error && pubRes.data) prof = pubRes.data as Record<string, unknown>;
@@ -781,11 +590,6 @@ export default function ChatWorkspace() {
         setPeerAvatarUrl(typeof av === "string" && av.trim() ? av.trim() : null);
         const g = prof.gender;
         setPeerGender(typeof g === "string" ? g : null);
-        const phoneRaw = prof.phone;
-        setPeerPhone(typeof phoneRaw === "string" && phoneRaw.trim() ? phoneRaw.trim() : null);
-        const st = typeof prof.state === "string" ? prof.state : null;
-        const lga = typeof prof.lga === "string" ? prof.lga : null;
-        setPeerLocationLabel(formatLocationLine(st, lga));
         const created = typeof prof.created_at === "string" ? prof.created_at : null;
         setPeerMemberSince(formatMemberSince(created));
         const la = typeof prof.last_active === "string" ? prof.last_active : null;
@@ -794,29 +598,15 @@ export default function ChatWorkspace() {
         setPeerName("Member");
         setPeerAvatarUrl(null);
         setPeerGender(null);
-        setPeerPhone(null);
       }
 
       if (!verRes.error && verRes.data) setPeerVerified(true);
-
-      if (!revRes.error && revRes.data?.length) {
-        const rows = revRes.data as { rating: number | string }[];
-        const ratings = rows.map((r) => Number(r.rating)).filter((n) => Number.isFinite(n) && n > 0);
-        setPeerReviewCount(ratings.length);
-        if (ratings.length > 0) {
-          setPeerRating(Math.round((ratings.reduce((a, b) => a + b, 0) / ratings.length) * 10) / 10);
-        }
-      }
 
       const { data: msgs, error: mErr } = await fetchChatMessagesForConversation(supabase, conv.id);
       if (mErr) throw new Error(mErr.message);
       setReplyingTo(null);
       setHighlightedMessageId(null);
-      setSelectionMode(false);
-      setSelectedIds([]);
       setEmojiPickerOpen(false);
-      setReactionByMessage({});
-      setReactionSheetMsg(null);
       setMessages(msgs);
 
       attachListingToFirstSendRef.current =
@@ -905,6 +695,30 @@ export default function ChatWorkspace() {
   useEffect(() => {
     setMobileProductStripCollapsed(false);
   }, [stripProduct?.id]);
+
+  useEffect(() => {
+    setProductStripDismissed(false);
+  }, [stripProduct?.id]);
+
+  useEffect(() => {
+    if (!authUser?.id || !peerId) {
+      setIsFollowingPeer(false);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const { data } = await supabase
+        .from("profile_follows")
+        .select("follower_id")
+        .eq("follower_id", authUser.id)
+        .eq("following_id", peerId)
+        .maybeSingle();
+      if (!cancelled) setIsFollowingPeer(!!data);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [authUser?.id, peerId]);
 
   useEffect(() => {
     const ids = new Set<number>();
@@ -1049,18 +863,6 @@ export default function ChatWorkspace() {
           setMessages((prev) => prev.filter((m) => m.id !== oldRow.id));
         },
       )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "chat_message_reactions",
-          filter: `conversation_id=eq.${mid}`,
-        },
-        () => {
-          void refreshReactions();
-        },
-      )
       .subscribe();
 
     const convChannel = supabase
@@ -1094,7 +896,7 @@ export default function ChatWorkspace() {
       void supabase.removeChannel(msgChannel);
       void supabase.removeChannel(convChannel);
     };
-  }, [conversation?.id, authUser?.id, peerId, refreshReactions]);
+  }, [conversation?.id, authUser?.id, peerId]);
 
   const upsertTyping = useCallback(
     async (isTyping: boolean) => {
@@ -1182,14 +984,6 @@ export default function ChatWorkspace() {
   }, [authUser?.id]);
 
   useEffect(() => {
-    if (!authUser?.id || !peerId) {
-      setPeerResponseMs(null);
-      return;
-    }
-    setPeerResponseMs(averagePeerReplyDelayMs(messages, peerId, authUser.id));
-  }, [messages, peerId, authUser?.id]);
-
-  useEffect(() => {
     if (!peerId) return;
     const ch = supabase
       .channel(`peer-profile-la:${peerId}`)
@@ -1227,22 +1021,6 @@ export default function ChatWorkspace() {
       requestAnimationFrame(() => scrollToBottom("auto"));
     }
   }, [messages, peerTyping, scrollToBottom]);
-
-  const removeProductContext = useCallback(async () => {
-    if (!conversation?.id) return;
-    setContextClearBusy(true);
-    try {
-      const { error } = await clearConversationContextProduct(supabase, conversation.id);
-      if (error) throw error;
-      setConversation((c) => (c ? { ...c, context_product_id: null } : c));
-      setStripProduct(null);
-      toast.success("Listing removed from chat header");
-    } catch (e: unknown) {
-      toast.error(errorMessage(e, "Could not update"));
-    } finally {
-      setContextClearBusy(false);
-    }
-  }, [conversation?.id]);
 
   const sendMessage = useCallback(
     async (opts?: {
@@ -1504,56 +1282,61 @@ export default function ChatWorkspace() {
     }
   }, []);
 
-  const exitSelectionMode = useCallback(() => {
-    setSelectionMode(false);
-    setSelectedIds([]);
-  }, []);
+  const toggleFollowPeer = useCallback(async () => {
+    if (!authUser?.id || !peerId) return;
+    setFollowBusy(true);
+    try {
+      if (isFollowingPeer) {
+        const { error } = await supabase
+          .from("profile_follows")
+          .delete()
+          .eq("follower_id", authUser.id)
+          .eq("following_id", peerId);
+        if (error) throw error;
+        setIsFollowingPeer(false);
+        toast.message("Unfollowed");
+      } else {
+        const { error } = await supabase.from("profile_follows").insert({
+          follower_id: authUser.id,
+          following_id: peerId,
+        });
+        if (error) throw error;
+        setIsFollowingPeer(true);
+        toast.success("Following");
+      }
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Could not update follow");
+    } finally {
+      setFollowBusy(false);
+    }
+  }, [authUser?.id, peerId, isFollowingPeer]);
 
-  const toggleMessageSelected = useCallback((id: string) => {
-    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
-  }, []);
-
-  const enterSelectionWith = useCallback((id: string) => {
-    setSelectionMode(true);
-    setSelectedIds([id]);
-    setReplyingTo(null);
-  }, []);
-
-  const suppressNextRowClickRef = useRef(false);
-
-  const openReactionPickerForMessage = useCallback((msg: ChatMessageRow) => {
-    // eslint-disable-next-line no-console
-    console.log("[ChatWorkspace] openReactionPickerForMessage called", { messageId: msg.id });
-    if (String(msg.id).startsWith("pending-")) {
-      // eslint-disable-next-line no-console
-      console.log("[ChatWorkspace] openReactionPickerForMessage skipped (pending message)");
+  const forwardSingleMessage = useCallback(async (msg: ChatMessageRow) => {
+    const parts = [msg.message?.trim() ?? "", msg.image_url ? "[Image]" : "", msg.media_url ? "[Voice]" : ""].filter(
+      Boolean,
+    );
+    const text = parts.join("\n");
+    if (!text.trim()) {
+      toast.message("Nothing to forward");
       return;
     }
-    suppressNextRowClickRef.current = true;
-    window.setTimeout(() => {
-      suppressNextRowClickRef.current = false;
-    }, 450);
-    setReactionSheetMsg(msg);
-    // eslint-disable-next-line no-console
-    console.log("[ChatWorkspace] setReactionSheetMsg dispatched");
+    try {
+      if (typeof navigator.share === "function") {
+        await navigator.share({ text });
+      } else {
+        await navigator.clipboard.writeText(text);
+        toast.success("Copied for forwarding");
+      }
+    } catch {
+      /* user cancelled share */
+    }
+    setMobileSheetMsg(null);
   }, []);
 
-  const onMessageRowClick = useCallback(
-    (msg: ChatMessageRow) => {
-      if (suppressNextRowClickRef.current) {
-        suppressNextRowClickRef.current = false;
-        return;
-      }
-      if (selectionMode) {
-        toggleMessageSelected(msg.id);
-        return;
-      }
-      setReplyingTo(msg);
-      setHighlightedMessageId(msg.id);
-      window.setTimeout(() => setHighlightedMessageId(null), 800);
-    },
-    [selectionMode, toggleMessageSelected],
-  );
+  const openMessageActions = useCallback((msg: ChatMessageRow) => {
+    if (String(msg.id).startsWith("pending-")) return;
+    setMobileSheetMsg(msg);
+  }, []);
 
   const insertEmoji = useCallback((emoji: string) => {
     setEmojiPickerOpen(false);
@@ -1577,59 +1360,6 @@ export default function ChatWorkspace() {
     });
   }, []);
 
-  const selectedMessagesTextBlock = useMemo(() => {
-    const texts = messages
-      .filter((m) => selectedIds.includes(m.id))
-      .map((m) => m.message?.trim() ?? "")
-      .filter(Boolean);
-    return texts.join("\n\n");
-  }, [messages, selectedIds]);
-
-  const bulkCopySelected = useCallback(async () => {
-    if (!selectedMessagesTextBlock) {
-      toast.message("Nothing to copy");
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(selectedMessagesTextBlock);
-      toast.success("Copied");
-    } catch {
-      toast.error("Could not copy");
-    }
-  }, [selectedMessagesTextBlock]);
-
-  const bulkForwardSelected = useCallback(async () => {
-    if (!selectedMessagesTextBlock) {
-      toast.message("Nothing to forward");
-      return;
-    }
-    try {
-      if (typeof navigator.share === "function") {
-        await navigator.share({ text: selectedMessagesTextBlock });
-      } else {
-        await navigator.clipboard.writeText(selectedMessagesTextBlock);
-        toast.success("Copied for forwarding");
-      }
-    } catch {
-      /* user cancelled share or share failed */
-    }
-  }, [selectedMessagesTextBlock]);
-
-  const bulkDeleteSelected = useCallback(() => {
-    if (!authUser?.id) return;
-    const ownDeletable = messages.filter(
-      (m) =>
-        selectedIds.includes(m.id) &&
-        m.sender_id === authUser.id &&
-        !String(m.id).startsWith("pending-"),
-    );
-    if (!ownDeletable.length) {
-      toast.message("No messages you can delete in this selection.");
-      return;
-    }
-    setPendingConfirm({ kind: "bulk-delete-messages", messageIds: ownDeletable.map((m) => m.id) });
-  }, [authUser?.id, messages, selectedIds]);
-
   const deleteMessage = useCallback((msg: ChatMessageRow) => {
     setMobileSheetMsg(null);
     setPendingConfirm({ kind: "delete-message", message: msg });
@@ -1646,18 +1376,6 @@ export default function ChatWorkspace() {
         setMessages((prev) => prev.filter((m) => m.id !== target.id));
         setReplyingTo((c) => (c?.id === target.id ? null : c));
         toast.success("Message deleted");
-      } else if (pendingConfirm.kind === "bulk-delete-messages") {
-        const ids = pendingConfirm.messageIds;
-        for (const id of ids) {
-          const { error } = await supabase.from("chat_messages").delete().eq("id", id);
-          if (error) throw error;
-        }
-        const idSet = new Set(ids);
-        setMessages((prev) => prev.filter((m) => !idSet.has(m.id)));
-        setReplyingTo((c) => (c && idSet.has(c.id) ? null : c));
-        setSelectedIds([]);
-        setSelectionMode(false);
-        toast.success(ids.length === 1 ? "Message deleted" : `${ids.length} messages deleted`);
       } else if (pendingConfirm.kind === "delete-conversation") {
         const cid = conversation?.id;
         if (!cid) {
@@ -1689,29 +1407,6 @@ export default function ChatWorkspace() {
     }
   }, [actionBusy, conversation?.id, navigate, pendingConfirm]);
 
-  const saveEdit = useCallback(async () => {
-    if (!editTarget || !authUser?.id) return;
-    const t = editText.trim();
-    if (!t) {
-      toast.error("Message cannot be empty.");
-      return;
-    }
-    const { error } = await supabase
-      .from("chat_messages")
-      .update({ message: t, edited: true })
-      .eq("id", editTarget.id)
-      .eq("sender_id", authUser.id);
-    if (error) {
-      toast.error(error.message);
-      return;
-    }
-    setMessages((prev) =>
-      prev.map((m) => (m.id === editTarget.id ? { ...m, message: t, edited: true } : m)),
-    );
-    setEditTarget(null);
-    toast.success("Message updated");
-  }, [editTarget, editText, authUser?.id]);
-
   const jumpToMessage = useCallback((id: string | null | undefined) => {
     if (!id) return;
     const el = messageRefs.current.get(id);
@@ -1722,7 +1417,6 @@ export default function ChatWorkspace() {
     }
   }, []);
 
-  const peerContactLinks = phoneLinkTargets(peerPhone);
   const chatShellStyle = {
     ...(viewportHeight ? { ["--chat-viewport-height" as string]: `${viewportHeight}px` } : {}),
     ["--chat-header-height" as string]: `${peerHeaderHeight}px`,
@@ -1733,15 +1427,6 @@ export default function ChatWorkspace() {
     if (!q) return messages;
     return messages.filter((m) => (m.message || "").toLowerCase().includes(q));
   }, [messages, threadSearch]);
-
-  const openExternalChannel = useCallback(
-    (kind: "whatsapp" | "voice") => {
-      if (!peerContactLinks) return;
-      const url = kind === "whatsapp" ? peerContactLinks.waHref : peerContactLinks.telHref;
-      window.open(url, "_blank", "noopener,noreferrer");
-    },
-    [peerContactLinks],
-  );
 
   if (authLoading || loading) {
     return (
@@ -1877,196 +1562,160 @@ export default function ChatWorkspace() {
 
   const chatPanel = (
     <>
-      <div className="relative isolate flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-gradient-to-br from-emerald-50 via-[#eefbf4] to-cyan-50 dark:from-zinc-950 dark:via-emerald-950/40 dark:to-slate-950">
-        <div className="pointer-events-none absolute inset-0" aria-hidden>
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_20%_0%,rgba(59,130,246,0.12),transparent_50%),radial-gradient(ellipse_at_80%_100%,rgba(16,185,129,0.15),transparent_45%)] dark:bg-[radial-gradient(ellipse_at_30%_0%,rgba(59,130,246,0.08),transparent_50%),radial-gradient(ellipse_at_70%_90%,rgba(16,185,129,0.12),transparent_40%)]" />
-          <div className="absolute -left-20 top-20 h-56 w-56 rounded-full bg-emerald-400/15 blur-3xl dark:bg-emerald-500/10" />
-          <div className="absolute bottom-10 right-0 h-64 w-64 rounded-full bg-cyan-400/20 blur-3xl dark:bg-cyan-500/10" />
-        </div>
-
+      <div className="relative isolate flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#e5ddd5] dark:bg-zinc-950">
         {/* Mobile: fixed below TopNav so it stays visible while typing / scrolling; md+: sticky in column. */}
         <header
           ref={peerHeaderRef}
           className={cn(
-            "shrink-0 overflow-visible border-b border-emerald-200/90 bg-white shadow-md dark:border-emerald-800/80 dark:bg-zinc-900",
+            "shrink-0 overflow-visible border-b border-[#d1d7db] bg-[#f0f2f5] shadow-sm dark:border-zinc-700 dark:bg-zinc-900",
             "max-md:fixed max-md:left-0 max-md:right-0 max-md:top-16 max-md:z-40",
             "md:sticky md:top-16 md:z-30",
           )}
         >
-          {stripProduct ? (
-            <div className="shrink-0 border-b border-emerald-200/80 bg-emerald-50/90 dark:border-emerald-800/60 dark:bg-emerald-950/40">
+          {stripProduct && !productStripDismissed ? (
+            <div className="shrink-0 border-b border-[#d1d7db] bg-white dark:border-zinc-700 dark:bg-zinc-800/80">
               {mobileProductStripCollapsed ? (
                 <button
                   type="button"
-                  className="flex w-full items-center gap-2 px-3 py-2.5 text-left md:hidden sm:px-4"
+                  className="flex min-h-[44px] w-full items-center gap-2 px-3 py-2 text-left md:hidden sm:px-4"
                   onClick={() => setMobileProductStripCollapsed(false)}
                   aria-expanded={false}
                   aria-controls="chat-product-strip-details"
                 >
-                  <ChevronDown className="h-4 w-4 shrink-0 -rotate-90 text-emerald-800 dark:text-emerald-300" aria-hidden />
-                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-900 dark:text-zinc-100">
+                  <ChevronDown className="h-4 w-4 shrink-0 -rotate-90 text-gray-600" aria-hidden />
+                  <span className="min-w-0 flex-1 truncate text-sm font-semibold text-gray-900 dark:text-zinc-100">
                     {stripProduct.title}
                   </span>
-                  <span className="shrink-0 rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-medium text-gray-700 dark:bg-zinc-800 dark:text-zinc-300">
-                    {stripProduct.condition ?? "—"}
-                  </span>
+                  <span className="shrink-0 text-xs font-semibold text-[#25D366]">{formatPrice(stripProduct.price)}</span>
                 </button>
               ) : null}
 
               <div
                 id="chat-product-strip-details"
                 className={cn(
-                  "relative flex items-start gap-3 px-3 py-2.5 sm:px-4",
+                  "relative flex items-center gap-3 px-3 py-2.5 sm:px-4",
                   mobileProductStripCollapsed ? "hidden md:flex" : "flex",
                 )}
               >
                 <button
                   type="button"
-                  className="absolute right-14 top-2 z-10 rounded-full p-1.5 text-gray-600 hover:bg-white/80 dark:hover:bg-zinc-800 md:hidden"
+                  className="absolute right-28 top-2 z-10 min-h-[44px] min-w-[44px] rounded-full p-2 text-gray-600 hover:bg-gray-100 md:hidden dark:hover:bg-zinc-700"
                   aria-label="Hide listing details"
                   onClick={() => setMobileProductStripCollapsed(true)}
                 >
                   <ChevronDown className="h-4 w-4 rotate-180" aria-hidden />
                 </button>
-                <a
-                  href={`/products/${stripProduct.id}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="relative flex min-w-0 flex-1 gap-3 pr-10 no-underline md:pr-0"
-                >
-                  <span className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-gray-100 ring-1 ring-black/5 dark:bg-zinc-800">
-                    {stripProduct.image ? (
-                      <img src={stripProduct.image} alt="" className="h-full w-full object-cover" />
-                    ) : (
-                      <span className="flex h-full w-full items-center justify-center text-[10px] text-gray-400">
-                        No image
-                      </span>
-                    )}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="mb-0.5 flex flex-wrap items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-emerald-800 dark:text-emerald-300/90">
-                      <Package className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                      Discussing this listing
-                      {peerVerified ? <VerifiedBadge title="Verified seller" size="sm" /> : null}
-                    </span>
-                    <span className="line-clamp-2 text-sm font-semibold text-gray-900 hover:text-emerald-700 dark:text-foreground">
-                      {stripProduct.title}
-                    </span>
-                    <span className="mt-0.5 block text-sm font-bold text-emerald-600">{formatPrice(stripProduct.price)}</span>
-                    <span className="mt-1 block text-xs text-gray-700 dark:text-zinc-400">
-                      Condition:{" "}
-                      <span className="font-medium text-gray-900 dark:text-zinc-200">{stripProduct.condition ?? "—"}</span>
-                    </span>
-                    <span className="mt-0.5 block text-xs text-gray-600 dark:text-zinc-500">
-                      {peerResponseMs != null
-                        ? formatAvgResponseLabel(peerResponseMs)
-                        : "Typical reply: not enough chat history yet"}
-                    </span>
-                  </span>
-                </a>
+                <span className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-gray-100 ring-1 ring-black/5 dark:bg-zinc-800">
+                  {stripProduct.image ? (
+                    <img src={stripProduct.image} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    <span className="flex h-full w-full items-center justify-center text-[10px] text-gray-400">No image</span>
+                  )}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="line-clamp-2 text-sm font-semibold text-gray-900 dark:text-zinc-100">{stripProduct.title}</p>
+                  <p className="text-sm font-bold text-[#25D366]">{formatPrice(stripProduct.price)}</p>
+                </div>
+                <Button type="button" variant="secondary" size="sm" className="min-h-[44px] shrink-0 px-3" asChild>
+                  <Link to={`/products/${stripProduct.id}`}>View product</Link>
+                </Button>
                 <button
                   type="button"
-                  onClick={() => void removeProductContext()}
-                  disabled={contextClearBusy}
-                  className="shrink-0 rounded-full p-2 text-gray-500 hover:bg-white/80 disabled:opacity-50 dark:hover:bg-zinc-800"
-                  aria-label="Remove listing from chat"
+                  onClick={() => setProductStripDismissed(true)}
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-gray-500 hover:bg-gray-100 dark:hover:bg-zinc-700"
+                  aria-label="Dismiss product banner"
                 >
                   <X className="h-5 w-5" />
                 </button>
               </div>
             </div>
           ) : null}
-          <div className="px-3 py-2.5 sm:px-4">
-            <div className="flex items-start gap-2 sm:gap-3">
+          <div className="px-2 py-2 sm:px-3">
+            <div className="flex min-h-[52px] items-center gap-1.5 sm:gap-2">
               <button
                 type="button"
                 onClick={() => navigate("/messages")}
-                className="-ml-2 shrink-0 rounded-lg p-2 hover:bg-gray-100 dark:hover:bg-zinc-800"
+                className="flex h-11 min-w-[44px] shrink-0 items-center justify-center rounded-full hover:bg-black/[0.05] dark:hover:bg-white/10"
                 aria-label="Back"
               >
-                <ArrowLeft className="h-5 w-5 text-gray-700 dark:text-zinc-200" />
+                <ArrowLeft className="h-6 w-6 text-gray-800 dark:text-zinc-100" />
               </button>
               <img
                 src={peerAvatarDisplay}
                 alt=""
-                className="h-11 w-11 shrink-0 rounded-full object-cover ring-2 ring-emerald-100 dark:ring-zinc-700"
+                className="h-10 w-10 shrink-0 rounded-full bg-gray-200 object-cover ring-2 ring-white dark:ring-zinc-700"
               />
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5">
-                  <h1 className="min-w-0 flex-1 text-lg font-bold leading-snug tracking-tight text-gray-900 dark:text-zinc-100 sm:text-xl">
-                    <span className="line-clamp-2 break-words">{peerName}</span>
-                  </h1>
-                  {peerVerified ? <VerifiedBadge title="Verified seller" size="md" className="mt-0.5" /> : null}
-                </div>
+                <h1 className="truncate text-base font-bold leading-tight text-gray-900 dark:text-zinc-100">{peerName}</h1>
+                <p className="mt-0.5 flex items-center gap-1.5 text-xs text-gray-600 dark:text-zinc-400">
+                  <span
+                    className={cn(
+                      "h-2 w-2 shrink-0 rounded-full",
+                      peerTyping ? "bg-amber-500" : peerActiveByProfile ? "bg-[#25D366]" : "bg-gray-400",
+                    )}
+                    aria-hidden
+                  />
+                  {peerTyping ? (
+                    <span>typing…</span>
+                  ) : peerActiveByProfile ? (
+                    <span className="text-[#16a34a] dark:text-[#4ade80]">Online</span>
+                  ) : peerLastActive ? (
+                    <span className="truncate">Last seen {formatListTime(peerLastActive)}</span>
+                  ) : (
+                    <span>Offline</span>
+                  )}
+                </p>
               </div>
+              <Button
+                type="button"
+                variant={isFollowingPeer ? "secondary" : "default"}
+                size="sm"
+                className="h-11 min-h-[44px] shrink-0 gap-1.5 px-3 text-xs font-semibold"
+                disabled={followBusy}
+                onClick={() => void toggleFollowPeer()}
+              >
+                {isFollowingPeer ? <UserCheck className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}
+                {isFollowingPeer ? "Following" : "Follow"}
+              </Button>
+              <button
+                type="button"
+                className="flex h-11 min-w-[44px] shrink-0 items-center justify-center rounded-full hover:bg-black/[0.05] dark:hover:bg-white/10"
+                aria-label="Search in chat"
+                onClick={() => setSearchOpen((v) => !v)}
+              >
+                <Search className="h-5 w-5 text-gray-700 dark:text-zinc-200" />
+              </button>
               <DropdownMenu modal={false}>
                 <DropdownMenuTrigger asChild>
                   <button
                     type="button"
-                    className="shrink-0 rounded-lg p-2 text-gray-600 hover:bg-gray-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                    aria-label="Chat options"
+                    className="flex h-11 min-w-[44px] shrink-0 items-center justify-center rounded-full hover:bg-black/[0.05] dark:hover:bg-white/10"
+                    aria-label="More options"
                   >
-                    <MoreVertical className="h-5 w-5" />
+                    <MoreVertical className="h-5 w-5 text-gray-700 dark:text-zinc-200" />
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-60">
-                  <DropdownMenuLabel className="line-clamp-2">{peerName}</DropdownMenuLabel>
+                <DropdownMenuContent align="end" className="w-56">
                   {peerMemberSince ? (
-                    <p className="px-2 pb-2 pt-0 text-[11px] leading-snug text-gray-500 dark:text-zinc-400">
-                      <span className="inline-flex items-center gap-1.5">
-                        <Calendar className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
-                        <span>Member since {peerMemberSince}</span>
-                      </span>
-                    </p>
+                    <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+                      Member since {peerMemberSince}
+                    </DropdownMenuLabel>
                   ) : null}
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    className="cursor-pointer gap-2"
-                    onSelect={(e) => {
-                      e.preventDefault();
-                      setSearchOpen((v) => !v);
-                    }}
-                  >
-                    <Search className="h-4 w-4" />
-                    Search in chat
+                  <DropdownMenuItem asChild>
+                    <Link to={`/profile/${peerId}`} className="flex cursor-pointer items-center gap-2">
+                      <User className="h-4 w-4" />
+                      View profile
+                    </Link>
                   </DropdownMenuItem>
-                  {peerContactLinks ? (
-                    <>
-                      <DropdownMenuItem
-                        className="cursor-pointer gap-2"
-                        onSelect={(e) => {
-                          e.preventDefault();
-                          openExternalChannel("whatsapp");
-                        }}
-                      >
-                        <WhatsAppIcon className="h-4 w-4 text-[#25D366]" />
-                        WhatsApp
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        className="cursor-pointer gap-2"
-                        onSelect={(e) => {
-                          e.preventDefault();
-                          openExternalChannel("voice");
-                        }}
-                      >
-                        <Phone className="h-4 w-4" />
-                        Call
-                      </DropdownMenuItem>
-                    </>
-                  ) : (
-                    <DropdownMenuItem disabled className="text-xs">
-                      No phone on profile
-                    </DropdownMenuItem>
-                  )}
-                  <DropdownMenuSeparator />
                   <DropdownMenuItem
                     onSelect={(e) => {
                       e.preventDefault();
-                      setPendingConfirm({ kind: "delete-conversation" });
+                      setPendingConfirm({ kind: "clear-chat" });
                     }}
                   >
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    Delete conversation
+                    <Eraser className="mr-2 h-4 w-4" />
+                    Clear chat
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     onSelect={(e) => {
@@ -2078,98 +1727,8 @@ export default function ChatWorkspace() {
                     <Ban className="mr-2 h-4 w-4" />
                     Block user
                   </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onSelect={(e) => {
-                      e.preventDefault();
-                      setPendingConfirm({ kind: "clear-chat" });
-                    }}
-                  >
-                    <Eraser className="mr-2 h-4 w-4" />
-                    Clear chat
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem asChild>
-                    <Link to={`/profile/${peerId}`} className="flex cursor-pointer items-center gap-2">
-                      <User className="h-4 w-4" />
-                      View profile
-                    </Link>
-                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-            </div>
-
-            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] leading-tight text-gray-600 dark:text-zinc-400 sm:mt-1 sm:gap-x-2.5 sm:text-xs">
-              {peerReviewCount > 0 && peerRating != null ? (
-                <span
-                  className="inline-flex items-center gap-px"
-                  title={`${peerRating.toFixed(1)} average · ${peerReviewCount} reviews`}
-                  aria-label={`${peerRating.toFixed(1)} average, ${peerReviewCount} reviews`}
-                >
-                  {Array.from({ length: 5 }, (_, i) => (
-                    <Star
-                      key={i}
-                      className={cn(
-                        "h-3 w-3 shrink-0 stroke-[1.5]",
-                        i < Math.round(Math.min(5, Math.max(0, peerRating)))
-                          ? "fill-amber-400 text-amber-500"
-                          : "fill-none text-gray-300 dark:text-zinc-600",
-                      )}
-                      aria-hidden
-                    />
-                  ))}
-                  <span className="ml-0.5 tabular-nums text-[10px] text-gray-400 dark:text-zinc-500">({peerReviewCount})</span>
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-px opacity-70" title="No reviews yet" aria-label="No reviews yet">
-                  {Array.from({ length: 5 }, (_, i) => (
-                    <Star
-                      key={i}
-                      className="h-3 w-3 shrink-0 fill-none stroke-[1.5] text-gray-300 dark:text-zinc-600"
-                      aria-hidden
-                    />
-                  ))}
-                </span>
-              )}
-              {peerLocationLabel ? (
-                <>
-                  <span className="text-gray-300 dark:text-zinc-600" aria-hidden>
-                    ·
-                  </span>
-                  <span className="inline-flex min-w-0 max-w-[min(100%,10rem)] items-center gap-0.5 sm:max-w-[13rem]">
-                    <MapPin className="h-3 w-3 shrink-0 text-gray-400" aria-hidden />
-                    <span className="truncate">{peerLocationLabel}</span>
-                  </span>
-                </>
-              ) : null}
-              <span className="text-gray-300 dark:text-zinc-600" aria-hidden>
-                ·
-              </span>
-              <span
-                className="inline-flex min-w-0 items-center gap-0.5"
-                title={
-                  peerResponseMs != null
-                    ? formatAvgResponseLabel(peerResponseMs)
-                    : "Not enough message history to estimate reply time"
-                }
-              >
-                <Zap className="h-3 w-3 shrink-0 text-amber-500" aria-hidden />
-                <span className="truncate">
-                  {peerResponseMs != null ? formatAvgResponseLabelShort(peerResponseMs) : "No reply stats"}
-                </span>
-              </span>
-              <span className="inline-flex shrink-0 items-center gap-1 font-medium text-gray-700 dark:text-zinc-300">
-                <span
-                  className={cn(
-                    "h-1.5 w-1.5 shrink-0 rounded-full",
-                    peerTyping ? "bg-amber-500" : peerActiveByProfile ? "bg-emerald-500" : "bg-zinc-400 dark:bg-zinc-500",
-                  )}
-                  title={peerTyping ? "Typing" : peerActiveByProfile ? "Active" : "Offline"}
-                  aria-hidden
-                />
-                <span className="whitespace-nowrap">
-                  {peerTyping ? "Typing…" : peerActiveByProfile ? "Active" : "Offline"}
-                </span>
-              </span>
             </div>
             {searchOpen ? (
               <div className="mt-2 flex items-center gap-2 rounded-xl border border-emerald-100 bg-white/90 px-3 py-2 dark:border-emerald-900 dark:bg-zinc-800/90">
@@ -2224,7 +1783,7 @@ export default function ChatWorkspace() {
           <div
             ref={scrollRef}
             onScroll={updateScrollState}
-            className="chat-messages min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-3 py-3 sm:px-4 [-webkit-overflow-scrolling:touch]"
+            className="chat-messages min-h-0 flex-1 overflow-y-auto overscroll-y-contain bg-[#e5ddd5] px-2 py-2 sm:px-3 [-webkit-overflow-scrolling:touch] dark:bg-zinc-950"
           >
             <div className="flex flex-col pb-1">
               {messages.map((msg, i) => {
@@ -2246,24 +1805,19 @@ export default function ChatWorkspace() {
                 const isHighlighted = highlightedMessageId === msg.id;
                 const productCard = resolveMessageProductCard(msg);
 
-                const reactionPickerDisabled = selectionMode || String(msg.id).startsWith("pending-");
+                const actionsDisabled = String(msg.id).startsWith("pending-");
 
                 const messageBubbleEl = (
                   <MessageBubble
                     mine={mine}
-                    senderName={mine ? "You" : peerFirstName}
-                    showSenderName={!sameCluster}
                     timeLabel={timeLabel}
                     showMeta={showMeta}
                     receiptPhase={outgoingReceiptPhase(msg)}
                     showIncomingRead={!mine && !!msg.read_at}
                     isHighlighted={isHighlighted}
                     edited={!!msg.edited}
-                    reactions={reactionByMessage[msg.id]?.summaries ?? null}
-                    onRequestReactionPicker={
-                      reactionPickerDisabled ? undefined : () => openReactionPickerForMessage(msg)
-                    }
-                    reactionInteractionDisabled={!!reactionPickerDisabled}
+                    onRequestActions={actionsDisabled ? undefined : () => openMessageActions(msg)}
+                    actionsDisabled={actionsDisabled}
                     replySlot={
                       replyPreview || msg.reply_to_id ? (
                         <button
@@ -2271,19 +1825,15 @@ export default function ChatWorkspace() {
                           onPointerDown={(e) => e.stopPropagation()}
                           onClick={(e) => {
                             e.stopPropagation();
-                            if (selectionMode) {
-                              toggleMessageSelected(msg.id);
-                              return;
-                            }
                             jumpToMessage(replyPreview?.id ?? msg.reply_to_id);
                           }}
-                          className={`mb-2 block w-full rounded-xl border-l-4 px-3 py-2 text-left transition ${
+                          className={`mb-2 block w-full rounded-lg border-l-[3px] px-2.5 py-1.5 text-left transition ${
                             mine
-                              ? "border-white/60 bg-white/18 text-white/95 hover:bg-white/22"
-                              : "border-emerald-500/80 bg-white/40 text-gray-900 hover:bg-white/55"
+                              ? "border-white/70 bg-black/10 text-white"
+                              : "border-gray-400 bg-gray-100 text-gray-900 dark:bg-zinc-600/80 dark:text-zinc-100"
                           }`}
                         >
-                          <p className="truncate text-[11px] font-semibold">{quotedSender}</p>
+                          <p className="truncate text-[11px] font-semibold opacity-90">{quotedSender}</p>
                           <p className="line-clamp-2 text-[12px] leading-snug opacity-90">
                             {replyPreview
                               ? messagePreviewText(replyPreview.message, replyPreview.image_url)
@@ -2299,7 +1849,7 @@ export default function ChatWorkspace() {
                           title={productCard.strip.title}
                           priceLabel={productCard.pricePending ? "…" : formatPrice(productCard.strip.price)}
                           imageUrl={productCard.strip.image}
-                          disableLink={selectionMode}
+                          disableLink={false}
                         />
                       ) : null
                     }
@@ -2309,10 +1859,10 @@ export default function ChatWorkspace() {
                         <img
                           src={msg.image_url}
                           alt=""
-                          className="max-h-64 max-w-full rounded-lg object-cover"
+                          className="max-h-64 max-w-full rounded-md object-cover"
                           loading="lazy"
-                          onPointerDown={(e) => !selectionMode && e.stopPropagation()}
-                          onClick={(e) => !selectionMode && e.stopPropagation()}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          onClick={(e) => e.stopPropagation()}
                         />
                       ) : null}
                       {msg.media_url ? (
@@ -2321,15 +1871,19 @@ export default function ChatWorkspace() {
                           controls
                           className="max-w-[min(100%,280px)]"
                           preload="metadata"
-                          onPointerDown={(e) => !selectionMode && e.stopPropagation()}
-                          onClick={(e) => !selectionMode && e.stopPropagation()}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          onClick={(e) => e.stopPropagation()}
                         />
                       ) : null}
                       {msg.message?.trim() ? (
-                        <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{msg.message}</p>
+                        <p
+                          className={`whitespace-pre-wrap break-words text-sm leading-relaxed ${mine ? "text-white" : "text-inherit"}`}
+                        >
+                          {msg.message}
+                        </p>
                       ) : null}
                       {msg.client_sending ? (
-                        <span className="inline-flex items-center gap-1 text-[11px] opacity-80">
+                        <span className={`inline-flex items-center gap-1 text-[11px] ${mine ? "text-white/85" : "opacity-80"}`}>
                           <Loader2 className="h-3 w-3 animate-spin" /> Sending…
                         </span>
                       ) : null}
@@ -2337,20 +1891,44 @@ export default function ChatWorkspace() {
                   </MessageBubble>
                 );
 
-                const rowBody = (
-                  <div
-                    className="touch-manipulation min-w-0 flex-1"
-                    onClick={() => onMessageRowClick(msg)}
-                  >
-                    {messageBubbleEl}
-                  </div>
+                const rowBody = <div className="touch-manipulation min-w-0 flex-1">{messageBubbleEl}</div>;
+
+                const menuItems = (
+                  <>
+                    <ContextMenuItem
+                      onSelect={() => {
+                        setReplyingTo(msg);
+                        jumpToMessage(msg.id);
+                      }}
+                    >
+                      <Reply className="mr-2 h-4 w-4" />
+                      Reply
+                    </ContextMenuItem>
+                    <ContextMenuItem onSelect={() => void copyText(msg)}>
+                      <Copy className="mr-2 h-4 w-4" />
+                      Copy
+                    </ContextMenuItem>
+                    <ContextMenuItem onSelect={() => void forwardSingleMessage(msg)}>
+                      <Share2 className="mr-2 h-4 w-4" />
+                      Forward
+                    </ContextMenuItem>
+                    {mine ? (
+                      <ContextMenuItem
+                        className="text-red-600"
+                        onSelect={() => setPendingConfirm({ kind: "delete-message", message: msg })}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Delete
+                      </ContextMenuItem>
+                    ) : null}
+                  </>
                 );
 
                 return (
                   <Fragment key={msg.id}>
                     {showDayDivider ? (
                       <div className="mb-3 flex justify-center">
-                        <span className="rounded-full bg-white/80 px-3 py-1 text-[11px] font-semibold text-gray-600 shadow-sm ring-1 ring-black/5 backdrop-blur dark:bg-zinc-800/90 dark:text-zinc-300 dark:ring-white/10">
+                        <span className="rounded-full bg-white/90 px-3 py-1 text-[11px] font-semibold text-gray-600 shadow-sm ring-1 ring-black/5 dark:bg-zinc-800/90 dark:text-zinc-300 dark:ring-white/10">
                           {dayDividerLabel(msg.created_at)}
                         </span>
                       </div>
@@ -2360,84 +1938,12 @@ export default function ChatWorkspace() {
                         if (node) messageRefs.current.set(msg.id, node);
                         else messageRefs.current.delete(msg.id);
                       }}
-                      className={cn(
-                        "flex w-full items-start gap-1 sm:gap-2",
-                        sameCluster ? "mb-0.5" : "mb-2",
-                      )}
+                      className={cn("flex w-full items-start", sameCluster ? "mb-0.5" : "mb-2")}
                     >
-                      {selectionMode ? (
-                        <button
-                          type="button"
-                          role="checkbox"
-                          aria-checked={selectedIds.includes(msg.id)}
-                          aria-label={selectedIds.includes(msg.id) ? "Deselect message" : "Select message"}
-                          onPointerDown={(e) => e.stopPropagation()}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleMessageSelected(msg.id);
-                          }}
-                          className={cn(
-                            "mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border transition active:scale-[0.97]",
-                            selectedIds.includes(msg.id)
-                              ? "border-emerald-500 bg-emerald-500 text-white shadow-sm dark:border-emerald-400"
-                              : "border-gray-300 bg-white/90 text-gray-600 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200",
-                          )}
-                        >
-                          {selectedIds.includes(msg.id) ? <Check className="h-5 w-5" strokeWidth={2.5} /> : null}
-                        </button>
-                      ) : null}
-                      {selectionMode ? (
-                        rowBody
-                      ) : useDesktopContextMenu ? (
+                      {useDesktopContextMenu ? (
                         <ContextMenu>
                           <ContextMenuTrigger asChild>{rowBody}</ContextMenuTrigger>
-                          <ContextMenuContent>
-                            <ContextMenuItem
-                              onSelect={() => {
-                                enterSelectionWith(msg.id);
-                              }}
-                            >
-                              <Check className="mr-2 h-4 w-4" />
-                              Select messages
-                            </ContextMenuItem>
-                            <ContextMenuSeparator />
-                            <ContextMenuItem
-                              onSelect={() => {
-                                setReplyingTo(msg);
-                                jumpToMessage(msg.id);
-                              }}
-                            >
-                              <Reply className="mr-2 h-4 w-4" />
-                              Reply
-                            </ContextMenuItem>
-                            <ContextMenuItem onSelect={() => void copyText(msg)}>
-                              <Copy className="mr-2 h-4 w-4" />
-                              Copy
-                            </ContextMenuItem>
-                            {mine ? (
-                              <ContextMenuItem
-                                onSelect={() => {
-                                  setEditTarget(msg);
-                                  setEditText(msg.message || "");
-                                }}
-                              >
-                                Edit
-                              </ContextMenuItem>
-                            ) : null}
-                            {mine ? (
-                              <ContextMenuItem
-                                className="text-red-600"
-                                onSelect={() => setPendingConfirm({ kind: "delete-message", message: msg })}
-                              >
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                Delete
-                              </ContextMenuItem>
-                            ) : null}
-                            <ContextMenuSeparator />
-                            <ContextMenuItem onSelect={() => setMobileSheetMsg(msg)} className="md:hidden">
-                              More…
-                            </ContextMenuItem>
-                          </ContextMenuContent>
+                          <ContextMenuContent className="min-w-[12rem]">{menuItems}</ContextMenuContent>
                         </ContextMenu>
                       ) : (
                         rowBody
@@ -2467,56 +1973,8 @@ export default function ChatWorkspace() {
             </div>
           ) : null}
 
-          <div className="relative z-30 shrink-0 border-t border-emerald-100/90 bg-white/96 pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-[0_-2px_10px_rgba(0,0,0,0.06)] backdrop-blur dark:border-emerald-900/60 dark:bg-zinc-900/96 dark:shadow-[0_-2px_12px_rgba(0,0,0,0.35)]">
-            {selectionMode ? (
-              <div className="flex flex-wrap items-center gap-2 border-b border-emerald-100/80 bg-emerald-50/50 px-3 py-2.5 dark:border-emerald-900/50 dark:bg-emerald-950/40">
-                <span className="min-h-[44px] flex-1 content-center text-sm font-semibold text-emerald-900 dark:text-emerald-100">
-                  {selectedIds.length} selected
-                </span>
-                <div className="flex flex-wrap items-center justify-end gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="min-h-[44px] min-w-[44px] touch-manipulation px-3"
-                    onClick={() => void bulkCopySelected()}
-                  >
-                    <Copy className="mr-1.5 h-4 w-4" />
-                    Copy
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="min-h-[44px] min-w-[44px] touch-manipulation px-3"
-                    onClick={() => void bulkForwardSelected()}
-                  >
-                    <Share2 className="mr-1.5 h-4 w-4" />
-                    Forward
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    size="sm"
-                    className="min-h-[44px] min-w-[44px] touch-manipulation px-3"
-                    onClick={bulkDeleteSelected}
-                  >
-                    <Trash2 className="mr-1.5 h-4 w-4" />
-                    Delete
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    className="min-h-[44px] min-w-[44px] touch-manipulation px-3"
-                    onClick={exitSelectionMode}
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-            ) : null}
-            <div className="px-3 py-3 sm:px-4">
+          <div className="relative z-30 shrink-0 border-t border-[#d1d7db] bg-[#f0f2f5] pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-[0_-1px_3px_rgba(0,0,0,0.08)] dark:border-zinc-700 dark:bg-zinc-900">
+            <div className="px-2 py-2 sm:px-3">
               {replyingTo ? (
                 <div className="mb-2 flex items-start justify-between gap-3 rounded-2xl border border-emerald-100 bg-emerald-50/80 px-3 py-2 dark:border-emerald-900 dark:bg-emerald-950/50">
                   <div className="min-w-0">
@@ -2538,17 +1996,12 @@ export default function ChatWorkspace() {
                 </div>
               ) : null}
 
-              <div
-                className={cn(
-                  "flex flex-wrap items-end gap-2",
-                  selectionMode && "pointer-events-none select-none opacity-45",
-                )}
-              >
+              <div className="flex flex-wrap items-end gap-1.5 sm:gap-2">
                 <input ref={attachInputRef} type="file" accept="image/*" className="hidden" onChange={onPickImage} />
                 <button
                   type="button"
                   onClick={() => attachInputRef.current?.click()}
-                  className="shrink-0 rounded-full p-2 text-gray-600 hover:bg-gray-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                  className="flex h-11 min-w-[44px] shrink-0 items-center justify-center rounded-full text-gray-700 hover:bg-black/[0.06] dark:text-zinc-200 dark:hover:bg-white/10"
                   aria-label="Attach image"
                 >
                   <ImagePlus className="h-6 w-6" />
@@ -2557,7 +2010,7 @@ export default function ChatWorkspace() {
                   <PopoverTrigger asChild>
                     <button
                       type="button"
-                      className="shrink-0 rounded-full p-2 text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950/50"
+                      className="flex h-11 min-w-[44px] shrink-0 items-center justify-center rounded-full text-gray-700 hover:bg-black/[0.06] dark:text-zinc-200 dark:hover:bg-white/10"
                       aria-label="Insert emoji"
                       title="Emoji"
                     >
@@ -2589,7 +2042,7 @@ export default function ChatWorkspace() {
                   type="button"
                   onClick={() => void sendProductCard()}
                   disabled={!conversation?.context_product_id && !stripProduct}
-                  className="shrink-0 rounded-full p-2 text-gray-600 hover:bg-gray-100 disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                  className="flex h-11 min-w-[44px] shrink-0 items-center justify-center rounded-full text-gray-700 hover:bg-black/[0.06] disabled:opacity-40 dark:text-zinc-200 dark:hover:bg-white/10"
                   aria-label="Share listing"
                   title="Share product card"
                 >
@@ -2607,12 +2060,12 @@ export default function ChatWorkspace() {
                   }}
                   rows={1}
                   placeholder="Message…"
-                  className="min-h-[44px] min-w-0 flex-1 resize-none rounded-2xl border border-gray-200 bg-white px-3 py-2.5 text-sm outline-none ring-emerald-500/30 focus:ring-2 dark:border-zinc-600 dark:bg-zinc-800 dark:text-foreground"
+                  className="min-h-[44px] min-w-0 flex-1 resize-none rounded-full border border-[#d1d7db] bg-white px-4 py-2.5 text-sm outline-none focus:border-[#25D366] focus:ring-1 focus:ring-[#25D366] dark:border-zinc-600 dark:bg-zinc-800 dark:text-foreground"
                 />
                 <button
                   type="button"
                   onPointerDown={onMicPointerDown}
-                  className={`shrink-0 rounded-full p-2 ${recording ? "bg-red-500 text-white" : "text-gray-600 hover:bg-gray-100 dark:text-zinc-300 dark:hover:bg-zinc-800"}`}
+                  className={`flex h-11 min-w-[44px] shrink-0 items-center justify-center rounded-full ${recording ? "bg-red-500 text-white" : "text-gray-700 hover:bg-black/[0.06] dark:text-zinc-200 dark:hover:bg-white/10"}`}
                   aria-label="Hold to record voice"
                   title="Hold to record"
                 >
@@ -2622,7 +2075,7 @@ export default function ChatWorkspace() {
                   type="button"
                   onClick={() => void sendMessage()}
                   disabled={sendBusy || !draft.trim()}
-                  className="shrink-0 rounded-full bg-[#22c55e] p-2.5 text-white shadow-sm dark:bg-emerald-600 disabled:opacity-50"
+                  className="flex h-11 min-w-[44px] shrink-0 items-center justify-center rounded-full bg-[#25D366] text-white shadow-sm disabled:opacity-50 dark:bg-[#25D366]"
                   aria-label="Send"
                 >
                   {sendBusy ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
@@ -2633,55 +2086,16 @@ export default function ChatWorkspace() {
         </div>
       </div>
 
-      <Sheet open={reactionSheetMsg != null} onOpenChange={(open) => !open && setReactionSheetMsg(null)}>
-        <SheetContent
-          side="bottom"
-          className="rounded-t-3xl px-0 pb-[max(1rem,env(safe-area-inset-bottom))]"
-          onOpenAutoFocus={(e) => e.preventDefault()}
-        >
-          <SheetHeader className="px-4 pb-2">
-            <SheetTitle>Reaction</SheetTitle>
-            <SheetDescription>Choose an emoji — long press a message to open this.</SheetDescription>
-          </SheetHeader>
-          {reactionSheetMsg ? (
-            <div className="flex flex-wrap items-center justify-center gap-3 px-4 pb-6 pt-2">
-              {CHAT_QUICK_REACTION_EMOJIS.map((emoji) => (
-                <button
-                  key={emoji}
-                  type="button"
-                  className="flex h-14 w-14 items-center justify-center rounded-2xl text-3xl transition hover:bg-emerald-50 active:scale-95 dark:hover:bg-zinc-800"
-                  onClick={() => void applyQuickReaction(reactionSheetMsg, emoji)}
-                  aria-label={`React with ${emoji}`}
-                >
-                  {emoji}
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </SheetContent>
-      </Sheet>
-
       <Sheet open={mobileSheetMsg != null} onOpenChange={(open) => !open && setMobileSheetMsg(null)}>
         <SheetContent side="bottom" className="rounded-t-3xl px-0 pb-[max(1rem,env(safe-area-inset-bottom))]">
           <SheetHeader className="px-4 pb-2">
             <SheetTitle>Message</SheetTitle>
-            <SheetDescription>Reply, copy, edit, or delete.</SheetDescription>
+            <SheetDescription>Reply, forward, copy, or delete.</SheetDescription>
           </SheetHeader>
           {mobileSheetMsg ? (
-            <div className="grid gap-2 px-4">
+            <div className="grid gap-2 px-4 pb-2">
               <Button
-                variant="outline"
-                className="w-full"
-                onClick={() => {
-                  enterSelectionWith(mobileSheetMsg.id);
-                  setMobileSheetMsg(null);
-                }}
-              >
-                <Check className="mr-2 h-4 w-4" />
-                Select messages
-              </Button>
-              <Button
-                className="w-full"
+                className="h-12 w-full"
                 onClick={() => {
                   setReplyingTo(mobileSheetMsg);
                   setMobileSheetMsg(null);
@@ -2690,34 +2104,25 @@ export default function ChatWorkspace() {
                 <Reply className="mr-2 h-4 w-4" />
                 Reply
               </Button>
-              <Button variant="outline" className="w-full" onClick={() => void copyText(mobileSheetMsg)}>
+              <Button variant="outline" className="h-12 w-full" onClick={() => void forwardSingleMessage(mobileSheetMsg)}>
+                <Share2 className="mr-2 h-4 w-4" />
+                Forward
+              </Button>
+              <Button variant="outline" className="h-12 w-full" onClick={() => void copyText(mobileSheetMsg)}>
                 <Copy className="mr-2 h-4 w-4" />
                 Copy
               </Button>
               {mobileSheetMsg.sender_id === authUser?.id ? (
-                <>
-                  <Button
-                    variant="outline"
-                    className="w-full"
-                    onClick={() => {
-                      setEditTarget(mobileSheetMsg);
-                      setEditText(mobileSheetMsg.message || "");
-                      setMobileSheetMsg(null);
-                    }}
-                  >
-                    Edit
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    className="w-full"
-                    onClick={() => {
-                      deleteMessage(mobileSheetMsg);
-                    }}
-                  >
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    Delete
-                  </Button>
-                </>
+                <Button
+                  variant="destructive"
+                  className="h-12 w-full"
+                  onClick={() => {
+                    deleteMessage(mobileSheetMsg);
+                  }}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Delete
+                </Button>
               ) : null}
             </div>
           ) : null}
@@ -2730,20 +2135,16 @@ export default function ChatWorkspace() {
             <AlertDialogTitle>
               {pendingConfirm?.kind === "delete-message"
                 ? "Delete message?"
-                : pendingConfirm?.kind === "bulk-delete-messages"
-                  ? `Delete ${pendingConfirm.messageIds.length} message${pendingConfirm.messageIds.length === 1 ? "" : "s"}?`
-                  : pendingConfirm?.kind === "delete-conversation"
-                    ? "Delete conversation?"
-                    : "Clear chat?"}
+                : pendingConfirm?.kind === "delete-conversation"
+                  ? "Delete conversation?"
+                  : "Clear chat?"}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {pendingConfirm?.kind === "delete-message"
                 ? "This removes the message for everyone in the thread."
-                : pendingConfirm?.kind === "bulk-delete-messages"
-                  ? "This removes the selected messages you sent for everyone in the thread."
-                  : pendingConfirm?.kind === "delete-conversation"
-                    ? "This deletes the conversation and returns you to the inbox."
-                    : "This removes all messages in this chat."}
+                : pendingConfirm?.kind === "delete-conversation"
+                  ? "This deletes the conversation and returns you to the inbox."
+                  : "This removes all messages in this chat."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -2762,25 +2163,6 @@ export default function ChatWorkspace() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <Dialog open={editTarget != null} onOpenChange={(open) => !open && setEditTarget(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit message</DialogTitle>
-          </DialogHeader>
-          <textarea
-            value={editText}
-            onChange={(e) => setEditText(e.target.value)}
-            rows={4}
-            className="w-full rounded-lg border border-gray-200 p-3 text-sm dark:border-zinc-600 dark:bg-zinc-800"
-          />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditTarget(null)}>
-              Cancel
-            </Button>
-            <Button onClick={() => void saveEdit()}>Save</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </>
   );
 

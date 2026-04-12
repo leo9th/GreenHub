@@ -3,7 +3,7 @@ import { Link } from "react-router";
 import { MessageCircle } from "lucide-react";
 import ChatWorkspace from "../components/chat/ChatWorkspace";
 
-/** Direct-message thread UI: layout, header, and bubbles live in `components/chat/ChatWorkspace`. */
+/** Direct-message thread: WhatsApp-style layout, header, and bubbles in `components/chat/ChatWorkspace`. */
 
 function ChatErrorBoundary({ children }: { children: React.ReactNode }) {
   class Boundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {

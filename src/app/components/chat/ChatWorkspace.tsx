@@ -48,7 +48,9 @@ import {
   normalizeChatMessageRow,
   outgoingReceiptPhase,
   resolveChatMessageReplyPreviews,
+  fetchMessageReactions,
   type ChatMessageRow,
+  type MessageReactionsState,
 } from "../../utils/chatMessages";
 import {
   AlertDialog,
@@ -122,6 +124,17 @@ function parseConversationInt(v: unknown): number | null {
   if (v == null) return null;
   const n = typeof v === "number" ? v : Number(v);
   return Number.isFinite(n) ? n : null;
+}
+
+/** Parse `?product=` (same numeric id as `products.id` / `conversations.context_product_id`). */
+function parseProductQueryParam(param: string | null): number | null {
+  if (param == null || param === "") return null;
+  const t = decodeURIComponent(String(param)).trim();
+  if (!t) return null;
+  const n = Number(t);
+  if (!Number.isFinite(n) || n < 1) return null;
+  const i = Math.trunc(n);
+  return i >= 1 ? i : null;
 }
 
 function isDuplicateConversationError(err: { code?: string; message?: string }): boolean {
@@ -302,7 +315,9 @@ export default function ChatWorkspace() {
   const [followBusy, setFollowBusy] = useState(false);
   /** Hide listing strip locally (X); resets when listing changes */
   const [productStripDismissed, setProductStripDismissed] = useState(false);
+  const [reactionByMessage, setReactionByMessage] = useState<Record<string, MessageReactionsState>>({});
   const threadMessagesRef = useRef<ChatMessageRow[]>([]);
+  const refreshReactionsRef = useRef<() => Promise<void>>(async () => {});
   const draftTextareaRef = useRef<HTMLTextAreaElement>(null);
   const peerHeaderRef = useRef<HTMLElement | null>(null);
   /** After opening chat from a listing (`?product=`), attach `product_id` to the first outbound message. */
@@ -323,11 +338,14 @@ export default function ChatWorkspace() {
   } = useInboxConversationList(authUser?.id);
 
   const productParam = searchParams.get("product");
-  const validProductId = useMemo(() => {
-    if (!productParam) return null;
-    const n = parseInt(productParam, 10);
-    return Number.isFinite(n) && n > 0 ? n : null;
-  }, [productParam]);
+  const validProductId = useMemo(() => parseProductQueryParam(productParam), [productParam]);
+
+  /** Prefer `?product=` from the listing link so the strip loads even before DB sync. */
+  const stripProductSourceId = useMemo(() => {
+    if (validProductId != null && validProductId > 0) return validProductId;
+    const c = conversation ? parseConversationInt(conversation.context_product_id) : null;
+    return c != null && c > 0 ? Math.trunc(c) : null;
+  }, [validProductId, conversation?.context_product_id]);
 
   const peerFirstName = useMemo(() => peerName.split(/\s+/)[0] || "Member", [peerName]);
 
@@ -382,6 +400,28 @@ export default function ChatWorkspace() {
     threadMessagesRef.current = messages;
   }, [messages]);
 
+  const refreshReactions = useCallback(async () => {
+    if (!conversation?.id || !authUser?.id) return;
+    const ids = threadMessagesRef.current.map((m) => m.id).filter((id) => !String(id).startsWith("pending-"));
+    if (ids.length === 0) {
+      setReactionByMessage({});
+      return;
+    }
+    const { byMessage, error } = await fetchMessageReactions(supabase, conversation.id, ids, authUser.id);
+    if (error) return;
+    setReactionByMessage(byMessage);
+  }, [conversation?.id, authUser?.id]);
+
+  useEffect(() => {
+    refreshReactionsRef.current = refreshReactions;
+  }, [refreshReactions]);
+
+  const messageIdsKey = useMemo(() => messages.map((m) => m.id).join(","), [messages]);
+
+  useEffect(() => {
+    void refreshReactions();
+  }, [messageIdsKey, refreshReactions]);
+
   useEffect(() => {
     const mq = window.matchMedia("(min-width: 768px)");
     const apply = () => setUseDesktopContextMenu(mq.matches);
@@ -432,6 +472,8 @@ export default function ChatWorkspace() {
     peerTyping,
     peerPresenceTick,
     stripProduct,
+    stripProductSourceId,
+    listingStripLoading,
     productStripDismissed,
     mobileProductStripCollapsed,
     isFollowingPeer,
@@ -642,7 +684,7 @@ export default function ChatWorkspace() {
   }, [authLoading, authUser?.id, loadInboxList]);
 
   useEffect(() => {
-    const pid = conversation?.context_product_id;
+    const pid = stripProductSourceId;
     if (!pid) {
       setStripProduct(null);
       setListingStripLoading(false);
@@ -682,15 +724,23 @@ export default function ChatWorkspace() {
       cancelled = true;
       setListingStripLoading(false);
     };
-  }, [conversation?.context_product_id]);
+  }, [stripProductSourceId]);
 
+  /** Keep `conversations.context_product_id` aligned with `?product=` from the product page. */
   useEffect(() => {
-    if (!conversation) return;
-    const urlParams = new URLSearchParams(location.search);
-    const productIdFromUrl = urlParams.get("product");
-    // eslint-disable-next-line no-console
-    console.log("Product ID from URL:", productIdFromUrl);
-  }, [conversation?.id, location.search]);
+    if (!conversation?.id || validProductId == null) return;
+    const cur = parseConversationInt(conversation.context_product_id);
+    if (cur === validProductId) return;
+    let cancelled = false;
+    void (async () => {
+      const { error } = await setConversationContextProduct(supabase, conversation.id, validProductId);
+      if (cancelled || error) return;
+      setConversation((c) => (c ? { ...c, context_product_id: validProductId } : c));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [conversation?.id, conversation?.context_product_id, validProductId]);
 
   useEffect(() => {
     setMobileProductStripCollapsed(false);
@@ -698,7 +748,7 @@ export default function ChatWorkspace() {
 
   useEffect(() => {
     setProductStripDismissed(false);
-  }, [stripProduct?.id]);
+  }, [stripProductSourceId]);
 
   useEffect(() => {
     if (!authUser?.id || !peerId) {
@@ -861,6 +911,18 @@ export default function ChatWorkspace() {
           const oldRow = payload.old as { id?: string };
           if (!oldRow?.id) return;
           setMessages((prev) => prev.filter((m) => m.id !== oldRow.id));
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "chat_message_reactions",
+          filter: `conversation_id=eq.${mid}`,
+        },
+        () => {
+          void refreshReactionsRef.current();
         },
       )
       .subscribe();
@@ -1467,12 +1529,6 @@ export default function ChatWorkspace() {
     );
   }
 
-  const product = stripProduct;
-
-  if (!product && listingStripLoading) {
-    return <div className="p-4 text-center text-sm text-muted-foreground">Loading product details…</div>;
-  }
-
   const shellHeight =
     "max-md:h-[calc(var(--chat-viewport-height,100dvh)-4rem)] max-md:max-h-[calc(var(--chat-viewport-height,100dvh)-4rem)] md:h-[calc(var(--chat-viewport-height,100dvh)-4rem)] md:max-h-[calc(var(--chat-viewport-height,100dvh)-4rem)]";
 
@@ -1572,7 +1628,22 @@ export default function ChatWorkspace() {
             "md:sticky md:top-16 md:z-30",
           )}
         >
-          {stripProduct && !productStripDismissed ? (
+          {stripProductSourceId != null && listingStripLoading && !stripProduct ? (
+            <div
+              className="shrink-0 border-b border-[#d1d7db] bg-white px-3 py-2.5 dark:border-zinc-700 dark:bg-zinc-800/80 sm:px-4"
+              aria-busy
+              aria-label="Loading listing"
+            >
+              <div className="flex animate-pulse items-center gap-3">
+                <span className="h-14 w-14 shrink-0 rounded-lg bg-gray-200 dark:bg-zinc-700" />
+                <div className="min-w-0 flex-1 space-y-2">
+                  <div className="h-4 w-[min(100%,14rem)] rounded bg-gray-200 dark:bg-zinc-700" />
+                  <div className="h-3 w-24 rounded bg-gray-100 dark:bg-zinc-600/80" />
+                </div>
+                <span className="h-9 w-24 shrink-0 rounded-md bg-gray-200 dark:bg-zinc-700" />
+              </div>
+            </div>
+          ) : stripProduct && !productStripDismissed ? (
             <div className="shrink-0 border-b border-[#d1d7db] bg-white dark:border-zinc-700 dark:bg-zinc-800/80">
               {mobileProductStripCollapsed ? (
                 <button
@@ -1646,7 +1717,23 @@ export default function ChatWorkspace() {
                 className="h-10 w-10 shrink-0 rounded-full bg-gray-200 object-cover ring-2 ring-white dark:ring-zinc-700"
               />
               <div className="min-w-0 flex-1">
-                <h1 className="truncate text-base font-bold leading-tight text-gray-900 dark:text-zinc-100">{peerName}</h1>
+                <div className="flex min-w-0 items-center gap-1">
+                  <h1 className="min-w-0 truncate text-base font-bold leading-tight text-gray-900 dark:text-zinc-100">{peerName}</h1>
+                  <button
+                    type="button"
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-gray-700 hover:bg-black/[0.06] disabled:opacity-50 dark:text-zinc-200 dark:hover:bg-white/10"
+                    disabled={followBusy}
+                    title={isFollowingPeer ? "Unfollow" : "Follow"}
+                    aria-label={isFollowingPeer ? "Unfollow" : "Follow"}
+                    onClick={() => void toggleFollowPeer()}
+                  >
+                    {isFollowingPeer ? (
+                      <UserCheck className="h-[1.15rem] w-[1.15rem]" strokeWidth={2.25} />
+                    ) : (
+                      <UserPlus className="h-[1.15rem] w-[1.15rem]" strokeWidth={2.25} />
+                    )}
+                  </button>
+                </div>
                 <p className="mt-0.5 flex items-center gap-1.5 text-xs text-gray-600 dark:text-zinc-400">
                   <span
                     className={cn(
@@ -1666,17 +1753,6 @@ export default function ChatWorkspace() {
                   )}
                 </p>
               </div>
-              <Button
-                type="button"
-                variant={isFollowingPeer ? "secondary" : "default"}
-                size="sm"
-                className="h-11 min-h-[44px] shrink-0 gap-1.5 px-3 text-xs font-semibold"
-                disabled={followBusy}
-                onClick={() => void toggleFollowPeer()}
-              >
-                {isFollowingPeer ? <UserCheck className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}
-                {isFollowingPeer ? "Following" : "Follow"}
-              </Button>
               <button
                 type="button"
                 className="flex h-11 min-w-[44px] shrink-0 items-center justify-center rounded-full hover:bg-black/[0.05] dark:hover:bg-white/10"
@@ -1816,6 +1892,7 @@ export default function ChatWorkspace() {
                     showIncomingRead={!mine && !!msg.read_at}
                     isHighlighted={isHighlighted}
                     edited={!!msg.edited}
+                    reactions={reactionByMessage[msg.id]?.summaries ?? null}
                     onRequestActions={actionsDisabled ? undefined : () => openMessageActions(msg)}
                     actionsDisabled={actionsDisabled}
                     replySlot={

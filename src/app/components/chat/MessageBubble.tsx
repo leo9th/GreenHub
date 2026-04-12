@@ -1,5 +1,6 @@
 import React, { useCallback, useRef } from "react";
 import { Check, CheckCheck, Clock } from "lucide-react";
+import type { ChatReactionSummary } from "../../utils/chatMessages";
 
 const ACTIONS_LONG_PRESS_MS = 480;
 const ACTIONS_MOVE_CANCEL_PX = 14;
@@ -49,6 +50,8 @@ export type MessageBubbleProps = {
   children: React.ReactNode;
   /** Listing card under bubble */
   belowBubbleSlot?: React.ReactNode;
+  /** Aggregated emoji reactions (optional; omitted when table unavailable) */
+  reactions?: ChatReactionSummary[] | null;
   edited?: boolean;
   /** Long-press / hold to open actions (mobile); desktop uses right-click menu on parent */
   onRequestActions?: () => void;
@@ -65,6 +68,7 @@ export function MessageBubble({
   replySlot,
   children,
   belowBubbleSlot,
+  reactions,
   edited,
   onRequestActions,
   actionsDisabled,
@@ -152,6 +156,23 @@ export function MessageBubble({
             <div className="relative z-[2]">{replySlot}</div>
             <div className="relative z-[2]">{children}</div>
           </div>
+          {reactions && reactions.length > 0 ? (
+            <div
+              className={`mt-0.5 flex max-w-full flex-wrap gap-1 ${mine ? "justify-end" : "justify-start"}`}
+              aria-label="Reactions"
+            >
+              {reactions.map((r) => (
+                <span
+                  key={r.emoji}
+                  className={`inline-flex items-center gap-0.5 rounded-full border border-black/[0.06] bg-white/95 px-1.5 py-0.5 text-[11px] leading-none shadow-sm ring-1 ring-black/[0.04] dark:border-white/10 dark:bg-zinc-600/95 dark:ring-white/10`}
+                  title={`${r.count}`}
+                >
+                  <span className="leading-none">{r.emoji}</span>
+                  {r.count > 1 ? <span className="text-[10px] font-semibold text-gray-600 dark:text-zinc-200">{r.count}</span> : null}
+                </span>
+              ))}
+            </div>
+          ) : null}
           {belowBubbleSlot}
         </div>
 

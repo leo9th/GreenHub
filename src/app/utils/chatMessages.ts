@@ -150,6 +150,17 @@ export function canEditMessage(msg: ChatMessageRow, userId: string | undefined):
   return Date.now() - t <= MESSAGE_EDIT_WINDOW_MS;
 }
 
+/** WhatsApp-style unsend window (15 minutes) for delete-for-everyone. */
+export function canDeleteMessageForEveryone(msg: ChatMessageRow, userId: string | undefined): boolean {
+  if (!userId || msg.sender_id !== userId) return false;
+  if (msg.client_sending) return false;
+  if (msg.deleted_for_everyone) return false;
+  if ((msg.deleted_for ?? []).includes(userId)) return false;
+  const t = new Date(msg.created_at).getTime();
+  if (Number.isNaN(t)) return false;
+  return Date.now() - t <= MESSAGE_EDIT_WINDOW_MS;
+}
+
 export function isMessageHiddenForViewer(msg: ChatMessageRow, viewerId: string | undefined): boolean {
   if (!viewerId) return false;
   return (msg.deleted_for ?? []).includes(viewerId);

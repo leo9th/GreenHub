@@ -87,6 +87,12 @@ const CHAT_MEDIA_BUCKETS = ["chat-media", "chat-images", "chat-attachments"] as 
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
 const MAX_VOICE_BYTES = 5 * 1024 * 1024;
 
+/** Compare sender to viewer; Postgres UUID strings may not match `===` casing with `auth.user.id`. */
+function isMessageFromViewer(senderId: string | undefined, viewerId: string | undefined): boolean {
+  if (!senderId || !viewerId) return false;
+  return String(senderId).toLowerCase() === String(viewerId).toLowerCase();
+}
+
 const CHAT_EMOJI_GRID: string[] = [
   "😀",
   "😃",
@@ -375,7 +381,7 @@ export default function ChatWorkspace() {
   );
 
   const senderLabel = useCallback(
-    (uid: string) => (uid === authUser?.id ? "You" : peerFirstName),
+    (uid: string) => (isMessageFromViewer(uid, authUser?.id) ? "You" : peerFirstName),
     [authUser?.id, peerFirstName],
   );
 
@@ -869,7 +875,7 @@ export default function ChatWorkspace() {
           setMessages((prev) => {
             if (prev.some((m) => m.id === row.id)) return resolveChatMessageReplyPreviews(prev);
             const cleaned =
-              authUser?.id && row.sender_id === authUser.id
+              authUser?.id && isMessageFromViewer(row.sender_id, authUser.id)
                 ? prev.filter(
                     (m) =>
                       !(String(m.id).startsWith("pending-") && m.sender_id === row.sender_id && m.client_sending),
@@ -1859,6 +1865,7 @@ export default function ChatWorkspace() {
           <div
             ref={scrollRef}
             onScroll={updateScrollState}
+            dir="ltr"
             className="chat-messages min-h-0 flex-1 overflow-y-auto overscroll-y-contain bg-[#e5ddd5] px-2 py-2 sm:px-3 [-webkit-overflow-scrolling:touch] dark:bg-zinc-950"
           >
             <div className="flex flex-col pb-1">
@@ -1871,7 +1878,7 @@ export default function ChatWorkspace() {
                 const sameNextCluster =
                   !!next && next.sender_id === msg.sender_id && withinMinutes(msg.created_at, next.created_at, 8);
                 const showMeta = !sameNextCluster;
-                const mine = msg.sender_id === authUser?.id;
+                const mine = isMessageFromViewer(msg.sender_id, authUser?.id);
                 const t = new Date(msg.created_at);
                 const timeLabel = Number.isNaN(t.getTime())
                   ? ""
@@ -1968,7 +1975,9 @@ export default function ChatWorkspace() {
                   </MessageBubble>
                 );
 
-                const rowBody = <div className="touch-manipulation min-w-0 flex-1">{messageBubbleEl}</div>;
+                const rowBody = (
+                  <div className="block w-full min-w-0 flex-1 touch-manipulation">{messageBubbleEl}</div>
+                );
 
                 const menuItems = (
                   <>
@@ -2189,7 +2198,7 @@ export default function ChatWorkspace() {
                 <Copy className="mr-2 h-4 w-4" />
                 Copy
               </Button>
-              {mobileSheetMsg.sender_id === authUser?.id ? (
+              {isMessageFromViewer(mobileSheetMsg.sender_id, authUser?.id) ? (
                 <Button
                   variant="destructive"
                   className="h-12 w-full"

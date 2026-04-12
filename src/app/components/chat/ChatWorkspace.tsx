@@ -14,6 +14,7 @@ import {
   MessageCircle,
   Mic,
   MoreVertical,
+  Pencil,
   Package,
   Reply,
   Search,
@@ -44,13 +45,18 @@ import {
 } from "../../utils/chatConversations";
 import {
   CHAT_MESSAGE_BASE_COLUMNS,
+  CHAT_MESSAGE_DELETED_FOR_ME_PLACEHOLDER,
+  CHAT_MESSAGE_DELETED_PLACEHOLDER,
   fetchChatMessagesForConversation,
   markConversationMessagesDelivered,
   markConversationMessagesRead,
   normalizeChatMessageRow,
   outgoingReceiptPhase,
   resolveChatMessageReplyPreviews,
+  canEditMessage,
   fetchMessageReactions,
+  isDeletedForEveryone,
+  isMessageHiddenForViewer,
   removeOwnMessageReaction,
   setMessageReaction,
   type ChatMessageRow,
@@ -70,6 +76,7 @@ import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuSeparator,
   ContextMenuTrigger,
 } from "../ui/context-menu";
 import {
@@ -233,7 +240,8 @@ type StripProduct = {
 };
 
 type PendingConfirm =
-  | { kind: "delete-message"; message: ChatMessageRow }
+  | { kind: "delete-for-me"; message: ChatMessageRow }
+  | { kind: "delete-for-everyone"; message: ChatMessageRow }
   | { kind: "delete-conversation" }
   | { kind: "clear-chat" }
   | null;
@@ -334,6 +342,7 @@ export default function ChatWorkspace() {
   const [bulkSelectMode, setBulkSelectMode] = useState(false);
   const [selectedMessageIds, setSelectedMessageIds] = useState<string[]>([]);
   const [bulkDeleteBusy, setBulkDeleteBusy] = useState(false);
+  const [editingMessage, setEditingMessage] = useState<ChatMessageRow | null>(null);
   const [isFollowingPeer, setIsFollowingPeer] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
   /** Hide listing strip locally (X); resets when listing changes */
@@ -989,6 +998,10 @@ export default function ChatWorkspace() {
     setSelectedMessageIds([]);
   }, [conversation?.id]);
 
+  useEffect(() => {
+    setEditingMessage(null);
+  }, [conversation?.id]);
+
   const upsertTyping = useCallback(
     async (isTyping: boolean) => {
       if (!conversation?.id || !authUser?.id) return;
@@ -1132,6 +1145,51 @@ export default function ChatWorkspace() {
         return;
       }
 
+      if (editingMessage) {
+        const newText = (opts?.text ?? draft).trim();
+        if (!newText) {
+          toast.message("Message is empty.");
+          return;
+        }
+        if (!canEditMessage(editingMessage, authUser.id)) {
+          toast.error("You can only edit messages within 15 minutes.");
+          setEditingMessage(null);
+          return;
+        }
+        if (sendLockRef.current) return;
+        sendLockRef.current = true;
+        setSendBusy(true);
+        try {
+          const { error } = await supabase
+            .from("chat_messages")
+            .update({
+              message: newText,
+              edited: true,
+              edited_at: new Date().toISOString(),
+            })
+            .eq("id", editingMessage.id);
+          if (error) throw error;
+          setMessages((prev) =>
+            resolveChatMessageReplyPreviews(
+              prev.map((m) =>
+                m.id === editingMessage.id
+                  ? { ...m, message: newText, edited: true, edited_at: new Date().toISOString(), client_sending: false }
+                  : m,
+              ),
+            ),
+          );
+          setEditingMessage(null);
+          setDraft("");
+          toast.success("Message updated");
+        } catch (e: unknown) {
+          toast.error(errorMessage(e, "Could not edit message"));
+        } finally {
+          sendLockRef.current = false;
+          setSendBusy(false);
+        }
+        return;
+      }
+
       let productId = opts?.productId ?? null;
       if (productId == null && attachListingToFirstSendRef.current) {
         const ctx = conversation.context_product_id;
@@ -1253,17 +1311,21 @@ export default function ChatWorkspace() {
         setSendBusy(false);
       }
     },
-    [authUser?.id, conversation, draft, replyingTo, scrollToBottom],
+    [authUser?.id, conversation, draft, editingMessage, replyingTo, scrollToBottom],
   );
 
   const sendProductCard = useCallback(() => {
+    if (editingMessage) {
+      toast.message("Finish editing before sharing a listing.");
+      return;
+    }
     const pid = conversation?.context_product_id ?? stripProduct?.id ?? null;
     if (pid == null) {
       toast.message("No listing linked to this chat.");
       return;
     }
     void sendMessage({ text: "", productId: pid });
-  }, [conversation?.context_product_id, stripProduct?.id, sendMessage]);
+  }, [conversation?.context_product_id, stripProduct?.id, sendMessage, editingMessage]);
 
   const stopRecordingCleanup = useCallback(() => {
     if (recordTimerRef.current) {
@@ -1370,9 +1432,13 @@ export default function ChatWorkspace() {
       const file = e.target.files?.[0];
       e.target.value = "";
       if (!file) return;
+      if (editingMessage) {
+        toast.message("Finish editing before attaching media.");
+        return;
+      }
       void sendMessage({ imageFile: file });
     },
-    [sendMessage],
+    [sendMessage, editingMessage],
   );
 
   const onPickDocument = useCallback(
@@ -1380,9 +1446,13 @@ export default function ChatWorkspace() {
       const file = e.target.files?.[0];
       e.target.value = "";
       if (!file) return;
+      if (editingMessage) {
+        toast.message("Finish editing before attaching media.");
+        return;
+      }
       void sendMessage({ documentFile: file });
     },
-    [sendMessage],
+    [sendMessage, editingMessage],
   );
 
   const copyText = useCallback(async (msg: ChatMessageRow) => {
@@ -1515,10 +1585,43 @@ export default function ChatWorkspace() {
     });
   }, []);
 
-  const deleteMessage = useCallback((msg: ChatMessageRow) => {
+  const requestDeleteForMe = useCallback((msg: ChatMessageRow) => {
     setMobileSheetMsg(null);
-    setPendingConfirm({ kind: "delete-message", message: msg });
+    setPendingConfirm({ kind: "delete-for-me", message: msg });
   }, []);
+
+  const requestDeleteForEveryone = useCallback((msg: ChatMessageRow) => {
+    setMobileSheetMsg(null);
+    setPendingConfirm({ kind: "delete-for-everyone", message: msg });
+  }, []);
+
+  const mobileSheetMeta = useMemo(() => {
+    const m = mobileSheetMsg;
+    if (!m) return null;
+    const deletedEveryone = isDeletedForEveryone(m);
+    const hiddenForMe = !!authUser?.id && isMessageHiddenForViewer(m, authUser.id) && !deletedEveryone;
+    const placeholder = deletedEveryone ? "everyone" : hiddenForMe ? "hidden" : null;
+    const canEdit =
+      m.sender_id === authUser?.id &&
+      !placeholder &&
+      !!m.message?.trim() &&
+      canEditMessage(m, authUser?.id);
+    const canDeleteForMe =
+      !!authUser?.id && !hiddenForMe && !deletedEveryone && !String(m.id).startsWith("pending-");
+    const canDeleteForEveryone =
+      m.sender_id === authUser?.id &&
+      !deletedEveryone &&
+      !String(m.id).startsWith("pending-") &&
+      !m.client_sending;
+    const canCopyBody =
+      !placeholder &&
+      !!(
+        m.message?.trim() ||
+        m.image_url ||
+        (m.media_url && !isVoiceMediaUrl(m.media_url))
+      );
+    return { canEdit, canDeleteForMe, canDeleteForEveryone, canCopyBody, placeholder };
+  }, [mobileSheetMsg, authUser?.id]);
 
   const applySheetReaction = useCallback(
     async (emoji: string) => {
@@ -1560,13 +1663,51 @@ export default function ChatWorkspace() {
     if (!pendingConfirm || actionBusy) return;
     setActionBusy(true);
     try {
-      if (pendingConfirm.kind === "delete-message") {
+      if (pendingConfirm.kind === "delete-for-me") {
         const target = pendingConfirm.message;
-        const { error } = await supabase.from("chat_messages").delete().eq("id", target.id);
+        if (!authUser?.id) return;
+        const prevArr = target.deleted_for ?? [];
+        if (prevArr.includes(authUser.id)) {
+          setPendingConfirm(null);
+          return;
+        }
+        const next = [...prevArr, authUser.id];
+        const { error } = await supabase.from("chat_messages").update({ deleted_for: next }).eq("id", target.id);
         if (error) throw error;
-        setMessages((prev) => prev.filter((m) => m.id !== target.id));
+        setMessages((prev) =>
+          prev.map((m) => (m.id === target.id ? { ...m, deleted_for: next } : m)),
+        );
         setReplyingTo((c) => (c?.id === target.id ? null : c));
-        toast.success("Message deleted");
+        toast.success("Message removed for you");
+      } else if (pendingConfirm.kind === "delete-for-everyone") {
+        const target = pendingConfirm.message;
+        const { error } = await supabase
+          .from("chat_messages")
+          .update({
+            deleted_for_everyone: true,
+            message: "",
+            image_url: null,
+            media_url: null,
+            product_id: null,
+          })
+          .eq("id", target.id);
+        if (error) throw error;
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === target.id
+              ? {
+                  ...m,
+                  deleted_for_everyone: true,
+                  message: "",
+                  image_url: null,
+                  media_url: null,
+                  product_id: null,
+                }
+              : m,
+          ),
+        );
+        setReplyingTo((c) => (c?.id === target.id ? null : c));
+        toast.success("Message deleted for everyone");
       } else if (pendingConfirm.kind === "delete-conversation") {
         const cid = conversation?.id;
         if (!cid) {
@@ -1596,7 +1737,7 @@ export default function ChatWorkspace() {
       setActionBusy(false);
       setPendingConfirm(null);
     }
-  }, [actionBusy, conversation?.id, navigate, pendingConfirm]);
+  }, [actionBusy, authUser?.id, conversation?.id, navigate, pendingConfirm]);
 
   const jumpToMessage = useCallback((id: string | null | undefined) => {
     if (!id) return;
@@ -2037,11 +2178,32 @@ export default function ChatWorkspace() {
                   ? ""
                   : t.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
                 const replyPreview = msg.reply_preview;
-                const quotedSender = replyPreview ? senderLabel(replyPreview.sender_id) : "Message";
+                const replyTarget = msg.reply_to_id ? messages.find((m) => m.id === msg.reply_to_id) : undefined;
+                const quotedSender = replyPreview
+                  ? senderLabel(replyPreview.sender_id)
+                  : replyTarget
+                    ? senderLabel(replyTarget.sender_id)
+                    : "Message";
+                const quotedPreviewText = replyTarget?.deleted_for_everyone
+                  ? CHAT_MESSAGE_DELETED_PLACEHOLDER
+                  : replyPreview
+                    ? messagePreviewText(replyPreview.message, replyPreview.image_url)
+                    : replyTarget
+                      ? messagePreviewText(replyTarget.message, replyTarget.image_url)
+                      : "Original message";
                 const isHighlighted = highlightedMessageId === msg.id;
-                const productCard = resolveMessageProductCard(msg);
+                const deletedEveryone = isDeletedForEveryone(msg);
+                const hiddenForMe =
+                  !!authUser?.id && isMessageHiddenForViewer(msg, authUser.id) && !deletedEveryone;
+                const deletedPlaceholder = deletedEveryone ? "everyone" : hiddenForMe ? "hidden" : null;
+                const productCard = deletedPlaceholder ? null : resolveMessageProductCard(msg);
 
                 const actionsDisabled = String(msg.id).startsWith("pending-") || bulkSelectMode;
+                const canEditThis =
+                  mine &&
+                  !deletedPlaceholder &&
+                  !!msg.message?.trim() &&
+                  canEditMessage(msg, authUser?.id);
 
                 const messageBubbleEl = (
                   <MessageBubble
@@ -2052,7 +2214,9 @@ export default function ChatWorkspace() {
                     showIncomingRead={!mine && !!msg.read_at}
                     isHighlighted={isHighlighted}
                     edited={!!msg.edited}
-                    reactions={reactionByMessage[msg.id]?.summaries ?? null}
+                    deletedPlaceholder={deletedPlaceholder}
+                    showSenderName={false}
+                    reactions={deletedPlaceholder ? null : reactionByMessage[msg.id]?.summaries ?? null}
                     onRequestActions={
                       actionsDisabled ? undefined : () => openMessageActions(msg)
                     }
@@ -2073,11 +2237,7 @@ export default function ChatWorkspace() {
                           }`}
                         >
                           <p className="truncate text-[11px] font-semibold opacity-90">{quotedSender}</p>
-                          <p className="line-clamp-2 text-[12px] leading-snug opacity-90">
-                            {replyPreview
-                              ? messagePreviewText(replyPreview.message, replyPreview.image_url)
-                              : "Original message"}
-                          </p>
+                          <p className="line-clamp-2 text-[12px] leading-snug opacity-90">{quotedPreviewText}</p>
                         </button>
                       ) : null
                     }
@@ -2134,7 +2294,8 @@ export default function ChatWorkspace() {
                       ) : null}
                       {msg.message?.trim() ? (
                         <p
-                          className={`whitespace-pre-wrap break-words text-sm leading-relaxed ${mine ? "text-white" : "text-inherit"}`}
+                          data-skip-longpress
+                          className={`select-text whitespace-pre-wrap break-words text-sm leading-relaxed ${mine ? "text-white" : "text-inherit"}`}
                         >
                           {msg.message}
                         </p>
@@ -2176,6 +2337,21 @@ export default function ChatWorkspace() {
                   </div>
                 );
 
+                const canCopyBody =
+                  !deletedPlaceholder &&
+                  !!(
+                    msg.message?.trim() ||
+                    msg.image_url ||
+                    (msg.media_url && !isVoiceMediaUrl(msg.media_url))
+                  );
+                const canDeleteForMe =
+                  !!authUser?.id && !hiddenForMe && !deletedEveryone && !String(msg.id).startsWith("pending-");
+                const canDeleteForEveryone =
+                  mine &&
+                  !deletedEveryone &&
+                  !String(msg.id).startsWith("pending-") &&
+                  !msg.client_sending;
+
                 const menuItems = (
                   <>
                     <ContextMenuItem
@@ -2187,21 +2363,50 @@ export default function ChatWorkspace() {
                       <Reply className="mr-2 h-4 w-4" />
                       Reply
                     </ContextMenuItem>
-                    <ContextMenuItem onSelect={() => void copyText(msg)}>
+                    <ContextMenuItem
+                      disabled={!canCopyBody}
+                      onSelect={() => {
+                        if (!canCopyBody) return;
+                        void copyText(msg);
+                      }}
+                    >
                       <Copy className="mr-2 h-4 w-4" />
                       Copy
                     </ContextMenuItem>
+                    {canEditThis ? (
+                      <ContextMenuItem
+                        onSelect={() => {
+                          setReplyingTo(null);
+                          setEditingMessage(msg);
+                          setDraft(msg.message ?? "");
+                          requestAnimationFrame(() => draftTextareaRef.current?.focus());
+                        }}
+                      >
+                        <Pencil className="mr-2 h-4 w-4" />
+                        Edit
+                      </ContextMenuItem>
+                    ) : null}
                     <ContextMenuItem onSelect={() => void forwardSingleMessage(msg)}>
                       <Share2 className="mr-2 h-4 w-4" />
                       Forward
                     </ContextMenuItem>
-                    {mine ? (
+                    {(canDeleteForMe || canDeleteForEveryone) && <ContextMenuSeparator />}
+                    {canDeleteForMe ? (
                       <ContextMenuItem
                         className="text-red-600"
-                        onSelect={() => setPendingConfirm({ kind: "delete-message", message: msg })}
+                        onSelect={() => requestDeleteForMe(msg)}
                       >
                         <Trash2 className="mr-2 h-4 w-4" />
-                        Delete
+                        Delete for me
+                      </ContextMenuItem>
+                    ) : null}
+                    {canDeleteForEveryone ? (
+                      <ContextMenuItem
+                        className="text-red-600"
+                        onSelect={() => requestDeleteForEveryone(msg)}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Delete for everyone
                       </ContextMenuItem>
                     ) : null}
                   </>
@@ -2258,6 +2463,29 @@ export default function ChatWorkspace() {
 
           <div className="relative z-30 shrink-0 border-t border-[#d1d7db] bg-[#f0f2f5] pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-[0_-1px_3px_rgba(0,0,0,0.08)] dark:border-zinc-700 dark:bg-zinc-900">
             <div className="px-2 py-2 sm:px-3">
+              {editingMessage ? (
+                <div className="mb-2 flex items-start justify-between gap-3 rounded-2xl border border-amber-600/40 bg-amber-50/95 px-3 py-2.5 dark:border-amber-500/35 dark:bg-amber-950/55">
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-900 dark:text-amber-200">
+                      Editing message
+                    </p>
+                    <p className="truncate text-sm text-amber-950 dark:text-amber-50/95">
+                      {messagePreviewText(editingMessage.message, editingMessage.image_url)}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingMessage(null);
+                      setDraft("");
+                    }}
+                    className="shrink-0 rounded-full p-1 text-amber-900 hover:bg-amber-800/10 dark:text-amber-200 dark:hover:bg-amber-900/50"
+                    aria-label="Cancel edit"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : null}
               {replyingTo ? (
                 <div className="mb-2 flex items-start justify-between gap-3 rounded-2xl border border-emerald-700/35 bg-emerald-700/15 px-3 py-2.5 dark:border-emerald-500/40 dark:bg-emerald-950/70">
                   <div className="min-w-0">
@@ -2290,16 +2518,18 @@ export default function ChatWorkspace() {
                 />
                 <button
                   type="button"
+                  disabled={!!editingMessage}
                   onClick={() => attachInputRef.current?.click()}
-                  className="flex h-9 min-w-[36px] shrink-0 items-center justify-center rounded-full text-gray-700 hover:bg-black/[0.06] dark:text-zinc-200 dark:hover:bg-white/10"
+                  className="flex h-9 min-w-[36px] shrink-0 items-center justify-center rounded-full text-gray-700 hover:bg-black/[0.06] disabled:opacity-40 dark:text-zinc-200 dark:hover:bg-white/10"
                   aria-label="Attach image"
                 >
                   <ImagePlus className="h-[1.35rem] w-[1.35rem]" strokeWidth={2} />
                 </button>
                 <button
                   type="button"
+                  disabled={!!editingMessage}
                   onClick={() => docInputRef.current?.click()}
-                  className="flex h-9 min-w-[36px] shrink-0 items-center justify-center rounded-full text-gray-700 hover:bg-black/[0.06] dark:text-zinc-200 dark:hover:bg-white/10"
+                  className="flex h-9 min-w-[36px] shrink-0 items-center justify-center rounded-full text-gray-700 hover:bg-black/[0.06] disabled:opacity-40 dark:text-zinc-200 dark:hover:bg-white/10"
                   aria-label="Attach PDF or Word"
                   title="PDF, Word…"
                 >
@@ -2307,15 +2537,15 @@ export default function ChatWorkspace() {
                 </button>
                 <button
                   type="button"
+                  disabled={!!editingMessage || (!conversation?.context_product_id && !stripProduct)}
                   onClick={() => void sendProductCard()}
-                  disabled={!conversation?.context_product_id && !stripProduct}
                   className="flex h-9 min-w-[36px] shrink-0 items-center justify-center rounded-full text-gray-700 hover:bg-black/[0.06] disabled:opacity-40 dark:text-zinc-200 dark:hover:bg-white/10"
                   aria-label="Share listing"
                   title="Share product card"
                 >
                   <Package className="h-[1.35rem] w-[1.35rem]" strokeWidth={2} />
                 </button>
-                <div className="relative min-h-[52px] min-w-0 flex-1">
+                <div className="relative min-h-[44px] min-w-0 flex-1">
                   <textarea
                     ref={draftTextareaRef}
                     value={draft}
@@ -2326,9 +2556,9 @@ export default function ChatWorkspace() {
                         void sendMessage();
                       }
                     }}
-                    rows={2}
-                    placeholder="Message…"
-                    className="max-h-36 min-h-[52px] w-full resize-y rounded-2xl border border-[#bfc6c9] bg-white py-3 pl-3 pr-12 text-[15px] leading-relaxed outline-none focus:border-[#0f9d58] focus:ring-2 focus:ring-[#0f9d58]/25 dark:border-zinc-600 dark:bg-zinc-800 dark:text-foreground"
+                    rows={1}
+                    placeholder={editingMessage ? "Edit message…" : "Message…"}
+                    className="max-h-[7.25rem] min-h-[44px] w-full resize-none overflow-y-auto rounded-2xl border border-[#bfc6c9] bg-white py-2.5 pl-3 pr-12 text-[15px] leading-relaxed outline-none focus:border-[#0f9d58] focus:ring-2 focus:ring-[#0f9d58]/25 dark:border-zinc-600 dark:bg-zinc-800 dark:text-foreground"
                   />
                   <Popover open={emojiPickerOpen} onOpenChange={setEmojiPickerOpen}>
                     <PopoverTrigger asChild>
@@ -2365,8 +2595,9 @@ export default function ChatWorkspace() {
                 </div>
                 <button
                   type="button"
+                  disabled={!!editingMessage}
                   onPointerDown={onMicPointerDown}
-                  className={`flex h-9 min-w-[36px] shrink-0 items-center justify-center rounded-full ${recording ? "bg-red-500 text-white" : "text-gray-700 hover:bg-black/[0.06] dark:text-zinc-200 dark:hover:bg-white/10"}`}
+                  className={`flex h-9 min-w-[36px] shrink-0 items-center justify-center rounded-full disabled:opacity-40 ${recording ? "bg-red-500 text-white" : "text-gray-700 hover:bg-black/[0.06] dark:text-zinc-200 dark:hover:bg-white/10"}`}
                   aria-label="Hold to record voice"
                   title="Hold to record"
                 >
@@ -2377,7 +2608,7 @@ export default function ChatWorkspace() {
                   onClick={() => void sendMessage()}
                   disabled={sendBusy || !draft.trim()}
                   className="flex h-9 min-w-[36px] shrink-0 items-center justify-center rounded-full bg-[#0f9d58] text-white shadow-sm disabled:opacity-50"
-                  aria-label="Send"
+                  aria-label={editingMessage ? "Save edit" : "Send"}
                 >
                   {sendBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                 </button>
@@ -2404,14 +2635,18 @@ export default function ChatWorkspace() {
                     React with emoji, reply, forward, copy, or delete this message.
                   </SheetDescription>
                   <p className="mt-1 line-clamp-3 text-sm leading-snug text-zinc-500 dark:text-zinc-400">
-                    {messagePreviewText(mobileSheetMsg.message, mobileSheetMsg.image_url) ||
-                      (mobileSheetMsg.image_url
-                        ? "Photo"
-                        : mobileSheetMsg.media_url
-                          ? isVoiceMediaUrl(mobileSheetMsg.media_url)
-                            ? "Voice message"
-                            : "File attachment"
-                          : "Message")}
+                    {mobileSheetMeta?.placeholder === "everyone"
+                      ? CHAT_MESSAGE_DELETED_PLACEHOLDER
+                      : mobileSheetMeta?.placeholder === "hidden"
+                        ? CHAT_MESSAGE_DELETED_FOR_ME_PLACEHOLDER
+                        : messagePreviewText(mobileSheetMsg.message, mobileSheetMsg.image_url) ||
+                          (mobileSheetMsg.image_url
+                            ? "Photo"
+                            : mobileSheetMsg.media_url
+                              ? isVoiceMediaUrl(mobileSheetMsg.media_url)
+                                ? "Voice message"
+                                : "File attachment"
+                              : "Message")}
                   </p>
                 </div>
 
@@ -2445,46 +2680,75 @@ export default function ChatWorkspace() {
                   <p className="mt-2 text-[11px] text-zinc-400 dark:text-zinc-500">Tap again to remove your reaction.</p>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 px-4 pt-3">
-                  <Button
-                    className="h-11 rounded-xl font-medium shadow-sm"
-                    onClick={() => {
-                      setReplyingTo(mobileSheetMsg);
-                      setMobileSheetMsg(null);
-                    }}
-                  >
-                    <Reply className="mr-2 h-4 w-4" />
-                    Reply
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="h-11 rounded-xl border-zinc-200 bg-white font-medium dark:border-zinc-600 dark:bg-zinc-800"
-                    onClick={() => void forwardSingleMessage(mobileSheetMsg)}
-                  >
-                    <Share2 className="mr-2 h-4 w-4" />
-                    Forward
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className={cn(
-                      "h-11 rounded-xl border-zinc-200 bg-white font-medium dark:border-zinc-600 dark:bg-zinc-800",
-                      mobileSheetMsg.sender_id !== authUser?.id && "col-span-2",
-                    )}
-                    onClick={() => void copyText(mobileSheetMsg)}
-                  >
-                    <Copy className="mr-2 h-4 w-4" />
-                    Copy
-                  </Button>
-                  {mobileSheetMsg.sender_id === authUser?.id ? (
+                <div className="flex flex-col gap-2 px-4 pt-3">
+                  <div className="grid grid-cols-2 gap-2">
                     <Button
-                      variant="destructive"
-                      className="h-11 rounded-xl font-medium"
+                      className="h-11 rounded-xl font-medium shadow-sm"
                       onClick={() => {
-                        deleteMessage(mobileSheetMsg);
+                        setReplyingTo(mobileSheetMsg);
+                        setMobileSheetMsg(null);
                       }}
                     >
+                      <Reply className="mr-2 h-4 w-4" />
+                      Reply
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="h-11 rounded-xl border-zinc-200 bg-white font-medium dark:border-zinc-600 dark:bg-zinc-800"
+                      onClick={() => void forwardSingleMessage(mobileSheetMsg)}
+                    >
+                      <Share2 className="mr-2 h-4 w-4" />
+                      Forward
+                    </Button>
+                  </div>
+                  {mobileSheetMeta?.canEdit ? (
+                    <Button
+                      variant="outline"
+                      className="h-11 w-full rounded-xl border-zinc-200 bg-white font-medium dark:border-zinc-600 dark:bg-zinc-800"
+                      onClick={() => {
+                        setReplyingTo(null);
+                        setEditingMessage(mobileSheetMsg);
+                        setDraft(mobileSheetMsg.message ?? "");
+                        setMobileSheetMsg(null);
+                        requestAnimationFrame(() => draftTextareaRef.current?.focus());
+                      }}
+                    >
+                      <Pencil className="mr-2 h-4 w-4" />
+                      Edit
+                    </Button>
+                  ) : null}
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button
+                      variant="outline"
+                      disabled={!mobileSheetMeta?.canCopyBody}
+                      className={cn(
+                        "h-11 rounded-xl border-zinc-200 bg-white font-medium dark:border-zinc-600 dark:bg-zinc-800",
+                        !mobileSheetMeta?.canDeleteForMe && "col-span-2",
+                      )}
+                      onClick={() => void copyText(mobileSheetMsg)}
+                    >
+                      <Copy className="mr-2 h-4 w-4" />
+                      Copy
+                    </Button>
+                    {mobileSheetMeta?.canDeleteForMe ? (
+                      <Button
+                        variant="outline"
+                        className="h-11 rounded-xl border-red-200 bg-white font-medium text-red-700 hover:bg-red-50 dark:border-red-900/60 dark:bg-zinc-800 dark:text-red-300 dark:hover:bg-red-950/40"
+                        onClick={() => requestDeleteForMe(mobileSheetMsg)}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Delete for me
+                      </Button>
+                    ) : null}
+                  </div>
+                  {mobileSheetMeta?.canDeleteForEveryone ? (
+                    <Button
+                      variant="destructive"
+                      className="h-11 w-full rounded-xl font-medium"
+                      onClick={() => requestDeleteForEveryone(mobileSheetMsg)}
+                    >
                       <Trash2 className="mr-2 h-4 w-4" />
-                      Delete
+                      Delete for everyone
                     </Button>
                   ) : null}
                 </div>
@@ -2498,18 +2762,22 @@ export default function ChatWorkspace() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {pendingConfirm?.kind === "delete-message"
-                ? "Delete message?"
-                : pendingConfirm?.kind === "delete-conversation"
-                  ? "Delete conversation?"
-                  : "Clear chat?"}
+              {pendingConfirm?.kind === "delete-for-me"
+                ? "Remove message for you?"
+                : pendingConfirm?.kind === "delete-for-everyone"
+                  ? "Delete for everyone?"
+                  : pendingConfirm?.kind === "delete-conversation"
+                    ? "Delete conversation?"
+                    : "Clear chat?"}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {pendingConfirm?.kind === "delete-message"
-                ? "This removes the message for everyone in the thread."
-                : pendingConfirm?.kind === "delete-conversation"
-                  ? "This deletes the conversation and returns you to the inbox."
-                  : "This removes all messages in this chat."}
+              {pendingConfirm?.kind === "delete-for-me"
+                ? "This message will be hidden on your device only. Others will still see it."
+                : pendingConfirm?.kind === "delete-for-everyone"
+                  ? "This removes the message for everyone in this chat."
+                  : pendingConfirm?.kind === "delete-conversation"
+                    ? "This deletes the conversation and returns you to the inbox."
+                    : "This removes all messages in this chat."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -2522,7 +2790,13 @@ export default function ChatWorkspace() {
                 void runConfirm();
               }}
             >
-              {actionBusy ? "…" : "Continue"}
+              {actionBusy
+                ? "…"
+                : pendingConfirm?.kind === "delete-for-me"
+                  ? "Remove"
+                  : pendingConfirm?.kind === "delete-for-everyone"
+                    ? "Delete for everyone"
+                    : "Continue"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

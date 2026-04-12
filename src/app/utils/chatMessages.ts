@@ -26,14 +26,25 @@ export type ChatMessageRow = {
   /** Voice or other non-image media */
   media_url?: string | null;
   edited?: boolean;
+  edited_at?: string | null;
+  /** Sender cleared content for all participants */
+  deleted_for_everyone?: boolean;
+  /** User ids who chose “delete for me” */
+  deleted_for?: string[] | null;
   /** Optional listing attached to this message (portrait card in thread) */
   product_id?: number | null;
   /** Local only: message is being sent to the server */
   client_sending?: boolean;
 };
 
+/** WhatsApp-style edit window (15 minutes). */
+export const MESSAGE_EDIT_WINDOW_MS = 15 * 60 * 1000;
+
+export const CHAT_MESSAGE_DELETED_PLACEHOLDER = "This message was deleted.";
+export const CHAT_MESSAGE_DELETED_FOR_ME_PLACEHOLDER = "This message was removed.";
+
 export const CHAT_MESSAGE_BASE_COLUMNS =
-  "id, sender_id, message, created_at, status, delivered_at, read_at, reply_to_id, image_url, media_url, edited, product_id";
+  "id, sender_id, message, created_at, status, delivered_at, read_at, reply_to_id, image_url, media_url, edited, edited_at, deleted_for_everyone, deleted_for, product_id";
 
 /** Flat select only — no `reply_to` embed (avoids PGRST204 self-FK relationship errors). Use resolveChatMessageReplyPreviews(). */
 export const CHAT_MESSAGE_COLUMNS = CHAT_MESSAGE_BASE_COLUMNS;
@@ -92,6 +103,23 @@ export function normalizeChatMessageRow(raw: Record<string, unknown>): ChatMessa
     normalizeReplyPreview(raw.replied_message);
   const editedRaw = raw.edited;
   const edited = editedRaw === true || editedRaw === "true";
+  const editedAtRaw = raw.edited_at;
+  const edited_at =
+    typeof editedAtRaw === "string" && editedAtRaw ? editedAtRaw : editedAtRaw instanceof Date ? editedAtRaw.toISOString() : null;
+  const dfe = raw.deleted_for_everyone;
+  const deleted_for_everyone = dfe === true || dfe === "true" || dfe === "t";
+  const df = raw.deleted_for;
+  let deleted_for: string[] | null = null;
+  if (Array.isArray(df)) {
+    deleted_for = df.map((x) => String(x));
+  } else if (df != null && typeof df === "string") {
+    try {
+      const parsed = JSON.parse(df) as unknown;
+      deleted_for = Array.isArray(parsed) ? parsed.map((x) => String(x)) : null;
+    } catch {
+      deleted_for = null;
+    }
+  }
   return {
     id: String(raw.id),
     sender_id: String(raw.sender_id),
@@ -105,8 +133,30 @@ export function normalizeChatMessageRow(raw: Record<string, unknown>): ChatMessa
     image_url: (raw.image_url as string | null | undefined) ?? null,
     media_url: (raw.media_url as string | null | undefined) ?? null,
     edited,
+    edited_at,
+    deleted_for_everyone,
+    deleted_for,
     product_id: parseMessageProductId(raw.product_id),
   };
+}
+
+export function canEditMessage(msg: ChatMessageRow, userId: string | undefined): boolean {
+  if (!userId || msg.sender_id !== userId) return false;
+  if (msg.client_sending) return false;
+  if (msg.deleted_for_everyone) return false;
+  if ((msg.deleted_for ?? []).includes(userId)) return false;
+  const t = new Date(msg.created_at).getTime();
+  if (Number.isNaN(t)) return false;
+  return Date.now() - t <= MESSAGE_EDIT_WINDOW_MS;
+}
+
+export function isMessageHiddenForViewer(msg: ChatMessageRow, viewerId: string | undefined): boolean {
+  if (!viewerId) return false;
+  return (msg.deleted_for ?? []).includes(viewerId);
+}
+
+export function isDeletedForEveryone(msg: ChatMessageRow): boolean {
+  return !!msg.deleted_for_everyone;
 }
 
 function parseMessageProductId(raw: unknown): number | null {

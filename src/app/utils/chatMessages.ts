@@ -35,6 +35,8 @@ export type ChatMessageRow = {
   product_id?: number | null;
   /** Local only: message is being sent to the server */
   client_sending?: boolean;
+  /** Local only: queued in IndexedDB until the network allows send */
+  client_pending_local?: boolean;
 };
 
 /** WhatsApp-style edit window (15 minutes). */
@@ -145,11 +147,19 @@ function viewerOwnsMessage(senderId: string, userId: string | undefined): boolea
   return String(senderId).toLowerCase() === String(userId).toLowerCase();
 }
 
+/** UUID strings from Postgres/auth may differ in casing; `includes` on deleted_for is unsafe without this. */
+export function deletedForIncludesViewer(deletedFor: string[] | null | undefined, viewerId: string | undefined): boolean {
+  if (!viewerId || !deletedFor?.length) return false;
+  const v = String(viewerId).toLowerCase();
+  return deletedFor.some((id) => String(id).toLowerCase() === v);
+}
+
 export function canEditMessage(msg: ChatMessageRow, userId: string | undefined): boolean {
   if (!viewerOwnsMessage(msg.sender_id, userId)) return false;
   if (msg.client_sending) return false;
+  if (msg.client_pending_local) return false;
   if (msg.deleted_for_everyone) return false;
-  if ((msg.deleted_for ?? []).includes(userId)) return false;
+  if (deletedForIncludesViewer(msg.deleted_for, userId)) return false;
   const t = new Date(msg.created_at).getTime();
   if (Number.isNaN(t)) return false;
   return Date.now() - t <= MESSAGE_EDIT_WINDOW_MS;
@@ -159,16 +169,16 @@ export function canEditMessage(msg: ChatMessageRow, userId: string | undefined):
 export function canDeleteMessageForEveryone(msg: ChatMessageRow, userId: string | undefined): boolean {
   if (!viewerOwnsMessage(msg.sender_id, userId)) return false;
   if (msg.client_sending) return false;
+  if (msg.client_pending_local) return false;
   if (msg.deleted_for_everyone) return false;
-  if ((msg.deleted_for ?? []).includes(userId)) return false;
+  if (deletedForIncludesViewer(msg.deleted_for, userId)) return false;
   const t = new Date(msg.created_at).getTime();
   if (Number.isNaN(t)) return false;
   return Date.now() - t <= MESSAGE_EDIT_WINDOW_MS;
 }
 
 export function isMessageHiddenForViewer(msg: ChatMessageRow, viewerId: string | undefined): boolean {
-  if (!viewerId) return false;
-  return (msg.deleted_for ?? []).includes(viewerId);
+  return deletedForIncludesViewer(msg.deleted_for, viewerId);
 }
 
 export function isDeletedForEveryone(msg: ChatMessageRow): boolean {
@@ -183,7 +193,7 @@ function parseMessageProductId(raw: unknown): number | null {
 
 /** Outgoing message receipt UI phase (includes optimistic sending). */
 export function outgoingReceiptPhase(msg: ChatMessageRow): "sending" | "sent" | "delivered" | "read" {
-  if (msg.client_sending) return "sending";
+  if (msg.client_pending_local || msg.client_sending) return "sending";
   if (msg.read_at != null || msg.status === "read") return "read";
   if (msg.delivered_at != null || msg.status === "delivered") return "delivered";
   return "sent";

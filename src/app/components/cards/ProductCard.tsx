@@ -1,4 +1,4 @@
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { useCurrency } from "../../hooks/useCurrency";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { VerifiedBadge } from "../VerifiedBadge";
@@ -38,6 +38,10 @@ export interface ProductCardProps {
   liked?: boolean;
   likeDisabled?: boolean;
   onLikeClick?: (e: ReactMouseEvent) => void;
+  /** Seller uuid — when set with `sellerFollowerCount`, shows a followers chip above the ❤️ row. */
+  sellerId?: string;
+  /** Loaded follower count for `sellerId` (omit until loaded). */
+  sellerFollowerCount?: number;
 }
 
 export function ProductCard({
@@ -56,8 +60,11 @@ export function ProductCard({
   likesCount,
   sellerVerified,
   verifiedAdvertiser,
+  sellerId,
+  sellerFollowerCount,
 }: ProductCardProps) {
   const formatPrice = useCurrency();
+  const navigate = useNavigate();
   const resolvedId =
     id != null && String(id).trim() !== ""
       ? String(id)
@@ -88,22 +95,38 @@ export function ProductCard({
             {condition}
           </span>
         ) : null}
-        <div className="absolute bottom-2 right-2 flex gap-2">
-          {displayViews !== undefined && displayViews > 0 ? (
-            <span className="flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-xs text-white">
-              👁 {displayViews}
-            </span>
+        <div className="absolute bottom-2 right-2 flex flex-col items-end gap-1">
+          {sellerId && sellerFollowerCount !== undefined ? (
+            <button
+              type="button"
+              className="flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-xs text-white hover:bg-black/75"
+              aria-label="Seller followers"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                navigate(`/profile/${sellerId}/followers`);
+              }}
+            >
+              👥 {sellerFollowerCount}
+            </button>
           ) : null}
-          {displayLikes !== undefined && displayLikes > 0 ? (
-            <span className="flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-xs text-white">
-              ❤️ {displayLikes}
-            </span>
-          ) : null}
-          {commentCount !== undefined && commentCount > 0 ? (
-            <span className="flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-xs text-white">
-              💬 {commentCount}
-            </span>
-          ) : null}
+          <div className="flex gap-2">
+            {displayViews !== undefined && displayViews > 0 ? (
+              <span className="flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-xs text-white">
+                👁 {displayViews}
+              </span>
+            ) : null}
+            {displayLikes !== undefined && displayLikes > 0 ? (
+              <span className="flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-xs text-white">
+                ❤️ {displayLikes}
+              </span>
+            ) : null}
+            {commentCount !== undefined && commentCount > 0 ? (
+              <span className="flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-xs text-white">
+                💬 {commentCount}
+              </span>
+            ) : null}
+          </div>
         </div>
       </div>
 

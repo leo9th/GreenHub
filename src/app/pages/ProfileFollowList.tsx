@@ -173,10 +173,7 @@ export default function ProfileFollowList() {
                   </Link>
                   {!isSelf ? (
                     <div className="shrink-0 w-[104px]">
-                      <FollowButton
-                        targetUserId={r.id}
-                        className={`inline-flex w-full items-center justify-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold shadow-sm transition-colors disabled:opacity-50`}
-                      />
+                      <FollowButton targetUserId={r.id} size="compact" />
                     </div>
                   ) : null}
                 </li>

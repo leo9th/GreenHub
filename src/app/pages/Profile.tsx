@@ -641,7 +641,8 @@ export default function Profile() {
                 <div className="flex flex-col gap-2 sm:flex-row sm:w-full">
                   <FollowButton
                     targetUserId={targetUserId}
-                    profileMissing={profileMissing || dataLoading}
+                    profileMissing={profileMissing}
+                    disabled={dataLoading}
                     onFollowersDelta={(d) => setFollowerCount((n) => Math.max(0, n + d))}
                   />
                   <Link

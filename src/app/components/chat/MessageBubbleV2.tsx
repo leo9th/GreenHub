@@ -20,6 +20,7 @@ export type MessageBubbleV2Props = {
   reactions?: ChatReactionSummary[] | null;
   onRequestMenu?: () => void;
   menuDisabled?: boolean;
+  outgoingPendingLabel?: string | null;
   /** Soft-delete for everyone — placeholder body */
   deletedForEveryone?: boolean;
   /** Current user chose delete for me — compact stub */
@@ -40,6 +41,7 @@ export function MessageBubbleV2({
   reactions,
   onRequestMenu,
   menuDisabled,
+  outgoingPendingLabel,
   deletedForEveryone,
   deletedForMeStub,
 }: MessageBubbleV2Props) {
@@ -171,7 +173,7 @@ export function MessageBubbleV2({
                 (edited)
               </span>
             ) : null}
-            {mine ? <MessageReceiptTicks phase={receiptPhase} /> : null}
+            {mine ? <MessageReceiptTicks phase={receiptPhase} outgoingPendingLabel={outgoingPendingLabel} /> : null}
             {!mine && showIncomingRead ? (
               <span className="inline-flex items-center gap-0.5 text-sky-600 dark:text-sky-400" title="You read this message">
                 <CheckCheck className="h-3.5 w-3.5" strokeWidth={2.5} />

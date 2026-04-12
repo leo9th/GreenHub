@@ -36,6 +36,7 @@ import { getProductThumbnailUrl } from "../utils/productImages";
 import { useVerifiedSellerIds } from "../hooks/useVerifiedSellerIds";
 import { useVerifiedAdvertiserIds } from "../hooks/useVerifiedAdvertiserIds";
 import { getRecentProductIds, RECENT_VIEWED_EVENT } from "../utils/recentlyViewedProducts";
+import { fetchProfileFollowerCountsForUsers } from "../utils/profileFollowCounts";
 
 export default function Home() {
   const navigate = useNavigate();
@@ -58,6 +59,7 @@ export default function Home() {
   const [likedProductIds, setLikedProductIds] = useState<Set<string>>(new Set());
   const [pendingLikeIds, setPendingLikeIds] = useState<Set<string>>(new Set());
   const [commentCounts, setCommentCounts] = useState<Record<string, number>>({});
+  const [sellerFollowerCounts, setSellerFollowerCounts] = useState<Record<string, number>>({});
   const [homeSort, setHomeSort] = useState<ListingSort>("recent");
   const [recentViewedProducts, setRecentViewedProducts] = useState<Array<Record<string, unknown>>>([]);
   const [recentViewedLoading, setRecentViewedLoading] = useState(() => getRecentProductIds().length > 0);
@@ -97,8 +99,33 @@ export default function Home() {
     () => [...products, ...recentViewedProducts],
     [products, recentViewedProducts],
   );
+
+  const listingSellerIdsKey = useMemo(() => {
+    const seen = new Set<string>();
+    for (const p of productsForVerification) {
+      const sid = (p as Record<string, unknown>).seller_id;
+      if (sid != null && String(sid).trim() !== "") seen.add(String(sid));
+    }
+    return [...seen].sort().join(",");
+  }, [productsForVerification]);
+
   const verifiedSellerIds = useVerifiedSellerIds(supabase, productsForVerification);
   const verifiedAdvertiserIds = useVerifiedAdvertiserIds(supabase, productsForVerification);
+
+  useEffect(() => {
+    const ids = listingSellerIdsKey.split(",").filter(Boolean);
+    if (ids.length === 0) {
+      setSellerFollowerCounts({});
+      return;
+    }
+    let cancelled = false;
+    void fetchProfileFollowerCountsForUsers(supabase, ids).then((map) => {
+      if (!cancelled) setSellerFollowerCounts(map);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [listingSellerIdsKey]);
 
   useEffect(() => {
     if (!authUser?.id || homeCardIds.length === 0) {
@@ -698,6 +725,8 @@ export default function Home() {
                       likeDisabled={pendingLikeIds.has(productRowKey(product.id))}
                       onLikeClick={(ev) => void onProductLike(ev, row)}
                       topRightBadge={<BoostCardBadge row={row} />}
+                      sellerId={sid || undefined}
+                      sellerFollowerCount={sid ? sellerFollowerCounts[sid] : undefined}
                     />
                   );
                 })}
@@ -755,6 +784,8 @@ export default function Home() {
                       likeDisabled={pendingLikeIds.has(productRowKey(product.id))}
                       onLikeClick={(ev) => void onProductLike(ev, row)}
                       topRightBadge={<BoostCardBadge row={row} />}
+                      sellerId={sid || undefined}
+                      sellerFollowerCount={sid ? sellerFollowerCounts[sid] : undefined}
                     />
                   );
                 })

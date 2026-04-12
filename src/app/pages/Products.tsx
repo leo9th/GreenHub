@@ -34,6 +34,7 @@ import {
 } from "../utils/productSearch";
 import { getRelatedSearchSuggestions } from "../utils/searchSuggestions";
 import { getProductThumbnailUrl } from "../utils/productImages";
+import { fetchProfileFollowerCountsForUsers } from "../utils/profileFollowCounts";
 import { useVerifiedSellerIds } from "../hooks/useVerifiedSellerIds";
 import { useVerifiedAdvertiserIds } from "../hooks/useVerifiedAdvertiserIds";
 
@@ -331,6 +332,7 @@ export default function Products() {
   const [isLoadingProducts, setIsLoadingProducts] = useState<boolean>(true);
   const [productLoadError, setProductLoadError] = useState<string | null>(null);
   const [commentCounts, setCommentCounts] = useState<Record<string, number>>({});
+  const [sellerFollowerCounts, setSellerFollowerCounts] = useState<Record<string, number>>({});
   const [likedProductIds, setLikedProductIds] = useState<Set<string>>(new Set());
   const [pendingLikeIds, setPendingLikeIds] = useState<Set<string>>(new Set());
   const verifiedSellerIds = useVerifiedSellerIds(supabase, products);

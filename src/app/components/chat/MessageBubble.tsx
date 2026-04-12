@@ -7,13 +7,23 @@ const ACTIONS_MOVE_CANCEL_PX = 14;
 
 export type ReceiptPhase = "sending" | "sent" | "delivered" | "read";
 
-export function MessageReceiptTicks({ phase }: { phase: ReceiptPhase }) {
+export function MessageReceiptTicks({
+  phase,
+  outgoingPendingLabel,
+}: {
+  phase: ReceiptPhase;
+  /** When set (e.g. offline queue), shown next to the clock for outgoing messages */
+  outgoingPendingLabel?: string | null;
+}) {
   const gray = "text-white/80";
   const blue = "text-sky-200";
   if (phase === "sending") {
     return (
-      <span className={`inline-flex items-center gap-0.5 ${gray}`} title="Sending">
+      <span className={`inline-flex items-center gap-1 ${gray}`} title={outgoingPendingLabel ?? "Sending"}>
         <Clock className="h-3.5 w-3.5" strokeWidth={2} />
+        {outgoingPendingLabel ? (
+          <span className="text-[10px] font-semibold uppercase tracking-wide">{outgoingPendingLabel}</span>
+        ) : null}
       </span>
     );
   }
@@ -57,6 +67,8 @@ export type MessageBubbleProps = {
   /** Long-press / hold to open actions (mobile); desktop uses right-click menu on parent */
   onRequestActions?: () => void;
   actionsDisabled?: boolean;
+  /** Shown next to clock when message is queued offline */
+  outgoingPendingLabel?: string | null;
 };
 
 export function MessageBubble({
@@ -73,6 +85,7 @@ export function MessageBubble({
   edited,
   onRequestActions,
   actionsDisabled,
+  outgoingPendingLabel,
 }: MessageBubbleProps) {
   const lpTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lpStartRef = useRef({ x: 0, y: 0 });
@@ -190,7 +203,7 @@ export function MessageBubble({
                 edited
               </span>
             ) : null}
-            {mine ? <MessageReceiptTicks phase={receiptPhase} /> : null}
+            {mine ? <MessageReceiptTicks phase={receiptPhase} outgoingPendingLabel={outgoingPendingLabel} /> : null}
             {!mine && showIncomingRead ? (
               <span className="inline-flex items-center gap-0.5 text-sky-600 dark:text-sky-400" title="You read this message">
                 <CheckCheck className="h-3.5 w-3.5" strokeWidth={2.5} />

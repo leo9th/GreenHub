@@ -44,6 +44,7 @@ import {
 } from "../../utils/chatConversations";
 import {
   clearConversationForMe,
+  clearConversationMessages,
   fetchPinnedMessage,
   fetchSavedMessageIds,
   toggleSavedMessage,
@@ -51,6 +52,14 @@ import {
   upsertPinnedMessage,
   type PinnedMessageRow,
 } from "../../utils/chatMessageExtras";
+import {
+  isBrowserOnline,
+  outboxDelete,
+  outboxListConversation,
+  outboxPut,
+  outboxRecordToChatRow,
+  shouldQueueSendFailure,
+} from "../../utils/chatOutboxDb";
 import {
   CHAT_MESSAGE_BASE_COLUMNS,
   CHAT_MESSAGE_DELETED_PLACEHOLDER,
@@ -251,7 +260,11 @@ type StripProduct = {
   condition: string | null;
 };
 
-type PendingConfirm = { kind: "delete-conversation" } | { kind: "clear-chat" } | null;
+type PendingConfirm =
+  | { kind: "delete-conversation" }
+  | { kind: "clear-chat" }
+  | { kind: "clear-chat-both" }
+  | null;
 
 async function uploadChatMedia(path: string, file: File, contentType?: string): Promise<string> {
   let lastErr: Error | null = null;
@@ -750,6 +763,20 @@ export default function ChatWorkspace() {
       setHighlightedMessageId(null);
       setEmojiPickerOpen(false);
       setMessages(msgs);
+      void (async () => {
+        try {
+          const pending = await outboxListConversation(conv.id);
+          if (pending.length === 0) return;
+          setMessages((prev) => {
+            const have = new Set(prev.map((x) => x.id));
+            const add = pending.filter((p) => !have.has(p.localId)).map(outboxRecordToChatRow);
+            if (add.length === 0) return prev;
+            return resolveChatMessageReplyPreviews([...prev, ...add]);
+          });
+        } catch {
+          /* noop */
+        }
+      })();
 
       attachListingToFirstSendRef.current =
         validProductId != null && Number.isFinite(validProductId) && validProductId > 0;

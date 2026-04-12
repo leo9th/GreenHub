@@ -8,8 +8,12 @@ type FollowButtonProps = {
   targetUserId: string;
   /** When the target profile row is missing / not loadable */
   profileMissing?: boolean;
+  /** Parent page still loading profile payload */
+  disabled?: boolean;
   /** Parent holds aggregate follower count; +/-1 on successful toggle */
   onFollowersDelta?: (delta: number) => void;
+  /** `compact` = denser list-row button; default = profile header */
+  size?: "default" | "compact";
   className?: string;
 };
 
@@ -17,7 +21,14 @@ type FollowButtonProps = {
  * Follow / unfollow another member (uses `profile_follows`).
  * Hidden on your own profile.
  */
-export function FollowButton({ targetUserId, profileMissing, onFollowersDelta, className }: FollowButtonProps) {
+export function FollowButton({
+  targetUserId,
+  profileMissing,
+  disabled: parentDisabled,
+  onFollowersDelta,
+  size = "default",
+  className,
+}: FollowButtonProps) {
   const { user } = useAuth();
   const [isFollowing, setIsFollowing] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
@@ -48,7 +59,7 @@ export function FollowButton({ targetUserId, profileMissing, onFollowersDelta, c
   }, [user?.id, targetUserId]);
 
   const handleClick = useCallback(async () => {
-    if (!user?.id || user.id === targetUserId || profileMissing) return;
+    if (!user?.id || user.id === targetUserId || profileMissing || parentDisabled) return;
     setFollowBusy(true);
     try {
       if (isFollowing) {
@@ -74,24 +85,25 @@ export function FollowButton({ targetUserId, profileMissing, onFollowersDelta, c
     } finally {
       setFollowBusy(false);
     }
-  }, [user?.id, targetUserId, profileMissing, isFollowing, onFollowersDelta]);
+  }, [user?.id, targetUserId, profileMissing, parentDisabled, isFollowing, onFollowersDelta]);
 
   if (profileMissing) return null;
   if (!user?.id || user.id === targetUserId) return null;
+
+  const layout =
+    size === "compact"
+      ? "inline-flex w-full items-center justify-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold"
+      : "inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-1.5 text-sm font-semibold";
+  const stateCls = isFollowing
+    ? "border border-gray-200 bg-gray-50 text-gray-800 hover:bg-gray-100"
+    : "border border-[#22c55e]/40 bg-white text-[#15803d] hover:bg-[#f0fdf4]";
 
   return (
     <button
       type="button"
       onClick={() => void handleClick()}
-      disabled={followBusy || !checked || profileMissing}
-      className={
-        className ??
-        `inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-1.5 text-sm font-semibold shadow-sm transition-colors disabled:opacity-50 ${
-          isFollowing
-            ? "border border-gray-200 bg-gray-50 text-gray-800 hover:bg-gray-100"
-            : "border border-[#22c55e]/40 bg-white text-[#15803d] hover:bg-[#f0fdf4]"
-        }`
-      }
+      disabled={followBusy || !checked || !!profileMissing || !!parentDisabled}
+      className={className ?? `${layout} shadow-sm transition-colors disabled:opacity-50 ${stateCls}`}
     >
       {followBusy ? (
         <Loader2 className="h-3.5 w-3.5 animate-spin" />

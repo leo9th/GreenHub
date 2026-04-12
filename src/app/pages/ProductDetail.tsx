@@ -4,6 +4,8 @@ import { Link, useParams, useNavigate } from "react-router";
 import {
   ArrowLeft,
   Heart,
+  Share2,
+  Users,
   Star,
   MapPin,
   ShoppingCart,
@@ -1027,7 +1029,57 @@ export default function ProductDetail() {
                   <span className="absolute top-3 left-3 z-[1] bg-[#15803d] text-white text-[11px] font-semibold px-2 py-1 rounded-lg shadow-sm">
                     {product.condition}
                   </span>
-                  <BoostDetailBadge row={foundProduct as Record<string, unknown>} />
+                  <div className="absolute top-3 right-3 z-[4] flex max-w-[calc(100%-0.75rem)] flex-col items-end gap-2">
+                    <div
+                      className="flex shrink-0 items-center gap-1"
+                      role="group"
+                      aria-label="Listing actions"
+                    >
+                      <button
+                        type="button"
+                        disabled={!sellerPeerId}
+                        onClick={() => {
+                          if (!sellerPeerId) return;
+                          navigate(`/profile/${sellerPeerId}/followers`);
+                        }}
+                        className="inline-flex max-w-[9rem] items-center gap-1 rounded-full bg-black/50 px-2 py-1.5 text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-black/60 disabled:cursor-not-allowed disabled:opacity-50"
+                        aria-label="View seller followers"
+                      >
+                        <Users className="h-3.5 w-3.5 shrink-0" strokeWidth={2} aria-hidden />
+                        <span className="text-[10px] font-semibold leading-none tabular-nums">
+                          {!sellerPeerId || sellerFollowerCountFailed
+                            ? "--"
+                            : sellerFollowerCountLoading || sellerFollowerCount === null
+                              ? "..."
+                              : formatFollowerShort(sellerFollowerCount)}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleShare()}
+                        className="rounded-full bg-black/50 p-1.5 text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-black/60"
+                        aria-label="Share listing"
+                      >
+                        <Share2 className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={likeBusy}
+                        onClick={() => void handleToggleLike()}
+                        className="inline-flex items-center gap-0.5 rounded-full bg-black/50 px-2 py-1.5 text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-black/60 disabled:opacity-50"
+                        aria-label={liked ? "Unlike" : "Like"}
+                      >
+                        <Heart
+                          className={`h-3.5 w-3.5 shrink-0 ${liked ? "fill-white text-white" : "text-white"}`}
+                          fill={liked ? "currentColor" : "none"}
+                          strokeWidth={2}
+                          aria-hidden
+                        />
+                        <span className="text-[10px] font-semibold leading-none tabular-nums">{likeCount}</span>
+                      </button>
+                    </div>
+                    <BoostDetailBadge row={foundProduct as Record<string, unknown>} />
+                  </div>
                   {product.images.length > 1 ? (
                     <span className="absolute bottom-3 right-3 z-[2] rounded-full bg-black/55 px-2.5 py-1 text-[11px] font-medium tabular-nums text-white shadow-sm">
                       {currentImageIndex + 1}/{product.images.length}
@@ -1061,59 +1113,6 @@ export default function ProductDetail() {
                   </div>
                 </div>
               )}
-              <div
-                className="mt-4 flex items-stretch justify-around gap-3 border-t border-gray-100 pt-4"
-                role="group"
-                aria-label="Listing actions"
-              >
-                <button
-                  type="button"
-                  disabled={!sellerPeerId}
-                  onClick={() => {
-                    if (!sellerPeerId) return;
-                    navigate(`/profile/${sellerPeerId}/followers`);
-                  }}
-                  className="flex min-w-0 flex-1 flex-col items-center gap-1 rounded-xl py-1 text-center text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-                  aria-label="View seller followers"
-                >
-                  <span className="text-2xl leading-none" aria-hidden>
-                    👥
-                  </span>
-                  <span className="text-sm font-semibold tabular-nums text-gray-900">
-                    {!sellerPeerId || sellerFollowerCountFailed
-                      ? "--"
-                      : sellerFollowerCountLoading || sellerFollowerCount === null
-                        ? "..."
-                        : formatFollowerShort(sellerFollowerCount)}
-                  </span>
-                  <span className="text-[10px] font-medium text-gray-500">Followers</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void handleShare()}
-                  className="flex min-w-0 flex-1 flex-col items-center gap-1 rounded-xl py-1 text-center text-gray-700 transition-colors hover:bg-gray-50"
-                  aria-label="Share listing"
-                >
-                  <span className="text-2xl leading-none" aria-hidden>
-                    📤
-                  </span>
-                  <span className="h-5 shrink-0" aria-hidden />
-                  <span className="text-[10px] font-medium text-gray-500">Share</span>
-                </button>
-                <button
-                  type="button"
-                  disabled={likeBusy}
-                  onClick={() => void handleToggleLike()}
-                  className="flex min-w-0 flex-1 flex-col items-center gap-1 rounded-xl py-1 text-center text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50"
-                  aria-label={liked ? "Unlike" : "Like"}
-                >
-                  <span className="text-2xl leading-none" aria-hidden>
-                    ❤️
-                  </span>
-                  <span className="text-sm font-semibold tabular-nums text-gray-900">{likeCount}</span>
-                  <span className="text-[10px] font-medium text-gray-500">Like</span>
-                </button>
-              </div>
             </div>
           </div>
 

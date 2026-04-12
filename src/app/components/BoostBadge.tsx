@@ -47,7 +47,7 @@ export function BoostDetailBadge({ row }: { row: Record<string, unknown> }) {
   if (!spec) return null;
   return (
     <span
-      className={`absolute top-3 right-3 z-[2] text-xs font-bold px-2.5 py-1 rounded-lg shadow-sm ${spec.className}`}
+      className={`shrink-0 self-end z-[1] text-xs font-bold px-2.5 py-1 rounded-lg shadow-sm ${spec.className}`}
     >
       {spec.label}
     </span>

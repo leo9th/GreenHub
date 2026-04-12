@@ -4,9 +4,11 @@ import {
   ArrowDown,
   ArrowLeft,
   Ban,
+  CheckSquare,
   ChevronDown,
   Copy,
   Eraser,
+  FileText,
   ImagePlus,
   Loader2,
   MessageCircle,
@@ -88,6 +90,16 @@ import { ChatPortraitProductCard } from "./ChatPortraitProductCard";
 const CHAT_MEDIA_BUCKETS = ["chat-media", "chat-images", "chat-attachments"] as const;
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
 const MAX_VOICE_BYTES = 5 * 1024 * 1024;
+const MAX_DOC_BYTES = 15 * 1024 * 1024;
+
+const DOC_PICKER_ACCEPT =
+  "image/*,.pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+function isVoiceMediaUrl(url: string | null | undefined): boolean {
+  if (!url) return false;
+  const u = url.toLowerCase();
+  return u.includes("/voice-") || /\.(webm|m4a|ogg|mp3|wav)(\?|$)/.test(u);
+}
 
 const CHAT_EMOJI_GRID: string[] = [
   "😀",
@@ -276,6 +288,7 @@ export default function ChatWorkspace() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const attachInputRef = useRef<HTMLInputElement>(null);
+  const docInputRef = useRef<HTMLInputElement>(null);
 
   const [conversation, setConversation] = useState<ConversationRow | null>(null);
   const [peerId, setPeerId] = useState<string | null>(null);
@@ -317,6 +330,10 @@ export default function ChatWorkspace() {
 
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
   const [reactionApplyBusy, setReactionApplyBusy] = useState(false);
+  /** Multi-select own messages for bulk delete */
+  const [bulkSelectMode, setBulkSelectMode] = useState(false);
+  const [selectedMessageIds, setSelectedMessageIds] = useState<string[]>([]);
+  const [bulkDeleteBusy, setBulkDeleteBusy] = useState(false);
   const [isFollowingPeer, setIsFollowingPeer] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
   /** Hide listing strip locally (X); resets when listing changes */
@@ -483,6 +500,7 @@ export default function ChatWorkspace() {
     productStripDismissed,
     mobileProductStripCollapsed,
     isFollowingPeer,
+    bulkSelectMode,
   ]);
 
   /** Avoid tying shell height to visualViewport.height — it shrinks with the mobile keyboard and collapses the sticky chat header. */
@@ -966,6 +984,11 @@ export default function ChatWorkspace() {
     };
   }, [conversation?.id, authUser?.id, peerId]);
 
+  useEffect(() => {
+    setBulkSelectMode(false);
+    setSelectedMessageIds([]);
+  }, [conversation?.id]);
+
   const upsertTyping = useCallback(
     async (isTyping: boolean) => {
       if (!conversation?.id || !authUser?.id) return;
@@ -1094,12 +1117,14 @@ export default function ChatWorkspace() {
     async (opts?: {
       text?: string;
       imageFile?: File | null;
+      documentFile?: File | null;
       voiceBlob?: Blob | null;
       voiceMime?: string;
       productId?: number | null;
     }) => {
       const text = (opts?.text ?? draft).trim();
       const imageFile = opts?.imageFile;
+      const documentFile = opts?.documentFile;
       const voiceBlob = opts?.voiceBlob;
 
       if (!authUser?.id || !conversation) {
@@ -1120,7 +1145,7 @@ export default function ChatWorkspace() {
       } else if (productId != null) {
         attachListingToFirstSendRef.current = false;
       }
-      if (!text && !imageFile && !voiceBlob && productId == null) {
+      if (!text && !imageFile && !documentFile && !voiceBlob && productId == null) {
         toast.message("Type a message or attach media.");
         return;
       }
@@ -1145,7 +1170,17 @@ export default function ChatWorkspace() {
           if (!outgoingMessage) outgoingMessage = "";
         }
 
-        if (voiceBlob) {
+        else if (documentFile) {
+          if (documentFile.size > MAX_DOC_BYTES) {
+            toast.error(`File too large (max ${formatBytes(MAX_DOC_BYTES)})`);
+            setSendBusy(false);
+            return;
+          }
+          const ext = documentFile.name.split(".").pop() || "bin";
+          const path = `${conversation.id}/${authUser.id}/doc-${crypto.randomUUID()}.${ext}`;
+          mediaUrl = await uploadChatMedia(path, documentFile, documentFile.type || undefined);
+          if (!outgoingMessage.trim()) outgoingMessage = documentFile.name;
+        } else if (voiceBlob) {
           if (voiceBlob.size > MAX_VOICE_BYTES) {
             toast.error("Voice note too large.");
             setSendBusy(false);
@@ -1340,6 +1375,16 @@ export default function ChatWorkspace() {
     [sendMessage],
   );
 
+  const onPickDocument = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      e.target.value = "";
+      if (!file) return;
+      void sendMessage({ documentFile: file });
+    },
+    [sendMessage],
+  );
+
   const copyText = useCallback(async (msg: ChatMessageRow) => {
     try {
       await navigator.clipboard.writeText(msg.message || "");
@@ -1380,9 +1425,11 @@ export default function ChatWorkspace() {
   }, [authUser?.id, peerId, isFollowingPeer]);
 
   const forwardSingleMessage = useCallback(async (msg: ChatMessageRow) => {
-    const parts = [msg.message?.trim() ?? "", msg.image_url ? "[Image]" : "", msg.media_url ? "[Voice]" : ""].filter(
-      Boolean,
-    );
+    const parts = [
+      msg.message?.trim() ?? "",
+      msg.image_url ? "[Image]" : "",
+      msg.media_url ? (isVoiceMediaUrl(msg.media_url) ? "[Voice]" : "[File]") : "",
+    ].filter(Boolean);
     const text = parts.join("\n");
     if (!text.trim()) {
       toast.message("Nothing to forward");
@@ -1403,8 +1450,48 @@ export default function ChatWorkspace() {
 
   const openMessageActions = useCallback((msg: ChatMessageRow) => {
     if (String(msg.id).startsWith("pending-")) return;
+    if (bulkSelectMode) return;
     setMobileSheetMsg(msg);
+  }, [bulkSelectMode]);
+
+  const exitBulkSelectMode = useCallback(() => {
+    setBulkSelectMode(false);
+    setSelectedMessageIds([]);
   }, []);
+
+  const toggleMessageSelected = useCallback((msg: ChatMessageRow) => {
+    if (msg.sender_id !== authUser?.id || String(msg.id).startsWith("pending-")) return;
+    setSelectedMessageIds((prev) => {
+      const i = prev.indexOf(msg.id);
+      if (i >= 0) return prev.filter((id) => id !== msg.id);
+      return [...prev, msg.id];
+    });
+  }, [authUser?.id]);
+
+  const deleteSelectedMessages = useCallback(async () => {
+    if (!authUser?.id || selectedMessageIds.length === 0) return;
+    const deletable = selectedMessageIds.filter((id) => {
+      const m = messages.find((x) => x.id === id);
+      return m && m.sender_id === authUser.id && !String(id).startsWith("pending-");
+    });
+    if (deletable.length === 0) {
+      toast.message("Select your own messages to delete.");
+      return;
+    }
+    setBulkDeleteBusy(true);
+    try {
+      const { error } = await supabase.from("chat_messages").delete().in("id", deletable);
+      if (error) throw error;
+      setMessages((prev) => prev.filter((m) => !deletable.includes(m.id)));
+      setReplyingTo((r) => (r && deletable.includes(r.id) ? null : r));
+      exitBulkSelectMode();
+      toast.success(deletable.length === 1 ? "Message deleted" : `${deletable.length} messages deleted`);
+    } catch (e: unknown) {
+      toast.error(errorMessage(e, "Could not delete messages"));
+    } finally {
+      setBulkDeleteBusy(false);
+    }
+  }, [authUser?.id, selectedMessageIds, messages, exitBulkSelectMode]);
 
   const insertEmoji = useCallback((emoji: string) => {
     setEmojiPickerOpen(false);
@@ -1829,6 +1916,16 @@ export default function ChatWorkspace() {
                   <DropdownMenuItem
                     onSelect={(e) => {
                       e.preventDefault();
+                      setBulkSelectMode(true);
+                      setSelectedMessageIds([]);
+                    }}
+                  >
+                    <CheckSquare className="mr-2 h-4 w-4" />
+                    Select messages
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={(e) => {
+                      e.preventDefault();
                       setPendingConfirm({ kind: "clear-chat" });
                     }}
                   >
@@ -1884,6 +1981,27 @@ export default function ChatWorkspace() {
           aria-hidden
         />
 
+        {bulkSelectMode ? (
+          <div className="flex shrink-0 items-center justify-between gap-2 border-b border-[#0a7a47] bg-[#0f9d58] px-3 py-2.5 text-white shadow-sm dark:border-emerald-950 dark:bg-[#0c7a45]">
+            <button
+              type="button"
+              className="min-h-[44px] text-sm font-medium text-white/95 hover:underline"
+              onClick={exitBulkSelectMode}
+            >
+              Cancel
+            </button>
+            <span className="text-sm font-semibold tabular-nums">{selectedMessageIds.length} selected</span>
+            <button
+              type="button"
+              disabled={bulkDeleteBusy || selectedMessageIds.length === 0}
+              className="min-h-[44px] text-sm font-bold text-white disabled:opacity-40"
+              onClick={() => void deleteSelectedMessages()}
+            >
+              {bulkDeleteBusy ? "…" : "Delete"}
+            </button>
+          </div>
+        ) : null}
+
         <div className="relative z-10 flex min-h-0 flex-1 flex-col">
           {showJumpBottom ? (
             <div className="pointer-events-none absolute inset-x-0 bottom-4 z-20 flex justify-center px-4">
@@ -1923,7 +2041,7 @@ export default function ChatWorkspace() {
                 const isHighlighted = highlightedMessageId === msg.id;
                 const productCard = resolveMessageProductCard(msg);
 
-                const actionsDisabled = String(msg.id).startsWith("pending-");
+                const actionsDisabled = String(msg.id).startsWith("pending-") || bulkSelectMode;
 
                 const messageBubbleEl = (
                   <MessageBubble
@@ -1935,7 +2053,9 @@ export default function ChatWorkspace() {
                     isHighlighted={isHighlighted}
                     edited={!!msg.edited}
                     reactions={reactionByMessage[msg.id]?.summaries ?? null}
-                    onRequestActions={actionsDisabled ? undefined : () => openMessageActions(msg)}
+                    onRequestActions={
+                      actionsDisabled ? undefined : () => openMessageActions(msg)
+                    }
                     actionsDisabled={actionsDisabled}
                     replySlot={
                       replyPreview || msg.reply_to_id ? (
@@ -1984,7 +2104,7 @@ export default function ChatWorkspace() {
                           onClick={(e) => e.stopPropagation()}
                         />
                       ) : null}
-                      {msg.media_url ? (
+                      {msg.media_url && isVoiceMediaUrl(msg.media_url) ? (
                         <audio
                           src={msg.media_url}
                           controls
@@ -1993,6 +2113,24 @@ export default function ChatWorkspace() {
                           onPointerDown={(e) => e.stopPropagation()}
                           onClick={(e) => e.stopPropagation()}
                         />
+                      ) : null}
+                      {msg.media_url && !isVoiceMediaUrl(msg.media_url) ? (
+                        <a
+                          href={msg.media_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          download
+                          className={`inline-flex max-w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-sm font-medium ${
+                            mine
+                              ? "border-white/30 bg-black/15 text-white hover:bg-black/25"
+                              : "border-gray-200 bg-gray-50 text-gray-900 hover:bg-gray-100 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700"
+                          }`}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <FileText className="h-4 w-4 shrink-0" />
+                          Open file
+                        </a>
                       ) : null}
                       {msg.message?.trim() ? (
                         <p
@@ -2010,7 +2148,33 @@ export default function ChatWorkspace() {
                   </MessageBubble>
                 );
 
-                const rowBody = <div className="touch-manipulation min-w-0 flex-1">{messageBubbleEl}</div>;
+                const rowBody = (
+                  <div
+                    className={cn("flex min-w-0 items-start gap-1.5", bulkSelectMode && mine && "touch-manipulation")}
+                  >
+                    {bulkSelectMode && mine ? (
+                      <button
+                        type="button"
+                        role="checkbox"
+                        aria-checked={selectedMessageIds.includes(msg.id)}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleMessageSelected(msg);
+                        }}
+                        className={cn(
+                          "mt-1.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 transition",
+                          selectedMessageIds.includes(msg.id)
+                            ? "border-white bg-white text-[#0f9d58]"
+                            : "border-zinc-500 bg-white/90 text-transparent dark:border-zinc-400 dark:bg-zinc-800",
+                        )}
+                      >
+                        {selectedMessageIds.includes(msg.id) ? "✓" : null}
+                      </button>
+                    ) : null}
+                    <div className="min-w-0 flex-1 touch-manipulation">{messageBubbleEl}</div>
+                  </div>
+                );
 
                 const menuItems = (
                   <>
@@ -2059,13 +2223,13 @@ export default function ChatWorkspace() {
                       }}
                       className={cn("flex w-full items-start", sameCluster ? "mb-0.5" : "mb-2")}
                     >
-                      {useDesktopContextMenu ? (
+                      {bulkSelectMode || !useDesktopContextMenu ? (
+                        rowBody
+                      ) : (
                         <ContextMenu>
                           <ContextMenuTrigger asChild>{rowBody}</ContextMenuTrigger>
                           <ContextMenuContent className="min-w-[12rem]">{menuItems}</ContextMenuContent>
                         </ContextMenu>
-                      ) : (
-                        rowBody
                       )}
                     </div>
                   </Fragment>
@@ -2095,19 +2259,19 @@ export default function ChatWorkspace() {
           <div className="relative z-30 shrink-0 border-t border-[#d1d7db] bg-[#f0f2f5] pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-[0_-1px_3px_rgba(0,0,0,0.08)] dark:border-zinc-700 dark:bg-zinc-900">
             <div className="px-2 py-2 sm:px-3">
               {replyingTo ? (
-                <div className="mb-2 flex items-start justify-between gap-3 rounded-2xl border border-emerald-100 bg-emerald-50/80 px-3 py-2 dark:border-emerald-900 dark:bg-emerald-950/50">
+                <div className="mb-2 flex items-start justify-between gap-3 rounded-2xl border border-emerald-700/35 bg-emerald-700/15 px-3 py-2.5 dark:border-emerald-500/40 dark:bg-emerald-950/70">
                   <div className="min-w-0">
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-400">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-900 dark:text-emerald-300">
                       Replying to {senderLabel(replyingTo.sender_id)}
                     </p>
-                    <p className="truncate text-sm text-emerald-950/80 dark:text-emerald-100/80">
+                    <p className="truncate text-sm text-emerald-950 dark:text-emerald-50/95">
                       {messagePreviewText(replyingTo.message, replyingTo.image_url)}
                     </p>
                   </div>
                   <button
                     type="button"
                     onClick={() => setReplyingTo(null)}
-                    className="shrink-0 rounded-full p-1 text-emerald-700 hover:bg-emerald-100 dark:text-emerald-300 dark:hover:bg-emerald-900/50"
+                    className="shrink-0 rounded-full p-1 text-emerald-900 hover:bg-emerald-800/15 dark:text-emerald-200 dark:hover:bg-emerald-900/50"
                     aria-label="Cancel reply"
                   >
                     <X className="h-4 w-4" />
@@ -2115,89 +2279,107 @@ export default function ChatWorkspace() {
                 </div>
               ) : null}
 
-              <div className="flex flex-wrap items-end gap-1.5 sm:gap-2">
+              <div className="flex flex-wrap items-end gap-0.5 sm:gap-1">
                 <input ref={attachInputRef} type="file" accept="image/*" className="hidden" onChange={onPickImage} />
+                <input
+                  ref={docInputRef}
+                  type="file"
+                  accept={DOC_PICKER_ACCEPT}
+                  className="hidden"
+                  onChange={onPickDocument}
+                />
                 <button
                   type="button"
                   onClick={() => attachInputRef.current?.click()}
-                  className="flex h-11 min-w-[44px] shrink-0 items-center justify-center rounded-full text-gray-700 hover:bg-black/[0.06] dark:text-zinc-200 dark:hover:bg-white/10"
+                  className="flex h-9 min-w-[36px] shrink-0 items-center justify-center rounded-full text-gray-700 hover:bg-black/[0.06] dark:text-zinc-200 dark:hover:bg-white/10"
                   aria-label="Attach image"
                 >
-                  <ImagePlus className="h-6 w-6" />
+                  <ImagePlus className="h-[1.35rem] w-[1.35rem]" strokeWidth={2} />
                 </button>
-                <Popover open={emojiPickerOpen} onOpenChange={setEmojiPickerOpen}>
-                  <PopoverTrigger asChild>
-                    <button
-                      type="button"
-                      className="flex h-11 min-w-[44px] shrink-0 items-center justify-center rounded-full text-gray-700 hover:bg-black/[0.06] dark:text-zinc-200 dark:hover:bg-white/10"
-                      aria-label="Insert emoji"
-                      title="Emoji"
-                    >
-                      <Smile className="h-6 w-6" strokeWidth={2} />
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent
-                    side="top"
-                    align="start"
-                    sideOffset={8}
-                    className="w-[min(100vw-2rem,20rem)] touch-manipulation p-2"
-                  >
-                    <div className="grid max-h-[min(50vh,16rem)] grid-cols-6 gap-1 overflow-y-auto overscroll-contain sm:grid-cols-8">
-                      {CHAT_EMOJI_GRID.map((emoji) => (
-                        <button
-                          key={emoji}
-                          type="button"
-                          className="flex h-11 w-11 items-center justify-center rounded-lg text-xl transition hover:bg-emerald-50 active:scale-95 dark:hover:bg-zinc-800"
-                          onClick={() => insertEmoji(emoji)}
-                          aria-label={`Insert ${emoji}`}
-                        >
-                          {emoji}
-                        </button>
-                      ))}
-                    </div>
-                  </PopoverContent>
-                </Popover>
+                <button
+                  type="button"
+                  onClick={() => docInputRef.current?.click()}
+                  className="flex h-9 min-w-[36px] shrink-0 items-center justify-center rounded-full text-gray-700 hover:bg-black/[0.06] dark:text-zinc-200 dark:hover:bg-white/10"
+                  aria-label="Attach PDF or Word"
+                  title="PDF, Word…"
+                >
+                  <FileText className="h-[1.35rem] w-[1.35rem]" strokeWidth={2} />
+                </button>
                 <button
                   type="button"
                   onClick={() => void sendProductCard()}
                   disabled={!conversation?.context_product_id && !stripProduct}
-                  className="flex h-11 min-w-[44px] shrink-0 items-center justify-center rounded-full text-gray-700 hover:bg-black/[0.06] disabled:opacity-40 dark:text-zinc-200 dark:hover:bg-white/10"
+                  className="flex h-9 min-w-[36px] shrink-0 items-center justify-center rounded-full text-gray-700 hover:bg-black/[0.06] disabled:opacity-40 dark:text-zinc-200 dark:hover:bg-white/10"
                   aria-label="Share listing"
                   title="Share product card"
                 >
-                  <Package className="h-6 w-6" />
+                  <Package className="h-[1.35rem] w-[1.35rem]" strokeWidth={2} />
                 </button>
-                <textarea
-                  ref={draftTextareaRef}
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      void sendMessage();
-                    }
-                  }}
-                  rows={1}
-                  placeholder="Message…"
-                  className="min-h-[44px] min-w-0 flex-1 resize-none rounded-full border border-[#d1d7db] bg-white px-4 py-2.5 text-sm outline-none focus:border-[#25D366] focus:ring-1 focus:ring-[#25D366] dark:border-zinc-600 dark:bg-zinc-800 dark:text-foreground"
-                />
+                <div className="relative min-h-[52px] min-w-0 flex-1">
+                  <textarea
+                    ref={draftTextareaRef}
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        void sendMessage();
+                      }
+                    }}
+                    rows={2}
+                    placeholder="Message…"
+                    className="max-h-36 min-h-[52px] w-full resize-y rounded-2xl border border-[#bfc6c9] bg-white py-3 pl-3 pr-12 text-[15px] leading-relaxed outline-none focus:border-[#0f9d58] focus:ring-2 focus:ring-[#0f9d58]/25 dark:border-zinc-600 dark:bg-zinc-800 dark:text-foreground"
+                  />
+                  <Popover open={emojiPickerOpen} onOpenChange={setEmojiPickerOpen}>
+                    <PopoverTrigger asChild>
+                      <button
+                        type="button"
+                        className="absolute bottom-2 right-2 flex h-8 w-8 items-center justify-center rounded-full text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-100"
+                        aria-label="Insert emoji"
+                        title="Emoji"
+                      >
+                        <Smile className="h-[1.25rem] w-[1.25rem]" strokeWidth={2} />
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent
+                      side="top"
+                      align="end"
+                      sideOffset={8}
+                      className="w-[min(100vw-2rem,20rem)] touch-manipulation p-2"
+                    >
+                      <div className="grid max-h-[min(50vh,16rem)] grid-cols-6 gap-1 overflow-y-auto overscroll-contain sm:grid-cols-8">
+                        {CHAT_EMOJI_GRID.map((emoji) => (
+                          <button
+                            key={emoji}
+                            type="button"
+                            className="flex h-11 w-11 items-center justify-center rounded-lg text-xl transition hover:bg-emerald-50 active:scale-95 dark:hover:bg-zinc-800"
+                            onClick={() => insertEmoji(emoji)}
+                            aria-label={`Insert ${emoji}`}
+                          >
+                            {emoji}
+                          </button>
+                        ))}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                </div>
                 <button
                   type="button"
                   onPointerDown={onMicPointerDown}
-                  className={`flex h-11 min-w-[44px] shrink-0 items-center justify-center rounded-full ${recording ? "bg-red-500 text-white" : "text-gray-700 hover:bg-black/[0.06] dark:text-zinc-200 dark:hover:bg-white/10"}`}
+                  className={`flex h-9 min-w-[36px] shrink-0 items-center justify-center rounded-full ${recording ? "bg-red-500 text-white" : "text-gray-700 hover:bg-black/[0.06] dark:text-zinc-200 dark:hover:bg-white/10"}`}
                   aria-label="Hold to record voice"
                   title="Hold to record"
                 >
-                  <Mic className="h-6 w-6" />
+                  <Mic className="h-[1.35rem] w-[1.35rem]" />
                 </button>
                 <button
                   type="button"
                   onClick={() => void sendMessage()}
                   disabled={sendBusy || !draft.trim()}
-                  className="flex h-11 min-w-[44px] shrink-0 items-center justify-center rounded-full bg-[#25D366] text-white shadow-sm disabled:opacity-50 dark:bg-[#25D366]"
+                  className="flex h-9 min-w-[36px] shrink-0 items-center justify-center rounded-full bg-[#0f9d58] text-white shadow-sm disabled:opacity-50"
                   aria-label="Send"
                 >
-                  {sendBusy ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
+                  {sendBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                 </button>
               </div>
             </div>
@@ -2223,7 +2405,13 @@ export default function ChatWorkspace() {
                   </SheetDescription>
                   <p className="mt-1 line-clamp-3 text-sm leading-snug text-zinc-500 dark:text-zinc-400">
                     {messagePreviewText(mobileSheetMsg.message, mobileSheetMsg.image_url) ||
-                      (mobileSheetMsg.image_url ? "Photo" : mobileSheetMsg.media_url ? "Voice message" : "Message")}
+                      (mobileSheetMsg.image_url
+                        ? "Photo"
+                        : mobileSheetMsg.media_url
+                          ? isVoiceMediaUrl(mobileSheetMsg.media_url)
+                            ? "Voice message"
+                            : "File attachment"
+                          : "Message")}
                   </p>
                 </div>
 

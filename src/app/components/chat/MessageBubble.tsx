@@ -127,8 +127,9 @@ export function MessageBubble({
     [clearLongPress],
   );
 
+  /** Darker outgoing green for readability (was #25D366 — too light on some screens). */
   const bubbleClass = mine
-    ? "relative z-[1] rounded-lg rounded-br-sm bg-[#25D366] text-white shadow-sm"
+    ? "relative z-[1] rounded-lg rounded-br-sm bg-[#0f9d58] text-white shadow-md"
     : "relative z-[1] rounded-lg rounded-bl-sm bg-white text-gray-900 shadow-sm ring-1 ring-black/[0.06] dark:bg-zinc-700 dark:text-zinc-100 dark:ring-white/10";
 
   const metaMine = "text-[11px] text-white/85";
@@ -148,7 +149,7 @@ export function MessageBubble({
             className={`relative ${bubbleClass} px-3 py-2 ${
               isHighlighted
                 ? mine
-                  ? "ring-2 ring-white/80 ring-offset-2 ring-offset-[#25D366]"
+                  ? "ring-2 ring-white/90 ring-offset-2 ring-offset-[#0f9d58]"
                   : "ring-2 ring-emerald-400 ring-offset-2 ring-offset-[#ece5dd] dark:ring-offset-zinc-900"
                 : ""
             }`}

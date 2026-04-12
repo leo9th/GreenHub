@@ -243,6 +243,21 @@ function formatAvgResponseLabel(ms: number): string {
   return `Replies in ~${d} day${d >= 2 ? "s" : ""}`;
 }
 
+/** Compact line for chat header (tooltip uses full `formatAvgResponseLabel`). */
+function formatAvgResponseLabelShort(ms: number): string {
+  const minutes = ms / 60000;
+  if (minutes < 1) return "~1 min";
+  if (minutes < 60) return `~${Math.max(1, Math.round(minutes))} min`;
+  const hours = minutes / 60;
+  if (hours < 24) {
+    const rounded = Math.round(hours * 10) / 10;
+    return rounded <= 1.2 ? "~1 hr" : `~${rounded} hr`;
+  }
+  const days = minutes / (60 * 24);
+  const d = Math.max(1, Math.round(days * 10) / 10);
+  return `~${d}d`;
+}
+
 function formatLocationLine(state: string | null, lga: string | null): string | null {
   const s = state?.trim() || "";
   const l = lga?.trim() || "";
@@ -1964,6 +1979,14 @@ export default function ChatWorkspace() {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-60">
                   <DropdownMenuLabel className="line-clamp-2">{peerName}</DropdownMenuLabel>
+                  {peerMemberSince ? (
+                    <p className="px-2 pb-2 pt-0 text-[11px] leading-snug text-gray-500 dark:text-zinc-400">
+                      <span className="inline-flex items-center gap-1.5">
+                        <Calendar className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
+                        <span>Member since {peerMemberSince}</span>
+                      </span>
+                    </p>
+                  ) : null}
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
                     className="cursor-pointer gap-2"
@@ -2043,55 +2066,76 @@ export default function ChatWorkspace() {
               </DropdownMenu>
             </div>
 
-            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-700 dark:text-zinc-200">
+            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] leading-tight text-gray-600 dark:text-zinc-400 sm:mt-1 sm:gap-x-2.5 sm:text-xs">
               {peerReviewCount > 0 && peerRating != null ? (
-                <span className="inline-flex items-center gap-1">
-                  <Star className="h-3.5 w-3.5 shrink-0 fill-amber-400 text-amber-500" aria-hidden />
-                  <span className="font-medium tabular-nums">{peerRating.toFixed(1)}</span>
-                  <span className="text-gray-500 dark:text-zinc-400">({peerReviewCount})</span>
+                <span
+                  className="inline-flex items-center gap-px"
+                  title={`${peerRating.toFixed(1)} average · ${peerReviewCount} reviews`}
+                  aria-label={`${peerRating.toFixed(1)} average, ${peerReviewCount} reviews`}
+                >
+                  {Array.from({ length: 5 }, (_, i) => (
+                    <Star
+                      key={i}
+                      className={cn(
+                        "h-3 w-3 shrink-0 stroke-[1.5]",
+                        i < Math.round(Math.min(5, Math.max(0, peerRating)))
+                          ? "fill-amber-400 text-amber-500"
+                          : "fill-none text-gray-300 dark:text-zinc-600",
+                      )}
+                      aria-hidden
+                    />
+                  ))}
+                  <span className="ml-0.5 tabular-nums text-[10px] text-gray-400 dark:text-zinc-500">({peerReviewCount})</span>
                 </span>
               ) : (
-                <span className="text-xs text-gray-500 dark:text-zinc-500">No reviews yet</span>
+                <span className="inline-flex items-center gap-px opacity-70" title="No reviews yet" aria-label="No reviews yet">
+                  {Array.from({ length: 5 }, (_, i) => (
+                    <Star
+                      key={i}
+                      className="h-3 w-3 shrink-0 fill-none stroke-[1.5] text-gray-300 dark:text-zinc-600"
+                      aria-hidden
+                    />
+                  ))}
+                </span>
               )}
-            </div>
-
-            {(peerLocationLabel || peerMemberSince) && (
-              <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-600 dark:text-zinc-400">
-                {peerLocationLabel ? (
-                  <span className="inline-flex min-w-0 items-center gap-1">
-                    <MapPin className="h-3.5 w-3.5 shrink-0 text-gray-400" aria-hidden />
-                    <span className="break-words">{peerLocationLabel}</span>
+              {peerLocationLabel ? (
+                <>
+                  <span className="text-gray-300 dark:text-zinc-600" aria-hidden>
+                    ·
                   </span>
-                ) : null}
-                {peerMemberSince ? (
-                  <span className="inline-flex items-center gap-1">
-                    <Calendar className="h-3.5 w-3.5 shrink-0 text-gray-400" aria-hidden />
-                    Member since {peerMemberSince}
+                  <span className="inline-flex min-w-0 max-w-[min(100%,10rem)] items-center gap-0.5 sm:max-w-[13rem]">
+                    <MapPin className="h-3 w-3 shrink-0 text-gray-400" aria-hidden />
+                    <span className="truncate">{peerLocationLabel}</span>
                   </span>
-                ) : null}
-              </div>
-            )}
-
-            <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs">
-              <span className="inline-flex min-w-0 items-start gap-1.5 text-gray-700 dark:text-zinc-300">
-                <Zap className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" aria-hidden />
-                <span>
-                  {peerResponseMs != null
+                </>
+              ) : null}
+              <span className="text-gray-300 dark:text-zinc-600" aria-hidden>
+                ·
+              </span>
+              <span
+                className="inline-flex min-w-0 items-center gap-0.5"
+                title={
+                  peerResponseMs != null
                     ? formatAvgResponseLabel(peerResponseMs)
-                    : "Typical reply: not enough chat history yet"}
+                    : "Not enough message history to estimate reply time"
+                }
+              >
+                <Zap className="h-3 w-3 shrink-0 text-amber-500" aria-hidden />
+                <span className="truncate">
+                  {peerResponseMs != null ? formatAvgResponseLabelShort(peerResponseMs) : "No reply stats"}
                 </span>
               </span>
-              <span className="inline-flex items-center gap-2 text-gray-600 dark:text-zinc-400">
+              <span className="inline-flex shrink-0 items-center gap-1 font-medium text-gray-700 dark:text-zinc-300">
                 <span
                   className={cn(
-                    "h-2 w-2 shrink-0 rounded-full",
+                    "h-1.5 w-1.5 shrink-0 rounded-full",
                     peerTyping ? "bg-amber-500" : peerActiveByProfile ? "bg-emerald-500" : "bg-zinc-400 dark:bg-zinc-500",
                   )}
                   title={peerTyping ? "Typing" : peerActiveByProfile ? "Active" : "Offline"}
                   aria-hidden
                 />
                 <span className="whitespace-nowrap">
-                  {peerTyping ? `${peerFirstName} is typing…` : peerActiveByProfile ? "Active now" : "Offline"}
+                  {peerTyping ? "Typing…" : peerActiveByProfile ? "Active" : "Offline"}
                 </span>
               </span>
             </div>

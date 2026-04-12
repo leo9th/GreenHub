@@ -38,8 +38,6 @@ export function MessageReceiptTicks({ phase }: { phase: ReceiptPhase }) {
   );
 }
 
-export type DeletedPlaceholder = "everyone" | "hidden" | null;
-
 export type MessageBubbleProps = {
   mine: boolean;
   timeLabel: string;
@@ -55,11 +53,6 @@ export type MessageBubbleProps = {
   /** Aggregated emoji reactions (optional; omitted when table unavailable) */
   reactions?: ChatReactionSummary[] | null;
   edited?: boolean;
-  /** Name above bubble (e.g. group / first in cluster) */
-  senderName?: string | null;
-  showSenderName?: boolean;
-  /** Deleted / hidden — show italic placeholder instead of children */
-  deletedPlaceholder?: DeletedPlaceholder;
   /** Long-press / hold to open actions (mobile); desktop uses right-click menu on parent */
   onRequestActions?: () => void;
   actionsDisabled?: boolean;
@@ -77,9 +70,6 @@ export function MessageBubble({
   belowBubbleSlot,
   reactions,
   edited,
-  senderName,
-  showSenderName,
-  deletedPlaceholder,
   onRequestActions,
   actionsDisabled,
 }: MessageBubbleProps) {
@@ -97,8 +87,6 @@ export function MessageBubble({
     (e: React.PointerEvent) => {
       if (!onRequestActions || actionsDisabled) return;
       if (e.button !== 0) return;
-      const t = e.target as HTMLElement | null;
-      if (t?.closest("[data-skip-longpress]")) return;
       clearLongPress();
       lpStartRef.current = { x: e.clientX, y: e.clientY };
       try {
@@ -139,10 +127,9 @@ export function MessageBubble({
     [clearLongPress],
   );
 
-  /** Outgoing: green; incoming: light gray (WhatsApp-style). */
   const bubbleClass = mine
-    ? "relative z-[1] rounded-lg rounded-br-sm bg-[#0f9d58] text-white shadow-md"
-    : "relative z-[1] rounded-lg rounded-bl-sm bg-[#f0f0f0] text-gray-900 shadow-sm ring-1 ring-black/[0.04] dark:bg-zinc-700 dark:text-zinc-100 dark:ring-white/10";
+    ? "relative z-[1] rounded-lg rounded-br-sm bg-[#25D366] text-white shadow-sm"
+    : "relative z-[1] rounded-lg rounded-bl-sm bg-white text-gray-900 shadow-sm ring-1 ring-black/[0.06] dark:bg-zinc-700 dark:text-zinc-100 dark:ring-white/10";
 
   const metaMine = "text-[11px] text-white/85";
   const metaTheirs = "text-[11px] text-gray-500 dark:text-zinc-400";
@@ -156,38 +143,20 @@ export function MessageBubble({
       onPointerCancel={onActionsPointerEnd}
     >
       <div className={`flex min-w-0 max-w-[min(92%,26rem)] flex-col sm:max-w-[min(85%,28rem)] ${mine ? "items-end" : "items-start"}`}>
-        {showSenderName && senderName ? (
-          <p className="mb-0.5 max-w-full truncate px-1 text-[12px] font-semibold text-gray-600 dark:text-zinc-400">
-            {senderName}
-          </p>
-        ) : null}
         <div className="relative w-full min-w-0">
           <div
             className={`relative ${bubbleClass} px-3 py-2 ${
               isHighlighted
                 ? mine
-                  ? "ring-2 ring-white/90 ring-offset-2 ring-offset-[#0f9d58]"
+                  ? "ring-2 ring-white/80 ring-offset-2 ring-offset-[#25D366]"
                   : "ring-2 ring-emerald-400 ring-offset-2 ring-offset-[#ece5dd] dark:ring-offset-zinc-900"
                 : ""
             }`}
           >
             <div className="relative z-[2]">{replySlot}</div>
-            <div className="relative z-[2]">
-              {deletedPlaceholder ? (
-                <p
-                  className={`select-text text-sm italic ${mine ? "text-white/90" : "text-gray-500 dark:text-zinc-400"}`}
-                  data-skip-longpress
-                >
-                  {deletedPlaceholder === "everyone"
-                    ? "This message was deleted."
-                    : "This message was removed."}
-                </p>
-              ) : (
-                children
-              )}
-            </div>
+            <div className="relative z-[2]">{children}</div>
           </div>
-          {!deletedPlaceholder && reactions && reactions.length > 0 ? (
+          {reactions && reactions.length > 0 ? (
             <div
               className={`mt-0.5 flex max-w-full flex-wrap gap-1 ${mine ? "justify-end" : "justify-start"}`}
               aria-label="Reactions"
@@ -214,7 +183,7 @@ export function MessageBubble({
             {timeLabel ? <span className={`tabular-nums ${mine ? metaMine : metaTheirs}`}>{timeLabel}</span> : null}
             {edited ? (
               <span className={`text-[10px] font-medium ${mine ? "text-white/70" : "text-gray-400 dark:text-zinc-500"}`}>
-                (edited)
+                edited
               </span>
             ) : null}
             {mine ? <MessageReceiptTicks phase={receiptPhase} /> : null}

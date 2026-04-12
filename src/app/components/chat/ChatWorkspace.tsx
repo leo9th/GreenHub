@@ -4,17 +4,14 @@ import {
   ArrowDown,
   ArrowLeft,
   Ban,
-  CheckSquare,
   ChevronDown,
   Copy,
   Eraser,
-  FileText,
   ImagePlus,
   Loader2,
   MessageCircle,
   Mic,
   MoreVertical,
-  Pencil,
   Package,
   Reply,
   Search,
@@ -45,20 +42,13 @@ import {
 } from "../../utils/chatConversations";
 import {
   CHAT_MESSAGE_BASE_COLUMNS,
-  CHAT_MESSAGE_DELETED_FOR_ME_PLACEHOLDER,
-  CHAT_MESSAGE_DELETED_PLACEHOLDER,
   fetchChatMessagesForConversation,
   markConversationMessagesDelivered,
   markConversationMessagesRead,
   normalizeChatMessageRow,
   outgoingReceiptPhase,
   resolveChatMessageReplyPreviews,
-  canEditMessage,
   fetchMessageReactions,
-  isDeletedForEveryone,
-  isMessageHiddenForViewer,
-  removeOwnMessageReaction,
-  setMessageReaction,
   type ChatMessageRow,
   type MessageReactionsState,
 } from "../../utils/chatMessages";
@@ -76,7 +66,6 @@ import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
-  ContextMenuSeparator,
   ContextMenuTrigger,
 } from "../ui/context-menu";
 import {
@@ -87,7 +76,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
-import { Sheet, SheetContent, SheetDescription, SheetTitle } from "../ui/sheet";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "../ui/sheet";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import { Button } from "../ui/button";
 import { cn } from "../ui/utils";
@@ -97,16 +86,6 @@ import { ChatPortraitProductCard } from "./ChatPortraitProductCard";
 const CHAT_MEDIA_BUCKETS = ["chat-media", "chat-images", "chat-attachments"] as const;
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
 const MAX_VOICE_BYTES = 5 * 1024 * 1024;
-const MAX_DOC_BYTES = 15 * 1024 * 1024;
-
-const DOC_PICKER_ACCEPT =
-  "image/*,.pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-
-function isVoiceMediaUrl(url: string | null | undefined): boolean {
-  if (!url) return false;
-  const u = url.toLowerCase();
-  return u.includes("/voice-") || /\.(webm|m4a|ogg|mp3|wav)(\?|$)/.test(u);
-}
 
 const CHAT_EMOJI_GRID: string[] = [
   "😀",
@@ -140,9 +119,6 @@ const CHAT_EMOJI_GRID: string[] = [
   "📎",
   "✅",
 ];
-
-/** Shown on mobile long-press sheet — common chat reactions (horizontal strip). */
-const MESSAGE_SHEET_QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏", "🔥", "✨"] as const;
 
 function parseConversationInt(v: unknown): number | null {
   if (v == null) return null;
@@ -240,8 +216,7 @@ type StripProduct = {
 };
 
 type PendingConfirm =
-  | { kind: "delete-for-me"; message: ChatMessageRow }
-  | { kind: "delete-for-everyone"; message: ChatMessageRow }
+  | { kind: "delete-message"; message: ChatMessageRow }
   | { kind: "delete-conversation" }
   | { kind: "clear-chat" }
   | null;
@@ -296,7 +271,6 @@ export default function ChatWorkspace() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const attachInputRef = useRef<HTMLInputElement>(null);
-  const docInputRef = useRef<HTMLInputElement>(null);
 
   const [conversation, setConversation] = useState<ConversationRow | null>(null);
   const [peerId, setPeerId] = useState<string | null>(null);
@@ -337,12 +311,6 @@ export default function ChatWorkspace() {
   );
 
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
-  const [reactionApplyBusy, setReactionApplyBusy] = useState(false);
-  /** Multi-select own messages for bulk delete */
-  const [bulkSelectMode, setBulkSelectMode] = useState(false);
-  const [selectedMessageIds, setSelectedMessageIds] = useState<string[]>([]);
-  const [bulkDeleteBusy, setBulkDeleteBusy] = useState(false);
-  const [editingMessage, setEditingMessage] = useState<ChatMessageRow | null>(null);
   const [isFollowingPeer, setIsFollowingPeer] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
   /** Hide listing strip locally (X); resets when listing changes */
@@ -509,7 +477,6 @@ export default function ChatWorkspace() {
     productStripDismissed,
     mobileProductStripCollapsed,
     isFollowingPeer,
-    bulkSelectMode,
   ]);
 
   /** Avoid tying shell height to visualViewport.height — it shrinks with the mobile keyboard and collapses the sticky chat header. */
@@ -993,15 +960,6 @@ export default function ChatWorkspace() {
     };
   }, [conversation?.id, authUser?.id, peerId]);
 
-  useEffect(() => {
-    setBulkSelectMode(false);
-    setSelectedMessageIds([]);
-  }, [conversation?.id]);
-
-  useEffect(() => {
-    setEditingMessage(null);
-  }, [conversation?.id]);
-
   const upsertTyping = useCallback(
     async (isTyping: boolean) => {
       if (!conversation?.id || !authUser?.id) return;
@@ -1130,63 +1088,16 @@ export default function ChatWorkspace() {
     async (opts?: {
       text?: string;
       imageFile?: File | null;
-      documentFile?: File | null;
       voiceBlob?: Blob | null;
       voiceMime?: string;
       productId?: number | null;
     }) => {
       const text = (opts?.text ?? draft).trim();
       const imageFile = opts?.imageFile;
-      const documentFile = opts?.documentFile;
       const voiceBlob = opts?.voiceBlob;
 
       if (!authUser?.id || !conversation) {
         toast.error("Chat is not ready.");
-        return;
-      }
-
-      if (editingMessage) {
-        const newText = (opts?.text ?? draft).trim();
-        if (!newText) {
-          toast.message("Message is empty.");
-          return;
-        }
-        if (!canEditMessage(editingMessage, authUser.id)) {
-          toast.error("You can only edit messages within 15 minutes.");
-          setEditingMessage(null);
-          return;
-        }
-        if (sendLockRef.current) return;
-        sendLockRef.current = true;
-        setSendBusy(true);
-        try {
-          const { error } = await supabase
-            .from("chat_messages")
-            .update({
-              message: newText,
-              edited: true,
-              edited_at: new Date().toISOString(),
-            })
-            .eq("id", editingMessage.id);
-          if (error) throw error;
-          setMessages((prev) =>
-            resolveChatMessageReplyPreviews(
-              prev.map((m) =>
-                m.id === editingMessage.id
-                  ? { ...m, message: newText, edited: true, edited_at: new Date().toISOString(), client_sending: false }
-                  : m,
-              ),
-            ),
-          );
-          setEditingMessage(null);
-          setDraft("");
-          toast.success("Message updated");
-        } catch (e: unknown) {
-          toast.error(errorMessage(e, "Could not edit message"));
-        } finally {
-          sendLockRef.current = false;
-          setSendBusy(false);
-        }
         return;
       }
 
@@ -1203,7 +1114,7 @@ export default function ChatWorkspace() {
       } else if (productId != null) {
         attachListingToFirstSendRef.current = false;
       }
-      if (!text && !imageFile && !documentFile && !voiceBlob && productId == null) {
+      if (!text && !imageFile && !voiceBlob && productId == null) {
         toast.message("Type a message or attach media.");
         return;
       }
@@ -1228,17 +1139,7 @@ export default function ChatWorkspace() {
           if (!outgoingMessage) outgoingMessage = "";
         }
 
-        else if (documentFile) {
-          if (documentFile.size > MAX_DOC_BYTES) {
-            toast.error(`File too large (max ${formatBytes(MAX_DOC_BYTES)})`);
-            setSendBusy(false);
-            return;
-          }
-          const ext = documentFile.name.split(".").pop() || "bin";
-          const path = `${conversation.id}/${authUser.id}/doc-${crypto.randomUUID()}.${ext}`;
-          mediaUrl = await uploadChatMedia(path, documentFile, documentFile.type || undefined);
-          if (!outgoingMessage.trim()) outgoingMessage = documentFile.name;
-        } else if (voiceBlob) {
+        if (voiceBlob) {
           if (voiceBlob.size > MAX_VOICE_BYTES) {
             toast.error("Voice note too large.");
             setSendBusy(false);
@@ -1311,21 +1212,17 @@ export default function ChatWorkspace() {
         setSendBusy(false);
       }
     },
-    [authUser?.id, conversation, draft, editingMessage, replyingTo, scrollToBottom],
+    [authUser?.id, conversation, draft, replyingTo, scrollToBottom],
   );
 
   const sendProductCard = useCallback(() => {
-    if (editingMessage) {
-      toast.message("Finish editing before sharing a listing.");
-      return;
-    }
     const pid = conversation?.context_product_id ?? stripProduct?.id ?? null;
     if (pid == null) {
       toast.message("No listing linked to this chat.");
       return;
     }
     void sendMessage({ text: "", productId: pid });
-  }, [conversation?.context_product_id, stripProduct?.id, sendMessage, editingMessage]);
+  }, [conversation?.context_product_id, stripProduct?.id, sendMessage]);
 
   const stopRecordingCleanup = useCallback(() => {
     if (recordTimerRef.current) {
@@ -1432,27 +1329,9 @@ export default function ChatWorkspace() {
       const file = e.target.files?.[0];
       e.target.value = "";
       if (!file) return;
-      if (editingMessage) {
-        toast.message("Finish editing before attaching media.");
-        return;
-      }
       void sendMessage({ imageFile: file });
     },
-    [sendMessage, editingMessage],
-  );
-
-  const onPickDocument = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      e.target.value = "";
-      if (!file) return;
-      if (editingMessage) {
-        toast.message("Finish editing before attaching media.");
-        return;
-      }
-      void sendMessage({ documentFile: file });
-    },
-    [sendMessage, editingMessage],
+    [sendMessage],
   );
 
   const copyText = useCallback(async (msg: ChatMessageRow) => {
@@ -1495,11 +1374,9 @@ export default function ChatWorkspace() {
   }, [authUser?.id, peerId, isFollowingPeer]);
 
   const forwardSingleMessage = useCallback(async (msg: ChatMessageRow) => {
-    const parts = [
-      msg.message?.trim() ?? "",
-      msg.image_url ? "[Image]" : "",
-      msg.media_url ? (isVoiceMediaUrl(msg.media_url) ? "[Voice]" : "[File]") : "",
-    ].filter(Boolean);
+    const parts = [msg.message?.trim() ?? "", msg.image_url ? "[Image]" : "", msg.media_url ? "[Voice]" : ""].filter(
+      Boolean,
+    );
     const text = parts.join("\n");
     if (!text.trim()) {
       toast.message("Nothing to forward");
@@ -1520,48 +1397,8 @@ export default function ChatWorkspace() {
 
   const openMessageActions = useCallback((msg: ChatMessageRow) => {
     if (String(msg.id).startsWith("pending-")) return;
-    if (bulkSelectMode) return;
     setMobileSheetMsg(msg);
-  }, [bulkSelectMode]);
-
-  const exitBulkSelectMode = useCallback(() => {
-    setBulkSelectMode(false);
-    setSelectedMessageIds([]);
   }, []);
-
-  const toggleMessageSelected = useCallback((msg: ChatMessageRow) => {
-    if (msg.sender_id !== authUser?.id || String(msg.id).startsWith("pending-")) return;
-    setSelectedMessageIds((prev) => {
-      const i = prev.indexOf(msg.id);
-      if (i >= 0) return prev.filter((id) => id !== msg.id);
-      return [...prev, msg.id];
-    });
-  }, [authUser?.id]);
-
-  const deleteSelectedMessages = useCallback(async () => {
-    if (!authUser?.id || selectedMessageIds.length === 0) return;
-    const deletable = selectedMessageIds.filter((id) => {
-      const m = messages.find((x) => x.id === id);
-      return m && m.sender_id === authUser.id && !String(id).startsWith("pending-");
-    });
-    if (deletable.length === 0) {
-      toast.message("Select your own messages to delete.");
-      return;
-    }
-    setBulkDeleteBusy(true);
-    try {
-      const { error } = await supabase.from("chat_messages").delete().in("id", deletable);
-      if (error) throw error;
-      setMessages((prev) => prev.filter((m) => !deletable.includes(m.id)));
-      setReplyingTo((r) => (r && deletable.includes(r.id) ? null : r));
-      exitBulkSelectMode();
-      toast.success(deletable.length === 1 ? "Message deleted" : `${deletable.length} messages deleted`);
-    } catch (e: unknown) {
-      toast.error(errorMessage(e, "Could not delete messages"));
-    } finally {
-      setBulkDeleteBusy(false);
-    }
-  }, [authUser?.id, selectedMessageIds, messages, exitBulkSelectMode]);
 
   const insertEmoji = useCallback((emoji: string) => {
     setEmojiPickerOpen(false);
@@ -1585,129 +1422,22 @@ export default function ChatWorkspace() {
     });
   }, []);
 
-  const requestDeleteForMe = useCallback((msg: ChatMessageRow) => {
+  const deleteMessage = useCallback((msg: ChatMessageRow) => {
     setMobileSheetMsg(null);
-    setPendingConfirm({ kind: "delete-for-me", message: msg });
+    setPendingConfirm({ kind: "delete-message", message: msg });
   }, []);
-
-  const requestDeleteForEveryone = useCallback((msg: ChatMessageRow) => {
-    setMobileSheetMsg(null);
-    setPendingConfirm({ kind: "delete-for-everyone", message: msg });
-  }, []);
-
-  const mobileSheetMeta = useMemo(() => {
-    const m = mobileSheetMsg;
-    if (!m) return null;
-    const deletedEveryone = isDeletedForEveryone(m);
-    const hiddenForMe = !!authUser?.id && isMessageHiddenForViewer(m, authUser.id) && !deletedEveryone;
-    const placeholder = deletedEveryone ? "everyone" : hiddenForMe ? "hidden" : null;
-    const canEdit =
-      m.sender_id === authUser?.id &&
-      !placeholder &&
-      !!m.message?.trim() &&
-      canEditMessage(m, authUser?.id);
-    const canDeleteForMe =
-      !!authUser?.id && !hiddenForMe && !deletedEveryone && !String(m.id).startsWith("pending-");
-    const canDeleteForEveryone =
-      m.sender_id === authUser?.id &&
-      !deletedEveryone &&
-      !String(m.id).startsWith("pending-") &&
-      !m.client_sending;
-    const canCopyBody =
-      !placeholder &&
-      !!(
-        m.message?.trim() ||
-        m.image_url ||
-        (m.media_url && !isVoiceMediaUrl(m.media_url))
-      );
-    return { canEdit, canDeleteForMe, canDeleteForEveryone, canCopyBody, placeholder };
-  }, [mobileSheetMsg, authUser?.id]);
-
-  const applySheetReaction = useCallback(
-    async (emoji: string) => {
-      if (!mobileSheetMsg || !conversation?.id || !authUser?.id || reactionApplyBusy) return;
-      const msg = mobileSheetMsg;
-      const myEmoji = reactionByMessage[msg.id]?.myEmoji ?? null;
-      setReactionApplyBusy(true);
-      try {
-        if (myEmoji === emoji) {
-          const { error } = await removeOwnMessageReaction(supabase, msg.id, authUser.id);
-          if (error) throw new Error(error.message);
-        } else {
-          const { error } = await setMessageReaction(supabase, {
-            conversationId: conversation.id,
-            messageId: msg.id,
-            userId: authUser.id,
-            emoji,
-          });
-          if (error) throw new Error(error.message);
-        }
-        await refreshReactions();
-      } catch (e: unknown) {
-        toast.error(e instanceof Error ? e.message : "Could not update reaction");
-      } finally {
-        setReactionApplyBusy(false);
-      }
-    },
-    [
-      mobileSheetMsg,
-      conversation?.id,
-      authUser?.id,
-      reactionApplyBusy,
-      reactionByMessage,
-      refreshReactions,
-    ],
-  );
 
   const runConfirm = useCallback(async () => {
     if (!pendingConfirm || actionBusy) return;
     setActionBusy(true);
     try {
-      if (pendingConfirm.kind === "delete-for-me") {
+      if (pendingConfirm.kind === "delete-message") {
         const target = pendingConfirm.message;
-        if (!authUser?.id) return;
-        const prevArr = target.deleted_for ?? [];
-        if (prevArr.includes(authUser.id)) {
-          setPendingConfirm(null);
-          return;
-        }
-        const next = [...prevArr, authUser.id];
-        const { error } = await supabase.from("chat_messages").update({ deleted_for: next }).eq("id", target.id);
+        const { error } = await supabase.from("chat_messages").delete().eq("id", target.id);
         if (error) throw error;
-        setMessages((prev) =>
-          prev.map((m) => (m.id === target.id ? { ...m, deleted_for: next } : m)),
-        );
+        setMessages((prev) => prev.filter((m) => m.id !== target.id));
         setReplyingTo((c) => (c?.id === target.id ? null : c));
-        toast.success("Message removed for you");
-      } else if (pendingConfirm.kind === "delete-for-everyone") {
-        const target = pendingConfirm.message;
-        const { error } = await supabase
-          .from("chat_messages")
-          .update({
-            deleted_for_everyone: true,
-            message: "",
-            image_url: null,
-            media_url: null,
-            product_id: null,
-          })
-          .eq("id", target.id);
-        if (error) throw error;
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === target.id
-              ? {
-                  ...m,
-                  deleted_for_everyone: true,
-                  message: "",
-                  image_url: null,
-                  media_url: null,
-                  product_id: null,
-                }
-              : m,
-          ),
-        );
-        setReplyingTo((c) => (c?.id === target.id ? null : c));
-        toast.success("Message deleted for everyone");
+        toast.success("Message deleted");
       } else if (pendingConfirm.kind === "delete-conversation") {
         const cid = conversation?.id;
         if (!cid) {
@@ -1737,7 +1467,7 @@ export default function ChatWorkspace() {
       setActionBusy(false);
       setPendingConfirm(null);
     }
-  }, [actionBusy, authUser?.id, conversation?.id, navigate, pendingConfirm]);
+  }, [actionBusy, conversation?.id, navigate, pendingConfirm]);
 
   const jumpToMessage = useCallback((id: string | null | undefined) => {
     if (!id) return;
@@ -2057,16 +1787,6 @@ export default function ChatWorkspace() {
                   <DropdownMenuItem
                     onSelect={(e) => {
                       e.preventDefault();
-                      setBulkSelectMode(true);
-                      setSelectedMessageIds([]);
-                    }}
-                  >
-                    <CheckSquare className="mr-2 h-4 w-4" />
-                    Select messages
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onSelect={(e) => {
-                      e.preventDefault();
                       setPendingConfirm({ kind: "clear-chat" });
                     }}
                   >
@@ -2122,27 +1842,6 @@ export default function ChatWorkspace() {
           aria-hidden
         />
 
-        {bulkSelectMode ? (
-          <div className="flex shrink-0 items-center justify-between gap-2 border-b border-[#0a7a47] bg-[#0f9d58] px-3 py-2.5 text-white shadow-sm dark:border-emerald-950 dark:bg-[#0c7a45]">
-            <button
-              type="button"
-              className="min-h-[44px] text-sm font-medium text-white/95 hover:underline"
-              onClick={exitBulkSelectMode}
-            >
-              Cancel
-            </button>
-            <span className="text-sm font-semibold tabular-nums">{selectedMessageIds.length} selected</span>
-            <button
-              type="button"
-              disabled={bulkDeleteBusy || selectedMessageIds.length === 0}
-              className="min-h-[44px] text-sm font-bold text-white disabled:opacity-40"
-              onClick={() => void deleteSelectedMessages()}
-            >
-              {bulkDeleteBusy ? "…" : "Delete"}
-            </button>
-          </div>
-        ) : null}
-
         <div className="relative z-10 flex min-h-0 flex-1 flex-col">
           {showJumpBottom ? (
             <div className="pointer-events-none absolute inset-x-0 bottom-4 z-20 flex justify-center px-4">
@@ -2178,32 +1877,11 @@ export default function ChatWorkspace() {
                   ? ""
                   : t.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
                 const replyPreview = msg.reply_preview;
-                const replyTarget = msg.reply_to_id ? messages.find((m) => m.id === msg.reply_to_id) : undefined;
-                const quotedSender = replyPreview
-                  ? senderLabel(replyPreview.sender_id)
-                  : replyTarget
-                    ? senderLabel(replyTarget.sender_id)
-                    : "Message";
-                const quotedPreviewText = replyTarget?.deleted_for_everyone
-                  ? CHAT_MESSAGE_DELETED_PLACEHOLDER
-                  : replyPreview
-                    ? messagePreviewText(replyPreview.message, replyPreview.image_url)
-                    : replyTarget
-                      ? messagePreviewText(replyTarget.message, replyTarget.image_url)
-                      : "Original message";
+                const quotedSender = replyPreview ? senderLabel(replyPreview.sender_id) : "Message";
                 const isHighlighted = highlightedMessageId === msg.id;
-                const deletedEveryone = isDeletedForEveryone(msg);
-                const hiddenForMe =
-                  !!authUser?.id && isMessageHiddenForViewer(msg, authUser.id) && !deletedEveryone;
-                const deletedPlaceholder = deletedEveryone ? "everyone" : hiddenForMe ? "hidden" : null;
-                const productCard = deletedPlaceholder ? null : resolveMessageProductCard(msg);
+                const productCard = resolveMessageProductCard(msg);
 
-                const actionsDisabled = String(msg.id).startsWith("pending-") || bulkSelectMode;
-                const canEditThis =
-                  mine &&
-                  !deletedPlaceholder &&
-                  !!msg.message?.trim() &&
-                  canEditMessage(msg, authUser?.id);
+                const actionsDisabled = String(msg.id).startsWith("pending-");
 
                 const messageBubbleEl = (
                   <MessageBubble
@@ -2214,12 +1892,8 @@ export default function ChatWorkspace() {
                     showIncomingRead={!mine && !!msg.read_at}
                     isHighlighted={isHighlighted}
                     edited={!!msg.edited}
-                    deletedPlaceholder={deletedPlaceholder}
-                    showSenderName={false}
-                    reactions={deletedPlaceholder ? null : reactionByMessage[msg.id]?.summaries ?? null}
-                    onRequestActions={
-                      actionsDisabled ? undefined : () => openMessageActions(msg)
-                    }
+                    reactions={reactionByMessage[msg.id]?.summaries ?? null}
+                    onRequestActions={actionsDisabled ? undefined : () => openMessageActions(msg)}
                     actionsDisabled={actionsDisabled}
                     replySlot={
                       replyPreview || msg.reply_to_id ? (
@@ -2237,7 +1911,11 @@ export default function ChatWorkspace() {
                           }`}
                         >
                           <p className="truncate text-[11px] font-semibold opacity-90">{quotedSender}</p>
-                          <p className="line-clamp-2 text-[12px] leading-snug opacity-90">{quotedPreviewText}</p>
+                          <p className="line-clamp-2 text-[12px] leading-snug opacity-90">
+                            {replyPreview
+                              ? messagePreviewText(replyPreview.message, replyPreview.image_url)
+                              : "Original message"}
+                          </p>
                         </button>
                       ) : null
                     }
@@ -2264,7 +1942,7 @@ export default function ChatWorkspace() {
                           onClick={(e) => e.stopPropagation()}
                         />
                       ) : null}
-                      {msg.media_url && isVoiceMediaUrl(msg.media_url) ? (
+                      {msg.media_url ? (
                         <audio
                           src={msg.media_url}
                           controls
@@ -2274,28 +1952,9 @@ export default function ChatWorkspace() {
                           onClick={(e) => e.stopPropagation()}
                         />
                       ) : null}
-                      {msg.media_url && !isVoiceMediaUrl(msg.media_url) ? (
-                        <a
-                          href={msg.media_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          download
-                          className={`inline-flex max-w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-sm font-medium ${
-                            mine
-                              ? "border-white/30 bg-black/15 text-white hover:bg-black/25"
-                              : "border-gray-200 bg-gray-50 text-gray-900 hover:bg-gray-100 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700"
-                          }`}
-                          onPointerDown={(e) => e.stopPropagation()}
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <FileText className="h-4 w-4 shrink-0" />
-                          Open file
-                        </a>
-                      ) : null}
                       {msg.message?.trim() ? (
                         <p
-                          data-skip-longpress
-                          className={`select-text whitespace-pre-wrap break-words text-sm leading-relaxed ${mine ? "text-white" : "text-inherit"}`}
+                          className={`whitespace-pre-wrap break-words text-sm leading-relaxed ${mine ? "text-white" : "text-inherit"}`}
                         >
                           {msg.message}
                         </p>
@@ -2309,48 +1968,7 @@ export default function ChatWorkspace() {
                   </MessageBubble>
                 );
 
-                const rowBody = (
-                  <div
-                    className={cn("flex min-w-0 items-start gap-1.5", bulkSelectMode && mine && "touch-manipulation")}
-                  >
-                    {bulkSelectMode && mine ? (
-                      <button
-                        type="button"
-                        role="checkbox"
-                        aria-checked={selectedMessageIds.includes(msg.id)}
-                        onPointerDown={(e) => e.stopPropagation()}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleMessageSelected(msg);
-                        }}
-                        className={cn(
-                          "mt-1.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 transition",
-                          selectedMessageIds.includes(msg.id)
-                            ? "border-white bg-white text-[#0f9d58]"
-                            : "border-zinc-500 bg-white/90 text-transparent dark:border-zinc-400 dark:bg-zinc-800",
-                        )}
-                      >
-                        {selectedMessageIds.includes(msg.id) ? "✓" : null}
-                      </button>
-                    ) : null}
-                    <div className="min-w-0 flex-1 touch-manipulation">{messageBubbleEl}</div>
-                  </div>
-                );
-
-                const canCopyBody =
-                  !deletedPlaceholder &&
-                  !!(
-                    msg.message?.trim() ||
-                    msg.image_url ||
-                    (msg.media_url && !isVoiceMediaUrl(msg.media_url))
-                  );
-                const canDeleteForMe =
-                  !!authUser?.id && !hiddenForMe && !deletedEveryone && !String(msg.id).startsWith("pending-");
-                const canDeleteForEveryone =
-                  mine &&
-                  !deletedEveryone &&
-                  !String(msg.id).startsWith("pending-") &&
-                  !msg.client_sending;
+                const rowBody = <div className="touch-manipulation min-w-0 flex-1">{messageBubbleEl}</div>;
 
                 const menuItems = (
                   <>
@@ -2363,50 +1981,21 @@ export default function ChatWorkspace() {
                       <Reply className="mr-2 h-4 w-4" />
                       Reply
                     </ContextMenuItem>
-                    <ContextMenuItem
-                      disabled={!canCopyBody}
-                      onSelect={() => {
-                        if (!canCopyBody) return;
-                        void copyText(msg);
-                      }}
-                    >
+                    <ContextMenuItem onSelect={() => void copyText(msg)}>
                       <Copy className="mr-2 h-4 w-4" />
                       Copy
                     </ContextMenuItem>
-                    {canEditThis ? (
-                      <ContextMenuItem
-                        onSelect={() => {
-                          setReplyingTo(null);
-                          setEditingMessage(msg);
-                          setDraft(msg.message ?? "");
-                          requestAnimationFrame(() => draftTextareaRef.current?.focus());
-                        }}
-                      >
-                        <Pencil className="mr-2 h-4 w-4" />
-                        Edit
-                      </ContextMenuItem>
-                    ) : null}
                     <ContextMenuItem onSelect={() => void forwardSingleMessage(msg)}>
                       <Share2 className="mr-2 h-4 w-4" />
                       Forward
                     </ContextMenuItem>
-                    {(canDeleteForMe || canDeleteForEveryone) && <ContextMenuSeparator />}
-                    {canDeleteForMe ? (
+                    {mine ? (
                       <ContextMenuItem
                         className="text-red-600"
-                        onSelect={() => requestDeleteForMe(msg)}
+                        onSelect={() => setPendingConfirm({ kind: "delete-message", message: msg })}
                       >
                         <Trash2 className="mr-2 h-4 w-4" />
-                        Delete for me
-                      </ContextMenuItem>
-                    ) : null}
-                    {canDeleteForEveryone ? (
-                      <ContextMenuItem
-                        className="text-red-600"
-                        onSelect={() => requestDeleteForEveryone(msg)}
-                      >
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        Delete for everyone
+                        Delete
                       </ContextMenuItem>
                     ) : null}
                   </>
@@ -2428,13 +2017,13 @@ export default function ChatWorkspace() {
                       }}
                       className={cn("flex w-full items-start", sameCluster ? "mb-0.5" : "mb-2")}
                     >
-                      {bulkSelectMode || !useDesktopContextMenu ? (
-                        rowBody
-                      ) : (
+                      {useDesktopContextMenu ? (
                         <ContextMenu>
                           <ContextMenuTrigger asChild>{rowBody}</ContextMenuTrigger>
                           <ContextMenuContent className="min-w-[12rem]">{menuItems}</ContextMenuContent>
                         </ContextMenu>
+                      ) : (
+                        rowBody
                       )}
                     </div>
                   </Fragment>
@@ -2463,43 +2052,20 @@ export default function ChatWorkspace() {
 
           <div className="relative z-30 shrink-0 border-t border-[#d1d7db] bg-[#f0f2f5] pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-[0_-1px_3px_rgba(0,0,0,0.08)] dark:border-zinc-700 dark:bg-zinc-900">
             <div className="px-2 py-2 sm:px-3">
-              {editingMessage ? (
-                <div className="mb-2 flex items-start justify-between gap-3 rounded-2xl border border-amber-600/40 bg-amber-50/95 px-3 py-2.5 dark:border-amber-500/35 dark:bg-amber-950/55">
-                  <div className="min-w-0">
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-900 dark:text-amber-200">
-                      Editing message
-                    </p>
-                    <p className="truncate text-sm text-amber-950 dark:text-amber-50/95">
-                      {messagePreviewText(editingMessage.message, editingMessage.image_url)}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditingMessage(null);
-                      setDraft("");
-                    }}
-                    className="shrink-0 rounded-full p-1 text-amber-900 hover:bg-amber-800/10 dark:text-amber-200 dark:hover:bg-amber-900/50"
-                    aria-label="Cancel edit"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-              ) : null}
               {replyingTo ? (
-                <div className="mb-2 flex items-start justify-between gap-3 rounded-2xl border border-emerald-700/35 bg-emerald-700/15 px-3 py-2.5 dark:border-emerald-500/40 dark:bg-emerald-950/70">
+                <div className="mb-2 flex items-start justify-between gap-3 rounded-2xl border border-emerald-100 bg-emerald-50/80 px-3 py-2 dark:border-emerald-900 dark:bg-emerald-950/50">
                   <div className="min-w-0">
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-900 dark:text-emerald-300">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-400">
                       Replying to {senderLabel(replyingTo.sender_id)}
                     </p>
-                    <p className="truncate text-sm text-emerald-950 dark:text-emerald-50/95">
+                    <p className="truncate text-sm text-emerald-950/80 dark:text-emerald-100/80">
                       {messagePreviewText(replyingTo.message, replyingTo.image_url)}
                     </p>
                   </div>
                   <button
                     type="button"
                     onClick={() => setReplyingTo(null)}
-                    className="shrink-0 rounded-full p-1 text-emerald-900 hover:bg-emerald-800/15 dark:text-emerald-200 dark:hover:bg-emerald-900/50"
+                    className="shrink-0 rounded-full p-1 text-emerald-700 hover:bg-emerald-100 dark:text-emerald-300 dark:hover:bg-emerald-900/50"
                     aria-label="Cancel reply"
                   >
                     <X className="h-4 w-4" />
@@ -2507,110 +2073,89 @@ export default function ChatWorkspace() {
                 </div>
               ) : null}
 
-              <div className="flex flex-wrap items-end gap-0.5 sm:gap-1">
+              <div className="flex flex-wrap items-end gap-1.5 sm:gap-2">
                 <input ref={attachInputRef} type="file" accept="image/*" className="hidden" onChange={onPickImage} />
-                <input
-                  ref={docInputRef}
-                  type="file"
-                  accept={DOC_PICKER_ACCEPT}
-                  className="hidden"
-                  onChange={onPickDocument}
-                />
                 <button
                   type="button"
-                  disabled={!!editingMessage}
                   onClick={() => attachInputRef.current?.click()}
-                  className="flex h-9 min-w-[36px] shrink-0 items-center justify-center rounded-full text-gray-700 hover:bg-black/[0.06] disabled:opacity-40 dark:text-zinc-200 dark:hover:bg-white/10"
+                  className="flex h-11 min-w-[44px] shrink-0 items-center justify-center rounded-full text-gray-700 hover:bg-black/[0.06] dark:text-zinc-200 dark:hover:bg-white/10"
                   aria-label="Attach image"
                 >
-                  <ImagePlus className="h-[1.35rem] w-[1.35rem]" strokeWidth={2} />
+                  <ImagePlus className="h-6 w-6" />
                 </button>
+                <Popover open={emojiPickerOpen} onOpenChange={setEmojiPickerOpen}>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      className="flex h-11 min-w-[44px] shrink-0 items-center justify-center rounded-full text-gray-700 hover:bg-black/[0.06] dark:text-zinc-200 dark:hover:bg-white/10"
+                      aria-label="Insert emoji"
+                      title="Emoji"
+                    >
+                      <Smile className="h-6 w-6" strokeWidth={2} />
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    side="top"
+                    align="start"
+                    sideOffset={8}
+                    className="w-[min(100vw-2rem,20rem)] touch-manipulation p-2"
+                  >
+                    <div className="grid max-h-[min(50vh,16rem)] grid-cols-6 gap-1 overflow-y-auto overscroll-contain sm:grid-cols-8">
+                      {CHAT_EMOJI_GRID.map((emoji) => (
+                        <button
+                          key={emoji}
+                          type="button"
+                          className="flex h-11 w-11 items-center justify-center rounded-lg text-xl transition hover:bg-emerald-50 active:scale-95 dark:hover:bg-zinc-800"
+                          onClick={() => insertEmoji(emoji)}
+                          aria-label={`Insert ${emoji}`}
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  </PopoverContent>
+                </Popover>
                 <button
                   type="button"
-                  disabled={!!editingMessage}
-                  onClick={() => docInputRef.current?.click()}
-                  className="flex h-9 min-w-[36px] shrink-0 items-center justify-center rounded-full text-gray-700 hover:bg-black/[0.06] disabled:opacity-40 dark:text-zinc-200 dark:hover:bg-white/10"
-                  aria-label="Attach PDF or Word"
-                  title="PDF, Word…"
-                >
-                  <FileText className="h-[1.35rem] w-[1.35rem]" strokeWidth={2} />
-                </button>
-                <button
-                  type="button"
-                  disabled={!!editingMessage || (!conversation?.context_product_id && !stripProduct)}
                   onClick={() => void sendProductCard()}
-                  className="flex h-9 min-w-[36px] shrink-0 items-center justify-center rounded-full text-gray-700 hover:bg-black/[0.06] disabled:opacity-40 dark:text-zinc-200 dark:hover:bg-white/10"
+                  disabled={!conversation?.context_product_id && !stripProduct}
+                  className="flex h-11 min-w-[44px] shrink-0 items-center justify-center rounded-full text-gray-700 hover:bg-black/[0.06] disabled:opacity-40 dark:text-zinc-200 dark:hover:bg-white/10"
                   aria-label="Share listing"
                   title="Share product card"
                 >
-                  <Package className="h-[1.35rem] w-[1.35rem]" strokeWidth={2} />
+                  <Package className="h-6 w-6" />
                 </button>
-                <div className="relative min-h-[44px] min-w-0 flex-1">
-                  <textarea
-                    ref={draftTextareaRef}
-                    value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        void sendMessage();
-                      }
-                    }}
-                    rows={1}
-                    placeholder={editingMessage ? "Edit message…" : "Message…"}
-                    className="max-h-[7.25rem] min-h-[44px] w-full resize-none overflow-y-auto rounded-2xl border border-[#bfc6c9] bg-white py-2.5 pl-3 pr-12 text-[15px] leading-relaxed outline-none focus:border-[#0f9d58] focus:ring-2 focus:ring-[#0f9d58]/25 dark:border-zinc-600 dark:bg-zinc-800 dark:text-foreground"
-                  />
-                  <Popover open={emojiPickerOpen} onOpenChange={setEmojiPickerOpen}>
-                    <PopoverTrigger asChild>
-                      <button
-                        type="button"
-                        className="absolute bottom-2 right-2 flex h-8 w-8 items-center justify-center rounded-full text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-100"
-                        aria-label="Insert emoji"
-                        title="Emoji"
-                      >
-                        <Smile className="h-[1.25rem] w-[1.25rem]" strokeWidth={2} />
-                      </button>
-                    </PopoverTrigger>
-                    <PopoverContent
-                      side="top"
-                      align="end"
-                      sideOffset={8}
-                      className="w-[min(100vw-2rem,20rem)] touch-manipulation p-2"
-                    >
-                      <div className="grid max-h-[min(50vh,16rem)] grid-cols-6 gap-1 overflow-y-auto overscroll-contain sm:grid-cols-8">
-                        {CHAT_EMOJI_GRID.map((emoji) => (
-                          <button
-                            key={emoji}
-                            type="button"
-                            className="flex h-11 w-11 items-center justify-center rounded-lg text-xl transition hover:bg-emerald-50 active:scale-95 dark:hover:bg-zinc-800"
-                            onClick={() => insertEmoji(emoji)}
-                            aria-label={`Insert ${emoji}`}
-                          >
-                            {emoji}
-                          </button>
-                        ))}
-                      </div>
-                    </PopoverContent>
-                  </Popover>
-                </div>
+                <textarea
+                  ref={draftTextareaRef}
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      void sendMessage();
+                    }
+                  }}
+                  rows={1}
+                  placeholder="Message…"
+                  className="min-h-[44px] min-w-0 flex-1 resize-none rounded-full border border-[#d1d7db] bg-white px-4 py-2.5 text-sm outline-none focus:border-[#25D366] focus:ring-1 focus:ring-[#25D366] dark:border-zinc-600 dark:bg-zinc-800 dark:text-foreground"
+                />
                 <button
                   type="button"
-                  disabled={!!editingMessage}
                   onPointerDown={onMicPointerDown}
-                  className={`flex h-9 min-w-[36px] shrink-0 items-center justify-center rounded-full disabled:opacity-40 ${recording ? "bg-red-500 text-white" : "text-gray-700 hover:bg-black/[0.06] dark:text-zinc-200 dark:hover:bg-white/10"}`}
+                  className={`flex h-11 min-w-[44px] shrink-0 items-center justify-center rounded-full ${recording ? "bg-red-500 text-white" : "text-gray-700 hover:bg-black/[0.06] dark:text-zinc-200 dark:hover:bg-white/10"}`}
                   aria-label="Hold to record voice"
                   title="Hold to record"
                 >
-                  <Mic className="h-[1.35rem] w-[1.35rem]" />
+                  <Mic className="h-6 w-6" />
                 </button>
                 <button
                   type="button"
                   onClick={() => void sendMessage()}
                   disabled={sendBusy || !draft.trim()}
-                  className="flex h-9 min-w-[36px] shrink-0 items-center justify-center rounded-full bg-[#0f9d58] text-white shadow-sm disabled:opacity-50"
-                  aria-label={editingMessage ? "Save edit" : "Send"}
+                  className="flex h-11 min-w-[44px] shrink-0 items-center justify-center rounded-full bg-[#25D366] text-white shadow-sm disabled:opacity-50 dark:bg-[#25D366]"
+                  aria-label="Send"
                 >
-                  {sendBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  {sendBusy ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
                 </button>
               </div>
             </div>
@@ -2619,142 +2164,45 @@ export default function ChatWorkspace() {
       </div>
 
       <Sheet open={mobileSheetMsg != null} onOpenChange={(open) => !open && setMobileSheetMsg(null)}>
-        <SheetContent
-          side="bottom"
-          className="max-h-[min(85dvh,32rem)] overflow-y-auto rounded-t-[1.35rem] border-zinc-200/80 bg-zinc-50 px-0 pb-[max(1rem,env(safe-area-inset-bottom))] pt-0 shadow-2xl dark:border-zinc-700/80 dark:bg-zinc-900"
-        >
-          <div className="flex flex-col gap-1 pt-3">
-            <div className="mx-auto mb-1 h-1 w-10 shrink-0 rounded-full bg-zinc-300/90 dark:bg-zinc-600" aria-hidden />
-            {mobileSheetMsg ? (
-              <>
-                <div className="px-5 pb-2">
-                  <SheetTitle className="text-left text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-                    Message
-                  </SheetTitle>
-                  <SheetDescription className="sr-only">
-                    React with emoji, reply, forward, copy, or delete this message.
-                  </SheetDescription>
-                  <p className="mt-1 line-clamp-3 text-sm leading-snug text-zinc-500 dark:text-zinc-400">
-                    {mobileSheetMeta?.placeholder === "everyone"
-                      ? CHAT_MESSAGE_DELETED_PLACEHOLDER
-                      : mobileSheetMeta?.placeholder === "hidden"
-                        ? CHAT_MESSAGE_DELETED_FOR_ME_PLACEHOLDER
-                        : messagePreviewText(mobileSheetMsg.message, mobileSheetMsg.image_url) ||
-                          (mobileSheetMsg.image_url
-                            ? "Photo"
-                            : mobileSheetMsg.media_url
-                              ? isVoiceMediaUrl(mobileSheetMsg.media_url)
-                                ? "Voice message"
-                                : "File attachment"
-                              : "Message")}
-                  </p>
-                </div>
-
-                <div className="border-y border-zinc-200/90 bg-white/90 px-4 py-3 dark:border-zinc-700/90 dark:bg-zinc-800/50">
-                  <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-                    <Smile className="h-3.5 w-3.5" aria-hidden />
-                    React
-                  </div>
-                  <div className="-mx-1 flex gap-1.5 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                    {MESSAGE_SHEET_QUICK_REACTIONS.map((emoji) => {
-                      const mine = reactionByMessage[mobileSheetMsg.id]?.myEmoji === emoji;
-                      return (
-                        <button
-                          key={emoji}
-                          type="button"
-                          disabled={reactionApplyBusy}
-                          onClick={() => void applySheetReaction(emoji)}
-                          title={mine ? "Remove reaction" : "Add reaction"}
-                          className={cn(
-                            "flex h-12 min-w-[3rem] shrink-0 items-center justify-center rounded-2xl text-2xl transition active:scale-95 disabled:opacity-50",
-                            mine
-                              ? "bg-emerald-100 ring-2 ring-emerald-500/80 dark:bg-emerald-950/60 dark:ring-emerald-400/70"
-                              : "bg-zinc-100 hover:bg-zinc-200/90 dark:bg-zinc-700/80 dark:hover:bg-zinc-600",
-                          )}
-                        >
-                          {emoji}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <p className="mt-2 text-[11px] text-zinc-400 dark:text-zinc-500">Tap again to remove your reaction.</p>
-                </div>
-
-                <div className="flex flex-col gap-2 px-4 pt-3">
-                  <div className="grid grid-cols-2 gap-2">
-                    <Button
-                      className="h-11 rounded-xl font-medium shadow-sm"
-                      onClick={() => {
-                        setReplyingTo(mobileSheetMsg);
-                        setMobileSheetMsg(null);
-                      }}
-                    >
-                      <Reply className="mr-2 h-4 w-4" />
-                      Reply
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="h-11 rounded-xl border-zinc-200 bg-white font-medium dark:border-zinc-600 dark:bg-zinc-800"
-                      onClick={() => void forwardSingleMessage(mobileSheetMsg)}
-                    >
-                      <Share2 className="mr-2 h-4 w-4" />
-                      Forward
-                    </Button>
-                  </div>
-                  {mobileSheetMeta?.canEdit ? (
-                    <Button
-                      variant="outline"
-                      className="h-11 w-full rounded-xl border-zinc-200 bg-white font-medium dark:border-zinc-600 dark:bg-zinc-800"
-                      onClick={() => {
-                        setReplyingTo(null);
-                        setEditingMessage(mobileSheetMsg);
-                        setDraft(mobileSheetMsg.message ?? "");
-                        setMobileSheetMsg(null);
-                        requestAnimationFrame(() => draftTextareaRef.current?.focus());
-                      }}
-                    >
-                      <Pencil className="mr-2 h-4 w-4" />
-                      Edit
-                    </Button>
-                  ) : null}
-                  <div className="grid grid-cols-2 gap-2">
-                    <Button
-                      variant="outline"
-                      disabled={!mobileSheetMeta?.canCopyBody}
-                      className={cn(
-                        "h-11 rounded-xl border-zinc-200 bg-white font-medium dark:border-zinc-600 dark:bg-zinc-800",
-                        !mobileSheetMeta?.canDeleteForMe && "col-span-2",
-                      )}
-                      onClick={() => void copyText(mobileSheetMsg)}
-                    >
-                      <Copy className="mr-2 h-4 w-4" />
-                      Copy
-                    </Button>
-                    {mobileSheetMeta?.canDeleteForMe ? (
-                      <Button
-                        variant="outline"
-                        className="h-11 rounded-xl border-red-200 bg-white font-medium text-red-700 hover:bg-red-50 dark:border-red-900/60 dark:bg-zinc-800 dark:text-red-300 dark:hover:bg-red-950/40"
-                        onClick={() => requestDeleteForMe(mobileSheetMsg)}
-                      >
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        Delete for me
-                      </Button>
-                    ) : null}
-                  </div>
-                  {mobileSheetMeta?.canDeleteForEveryone ? (
-                    <Button
-                      variant="destructive"
-                      className="h-11 w-full rounded-xl font-medium"
-                      onClick={() => requestDeleteForEveryone(mobileSheetMsg)}
-                    >
-                      <Trash2 className="mr-2 h-4 w-4" />
-                      Delete for everyone
-                    </Button>
-                  ) : null}
-                </div>
-              </>
-            ) : null}
-          </div>
+        <SheetContent side="bottom" className="rounded-t-3xl px-0 pb-[max(1rem,env(safe-area-inset-bottom))]">
+          <SheetHeader className="px-4 pb-2">
+            <SheetTitle>Message</SheetTitle>
+            <SheetDescription>Reply, forward, copy, or delete.</SheetDescription>
+          </SheetHeader>
+          {mobileSheetMsg ? (
+            <div className="grid gap-2 px-4 pb-2">
+              <Button
+                className="h-12 w-full"
+                onClick={() => {
+                  setReplyingTo(mobileSheetMsg);
+                  setMobileSheetMsg(null);
+                }}
+              >
+                <Reply className="mr-2 h-4 w-4" />
+                Reply
+              </Button>
+              <Button variant="outline" className="h-12 w-full" onClick={() => void forwardSingleMessage(mobileSheetMsg)}>
+                <Share2 className="mr-2 h-4 w-4" />
+                Forward
+              </Button>
+              <Button variant="outline" className="h-12 w-full" onClick={() => void copyText(mobileSheetMsg)}>
+                <Copy className="mr-2 h-4 w-4" />
+                Copy
+              </Button>
+              {mobileSheetMsg.sender_id === authUser?.id ? (
+                <Button
+                  variant="destructive"
+                  className="h-12 w-full"
+                  onClick={() => {
+                    deleteMessage(mobileSheetMsg);
+                  }}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Delete
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
         </SheetContent>
       </Sheet>
 
@@ -2762,22 +2210,18 @@ export default function ChatWorkspace() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {pendingConfirm?.kind === "delete-for-me"
-                ? "Remove message for you?"
-                : pendingConfirm?.kind === "delete-for-everyone"
-                  ? "Delete for everyone?"
-                  : pendingConfirm?.kind === "delete-conversation"
-                    ? "Delete conversation?"
-                    : "Clear chat?"}
+              {pendingConfirm?.kind === "delete-message"
+                ? "Delete message?"
+                : pendingConfirm?.kind === "delete-conversation"
+                  ? "Delete conversation?"
+                  : "Clear chat?"}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {pendingConfirm?.kind === "delete-for-me"
-                ? "This message will be hidden on your device only. Others will still see it."
-                : pendingConfirm?.kind === "delete-for-everyone"
-                  ? "This removes the message for everyone in this chat."
-                  : pendingConfirm?.kind === "delete-conversation"
-                    ? "This deletes the conversation and returns you to the inbox."
-                    : "This removes all messages in this chat."}
+              {pendingConfirm?.kind === "delete-message"
+                ? "This removes the message for everyone in the thread."
+                : pendingConfirm?.kind === "delete-conversation"
+                  ? "This deletes the conversation and returns you to the inbox."
+                  : "This removes all messages in this chat."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -2790,13 +2234,7 @@ export default function ChatWorkspace() {
                 void runConfirm();
               }}
             >
-              {actionBusy
-                ? "…"
-                : pendingConfirm?.kind === "delete-for-me"
-                  ? "Remove"
-                  : pendingConfirm?.kind === "delete-for-everyone"
-                    ? "Delete for everyone"
-                    : "Continue"}
+              {actionBusy ? "…" : "Continue"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

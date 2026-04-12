@@ -1,5 +1,5 @@
 import React, { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import {
   ArrowDown,
   ArrowLeft,
@@ -342,6 +342,7 @@ export default function ChatWorkspace() {
     legacyThreadId?: string;
   }>();
   const [searchParams] = useSearchParams();
+  const location = useLocation();
   const navigate = useNavigate();
   const { user: authUser, loading: authLoading } = useAuth();
   const formatPrice = useCurrency();
@@ -436,6 +437,12 @@ export default function ChatWorkspace() {
     const n = parseInt(productParam, 10);
     return Number.isFinite(n) && n > 0 ? n : null;
   }, [productParam]);
+
+  useEffect(() => {
+    const urlParams = new URLSearchParams(location.search);
+    const productIdFromUrl = urlParams.get("product");
+    console.log("Product ID from URL:", productIdFromUrl);
+  }, [location.search]);
 
   const peerFirstName = useMemo(() => peerName.split(/\s+/)[0] || "Member", [peerName]);
 

@@ -244,3 +244,40 @@ export async function fetchMessageReactions(
   }
   return { byMessage, error: null };
 }
+
+/** One row per (message, user); upsert replaces emoji. */
+export async function setMessageReaction(
+  supabase: SupabaseClient,
+  params: {
+    conversationId: string;
+    messageId: string;
+    userId: string;
+    emoji: string;
+  },
+): Promise<{ error: { message: string } | null }> {
+  const { error } = await supabase.from("chat_message_reactions").upsert(
+    {
+      conversation_id: params.conversationId,
+      message_id: params.messageId,
+      user_id: params.userId,
+      emoji: params.emoji,
+    },
+    { onConflict: "message_id,user_id" },
+  );
+  if (error) return { error: { message: error.message } };
+  return { error: null };
+}
+
+export async function removeOwnMessageReaction(
+  supabase: SupabaseClient,
+  messageId: string,
+  userId: string,
+): Promise<{ error: { message: string } | null }> {
+  const { error } = await supabase
+    .from("chat_message_reactions")
+    .delete()
+    .eq("message_id", messageId)
+    .eq("user_id", userId);
+  if (error) return { error: { message: error.message } };
+  return { error: null };
+}

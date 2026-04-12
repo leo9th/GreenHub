@@ -49,6 +49,8 @@ import {
   outgoingReceiptPhase,
   resolveChatMessageReplyPreviews,
   fetchMessageReactions,
+  removeOwnMessageReaction,
+  setMessageReaction,
   type ChatMessageRow,
   type MessageReactionsState,
 } from "../../utils/chatMessages";
@@ -76,7 +78,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "../ui/sheet";
+import { Sheet, SheetContent, SheetDescription, SheetTitle } from "../ui/sheet";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import { Button } from "../ui/button";
 import { cn } from "../ui/utils";
@@ -119,6 +121,9 @@ const CHAT_EMOJI_GRID: string[] = [
   "📎",
   "✅",
 ];
+
+/** Shown on mobile long-press sheet — common chat reactions (horizontal strip). */
+const MESSAGE_SHEET_QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏", "🔥", "✨"] as const;
 
 function parseConversationInt(v: unknown): number | null {
   if (v == null) return null;
@@ -311,6 +316,7 @@ export default function ChatWorkspace() {
   );
 
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
+  const [reactionApplyBusy, setReactionApplyBusy] = useState(false);
   const [isFollowingPeer, setIsFollowingPeer] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
   /** Hide listing strip locally (X); resets when listing changes */
@@ -1427,6 +1433,42 @@ export default function ChatWorkspace() {
     setPendingConfirm({ kind: "delete-message", message: msg });
   }, []);
 
+  const applySheetReaction = useCallback(
+    async (emoji: string) => {
+      if (!mobileSheetMsg || !conversation?.id || !authUser?.id || reactionApplyBusy) return;
+      const msg = mobileSheetMsg;
+      const myEmoji = reactionByMessage[msg.id]?.myEmoji ?? null;
+      setReactionApplyBusy(true);
+      try {
+        if (myEmoji === emoji) {
+          const { error } = await removeOwnMessageReaction(supabase, msg.id, authUser.id);
+          if (error) throw new Error(error.message);
+        } else {
+          const { error } = await setMessageReaction(supabase, {
+            conversationId: conversation.id,
+            messageId: msg.id,
+            userId: authUser.id,
+            emoji,
+          });
+          if (error) throw new Error(error.message);
+        }
+        await refreshReactions();
+      } catch (e: unknown) {
+        toast.error(e instanceof Error ? e.message : "Could not update reaction");
+      } finally {
+        setReactionApplyBusy(false);
+      }
+    },
+    [
+      mobileSheetMsg,
+      conversation?.id,
+      authUser?.id,
+      reactionApplyBusy,
+      reactionByMessage,
+      refreshReactions,
+    ],
+  );
+
   const runConfirm = useCallback(async () => {
     if (!pendingConfirm || actionBusy) return;
     setActionBusy(true);
@@ -2164,45 +2206,103 @@ export default function ChatWorkspace() {
       </div>
 
       <Sheet open={mobileSheetMsg != null} onOpenChange={(open) => !open && setMobileSheetMsg(null)}>
-        <SheetContent side="bottom" className="rounded-t-3xl px-0 pb-[max(1rem,env(safe-area-inset-bottom))]">
-          <SheetHeader className="px-4 pb-2">
-            <SheetTitle>Message</SheetTitle>
-            <SheetDescription>Reply, forward, copy, or delete.</SheetDescription>
-          </SheetHeader>
-          {mobileSheetMsg ? (
-            <div className="grid gap-2 px-4 pb-2">
-              <Button
-                className="h-12 w-full"
-                onClick={() => {
-                  setReplyingTo(mobileSheetMsg);
-                  setMobileSheetMsg(null);
-                }}
-              >
-                <Reply className="mr-2 h-4 w-4" />
-                Reply
-              </Button>
-              <Button variant="outline" className="h-12 w-full" onClick={() => void forwardSingleMessage(mobileSheetMsg)}>
-                <Share2 className="mr-2 h-4 w-4" />
-                Forward
-              </Button>
-              <Button variant="outline" className="h-12 w-full" onClick={() => void copyText(mobileSheetMsg)}>
-                <Copy className="mr-2 h-4 w-4" />
-                Copy
-              </Button>
-              {mobileSheetMsg.sender_id === authUser?.id ? (
-                <Button
-                  variant="destructive"
-                  className="h-12 w-full"
-                  onClick={() => {
-                    deleteMessage(mobileSheetMsg);
-                  }}
-                >
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Delete
-                </Button>
-              ) : null}
-            </div>
-          ) : null}
+        <SheetContent
+          side="bottom"
+          className="max-h-[min(85dvh,32rem)] overflow-y-auto rounded-t-[1.35rem] border-zinc-200/80 bg-zinc-50 px-0 pb-[max(1rem,env(safe-area-inset-bottom))] pt-0 shadow-2xl dark:border-zinc-700/80 dark:bg-zinc-900"
+        >
+          <div className="flex flex-col gap-1 pt-3">
+            <div className="mx-auto mb-1 h-1 w-10 shrink-0 rounded-full bg-zinc-300/90 dark:bg-zinc-600" aria-hidden />
+            {mobileSheetMsg ? (
+              <>
+                <div className="px-5 pb-2">
+                  <SheetTitle className="text-left text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+                    Message
+                  </SheetTitle>
+                  <SheetDescription className="sr-only">
+                    React with emoji, reply, forward, copy, or delete this message.
+                  </SheetDescription>
+                  <p className="mt-1 line-clamp-3 text-sm leading-snug text-zinc-500 dark:text-zinc-400">
+                    {messagePreviewText(mobileSheetMsg.message, mobileSheetMsg.image_url) ||
+                      (mobileSheetMsg.image_url ? "Photo" : mobileSheetMsg.media_url ? "Voice message" : "Message")}
+                  </p>
+                </div>
+
+                <div className="border-y border-zinc-200/90 bg-white/90 px-4 py-3 dark:border-zinc-700/90 dark:bg-zinc-800/50">
+                  <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                    <Smile className="h-3.5 w-3.5" aria-hidden />
+                    React
+                  </div>
+                  <div className="-mx-1 flex gap-1.5 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                    {MESSAGE_SHEET_QUICK_REACTIONS.map((emoji) => {
+                      const mine = reactionByMessage[mobileSheetMsg.id]?.myEmoji === emoji;
+                      return (
+                        <button
+                          key={emoji}
+                          type="button"
+                          disabled={reactionApplyBusy}
+                          onClick={() => void applySheetReaction(emoji)}
+                          title={mine ? "Remove reaction" : "Add reaction"}
+                          className={cn(
+                            "flex h-12 min-w-[3rem] shrink-0 items-center justify-center rounded-2xl text-2xl transition active:scale-95 disabled:opacity-50",
+                            mine
+                              ? "bg-emerald-100 ring-2 ring-emerald-500/80 dark:bg-emerald-950/60 dark:ring-emerald-400/70"
+                              : "bg-zinc-100 hover:bg-zinc-200/90 dark:bg-zinc-700/80 dark:hover:bg-zinc-600",
+                          )}
+                        >
+                          {emoji}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="mt-2 text-[11px] text-zinc-400 dark:text-zinc-500">Tap again to remove your reaction.</p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 px-4 pt-3">
+                  <Button
+                    className="h-11 rounded-xl font-medium shadow-sm"
+                    onClick={() => {
+                      setReplyingTo(mobileSheetMsg);
+                      setMobileSheetMsg(null);
+                    }}
+                  >
+                    <Reply className="mr-2 h-4 w-4" />
+                    Reply
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="h-11 rounded-xl border-zinc-200 bg-white font-medium dark:border-zinc-600 dark:bg-zinc-800"
+                    onClick={() => void forwardSingleMessage(mobileSheetMsg)}
+                  >
+                    <Share2 className="mr-2 h-4 w-4" />
+                    Forward
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "h-11 rounded-xl border-zinc-200 bg-white font-medium dark:border-zinc-600 dark:bg-zinc-800",
+                      mobileSheetMsg.sender_id !== authUser?.id && "col-span-2",
+                    )}
+                    onClick={() => void copyText(mobileSheetMsg)}
+                  >
+                    <Copy className="mr-2 h-4 w-4" />
+                    Copy
+                  </Button>
+                  {mobileSheetMsg.sender_id === authUser?.id ? (
+                    <Button
+                      variant="destructive"
+                      className="h-11 rounded-xl font-medium"
+                      onClick={() => {
+                        deleteMessage(mobileSheetMsg);
+                      }}
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Delete
+                    </Button>
+                  ) : null}
+                </div>
+              </>
+            ) : null}
+          </div>
         </SheetContent>
       </Sheet>
 

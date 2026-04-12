@@ -323,4 +323,55 @@
       scrollbar-gutter: stable both-edges;
     }
   }
+
+  .market-prediction {
+    font-size: 0.875rem;
+    line-height: 1.45;
+    color: #9ca3af;
+    font-style: italic;
+    background: #f9fafb;
+    padding: 0.75rem;
+    border-radius: 0.75rem;
+    border-left: 3px solid #10b981;
+    margin: 1rem 0;
+  }
+
+  .negotiation-bar {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 1rem;
+    padding: 1rem;
+    margin: 1rem 0;
+  }
+
+  .offer-input-group {
+    display: flex;
+    gap: 0.75rem;
+    margin: 0.75rem 0;
+    flex-wrap: wrap;
+  }
+
+  .offer-input {
+    flex: 1;
+    min-width: 0;
+    padding: 0.75rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.75rem;
+    font-size: 1rem;
+  }
+
+  .send-offer-btn {
+    background: #10b981;
+    color: white;
+    padding: 0.75rem 1.5rem;
+    border: none;
+    border-radius: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .send-offer-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
 }

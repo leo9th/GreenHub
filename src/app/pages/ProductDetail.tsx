@@ -53,6 +53,10 @@ import {
 import { formatGreenHubMonthYear, formatGreenHubRelative } from "../utils/formatGreenHubTime";
 import { cn } from "../components/ui/utils";
 import { buildInternationalDeliveryOptions } from "../data/internationalShippingPresets";
+import { EditProductModal } from "../components/EditProductModal";
+import { PriceNegotiation } from "../components/PriceNegotiation";
+import { MarketPricePrediction } from "../components/MarketPricePrediction";
+import { SimilarProductsLinks } from "../components/SimilarProductsLinks";
 
 type ParsedDeliveryOption = { name: string; fee: number; duration: string };
 
@@ -323,6 +327,7 @@ export default function ProductDetail() {
   const [sellerFollowerCount, setSellerFollowerCount] = useState<number | null>(null);
   const [sellerFollowerCountLoading, setSellerFollowerCountLoading] = useState(false);
   const [sellerFollowerCountFailed, setSellerFollowerCountFailed] = useState(false);
+  const [editModalOpen, setEditModalOpen] = useState(false);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -365,6 +370,25 @@ export default function ProductDetail() {
     const t = raw.trim();
     return t || null;
   };
+
+  const refetchProduct = useCallback(async () => {
+    const idForQuery = normalizeRouteProductId(id);
+    if (idForQuery == null) return;
+    const { data, error } = await supabase.from("products").select("*").eq("id", idForQuery).maybeSingle();
+    if (error || !data) return;
+    const v = data.views;
+    const viewsNum = typeof v === "number" ? v : v != null ? Number(v) : 0;
+    setServerProduct({
+      ...data,
+      price: getProductPrice(data),
+      views: Number.isFinite(viewsNum) ? viewsNum : 0,
+      sellerId: data.seller_id,
+      sellerTier: data.seller_tier,
+      deliveryOptions: data.delivery_options,
+      createdAt: data.created_at,
+      updatedAt: data.updated_at,
+    });
+  }, [id]);
 
   const foundProduct = serverProduct;
   const likeProductId = useMemo(() => normalizeProductPk(foundProduct?.id), [foundProduct?.id]);
@@ -814,6 +838,7 @@ export default function ProductDetail() {
   const sellerPeerIdRaw = foundProduct.seller_id ?? foundProduct.sellerId;
   const sellerPeerId =
     sellerPeerIdRaw != null && String(sellerPeerIdRaw).trim() !== "" ? String(sellerPeerIdRaw).trim() : "";
+  const isOwner = Boolean(authUser?.id && sellerPeerId && authUser.id === sellerPeerId);
   const canMessageSeller = Boolean(sellerPeerId);
 
   /** Stable listing id for chat query (must match `searchParams` `product` in ChatWorkspace). */
@@ -1261,11 +1286,37 @@ export default function ProductDetail() {
                 mobileDetailTab === "details" ? "block" : "hidden md:block",
               )}
             >
-              <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2 md:mb-1">Listing</h2>
+              <div className="flex flex-wrap items-start justify-between gap-2 mb-2 md:mb-1">
+                <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Listing</h2>
+                {isOwner ? (
+                  <button
+                    type="button"
+                    onClick={() => setEditModalOpen(true)}
+                    className="shrink-0 rounded-lg border border-[#15803d]/40 bg-[#f0fdf4] px-3 py-1.5 text-xs font-semibold text-[#15803d] hover:bg-[#dcfce7]"
+                  >
+                    Edit product
+                  </button>
+                ) : null}
+              </div>
               <h1 className="text-xl md:text-2xl font-semibold text-gray-900 leading-snug tracking-tight">
                 {product.title}
               </h1>
               <p className="text-2xl md:text-3xl font-bold text-[#15803d] mt-3 tabular-nums">{priceDisplay}</p>
+              <PriceNegotiation
+                productId={foundProduct.id}
+                listingPrice={priceNum}
+                sellerId={sellerPeerId}
+                isOwner={isOwner}
+                formatPrice={formatPrice}
+              />
+              <MarketPricePrediction
+                title={String(product.title)}
+                category={String(product.category)}
+                description={product.description}
+                currentPrice={priceNum}
+                relatedListingCount={relatedProducts.length}
+              />
+              <SimilarProductsLinks productTitle={String(product.title)} />
               {!productReviewsReady ? (
                 <p className="mt-3 text-sm text-gray-400">Loading reviews…</p>
               ) : productRatingTotal > 0 ? (
@@ -1733,56 +1784,78 @@ export default function ProductDetail() {
 
       <div className="fixed bottom-0 left-0 right-0 z-30 border-t border-gray-100 bg-white/95 backdrop-blur-sm">
         <div className="mx-auto flex max-w-6xl gap-2 px-3 py-3 sm:px-4">
-          {canMessageSeller ? (
-            <Link
-              to={chatToSellerUrl}
-              onClick={handleChatClick}
-              className="hidden sm:inline-flex px-4 py-3 rounded-xl ring-1 ring-gray-200 text-sm font-semibold text-gray-800 items-center justify-center hover:bg-gray-50"
+          {isOwner ? (
+            <button
+              type="button"
+              onClick={() => setEditModalOpen(true)}
+              className="w-full py-3 rounded-xl bg-gray-900 text-white text-sm font-semibold hover:bg-gray-800"
             >
-              Chat
-            </Link>
-          ) : null}
-          <button
-            type="button"
-            onClick={() => {
-              addToCart({
-                id: product.id.toString(),
-                title: product.title,
-                price: product.price,
-                image: product.images[0] ?? "",
-                quantity: 1,
-                sellerId: sellerPeerId || product.seller.id.toString(),
-                deliveryFee: product.deliveryOptions[0]?.fee ?? 0,
-              });
-              toast.success("Added to cart");
-            }}
-            className="flex-1 py-3 rounded-xl bg-orange-500 text-white text-sm font-semibold hover:bg-orange-600"
-          >
-            <span className="inline-flex items-center justify-center gap-2">
-              <ShoppingCart className="w-4 h-4 sm:hidden" />
-              Add to cart
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              addToCart({
-                id: product.id.toString(),
-                title: product.title,
-                price: product.price,
-                image: product.images[0] ?? "",
-                quantity: 1,
-                sellerId: sellerPeerId || product.seller.id.toString(),
-                deliveryFee: product.deliveryOptions[0]?.fee ?? 0,
-              });
-              navigate("/checkout");
-            }}
-            className="flex-1 py-3 rounded-xl bg-[#16a34a] text-white text-sm font-bold hover:bg-[#15803d]"
-          >
-            Buy now
-          </button>
+              Edit listing
+            </button>
+          ) : (
+            <>
+              {canMessageSeller ? (
+                <Link
+                  to={chatToSellerUrl}
+                  onClick={handleChatClick}
+                  className="hidden sm:inline-flex px-4 py-3 rounded-xl ring-1 ring-gray-200 text-sm font-semibold text-gray-800 items-center justify-center hover:bg-gray-50"
+                >
+                  Chat
+                </Link>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => {
+                  addToCart({
+                    id: product.id.toString(),
+                    title: product.title,
+                    price: product.price,
+                    image: product.images[0] ?? "",
+                    quantity: 1,
+                    sellerId: sellerPeerId || product.seller.id.toString(),
+                    deliveryFee: product.deliveryOptions[0]?.fee ?? 0,
+                  });
+                  toast.success("Added to cart");
+                }}
+                className="flex-1 py-3 rounded-xl bg-orange-500 text-white text-sm font-semibold hover:bg-orange-600"
+              >
+                <span className="inline-flex items-center justify-center gap-2">
+                  <ShoppingCart className="w-4 h-4 sm:hidden" />
+                  Add to cart
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  addToCart({
+                    id: product.id.toString(),
+                    title: product.title,
+                    price: product.price,
+                    image: product.images[0] ?? "",
+                    quantity: 1,
+                    sellerId: sellerPeerId || product.seller.id.toString(),
+                    deliveryFee: product.deliveryOptions[0]?.fee ?? 0,
+                  });
+                  navigate("/checkout");
+                }}
+                className="flex-1 py-3 rounded-xl bg-[#16a34a] text-white text-sm font-bold hover:bg-[#15803d]"
+              >
+                Buy now
+              </button>
+            </>
+          )}
         </div>
       </div>
+
+      <EditProductModal
+        open={editModalOpen}
+        onOpenChange={setEditModalOpen}
+        product={foundProduct}
+        onSaved={() => {
+          void refetchProduct();
+          toast.success("Listing updated");
+        }}
+      />
     </div>
   );
 }

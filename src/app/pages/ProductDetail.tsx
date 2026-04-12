@@ -760,6 +760,17 @@ export default function ProductDetail() {
     sellerPeerIdRaw != null && String(sellerPeerIdRaw).trim() !== "" ? String(sellerPeerIdRaw).trim() : "";
   const canMessageSeller = Boolean(sellerPeerId);
 
+  /** Stable listing id for chat query (must match `searchParams` `product` in ChatWorkspace). */
+  const productIdForChat =
+    foundProduct.id != null && String(foundProduct.id).trim() !== ""
+      ? String(foundProduct.id)
+      : normalizeRouteProductId(id) ?? "";
+
+  const chatToSellerUrl =
+    sellerPeerId && productIdForChat
+      ? `/messages/u/${sellerPeerId}?product=${encodeURIComponent(productIdForChat)}`
+      : "/messages";
+
   const galleryImages = parseProductImagesFromRow(foundProduct as { image?: unknown; images?: unknown });
 
   const sellerDisplayName =
@@ -1062,7 +1073,7 @@ export default function ProductDetail() {
                 aria-label="Contact"
               >
                 <Link
-                  to={canMessageSeller ? `/messages/u/${sellerPeerId}?product=${product.id}` : "/messages"}
+                  to={chatToSellerUrl}
                   className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#15803d]/30 bg-white text-[#15803d] shadow-sm transition hover:bg-[#15803d] hover:text-white"
                   title="Chat about this listing"
                   aria-label="Chat about this listing"
@@ -1082,7 +1093,7 @@ export default function ProductDetail() {
 
             <div className="mb-3 hidden items-center justify-end gap-2 md:flex" role="group" aria-label="Contact">
               <Link
-                to={canMessageSeller ? `/messages/u/${sellerPeerId}?product=${product.id}` : "/messages"}
+                to={chatToSellerUrl}
                 className="inline-flex items-center gap-2 rounded-full border border-[#15803d]/30 bg-white px-3 py-1.5 text-sm font-semibold text-[#15803d] shadow-sm transition hover:bg-[#15803d] hover:text-white"
               >
                 <MessageCircle className="h-4 w-4 shrink-0" aria-hidden />
@@ -1212,7 +1223,7 @@ export default function ProductDetail() {
                 <div className="flex gap-2 items-stretch">
                   {canMessageSeller ? (
                     <Link
-                      to={`/messages/u/${sellerPeerId}?product=${product.id}`}
+                      to={chatToSellerUrl}
                       className="flex-1 min-h-[46px] inline-flex items-center justify-center gap-2 rounded-xl bg-[#16a34a] text-white text-sm font-semibold px-4 hover:bg-[#15803d] shadow-sm"
                     >
                       <MessageCircle className="w-4 h-4 shrink-0" aria-hidden />
@@ -1507,7 +1518,7 @@ export default function ProductDetail() {
         <div className="mx-auto flex max-w-6xl gap-2 px-3 py-3 sm:px-4">
           {canMessageSeller ? (
             <Link
-              to={`/messages/u/${sellerPeerId}?product=${product.id}`}
+              to={chatToSellerUrl}
               className="hidden sm:inline-flex px-4 py-3 rounded-xl ring-1 ring-gray-200 text-sm font-semibold text-gray-800 items-center justify-center hover:bg-gray-50"
             >
               Chat

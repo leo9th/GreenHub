@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "../components/ui/utils";
+import { getActiveSocialLinks, socialLinkItems } from "../config/social";
 
 const SUPPORT_EMAIL = "support@greenhub.ng";
 const PHONE_DISPLAY = "+234 812 522 1542";
@@ -20,13 +21,6 @@ const PHONE_HREF = "tel:+2348125221542";
 const MAIL_HREF = `mailto:${SUPPORT_EMAIL}`;
 const WA_HREF = "https://wa.me/2348125221542";
 const MAPS_QUERY = "https://www.google.com/maps/search/?api=1&query=Abuja%2C+Nigeria";
-
-const SOCIAL = [
-  { label: "Twitter", href: "https://twitter.com", emoji: "𝕏" },
-  { label: "Instagram", href: "https://instagram.com", emoji: "📷" },
-  { label: "LinkedIn", href: "https://linkedin.com", emoji: "💼" },
-  { label: "Facebook", href: "https://facebook.com", emoji: "📘" },
-] as const;
 
 type ContactCardProps = {
   icon: ReactNode;
@@ -303,10 +297,10 @@ export default function Contact() {
               Updates, tips, and community stories — join us where you scroll.
             </p>
             <ul className="mt-8 flex flex-wrap items-center justify-center gap-3 sm:gap-4">
-              {SOCIAL.map((s) => (
-                <li key={s.label}>
+              {getActiveSocialLinks(socialLinkItems).map((s) => (
+                <li key={s.id}>
                   <a
-                    href={s.href}
+                    href={s.url.trim()}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-zinc-200 transition hover:border-emerald-500/35 hover:bg-emerald-500/10 hover:text-white"

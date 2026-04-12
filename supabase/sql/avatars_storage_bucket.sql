@@ -1,5 +1,7 @@
+-- Standalone script (same as migration 20260516120000_avatars_storage_bucket.sql).
+-- Run in Supabase Dashboard → SQL Editor, or: psql … -f supabase/sql/avatars_storage_bucket.sql
+--
 -- Public avatars bucket: uploads must live under `{auth.uid()}/filename`
--- Standalone copy for manual runs: supabase/sql/avatars_storage_bucket.sql
 
 insert into storage.buckets (id, name, public)
 values ('avatars', 'avatars', true)

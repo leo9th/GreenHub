@@ -505,7 +505,7 @@ export default function ChatWorkspace() {
     async (msg: ChatMessageRow, emoji: string) => {
       if (!conversation?.id || !authUser?.id) return;
       if (String(msg.id).startsWith("pending-")) return;
-      const mine = reactionByMessage[msg.id]?.myEmoji;
+      const mine = reactionByMessage[msg.id]?.myEmoji?.trim() ?? null;
       const emojiNorm = emoji.trim().slice(0, 32);
       if (!emojiNorm) return;
       try {

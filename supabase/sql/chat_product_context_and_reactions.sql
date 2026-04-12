@@ -41,8 +41,9 @@ create index if not exists chat_message_reactions_message_id_idx
 
 alter table public.chat_message_reactions enable row level security;
 
-drop policy if exists "chat_message_reactions_select_participants" on public.chat_message_reactions;
-create policy "chat_message_reactions_select_participants"
+-- Policy names are unquoted (lowercase) so pasting into the SQL editor cannot break mid-identifier.
+drop policy if exists chat_message_reactions_select_participants on public.chat_message_reactions;
+create policy chat_message_reactions_select_participants
   on public.chat_message_reactions for select
   using (
     exists (
@@ -53,8 +54,8 @@ create policy "chat_message_reactions_select_participants"
     )
   );
 
-drop policy if exists "chat_message_reactions_insert_participant" on public.chat_message_reactions;
-create policy "chat_message_reactions_insert_participant"
+drop policy if exists chat_message_reactions_insert_participant on public.chat_message_reactions;
+create policy chat_message_reactions_insert_participant
   on public.chat_message_reactions for insert
   with check (
     user_id = (select auth.uid())
@@ -66,14 +67,14 @@ create policy "chat_message_reactions_insert_participant"
     )
   );
 
-drop policy if exists "chat_message_reactions_update_own" on public.chat_message_reactions;
-create policy "chat_message_reactions_update_own"
+drop policy if exists chat_message_reactions_update_own on public.chat_message_reactions;
+create policy chat_message_reactions_update_own
   on public.chat_message_reactions for update
   using (user_id = (select auth.uid()))
   with check (user_id = (select auth.uid()));
 
-drop policy if exists "chat_message_reactions_delete_own" on public.chat_message_reactions;
-create policy "chat_message_reactions_delete_own"
+drop policy if exists chat_message_reactions_delete_own on public.chat_message_reactions;
+create policy chat_message_reactions_delete_own
   on public.chat_message_reactions for delete
   using (user_id = (select auth.uid()));
 

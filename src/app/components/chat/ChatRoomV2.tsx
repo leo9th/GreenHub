@@ -1,6 +1,6 @@
 import React, { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
-import { ArrowLeft, Loader2, Paperclip, Pin, Send, Smile, Trash2, UserCheck, UserPlus } from "lucide-react";
+import { ArrowLeft, Loader2, Pin, Trash2, UserCheck, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../context/AuthContext";
@@ -71,8 +71,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../ui/dialog";
-import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import { cn } from "../ui/utils";
+import { ChatInputBar } from "./ChatInputBar";
 import { ChatPortraitProductCard } from "./ChatPortraitProductCard";
 import { MessageInfoDialog } from "./MessageInfoDialog";
 import { MessageBubbleV2 } from "./MessageBubbleV2";
@@ -1754,65 +1754,22 @@ export default function ChatRoomV2() {
             </div>
           ) : null}
 
-          <div className="flex flex-wrap items-end gap-1.5 sm:gap-2">
-            <input ref={attachInputRef} type="file" accept="image/*" className="hidden" onChange={onPickImage} />
-            <button
-              type="button"
-              onClick={() => attachInputRef.current?.click()}
-              className="flex h-11 min-w-[44px] shrink-0 items-center justify-center rounded-full text-gray-700 hover:bg-black/[0.06] dark:text-zinc-200 dark:hover:bg-white/10"
-              aria-label="Attach"
-            >
-              <Paperclip className="h-6 w-6" />
-            </button>
-            <Popover open={emojiPickerOpen} onOpenChange={setEmojiPickerOpen}>
-              <PopoverTrigger asChild>
-                <button
-                  type="button"
-                  className="flex h-11 min-w-[44px] shrink-0 items-center justify-center rounded-full text-gray-700 hover:bg-black/[0.06] dark:text-zinc-200 dark:hover:bg-white/10"
-                  aria-label="Emoji"
-                >
-                  <Smile className="h-6 w-6" />
-                </button>
-              </PopoverTrigger>
-              <PopoverContent side="top" align="start" className="w-[min(100vw-2rem,20rem)] p-2">
-                <div className="grid grid-cols-5 gap-1 sm:grid-cols-6">
-                  {INPUT_EMOJIS.map((emoji) => (
-                    <button
-                      key={emoji}
-                      type="button"
-                      className="flex h-11 w-11 items-center justify-center rounded-lg text-xl hover:bg-emerald-50 dark:hover:bg-zinc-800"
-                      onClick={() => insertEmoji(emoji)}
-                    >
-                      {emoji}
-                    </button>
-                  ))}
-                </div>
-              </PopoverContent>
-            </Popover>
-            <textarea
-              ref={draftTextareaRef}
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  void sendMessage();
-                }
-              }}
-              rows={1}
-              placeholder="Message…"
-              className="min-h-[44px] min-w-0 flex-1 resize-none rounded-full border border-[#d1d7db] bg-white px-4 py-2.5 text-sm outline-none focus:border-[#25D366] focus:ring-1 focus:ring-[#25D366] dark:border-zinc-600 dark:bg-zinc-800 dark:text-foreground"
-            />
-            <button
-              type="button"
-              disabled={sendBusy}
-              onClick={() => void sendMessage()}
-              className="flex h-11 min-w-[44px] shrink-0 items-center justify-center rounded-full bg-[#25D366] text-white hover:bg-[#20bd5a] disabled:opacity-50"
-              aria-label="Send"
-            >
-              {sendBusy ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
-            </button>
-          </div>
+          <ChatInputBar
+            draft={draft}
+            onDraftChange={setDraft}
+            onSend={() => void sendMessage()}
+            sendBusy={sendBusy}
+            draftTextareaRef={draftTextareaRef}
+            attachInputRef={attachInputRef}
+            onAttachChange={onPickImage}
+            attachAccept="image/*"
+            emojiPickerOpen={emojiPickerOpen}
+            onEmojiPickerOpenChange={setEmojiPickerOpen}
+            emojiList={INPUT_EMOJIS}
+            onEmojiInsert={insertEmoji}
+            enableMic={false}
+            attachIcon="paperclip"
+          />
         </div>
       </div>
 

@@ -7,18 +7,14 @@ import {
   ChevronDown,
   Copy,
   Eraser,
-  ImagePlus,
   Loader2,
   MessageCircle,
-  Mic,
   MoreVertical,
   Package,
   Pin,
   Reply,
   Search,
-  Send,
   Share2,
-  Smile,
   Star,
   Trash2,
   User,
@@ -114,9 +110,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../ui/dialog";
-import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import { Button } from "../ui/button";
 import { cn } from "../ui/utils";
+import { ChatInputBar } from "./ChatInputBar";
 import { ChatPortraitProductCard } from "./ChatPortraitProductCard";
 import { MessageInfoDialog } from "./MessageInfoDialog";
 import { MessageBubble } from "./MessageBubble";
@@ -2462,91 +2458,37 @@ export default function ChatWorkspace() {
                 </div>
               ) : null}
 
-              <div className="flex flex-wrap items-end gap-1.5 sm:gap-2">
-                <input ref={attachInputRef} type="file" accept="image/*" className="hidden" onChange={onPickImage} />
-                <button
-                  type="button"
-                  onClick={() => attachInputRef.current?.click()}
-                  className="flex h-11 min-w-[44px] shrink-0 items-center justify-center rounded-full text-gray-700 hover:bg-black/[0.06] dark:text-zinc-200 dark:hover:bg-white/10"
-                  aria-label="Attach image"
-                >
-                  <ImagePlus className="h-6 w-6" />
-                </button>
-                <Popover open={emojiPickerOpen} onOpenChange={setEmojiPickerOpen}>
-                  <PopoverTrigger asChild>
-                    <button
-                      type="button"
-                      className="flex h-11 min-w-[44px] shrink-0 items-center justify-center rounded-full text-gray-700 hover:bg-black/[0.06] dark:text-zinc-200 dark:hover:bg-white/10"
-                      aria-label="Insert emoji"
-                      title="Emoji"
-                    >
-                      <Smile className="h-6 w-6" strokeWidth={2} />
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent
-                    side="top"
-                    align="start"
-                    sideOffset={8}
-                    className="w-[min(100vw-2rem,20rem)] touch-manipulation p-2"
+              <ChatInputBar
+                draft={draft}
+                onDraftChange={setDraft}
+                onSend={() => void sendMessage()}
+                sendBusy={sendBusy}
+                draftTextareaRef={draftTextareaRef}
+                attachInputRef={attachInputRef}
+                onAttachChange={onPickImage}
+                attachAccept="image/*"
+                emojiPickerOpen={emojiPickerOpen}
+                onEmojiPickerOpenChange={setEmojiPickerOpen}
+                emojiList={CHAT_EMOJI_GRID}
+                onEmojiInsert={insertEmoji}
+                enableMic
+                recording={recording}
+                onMicPointerDown={onMicPointerDown}
+                attachIcon="image-plus"
+                leadingExtras={
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => void sendProductCard()}
+                    disabled={!conversation?.context_product_id && !stripProduct}
+                    className="flex h-11 min-w-[44px] shrink-0 items-center justify-center rounded-full text-gray-700 transition-colors duration-200 hover:bg-black/[0.06] disabled:opacity-40 dark:text-zinc-200 dark:hover:bg-white/10"
+                    aria-label="Share listing"
+                    title="Share product card"
                   >
-                    <div className="grid max-h-[min(50vh,16rem)] grid-cols-6 gap-1 overflow-y-auto overscroll-contain sm:grid-cols-8">
-                      {CHAT_EMOJI_GRID.map((emoji) => (
-                        <button
-                          key={emoji}
-                          type="button"
-                          className="flex h-11 w-11 items-center justify-center rounded-lg text-xl transition hover:bg-emerald-50 active:scale-95 dark:hover:bg-zinc-800"
-                          onClick={() => insertEmoji(emoji)}
-                          aria-label={`Insert ${emoji}`}
-                        >
-                          {emoji}
-                        </button>
-                      ))}
-                    </div>
-                  </PopoverContent>
-                </Popover>
-                <button
-                  type="button"
-                  onClick={() => void sendProductCard()}
-                  disabled={!conversation?.context_product_id && !stripProduct}
-                  className="flex h-11 min-w-[44px] shrink-0 items-center justify-center rounded-full text-gray-700 hover:bg-black/[0.06] disabled:opacity-40 dark:text-zinc-200 dark:hover:bg-white/10"
-                  aria-label="Share listing"
-                  title="Share product card"
-                >
-                  <Package className="h-6 w-6" />
-                </button>
-                <textarea
-                  ref={draftTextareaRef}
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      void sendMessage();
-                    }
-                  }}
-                  rows={1}
-                  placeholder="Message…"
-                  className="min-h-[44px] min-w-0 flex-1 resize-none rounded-full border border-[#d1d7db] bg-white px-4 py-2.5 text-sm outline-none focus:border-[#25D366] focus:ring-1 focus:ring-[#25D366] dark:border-zinc-600 dark:bg-zinc-800 dark:text-foreground"
-                />
-                <button
-                  type="button"
-                  onPointerDown={onMicPointerDown}
-                  className={`flex h-11 min-w-[44px] shrink-0 items-center justify-center rounded-full ${recording ? "bg-red-500 text-white" : "text-gray-700 hover:bg-black/[0.06] dark:text-zinc-200 dark:hover:bg-white/10"}`}
-                  aria-label="Hold to record voice"
-                  title="Hold to record"
-                >
-                  <Mic className="h-6 w-6" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void sendMessage()}
-                  disabled={sendBusy || !draft.trim()}
-                  className="flex h-11 min-w-[44px] shrink-0 items-center justify-center rounded-full bg-[#25D366] text-white shadow-sm disabled:opacity-50 dark:bg-[#25D366]"
-                  aria-label="Send"
-                >
-                  {sendBusy ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
-                </button>
-              </div>
+                    <Package className="h-6 w-6" />
+                  </button>
+                }
+              />
             </div>
           </div>
         </div>

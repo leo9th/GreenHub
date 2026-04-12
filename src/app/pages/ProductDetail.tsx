@@ -3,7 +3,6 @@ import useEmblaCarousel from "embla-carousel-react";
 import { Link, useParams, useNavigate } from "react-router";
 import {
   ArrowLeft,
-  Share2,
   Heart,
   Star,
   MapPin,
@@ -91,6 +90,16 @@ function shuffleRelatedProducts<T>(items: T[]): T[] {
     [next[i], next[j]] = [next[j], next[i]];
   }
   return next;
+}
+
+/** Compact display for follower counts on product detail (e.g. 1.2K when over 1000). */
+function formatFollowerShort(n: number): string {
+  if (!Number.isFinite(n) || n < 0) return "0";
+  if (n <= 1000) return n.toLocaleString();
+  const k = n / 1000;
+  const rounded = Math.round(k * 10) / 10;
+  const s = rounded % 1 === 0 ? String(Math.round(rounded)) : rounded.toFixed(1);
+  return `${s}K`;
 }
 
 const DEFAULT_DOCUMENT_TITLE = "GreenHub - Buy & Sell in Nigeria";
@@ -298,10 +307,44 @@ export default function ProductDetail() {
   const [moreFromSeller, setMoreFromSeller] = useState<RelatedCarouselItem[]>([]);
   const [productReviews, setProductReviews] = useState<ProductReviewDisplay[]>([]);
   const [productReviewsReady, setProductReviewsReady] = useState(false);
+  const [sellerFollowerCount, setSellerFollowerCount] = useState<number | null>(null);
+  const [sellerFollowerCountLoading, setSellerFollowerCountLoading] = useState(false);
+  const [sellerFollowerCountFailed, setSellerFollowerCountFailed] = useState(false);
 
   useEffect(() => {
     window.scrollTo(0, 0);
   }, []);
+
+  useEffect(() => {
+    const raw = serverProduct?.seller_id ?? serverProduct?.sellerId;
+    const sellerUuid = raw != null && String(raw).trim() !== "" ? String(raw).trim() : "";
+    if (!sellerUuid) {
+      setSellerFollowerCount(null);
+      setSellerFollowerCountLoading(false);
+      setSellerFollowerCountFailed(false);
+      return;
+    }
+    let cancelled = false;
+    setSellerFollowerCount(null);
+    setSellerFollowerCountFailed(false);
+    setSellerFollowerCountLoading(true);
+    (async () => {
+      const { data, error } = await supabase.rpc("profile_follower_count", { p_user_id: sellerUuid });
+      if (cancelled) return;
+      setSellerFollowerCountLoading(false);
+      if (error) {
+        setSellerFollowerCountFailed(true);
+        setSellerFollowerCount(null);
+        return;
+      }
+      const n = typeof data === "bigint" ? Number(data) : Number(data);
+      setSellerFollowerCountFailed(false);
+      setSellerFollowerCount(Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [serverProduct?.seller_id, serverProduct?.sellerId]);
 
   /** URL `products/:id` — pass through trimmed string so PostgREST matches int/bigint/uuid PKs without Number() precision loss */
   const normalizeRouteProductId = (raw: string | undefined): string | null => {
@@ -928,29 +971,7 @@ export default function ProductDetail() {
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <div className="flex items-center gap-0.5">
-            <button
-              type="button"
-              onClick={() => void handleShare()}
-              className="p-2 rounded-lg hover:bg-gray-50 text-gray-600"
-              aria-label="Share"
-            >
-              <Share2 className="w-[18px] h-[18px]" />
-            </button>
-            <button
-              type="button"
-              disabled={likeBusy}
-              onClick={() => void handleToggleLike()}
-              className="p-2 rounded-lg hover:bg-gray-50 text-gray-600 disabled:opacity-50"
-              aria-label={liked ? "Unlike" : "Like"}
-            >
-              <Heart
-                className={`w-[18px] h-[18px] ${liked ? "fill-red-500 text-red-500" : "text-gray-500"}`}
-                fill={liked ? "currentColor" : "none"}
-                strokeWidth={2}
-              />
-            </button>
-          </div>
+          <div className="w-10 shrink-0" aria-hidden />
         </div>
       </header>
 
@@ -1040,6 +1061,59 @@ export default function ProductDetail() {
                   </div>
                 </div>
               )}
+              <div
+                className="mt-4 flex items-stretch justify-around gap-3 border-t border-gray-100 pt-4"
+                role="group"
+                aria-label="Listing actions"
+              >
+                <button
+                  type="button"
+                  disabled={!sellerPeerId}
+                  onClick={() => {
+                    if (!sellerPeerId) return;
+                    navigate(`/profile/${sellerPeerId}/followers`);
+                  }}
+                  className="flex min-w-0 flex-1 flex-col items-center gap-1 rounded-xl py-1 text-center text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  aria-label="View seller followers"
+                >
+                  <span className="text-2xl leading-none" aria-hidden>
+                    👥
+                  </span>
+                  <span className="text-sm font-semibold tabular-nums text-gray-900">
+                    {!sellerPeerId || sellerFollowerCountFailed
+                      ? "--"
+                      : sellerFollowerCountLoading || sellerFollowerCount === null
+                        ? "..."
+                        : formatFollowerShort(sellerFollowerCount)}
+                  </span>
+                  <span className="text-[10px] font-medium text-gray-500">Followers</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleShare()}
+                  className="flex min-w-0 flex-1 flex-col items-center gap-1 rounded-xl py-1 text-center text-gray-700 transition-colors hover:bg-gray-50"
+                  aria-label="Share listing"
+                >
+                  <span className="text-2xl leading-none" aria-hidden>
+                    📤
+                  </span>
+                  <span className="h-5 shrink-0" aria-hidden />
+                  <span className="text-[10px] font-medium text-gray-500">Share</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={likeBusy}
+                  onClick={() => void handleToggleLike()}
+                  className="flex min-w-0 flex-1 flex-col items-center gap-1 rounded-xl py-1 text-center text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50"
+                  aria-label={liked ? "Unlike" : "Like"}
+                >
+                  <span className="text-2xl leading-none" aria-hidden>
+                    ❤️
+                  </span>
+                  <span className="text-sm font-semibold tabular-nums text-gray-900">{likeCount}</span>
+                  <span className="text-[10px] font-medium text-gray-500">Like</span>
+                </button>
+              </div>
             </div>
           </div>
 

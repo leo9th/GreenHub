@@ -7,7 +7,9 @@ import {
   ChevronDown,
   Copy,
   Eraser,
+  Flag,
   Loader2,
+  Pencil,
   MessageCircle,
   MoreVertical,
   Package,
@@ -114,6 +116,7 @@ import { Button } from "../ui/button";
 import { cn } from "../ui/utils";
 import { ChatInputBar } from "./ChatInputBar";
 import { ChatPortraitProductCard } from "./ChatPortraitProductCard";
+import { ReportUserDialog } from "./ReportUserDialog";
 import { MessageInfoDialog } from "./MessageInfoDialog";
 import { MessageBubble } from "./MessageBubble";
 import { MessageMenuV2, MESSAGE_QUICK_REACTIONS } from "./MessageMenuV2";
@@ -362,6 +365,7 @@ export default function ChatWorkspace() {
   );
 
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
   const [isFollowingPeer, setIsFollowingPeer] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
   /** Hide listing strip locally (X); resets when listing changes */
@@ -1757,6 +1761,20 @@ export default function ChatWorkspace() {
         setReplyingTo(null);
         setPinnedRow(null);
         toast.success("Chat cleared for you");
+      } else if (pendingConfirm.kind === "clear-chat-both") {
+        const cid = conversation?.id;
+        if (!cid) {
+          toast.error("Conversation not ready.");
+          return;
+        }
+        const { error } = await clearConversationMessages(supabase, cid);
+        if (error) throw new Error(error.message);
+        const { data: msgs, error: mErr } = await fetchChatMessagesForConversation(supabase, cid);
+        if (mErr) throw new Error(mErr.message);
+        setMessages(msgs);
+        setReplyingTo(null);
+        setPinnedRow(null);
+        toast.success("Chat cleared for both of you");
       }
     } catch (e: unknown) {
       toast.error(errorMessage(e, "Action failed"));
@@ -1792,6 +1810,19 @@ export default function ChatWorkspace() {
     const m = messages.find((x) => x.id === pinnedRow.message_id);
     return m ? messagePreviewText(m.message, m.image_url) : "Original message unavailable";
   }, [pinnedRow, messages]);
+
+  /** Most recent own message that is still editable (15 min window). */
+  const lastOwnMessageToEdit = useMemo(() => {
+    if (!authUser?.id) return null;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (String(m.id).startsWith("pending-")) continue;
+      if (isDeletedForEveryone(m)) continue;
+      if (!isMessageFromViewer(m.sender_id, authUser.id)) continue;
+      if (canEditMessage(m, authUser.id)) return m;
+    }
+    return null;
+  }, [messages, authUser?.id]);
 
   const menuMine = mobileSheetMsg ? isMessageFromViewer(mobileSheetMsg.sender_id, authUser?.id) : false;
 
@@ -2069,6 +2100,16 @@ export default function ChatWorkspace() {
               </button>
               <button
                 type="button"
+                disabled={!lastOwnMessageToEdit}
+                className="flex h-11 min-w-[44px] shrink-0 items-center justify-center rounded-full hover:bg-black/[0.05] disabled:opacity-35 dark:hover:bg-white/10"
+                aria-label="Edit last message"
+                title={lastOwnMessageToEdit ? "Edit your last message" : "No recent message to edit"}
+                onClick={() => lastOwnMessageToEdit && startEdit(lastOwnMessageToEdit)}
+              >
+                <Pencil className="h-5 w-5 text-gray-700 dark:text-zinc-200" />
+              </button>
+              <button
+                type="button"
                 className="flex h-11 min-w-[44px] shrink-0 items-center justify-center rounded-full hover:bg-black/[0.05] dark:hover:bg-white/10"
                 aria-label="Search in chat"
                 onClick={() => setSearchOpen((v) => !v)}
@@ -2106,6 +2147,15 @@ export default function ChatWorkspace() {
                   >
                     <Eraser className="mr-2 h-4 w-4" />
                     Clear chat
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={(e) => {
+                      e.preventDefault();
+                      setReportOpen(true);
+                    }}
+                  >
+                    <Flag className="mr-2 h-4 w-4" />
+                    Report / Scammer alert
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     onSelect={(e) => {
@@ -2368,6 +2418,31 @@ export default function ChatWorkspace() {
                     {mine ? <ContextMenuItem onSelect={() => void pinMsg(msg)}>Pin</ContextMenuItem> : null}
                     <ContextMenuSeparator />
                     <ContextMenuSub>
+                      <ContextMenuSubTrigger>
+                        <Eraser className="mr-2 h-4 w-4" />
+                        Clear chat
+                      </ContextMenuSubTrigger>
+                      <ContextMenuSubContent className="min-w-[12rem]">
+                        <ContextMenuItem
+                          onSelect={() => {
+                            setMobileSheetMsg(null);
+                            setPendingConfirm({ kind: "clear-chat" });
+                          }}
+                        >
+                          Clear for me
+                        </ContextMenuItem>
+                        <ContextMenuItem
+                          onSelect={() => {
+                            setMobileSheetMsg(null);
+                            setPendingConfirm({ kind: "clear-chat-both" });
+                          }}
+                        >
+                          Clear for both
+                        </ContextMenuItem>
+                      </ContextMenuSubContent>
+                    </ContextMenuSub>
+                    <ContextMenuSeparator />
+                    <ContextMenuSub>
                       <ContextMenuSubTrigger className="text-destructive focus:text-destructive data-[state=open]:text-destructive">
                         <Trash2 className="mr-2 h-4 w-4" />
                         Delete
@@ -2525,8 +2600,29 @@ export default function ChatWorkspace() {
           showEdit={!!(menuMine && canEditMessage(mobileSheetMsg, authUser?.id))}
           showDeleteForEveryone={!!(menuMine && canDeleteMessageForEveryone(mobileSheetMsg, authUser?.id))}
           myReaction={reactionByMessage[mobileSheetMsg.id]?.myEmoji ?? null}
+          onClearChatForMe={
+            conversation?.id
+              ? () => {
+                  setPendingConfirm({ kind: "clear-chat" });
+                }
+              : undefined
+          }
+          onClearChatForBoth={
+            conversation?.id
+              ? () => {
+                  setPendingConfirm({ kind: "clear-chat-both" });
+                }
+              : undefined
+          }
         />
       ) : null}
+
+      <ReportUserDialog
+        open={reportOpen}
+        onOpenChange={setReportOpen}
+        reporterId={authUser?.id}
+        reportedUserId={peerId}
+      />
 
       <MessageInfoDialog
         open={infoOpen}
@@ -2605,19 +2701,29 @@ export default function ChatWorkspace() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {pendingConfirm?.kind === "delete-conversation" ? "Delete conversation?" : "Clear chat?"}
+              {pendingConfirm?.kind === "delete-conversation"
+                ? "Delete conversation?"
+                : pendingConfirm?.kind === "clear-chat-both"
+                  ? "Clear chat for both?"
+                  : "Clear chat?"}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {pendingConfirm?.kind === "delete-conversation"
                 ? "This deletes the conversation and returns you to the inbox."
-                : `All messages in this chat will be hidden only for you. ${peerFirstName} will still see the full history.`}
+                : pendingConfirm?.kind === "clear-chat-both"
+                  ? `This removes all messages in this chat for you and ${peerFirstName}. This cannot be undone.`
+                  : `All messages in this chat will be hidden only for you. ${peerFirstName} will still see the full history.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={actionBusy}>Cancel</AlertDialogCancel>
             <AlertDialogAction
               disabled={actionBusy}
-              className="bg-red-600 hover:bg-red-700"
+              className={
+                pendingConfirm?.kind === "clear-chat"
+                  ? "bg-amber-600 hover:bg-amber-700"
+                  : "bg-red-600 hover:bg-red-700"
+              }
               onClick={(e) => {
                 e.preventDefault();
                 void runConfirm();

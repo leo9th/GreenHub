@@ -4,6 +4,7 @@ import {
   ChevronUp,
   Copy,
   Edit3,
+  Eraser,
   Forward,
   Info,
   Pin,
@@ -40,6 +41,9 @@ export type MessageMenuV2Props = {
   onDeleteForEveryone?: () => void;
   showDeleteForEveryone: boolean;
   showEdit: boolean;
+  /** Clear whole thread (for me / for everyone) — shown when in a conversation */
+  onClearChatForMe?: () => void;
+  onClearChatForBoth?: () => void;
 };
 
 function MenuRow({
@@ -97,14 +101,21 @@ export function MessageMenuV2({
   onDeleteForEveryone,
   showDeleteForEveryone,
   showEdit,
+  onClearChatForMe,
+  onClearChatForBoth,
 }: MessageMenuV2Props) {
   const [deleteExpanded, setDeleteExpanded] = useState(false);
+  const [clearExpanded, setClearExpanded] = useState(false);
 
   useEffect(() => {
-    if (!open) setDeleteExpanded(false);
+    if (!open) {
+      setDeleteExpanded(false);
+      setClearExpanded(false);
+    }
   }, [open]);
 
   const hasDeleteSubmenu = !!(onDeleteForMe || (showDeleteForEveryone && onDeleteForEveryone));
+  const hasClearSubmenu = !!(onClearChatForMe || onClearChatForBoth);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -163,6 +174,56 @@ export function MessageMenuV2({
             onClick={onToggleStar}
           />
           <MenuRow icon={Info} label="Info" onClick={onInfo} />
+
+          {hasClearSubmenu ? (
+            <div className="mt-2 border-t border-gray-100 pt-2 dark:border-zinc-800">
+              <button
+                type="button"
+                onClick={() => setClearExpanded((v) => !v)}
+                className={cn(
+                  "flex w-full items-center justify-between gap-2 rounded-xl px-3 py-3 text-left text-sm font-semibold shadow-sm transition",
+                  "bg-amber-500 text-white hover:bg-amber-600 dark:bg-amber-700 dark:hover:bg-amber-600",
+                )}
+                aria-expanded={clearExpanded}
+              >
+                <span className="flex items-center gap-3">
+                  <Eraser className="h-5 w-5 shrink-0 opacity-95" />
+                  Clear chat
+                </span>
+                <ChevronUp className={cn("h-5 w-5 shrink-0 transition", clearExpanded ? "" : "rotate-180")} />
+              </button>
+              {clearExpanded ? (
+                <div className="mt-1 space-y-0.5 rounded-xl border border-amber-100 bg-amber-50/60 p-1 dark:border-amber-900/40 dark:bg-amber-950/30">
+                  {onClearChatForMe ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClearChatForMe();
+                        onOpenChange(false);
+                      }}
+                      className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-amber-900 hover:bg-amber-100 dark:text-amber-100 dark:hover:bg-amber-950/60"
+                    >
+                      <Eraser className="h-4 w-4 shrink-0 opacity-90" />
+                      Clear for me
+                    </button>
+                  ) : null}
+                  {onClearChatForBoth ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClearChatForBoth();
+                        onOpenChange(false);
+                      }}
+                      className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-amber-900 hover:bg-amber-100 dark:text-amber-100 dark:hover:bg-amber-950/60"
+                    >
+                      <Eraser className="h-4 w-4 shrink-0 opacity-90" />
+                      Clear for both
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
 
           {hasDeleteSubmenu ? (
             <div className="mt-2 border-t border-gray-100 pt-2 dark:border-zinc-800">

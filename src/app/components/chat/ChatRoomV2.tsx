@@ -1,6 +1,6 @@
 import React, { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
-import { ArrowLeft, Loader2, Pin, Trash2, UserCheck, UserPlus } from "lucide-react";
+import { ArrowLeft, Eraser, Flag, Loader2, MoreVertical, Pencil, Pin, Trash2, UserCheck, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../context/AuthContext";
@@ -10,6 +10,7 @@ import { getAvatarUrl } from "../../utils/getAvatar";
 import { getProductPrice } from "../../utils/getProductPrice";
 import {
   clearConversationForMe,
+  clearConversationMessages,
   fetchPinnedMessage,
   fetchSavedMessageIds,
   toggleSavedMessage,
@@ -45,6 +46,12 @@ import {
 } from "../../utils/chatMessages";
 import { Button } from "../ui/button";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../ui/dropdown-menu";
+import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
@@ -74,6 +81,7 @@ import {
 import { cn } from "../ui/utils";
 import { ChatInputBar } from "./ChatInputBar";
 import { ChatPortraitProductCard } from "./ChatPortraitProductCard";
+import { ReportUserDialog } from "./ReportUserDialog";
 import { MessageInfoDialog } from "./MessageInfoDialog";
 import { MessageBubbleV2 } from "./MessageBubbleV2";
 import { MessageMenuV2, MESSAGE_QUICK_REACTIONS } from "./MessageMenuV2";
@@ -252,8 +260,10 @@ export default function ChatRoomV2() {
   const [pinnedRow, setPinnedRow] = useState<PinnedMessageRow | null>(null);
   const [infoMsg, setInfoMsg] = useState<ChatMessageRow | null>(null);
   const [infoOpen, setInfoOpen] = useState(false);
-  const [clearChatOpen, setClearChatOpen] = useState(false);
+  type RoomPendingClear = { kind: "clear-chat" } | { kind: "clear-chat-both" };
+  const [pendingClear, setPendingClear] = useState<RoomPendingClear | null>(null);
   const [clearBusy, setClearBusy] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
 
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
   const peerHeaderRef = useRef<HTMLElement | null>(null);
@@ -1328,25 +1338,32 @@ export default function ChatRoomV2() {
     toast.message("Unpinned");
   }, [conversation?.id]);
 
-  const runClearChat = useCallback(async () => {
-    if (!conversation?.id) return;
+  const runClearConfirm = useCallback(async () => {
+    if (!pendingClear || !conversation?.id || clearBusy) return;
     setClearBusy(true);
     try {
-      const { error } = await clearConversationForMe(supabase, conversation.id);
-      if (error) throw new Error(error.message);
+      if (pendingClear.kind === "clear-chat") {
+        const { error } = await clearConversationForMe(supabase, conversation.id);
+        if (error) throw new Error(error.message);
+      } else {
+        const { error } = await clearConversationMessages(supabase, conversation.id);
+        if (error) throw new Error(error.message);
+      }
       const { data: msgs, error: mErr } = await fetchChatMessagesForConversation(supabase, conversation.id);
       if (mErr) throw new Error(mErr.message);
       setMessages(msgs);
       setReplyingTo(null);
       setPinnedRow(null);
-      setClearChatOpen(false);
-      toast.success("Chat cleared for you");
+      toast.success(
+        pendingClear.kind === "clear-chat" ? "Chat cleared for you" : "Chat cleared for both of you",
+      );
+      setPendingClear(null);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Could not clear chat");
     } finally {
       setClearBusy(false);
     }
-  }, [conversation?.id]);
+  }, [pendingClear, conversation?.id, clearBusy]);
 
   const chatShellStyle = {
     ...(viewportHeight ? { ["--chat-viewport-height" as string]: `${viewportHeight}px` } : {}),
@@ -1405,6 +1422,18 @@ export default function ChatRoomV2() {
         })()
       : "";
 
+  const lastOwnMessageToEdit = useMemo(() => {
+    if (!authUser?.id) return null;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (String(m.id).startsWith("pending-")) continue;
+      if (isDeletedForEveryone(m)) continue;
+      if (!isMessageFromViewer(m.sender_id, authUser.id)) continue;
+      if (canEditMessage(m, authUser.id)) return m;
+    }
+    return null;
+  }, [messages, authUser?.id]);
+
   return (
     <div style={chatShellStyle} className={`flex ${shellHeight} min-h-0 flex-col bg-[#e5ddd5] dark:bg-zinc-950`}>
       <header
@@ -1433,12 +1462,48 @@ export default function ChatRoomV2() {
             variant="ghost"
             size="icon"
             className="shrink-0 text-gray-700 hover:bg-black/[0.06] dark:text-zinc-200 dark:hover:bg-white/10"
-            aria-label="Clear all messages"
-            title="Clear all messages"
-            onClick={() => setClearChatOpen(true)}
+            aria-label="Clear chat"
+            title="Clear chat"
+            onClick={() => setPendingClear({ kind: "clear-chat" })}
           >
             <Trash2 className="h-5 w-5" aria-hidden />
           </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            disabled={!lastOwnMessageToEdit}
+            className="shrink-0 text-gray-700 hover:bg-black/[0.06] disabled:opacity-35 dark:text-zinc-200 dark:hover:bg-white/10"
+            aria-label="Edit last message"
+            title={lastOwnMessageToEdit ? "Edit your last message" : "No recent message to edit"}
+            onClick={() => lastOwnMessageToEdit && startEdit(lastOwnMessageToEdit)}
+          >
+            <Pencil className="h-5 w-5" aria-hidden />
+          </Button>
+          <DropdownMenu modal={false}>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="shrink-0 text-gray-700 hover:bg-black/[0.06] dark:text-zinc-200 dark:hover:bg-white/10"
+                aria-label="More options"
+              >
+                <MoreVertical className="h-5 w-5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuItem
+                onSelect={(e) => {
+                  e.preventDefault();
+                  setReportOpen(true);
+                }}
+              >
+                <Flag className="mr-2 h-4 w-4" />
+                Report / Scammer alert
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button
             type="button"
             variant="secondary"
@@ -1704,6 +1769,31 @@ export default function ChatRoomV2() {
                         <ContextMenuItem onSelect={() => openInfo(msg)}>Info</ContextMenuItem>
                         <ContextMenuSeparator />
                         <ContextMenuSub>
+                          <ContextMenuSubTrigger>
+                            <Eraser className="mr-2 h-4 w-4" />
+                            Clear chat
+                          </ContextMenuSubTrigger>
+                          <ContextMenuSubContent className="min-w-[12rem]">
+                            <ContextMenuItem
+                              onSelect={() => {
+                                setMenuMsg(null);
+                                setPendingClear({ kind: "clear-chat" });
+                              }}
+                            >
+                              Clear for me
+                            </ContextMenuItem>
+                            <ContextMenuItem
+                              onSelect={() => {
+                                setMenuMsg(null);
+                                setPendingClear({ kind: "clear-chat-both" });
+                              }}
+                            >
+                              Clear for both
+                            </ContextMenuItem>
+                          </ContextMenuSubContent>
+                        </ContextMenuSub>
+                        <ContextMenuSeparator />
+                        <ContextMenuSub>
                           <ContextMenuSubTrigger className="text-destructive focus:text-destructive data-[state=open]:text-destructive">
                             <Trash2 className="mr-2 h-4 w-4" />
                             Delete
@@ -1804,8 +1894,29 @@ export default function ChatRoomV2() {
           showEdit={!!(menuMine && canEditMessage(menuMsg, authUser?.id))}
           showDeleteForEveryone={!!(menuMine && canDeleteMessageForEveryone(menuMsg, authUser?.id))}
           myReaction={reactionByMessage[menuMsg.id]?.myEmoji ?? null}
+          onClearChatForMe={
+            conversation?.id
+              ? () => {
+                  setPendingClear({ kind: "clear-chat" });
+                }
+              : undefined
+          }
+          onClearChatForBoth={
+            conversation?.id
+              ? () => {
+                  setPendingClear({ kind: "clear-chat-both" });
+                }
+              : undefined
+          }
         />
       ) : null}
+
+      <ReportUserDialog
+        open={reportOpen}
+        onOpenChange={setReportOpen}
+        reporterId={authUser?.id}
+        reportedUserId={peerId}
+      />
 
       <MessageInfoDialog
         open={infoOpen}
@@ -1818,25 +1929,33 @@ export default function ChatRoomV2() {
         peerFirstName={peerFirstName}
       />
 
-      <AlertDialog open={clearChatOpen} onOpenChange={setClearChatOpen}>
+      <AlertDialog open={pendingClear != null} onOpenChange={(open) => !open && setPendingClear(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Clear all messages?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {pendingClear?.kind === "clear-chat-both" ? "Clear chat for both?" : "Clear chat?"}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              All messages in this chat will be hidden only for you. {peerFirstName} will still see the full history.
+              {pendingClear?.kind === "clear-chat-both"
+                ? `This removes all messages in this chat for you and ${peerFirstName}. This cannot be undone.`
+                : `All messages in this chat will be hidden only for you. ${peerFirstName} will still see the full history.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={clearBusy}>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-red-600 hover:bg-red-700"
               disabled={clearBusy}
+              className={
+                pendingClear?.kind === "clear-chat"
+                  ? "bg-amber-600 hover:bg-amber-700"
+                  : "bg-red-600 hover:bg-red-700"
+              }
               onClick={(e) => {
                 e.preventDefault();
-                void runClearChat();
+                void runClearConfirm();
               }}
             >
-              {clearBusy ? "…" : "Clear chat"}
+              {clearBusy ? "…" : "Continue"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

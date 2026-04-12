@@ -380,6 +380,8 @@ export default function ChatWorkspace() {
   const [peerResponseMs, setPeerResponseMs] = useState<number | null>(null);
   const [messages, setMessages] = useState<ChatMessageRow[]>([]);
   const [stripProduct, setStripProduct] = useState<StripProduct | null>(null);
+  /** True while fetching listing row for the header strip (`context_product_id` / `?product=`). */
+  const [listingStripLoading, setListingStripLoading] = useState(false);
   /** Mobile only: when true, listing strip is minimized to one row (tap to expand). */
   const [mobileProductStripCollapsed, setMobileProductStripCollapsed] = useState(false);
   const [messageProductsById, setMessageProductsById] = useState<Map<number, StripProduct>>(() => new Map());
@@ -437,12 +439,6 @@ export default function ChatWorkspace() {
     const n = parseInt(productParam, 10);
     return Number.isFinite(n) && n > 0 ? n : null;
   }, [productParam]);
-
-  useEffect(() => {
-    const urlParams = new URLSearchParams(location.search);
-    const productIdFromUrl = urlParams.get("product");
-    console.log("Product ID from URL:", productIdFromUrl);
-  }, [location.search]);
 
   const peerFirstName = useMemo(() => peerName.split(/\s+/)[0] || "Member", [peerName]);
 
@@ -859,37 +855,52 @@ export default function ChatWorkspace() {
     const pid = conversation?.context_product_id;
     if (!pid) {
       setStripProduct(null);
+      setListingStripLoading(false);
       return;
     }
     let cancelled = false;
+    setListingStripLoading(true);
     void (async () => {
-      const { data, error } = await supabase
-        .from("products")
-        .select("id, title, price, price_local, image, like_count, condition")
-        .eq("id", pid)
-        .maybeSingle();
-      if (cancelled) return;
-      if (error || !data) {
-        setStripProduct(null);
-        return;
+      try {
+        const { data, error } = await supabase
+          .from("products")
+          .select("id, title, price, price_local, image, like_count, condition")
+          .eq("id", pid)
+          .maybeSingle();
+        if (cancelled) return;
+        if (error || !data) {
+          setStripProduct(null);
+          return;
+        }
+        const row = data as Record<string, unknown>;
+        const lcRaw = row.like_count;
+        const likeCount =
+          typeof lcRaw === "number" && Number.isFinite(lcRaw) ? lcRaw : Number(lcRaw) || 0;
+        setStripProduct({
+          id: Number(row.id),
+          title: String(row.title ?? "Listing"),
+          price: getProductPrice(row as { price?: unknown; price_local?: unknown }),
+          image: typeof row.image === "string" ? row.image : null,
+          like_count: likeCount,
+          condition: typeof row.condition === "string" && row.condition.trim() ? row.condition.trim() : null,
+        });
+      } finally {
+        if (!cancelled) setListingStripLoading(false);
       }
-      const row = data as Record<string, unknown>;
-      const lcRaw = row.like_count;
-      const likeCount =
-        typeof lcRaw === "number" && Number.isFinite(lcRaw) ? lcRaw : Number(lcRaw) || 0;
-      setStripProduct({
-        id: Number(row.id),
-        title: String(row.title ?? "Listing"),
-        price: getProductPrice(row as { price?: unknown; price_local?: unknown }),
-        image: typeof row.image === "string" ? row.image : null,
-        like_count: likeCount,
-        condition: typeof row.condition === "string" && row.condition.trim() ? row.condition.trim() : null,
-      });
     })();
     return () => {
       cancelled = true;
+      setListingStripLoading(false);
     };
   }, [conversation?.context_product_id]);
+
+  useEffect(() => {
+    if (!conversation) return;
+    const urlParams = new URLSearchParams(location.search);
+    const productIdFromUrl = urlParams.get("product");
+    // eslint-disable-next-line no-console
+    console.log("Product ID from URL:", productIdFromUrl);
+  }, [conversation?.id, location.search]);
 
   useEffect(() => {
     setMobileProductStripCollapsed(false);
@@ -1752,15 +1763,29 @@ export default function ChatWorkspace() {
   }
 
   if (!conversation || !peerId) {
+    if (loadError) {
+      return (
+        <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3 px-4 text-center">
+          <p className="font-medium text-gray-800 dark:text-foreground">Chat could not be loaded.</p>
+          <p className="max-w-md text-sm text-muted-foreground">{loadError}</p>
+          <Button variant="outline" asChild>
+            <Link to="/messages">Back to messages</Link>
+          </Button>
+        </div>
+      );
+    }
     return (
-      <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3 px-4 text-center">
-        <p className="font-medium text-gray-800 dark:text-foreground">Chat could not be loaded.</p>
-        {loadError ? <p className="max-w-md text-sm text-muted-foreground">{loadError}</p> : null}
-        <Button variant="outline" asChild>
-          <Link to="/messages">Back to messages</Link>
-        </Button>
+      <div className="flex min-h-[50vh] flex-col items-center justify-center gap-2 px-4 text-center text-sm text-muted-foreground">
+        <Loader2 className="h-8 w-8 animate-spin text-emerald-600" />
+        Loading conversation…
       </div>
     );
+  }
+
+  const product = stripProduct;
+
+  if (!product && listingStripLoading) {
+    return <div className="p-4 text-center text-sm text-muted-foreground">Loading product details…</div>;
   }
 
   const shellHeight =
@@ -2211,7 +2236,7 @@ export default function ChatWorkspace() {
                 const sameNextCluster =
                   !!next && next.sender_id === msg.sender_id && withinMinutes(msg.created_at, next.created_at, 8);
                 const showMeta = !sameNextCluster;
-                const mine = msg.sender_id === authUser.id;
+                const mine = msg.sender_id === authUser?.id;
                 const t = new Date(msg.created_at);
                 const timeLabel = Number.isNaN(t.getTime())
                   ? ""
@@ -2563,7 +2588,7 @@ export default function ChatWorkspace() {
                 <button
                   type="button"
                   onClick={() => void sendProductCard()}
-                  disabled={!conversation.context_product_id && !stripProduct}
+                  disabled={!conversation?.context_product_id && !stripProduct}
                   className="shrink-0 rounded-full p-2 text-gray-600 hover:bg-gray-100 disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-zinc-800"
                   aria-label="Share listing"
                   title="Share product card"
@@ -2669,7 +2694,7 @@ export default function ChatWorkspace() {
                 <Copy className="mr-2 h-4 w-4" />
                 Copy
               </Button>
-              {mobileSheetMsg.sender_id === authUser.id ? (
+              {mobileSheetMsg.sender_id === authUser?.id ? (
                 <>
                   <Button
                     variant="outline"

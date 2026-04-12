@@ -6,6 +6,7 @@ import {
   Ban,
   Calendar,
   Check,
+  ChevronDown,
   Copy,
   Eraser,
   ImagePlus,
@@ -285,6 +286,7 @@ type StripProduct = {
   price: number;
   image: string | null;
   like_count: number;
+  condition: string | null;
 };
 
 type PendingConfirm =
@@ -362,6 +364,8 @@ export default function ChatWorkspace() {
   const [peerResponseMs, setPeerResponseMs] = useState<number | null>(null);
   const [messages, setMessages] = useState<ChatMessageRow[]>([]);
   const [stripProduct, setStripProduct] = useState<StripProduct | null>(null);
+  /** Mobile only: when true, listing strip is minimized to one row (tap to expand). */
+  const [mobileProductStripCollapsed, setMobileProductStripCollapsed] = useState(false);
   const [messageProductsById, setMessageProductsById] = useState<Map<number, StripProduct>>(() => new Map());
   const [contextClearBusy, setContextClearBusy] = useState(false);
   const [peerTyping, setPeerTyping] = useState(false);
@@ -394,6 +398,8 @@ export default function ChatWorkspace() {
   const threadMessagesRef = useRef<ChatMessageRow[]>([]);
   const draftTextareaRef = useRef<HTMLTextAreaElement>(null);
   const peerHeaderRef = useRef<HTMLElement | null>(null);
+  /** After opening chat from a listing (`?product=`), attach `product_id` to the first outbound message. */
+  const attachListingToFirstSendRef = useRef(false);
   /** Default taller than the old single-row header so mobile spacer does not overlap extra rows before measure. */
   const [peerHeaderHeight, setPeerHeaderHeight] = useState(168);
   const {
@@ -595,6 +601,8 @@ export default function ChatWorkspace() {
     peerLastActive,
     peerTyping,
     peerPresenceTick,
+    stripProduct,
+    mobileProductStripCollapsed,
   ]);
 
   /** Avoid tying shell height to visualViewport.height — it shrinks with the mobile keyboard and collapses the sticky chat header. */
@@ -634,6 +642,7 @@ export default function ChatWorkspace() {
     if (!authUser?.id) return;
     setLoading(true);
     setLoadError(null);
+    attachListingToFirstSendRef.current = false;
     try {
       let conv: ConversationRow | null = null;
       let peer: string | null = null;
@@ -651,6 +660,13 @@ export default function ChatWorkspace() {
         conv = data;
         peer = otherPartyUserId(conv, authUser.id);
         if (!peer) throw new Error("Not a participant");
+        if (validProductId) {
+          const current = parseConversationInt(conv.context_product_id);
+          if (current !== validProductId) {
+            const { error: uErr } = await setConversationContextProduct(supabase, conv.id, validProductId);
+            if (!uErr) conv = { ...conv, context_product_id: validProductId };
+          }
+        }
       } else {
         const peerFromUrl = peerRouteParam?.trim() || legacyThreadId?.trim() || "";
         if (!peerFromUrl || !isValidConversationUUID(peerFromUrl)) {
@@ -697,7 +713,11 @@ export default function ChatWorkspace() {
         }
         peer = peerFromUrl;
         if (conv && !threadIdParam && !legacyThreadId) {
-          navigate(`/messages/c/${conv.id}`, { replace: true });
+          const productQs =
+            validProductId != null && Number.isFinite(validProductId) && validProductId > 0
+              ? `?product=${validProductId}`
+              : "";
+          navigate(`/messages/c/${conv.id}${productQs}`, { replace: true });
         }
       }
 
@@ -780,6 +800,9 @@ export default function ChatWorkspace() {
       setReactionByMessage({});
       setReactionSheetMsg(null);
       setMessages(msgs);
+
+      attachListingToFirstSendRef.current =
+        validProductId != null && Number.isFinite(validProductId) && validProductId > 0;
     } catch (e: unknown) {
       console.error(e);
       const msg = e instanceof Error ? e.message : "Could not open chat";
@@ -820,7 +843,7 @@ export default function ChatWorkspace() {
     void (async () => {
       const { data, error } = await supabase
         .from("products")
-        .select("id, title, price, price_local, image, like_count")
+        .select("id, title, price, price_local, image, like_count, condition")
         .eq("id", pid)
         .maybeSingle();
       if (cancelled) return;
@@ -838,12 +861,17 @@ export default function ChatWorkspace() {
         price: getProductPrice(row as { price?: unknown; price_local?: unknown }),
         image: typeof row.image === "string" ? row.image : null,
         like_count: likeCount,
+        condition: typeof row.condition === "string" && row.condition.trim() ? row.condition.trim() : null,
       });
     })();
     return () => {
       cancelled = true;
     };
   }, [conversation?.context_product_id]);
+
+  useEffect(() => {
+    setMobileProductStripCollapsed(false);
+  }, [stripProduct?.id]);
 
   useEffect(() => {
     const ids = new Set<number>();
@@ -860,7 +888,7 @@ export default function ChatWorkspace() {
     void (async () => {
       const { data, error } = await supabase
         .from("products")
-        .select("id, title, price, price_local, image, like_count")
+        .select("id, title, price, price_local, image, like_count, condition")
         .in("id", list);
       if (cancelled) return;
       if (error || !data) return;
@@ -877,6 +905,7 @@ export default function ChatWorkspace() {
           price: getProductPrice(row as { price?: unknown; price_local?: unknown }),
           image: typeof row.image === "string" ? row.image : null,
           like_count: likeCount,
+          condition: typeof row.condition === "string" && row.condition.trim() ? row.condition.trim() : null,
         });
       }
       setMessageProductsById(next);
@@ -1193,11 +1222,24 @@ export default function ChatWorkspace() {
       const text = (opts?.text ?? draft).trim();
       const imageFile = opts?.imageFile;
       const voiceBlob = opts?.voiceBlob;
-      const productId = opts?.productId ?? null;
 
       if (!authUser?.id || !conversation) {
         toast.error("Chat is not ready.");
         return;
+      }
+
+      let productId = opts?.productId ?? null;
+      if (productId == null && attachListingToFirstSendRef.current) {
+        const ctx = conversation.context_product_id;
+        if (ctx != null) {
+          const n = parseConversationInt(ctx);
+          if (n != null && n > 0) {
+            productId = n;
+            attachListingToFirstSendRef.current = false;
+          }
+        }
+      } else if (productId != null) {
+        attachListingToFirstSendRef.current = false;
       }
       if (!text && !imageFile && !voiceBlob && productId == null) {
         toast.message("Type a message or attach media.");
@@ -1998,6 +2040,90 @@ export default function ChatWorkspace() {
               </div>
             ) : null}
           </div>
+
+          {stripProduct ? (
+            <div className="shrink-0 border-t border-emerald-200/80 bg-emerald-50/90 dark:border-emerald-800/60 dark:bg-emerald-950/40">
+              {mobileProductStripCollapsed ? (
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 px-3 py-2.5 text-left md:hidden sm:px-4"
+                  onClick={() => setMobileProductStripCollapsed(false)}
+                  aria-expanded={false}
+                  aria-controls="chat-product-strip-details"
+                >
+                  <ChevronDown className="h-4 w-4 shrink-0 -rotate-90 text-emerald-800 dark:text-emerald-300" aria-hidden />
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-900 dark:text-zinc-100">
+                    {stripProduct.title}
+                  </span>
+                  <span className="shrink-0 rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-medium text-gray-700 dark:bg-zinc-800 dark:text-zinc-300">
+                    {stripProduct.condition ?? "—"}
+                  </span>
+                </button>
+              ) : null}
+
+              <div
+                id="chat-product-strip-details"
+                className={cn(
+                  "relative flex items-start gap-3 px-3 py-2.5 sm:px-4",
+                  mobileProductStripCollapsed ? "hidden md:flex" : "flex",
+                )}
+              >
+                <button
+                  type="button"
+                  className="absolute right-14 top-2 z-10 rounded-full p-1.5 text-gray-600 hover:bg-white/80 dark:hover:bg-zinc-800 md:hidden"
+                  aria-label="Hide listing details"
+                  onClick={() => setMobileProductStripCollapsed(true)}
+                >
+                  <ChevronDown className="h-4 w-4 rotate-180" aria-hidden />
+                </button>
+                <a
+                  href={`/products/${stripProduct.id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="relative flex min-w-0 flex-1 gap-3 pr-10 no-underline md:pr-0"
+                >
+                  <span className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-gray-100 ring-1 ring-black/5 dark:bg-zinc-800">
+                    {stripProduct.image ? (
+                      <img src={stripProduct.image} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      <span className="flex h-full w-full items-center justify-center text-[10px] text-gray-400">
+                        No image
+                      </span>
+                    )}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="mb-0.5 flex flex-wrap items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-emerald-800 dark:text-emerald-300/90">
+                      <Package className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                      Discussing this listing
+                      {peerVerified ? <VerifiedBadge title="Verified seller" size="sm" /> : null}
+                    </span>
+                    <span className="line-clamp-2 text-sm font-semibold text-gray-900 hover:text-emerald-700 dark:text-foreground">
+                      {stripProduct.title}
+                    </span>
+                    <span className="mt-0.5 block text-sm font-bold text-emerald-600">{formatPrice(stripProduct.price)}</span>
+                    <span className="mt-1 block text-xs text-gray-700 dark:text-zinc-400">
+                      Condition:{" "}
+                      <span className="font-medium text-gray-900 dark:text-zinc-200">{stripProduct.condition ?? "—"}</span>
+                    </span>
+                    <span className="mt-0.5 block text-xs text-gray-600 dark:text-zinc-500">
+                      {peerResponseMs != null
+                        ? formatAvgResponseLabel(peerResponseMs)
+                        : "Typical reply: not enough chat history yet"}
+                    </span>
+                  </span>
+                </a>
+                <button
+                  type="button"
+                  onClick={() => void removeProductContext()}
+                  disabled={contextClearBusy}
+                  className="shrink-0 rounded-full p-2 text-gray-500 hover:bg-white/80 disabled:opacity-50 dark:hover:bg-zinc-800"
+                  aria-label="Remove listing from chat"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+          ) : null}
         </header>
         {/* Reserves space for fixed header on small screens (header is out of flow when fixed). */}
         <div
@@ -2005,39 +2131,6 @@ export default function ChatWorkspace() {
           style={{ minHeight: peerHeaderHeight, height: peerHeaderHeight }}
           aria-hidden
         />
-
-        {stripProduct ? (
-          <div className="relative z-20 flex shrink-0 items-center gap-3 border-b border-gray-200 bg-white/95 px-3 py-3 dark:border-zinc-700 dark:bg-zinc-900/90 sm:px-4">
-            <Link
-              to={`/products/${stripProduct.id}`}
-              className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-gray-100 ring-1 ring-black/5 dark:bg-zinc-800"
-            >
-              {stripProduct.image ? (
-                <img src={stripProduct.image} alt="" className="h-full w-full object-cover" />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center text-[10px] text-gray-400">No image</div>
-              )}
-            </Link>
-            <div className="min-w-0 flex-1">
-              <Link
-                to={`/products/${stripProduct.id}`}
-                className="line-clamp-2 text-sm font-semibold text-gray-900 hover:text-emerald-700 dark:text-foreground"
-              >
-                {stripProduct.title}
-              </Link>
-              <p className="mt-0.5 text-sm font-bold text-emerald-600">{formatPrice(stripProduct.price)}</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => void removeProductContext()}
-              disabled={contextClearBusy}
-              className="shrink-0 rounded-full p-2 text-gray-500 hover:bg-gray-100 disabled:opacity-50 dark:hover:bg-zinc-800"
-              aria-label="Remove listing from chat"
-            >
-              <X className="h-5 w-5" />
-            </button>
-          </div>
-        ) : null}
 
         <div className="relative z-10 flex min-h-0 flex-1 flex-col">
           {showJumpBottom ? (

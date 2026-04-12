@@ -4,13 +4,18 @@ import { ArrowLeft, Upload, X } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { supabase } from "../../../lib/supabase";
 import { categories, nigerianStates } from "../../data/catalogConstants";
+import {
+  INTERNATIONAL_SHIPPING_PRESETS,
+  parseInternationalShippingFees,
+  type InternationalShippingFeeRow,
+} from "../../data/internationalShippingPresets";
 import { CAR_BRAND_SELECT_OTHER, NIGERIA_CAR_BRAND_OPTIONS } from "../../data/carBrands";
 import { supabaseErrorMessage } from "../../utils/supabaseErrorMessage";
 import { MAX_PRODUCT_IMAGES, parseProductImagesFromRow } from "../../utils/productImages";
 
 const STORAGE_BUCKET = "products";
 
-const PRODUCT_CONDITIONS = ["New", "Like New", "Good Fair"] as const;
+const PRODUCT_CONDITIONS = ["New", "Like New", "Good", "Fair"] as const;
 
 export default function AddProduct() {
   const navigate = useNavigate();
@@ -32,6 +37,8 @@ export default function AddProduct() {
   const [location, setLocation] = useState("");
   const [carBrandSelect, setCarBrandSelect] = useState<string>(NIGERIA_CAR_BRAND_OPTIONS[0]?.value ?? "");
   const [carBrandOther, setCarBrandOther] = useState("");
+  /** Keys = preset ids (usa, uk, …); values = fee + ETA for international shipping. */
+  const [intlShippingById, setIntlShippingById] = useState<Record<string, InternationalShippingFeeRow>>({});
 
   useEffect(() => {
     if (authLoading) return;
@@ -64,9 +71,13 @@ export default function AddProduct() {
       setDescription(data.description ?? "");
       setCategory(typeof data.category === "string" ? data.category : "");
       const cond = typeof data.condition === "string" ? data.condition : "";
-      setCondition(
-        PRODUCT_CONDITIONS.includes(cond as (typeof PRODUCT_CONDITIONS)[number]) ? cond : PRODUCT_CONDITIONS[0],
-      );
+      const normalizedCond =
+        cond === "Good Fair"
+          ? "Good"
+          : PRODUCT_CONDITIONS.includes(cond as (typeof PRODUCT_CONDITIONS)[number])
+            ? cond
+            : PRODUCT_CONDITIONS[0];
+      setCondition(normalizedCond);
       setLocation(typeof data.location === "string" ? data.location : "");
       const existingBrand = typeof data.car_brand === "string" ? data.car_brand.trim() : "";
       const presetValues = new Set(NIGERIA_CAR_BRAND_OPTIONS.map((o) => o.value));
@@ -90,6 +101,24 @@ export default function AddProduct() {
             : null;
       setPrice(n != null ? String(n) : "");
       setExistingImageUrls(parseProductImagesFromRow(data as { image?: unknown; images?: unknown }));
+
+      const feeMap = parseInternationalShippingFees(
+        (data as { international_shipping_fees?: unknown }).international_shipping_fees,
+      );
+      const dest = (data as { shipping_destinations?: unknown }).shipping_destinations;
+      const nextIntl: Record<string, InternationalShippingFeeRow> = {};
+      if (Array.isArray(dest)) {
+        for (const raw of dest) {
+          if (typeof raw !== "string") continue;
+          const preset = INTERNATIONAL_SHIPPING_PRESETS.find((p) => p.id === raw);
+          const row = feeMap[raw];
+          nextIntl[raw] = {
+            fee: row?.fee ?? preset?.defaultFee ?? 0,
+            duration: row?.duration ?? preset?.defaultDuration ?? "7-14 days",
+          };
+        }
+      }
+      setIntlShippingById(nextIntl);
     })();
 
     return () => {
@@ -124,6 +153,37 @@ export default function AddProduct() {
 
   const removeExistingUrl = (index: number) => {
     setExistingImageUrls((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const toggleIntlPreset = (presetId: string) => {
+    setIntlShippingById((prev) => {
+      const next = { ...prev };
+      if (next[presetId]) {
+        delete next[presetId];
+      } else {
+        const preset = INTERNATIONAL_SHIPPING_PRESETS.find((p) => p.id === presetId);
+        next[presetId] = {
+          fee: preset?.defaultFee ?? 0,
+          duration: preset?.defaultDuration ?? "7-14 days",
+        };
+      }
+      return next;
+    });
+  };
+
+  const updateIntlField = (presetId: string, field: "fee" | "duration", raw: string) => {
+    setIntlShippingById((prev) => {
+      const cur = prev[presetId];
+      if (!cur) return prev;
+      if (field === "fee") {
+        const n = Number.parseFloat(raw.replace(/,/g, ""));
+        return {
+          ...prev,
+          [presetId]: { ...cur, fee: Number.isFinite(n) ? Math.max(0, n) : 0 },
+        };
+      }
+      return { ...prev, [presetId]: { ...cur, duration: raw } };
+    });
   };
 
   const uploadNewImages = async (): Promise<string[]> => {
@@ -217,6 +277,10 @@ export default function AddProduct() {
     setIsSaving(true);
 
     try {
+      const intlKeys = Object.keys(intlShippingById);
+      const shippingDestPayload = intlKeys.length ? intlKeys : null;
+      const intlFeesPayload = intlKeys.length ? intlShippingById : null;
+
       const uploadedUrls = await uploadNewImages();
       const imageUrls = [...existingImageUrls, ...uploadedUrls].slice(0, MAX_PRODUCT_IMAGES);
       const mainImage = imageUrls[0];
@@ -236,6 +300,8 @@ export default function AddProduct() {
           condition,
           location: location.trim(),
           car_brand: carBrandValue,
+          shipping_destinations: shippingDestPayload,
+          international_shipping_fees: intlFeesPayload,
           updated_at: new Date().toISOString(),
         };
 
@@ -263,6 +329,8 @@ export default function AddProduct() {
         condition,
         location: location.trim(),
         car_brand: carBrandValue,
+        shipping_destinations: shippingDestPayload,
+        international_shipping_fees: intlFeesPayload,
         status: "active" as const,
         created_at: new Date().toISOString(),
       };
@@ -509,6 +577,74 @@ export default function AddProduct() {
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#22c55e]"
             placeholder="0"
           />
+        </div>
+
+        <div className="bg-white rounded-lg p-4 space-y-4">
+          <div>
+            <h2 className="font-semibold text-gray-800 mb-1">Delivery &amp; shipping</h2>
+            <p className="text-xs text-gray-500 mb-3">
+              International quick-select (common routes from Nigeria). Set fee and estimated delivery time per destination.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {INTERNATIONAL_SHIPPING_PRESETS.map((p) => {
+                const on = Boolean(intlShippingById[p.id]);
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => toggleIntlPreset(p.id)}
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${
+                      on
+                        ? "border-[#22c55e] bg-[#f0fdf4] text-[#15803d]"
+                        : "border-gray-200 bg-gray-50 text-gray-700 hover:border-[#22c55e]/50"
+                    }`}
+                  >
+                    <span aria-hidden>{p.flag}</span>
+                    <span>{p.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          {Object.keys(intlShippingById).length > 0 ? (
+            <ul className="space-y-3 divide-y divide-gray-100 rounded-lg border border-gray-200 bg-gray-50/80 p-3">
+              {Object.entries(intlShippingById).map(([id, row]) => {
+                const preset = INTERNATIONAL_SHIPPING_PRESETS.find((x) => x.id === id);
+                const label = preset ? `${preset.flag} ${preset.label} (${preset.hint})` : id;
+                return (
+                  <li key={id} className="pt-3 first:pt-0 space-y-2">
+                    <p className="text-sm font-medium text-gray-900">{label}</p>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Shipping fee (₦)</label>
+                        <input
+                          type="number"
+                          min={0}
+                          step={100}
+                          value={row.fee}
+                          onChange={(e) => updateIntlField(id, "fee", e.target.value)}
+                          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#22c55e]"
+                          placeholder="0"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Est. delivery time</label>
+                        <input
+                          type="text"
+                          value={row.duration}
+                          onChange={(e) => updateIntlField(id, "duration", e.target.value)}
+                          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#22c55e]"
+                          placeholder="7-14 days"
+                        />
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="text-xs text-gray-500">No international routes selected — buyers only see local / other options you add elsewhere.</p>
+          )}
         </div>
 
         <div className="pt-2">

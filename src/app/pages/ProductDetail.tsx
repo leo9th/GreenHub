@@ -41,6 +41,8 @@ import {
   type ProductReviewDisplay,
 } from "../utils/reviews";
 import { formatGreenHubMonthYear, formatGreenHubRelative } from "../utils/formatGreenHubTime";
+import { cn } from "../components/ui/utils";
+import { buildInternationalDeliveryOptions } from "../data/internationalShippingPresets";
 
 type ParsedDeliveryOption = { name: string; fee: number; duration: string };
 
@@ -276,6 +278,8 @@ export default function ProductDetail() {
   const { addToCart } = useCart();
   const { user: authUser } = useAuth();
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  /** Mobile-only: reduces scroll by showing one section at a time. Desktop shows full stack. */
+  const [mobileDetailTab, setMobileDetailTab] = useState<"details" | "seller" | "reviews" | "about">("details");
   const galleryTouchStartX = useRef<number | null>(null);
   const [sellerProfile, setSellerProfile] = useState<SellerProfileRow | null>(null);
   const [sellerReviewAvg, setSellerReviewAvg] = useState(0);
@@ -813,6 +817,10 @@ export default function ProductDetail() {
       tier: sellerTierRaw || "standard",
     },
     deliveryOptions: parseDeliveryOptionsFromDb(foundProduct.deliveryOptions ?? foundProduct.delivery_options),
+    intlDeliveryOptions: buildInternationalDeliveryOptions(
+      (foundProduct as { shipping_destinations?: unknown }).shipping_destinations,
+      (foundProduct as { international_shipping_fees?: unknown }).international_shipping_fees,
+    ),
   };
 
   const handlePrevImage = () => {
@@ -1009,7 +1017,44 @@ export default function ProductDetail() {
           </div>
 
           <div className="space-y-4 pt-6 md:col-span-7 md:pt-0 lg:col-span-7">
-            <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200/80 sm:p-5">
+            <div
+              className="md:hidden -mx-1 mb-2 flex gap-1 overflow-x-auto pb-1 px-1 [-webkit-overflow-scrolling:touch]"
+              role="tablist"
+              aria-label="Listing sections"
+            >
+              {(
+                [
+                  ["details", "Details"],
+                  ["seller", "Seller"],
+                  ["reviews", "Reviews"],
+                  ["about", "About"],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  role="tab"
+                  aria-selected={mobileDetailTab === id}
+                  onClick={() => setMobileDetailTab(id)}
+                  className={cn(
+                    "shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors",
+                    mobileDetailTab === id
+                      ? "bg-[#15803d] text-white shadow-sm"
+                      : "bg-gray-100 text-gray-700 hover:bg-gray-200",
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div
+              className={cn(
+                "rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200/80 sm:p-5",
+                mobileDetailTab === "details" ? "block" : "hidden md:block",
+              )}
+            >
+              <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2 md:mb-1">Listing</h2>
               <h1 className="text-xl md:text-2xl font-semibold text-gray-900 leading-snug tracking-tight">
                 {product.title}
               </h1>
@@ -1060,7 +1105,13 @@ export default function ProductDetail() {
               </div>
             </div>
 
-            <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200/80 sm:p-5">
+            <section
+              className={cn(
+                "rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200/80 sm:p-5",
+                mobileDetailTab === "seller" ? "block" : "hidden md:block",
+              )}
+            >
+              <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3">Seller</h2>
               <div className="flex items-start gap-3">
                 <img
                   src={product.seller.avatar}
@@ -1185,7 +1236,12 @@ export default function ProductDetail() {
               </div>
             </section>
 
-            <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200/80 sm:p-5">
+            <section
+              className={cn(
+                "rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200/80 sm:p-5",
+                mobileDetailTab === "reviews" ? "block" : "hidden md:block",
+              )}
+            >
               <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Product reviews</h2>
                 {authUser &&
@@ -1236,7 +1292,12 @@ export default function ProductDetail() {
               )}
             </section>
 
-            <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200/80 sm:p-5">
+            <section
+              className={cn(
+                "rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200/80 sm:p-5",
+                mobileDetailTab === "reviews" ? "block" : "hidden md:block",
+              )}
+            >
               <div className="flex items-center justify-between gap-2 mb-3">
                 <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Buyer reviews</h2>
                 {sellerPeerId && sellerReviewCount > 0 ? (
@@ -1275,7 +1336,12 @@ export default function ProductDetail() {
               )}
             </section>
 
-            <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200/80 sm:p-5">
+            <section
+              className={cn(
+                "rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200/80 sm:p-5",
+                mobileDetailTab === "about" ? "block" : "hidden md:block",
+              )}
+            >
               <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">Description</h2>
               {product.description ? (
                 <>
@@ -1290,30 +1356,71 @@ export default function ProductDetail() {
               )}
             </section>
 
-            <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200/80 sm:p-5">
+            <section
+              className={cn(
+                "rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200/80 sm:p-5",
+                mobileDetailTab === "about" ? "block" : "hidden md:block",
+              )}
+            >
               <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3">Delivery options</h2>
-              {product.deliveryOptions.length === 0 ? (
+              {product.deliveryOptions.length === 0 && product.intlDeliveryOptions.length === 0 ? (
                 <p className="text-sm text-gray-500">No delivery options listed for this item.</p>
               ) : (
-                <ul className="space-y-0 divide-y divide-gray-100">
-                  {product.deliveryOptions.map((option, index) => (
-                    <li key={index} className="flex items-center justify-between gap-4 text-sm py-3 first:pt-0">
-                      <div>
-                        <p className="font-medium text-gray-900">{option.name}</p>
-                        {option.duration ? (
-                          <p className="text-gray-500 text-xs mt-0.5">{option.duration}</p>
-                        ) : null}
-                      </div>
-                      <p className="font-semibold text-gray-900 tabular-nums shrink-0">
-                        {option.fee === 0 ? "Free" : formatPrice(option.fee)}
-                      </p>
-                    </li>
-                  ))}
-                </ul>
+                <>
+                  {product.deliveryOptions.length > 0 ? (
+                    <ul className="space-y-0 divide-y divide-gray-100">
+                      {product.deliveryOptions.map((option, index) => (
+                        <li key={`loc-${index}`} className="flex items-center justify-between gap-4 text-sm py-3 first:pt-0">
+                          <div>
+                            <p className="font-medium text-gray-900">{option.name}</p>
+                            {option.duration ? (
+                              <p className="text-gray-500 text-xs mt-0.5">{option.duration}</p>
+                            ) : null}
+                          </div>
+                          <p className="font-semibold text-gray-900 tabular-nums shrink-0">
+                            {option.fee === 0 ? "Free" : formatPrice(option.fee)}
+                          </p>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {product.intlDeliveryOptions.length > 0 ? (
+                    <>
+                      {product.deliveryOptions.length > 0 ? (
+                        <p className="mt-4 mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                          International shipping
+                        </p>
+                      ) : null}
+                      <ul className="space-y-0 divide-y divide-gray-100">
+                        {product.intlDeliveryOptions.map((option, index) => (
+                          <li
+                            key={`intl-${index}`}
+                            className="flex items-center justify-between gap-4 text-sm py-3 first:pt-0"
+                          >
+                            <div>
+                              <p className="font-medium text-gray-900">{option.name}</p>
+                              {option.duration ? (
+                                <p className="text-gray-500 text-xs mt-0.5">{option.duration}</p>
+                              ) : null}
+                            </div>
+                            <p className="font-semibold text-gray-900 tabular-nums shrink-0">
+                              {option.fee === 0 ? "Free" : formatPrice(option.fee)}
+                            </p>
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  ) : null}
+                </>
               )}
             </section>
 
-            <section className="rounded-2xl bg-amber-50/90 px-4 py-4 text-sm text-gray-800 ring-1 ring-amber-100/80">
+            <section
+              className={cn(
+                "rounded-2xl bg-amber-50/90 px-4 py-4 text-sm text-gray-800 ring-1 ring-amber-100/80",
+                mobileDetailTab === "about" ? "block" : "hidden md:block",
+              )}
+            >
               <p className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
                 <Shield className="w-4 h-4 text-amber-700 shrink-0" aria-hidden />
                 Safety tips

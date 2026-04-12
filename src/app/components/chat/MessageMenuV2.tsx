@@ -1,5 +1,16 @@
 import type { LucideIcon } from "lucide-react";
-import { Copy, Edit3, Forward, Reply, Trash2, X } from "lucide-react";
+import {
+  Copy,
+  Edit3,
+  Eraser,
+  Forward,
+  Info,
+  Pin,
+  Reply,
+  Star,
+  Trash2,
+  X,
+} from "lucide-react";
 import { Button } from "../ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "../ui/sheet";
 import { cn } from "../ui/utils";
@@ -9,19 +20,26 @@ export const MESSAGE_QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢"
 export type MessageMenuV2Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Non-empty when the user has a text selection (for partial copy). */
+  /** Text selection for partial copy */
   selectedText: string;
+  /** When false, only Reply, Copy, Forward, Star, Info (+ reactions). */
+  isMine: boolean;
   onReply: () => void;
-  onForward: () => void;
-  onCopyFull: () => void;
+  onCopy: () => void;
   onCopySelected: () => void;
-  onEdit?: () => void;
-  onDeleteForMe: () => void;
-  onDeleteForEveryone?: () => void;
+  onForward: () => void;
+  onToggleStar: () => void;
+  isStarred: boolean;
+  onInfo: () => void;
   onReact: (emoji: string) => void;
-  showEdit: boolean;
-  showDeleteForEveryone: boolean;
   myReaction: string | null;
+  onEdit?: () => void;
+  onPin?: () => void;
+  onDeleteForMe?: () => void;
+  onDeleteForEveryone?: () => void;
+  showDeleteForEveryone: boolean;
+  onClearConversation?: () => void;
+  showEdit: boolean;
 };
 
 function MenuRow({
@@ -41,9 +59,7 @@ function MenuRow({
     <button
       type="button"
       disabled={disabled}
-      onClick={() => {
-        onClick();
-      }}
+      onClick={() => onClick()}
       className={cn(
         "flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-medium transition",
         destructive
@@ -59,30 +75,35 @@ function MenuRow({
 }
 
 /**
- * WhatsApp-style action sheet for a message (long-press / mobile).
- * Desktop can reuse the same actions via a context menu with identical handlers.
+ * WhatsApp-style action sheet (long-press on mobile). Desktop uses the same handlers via `ContextMenu`.
  */
 export function MessageMenuV2({
   open,
   onOpenChange,
   selectedText,
+  isMine,
   onReply,
-  onForward,
-  onCopyFull,
+  onCopy,
   onCopySelected,
+  onForward,
+  onToggleStar,
+  isStarred,
+  onInfo,
+  onReact,
+  myReaction,
   onEdit,
+  onPin,
   onDeleteForMe,
   onDeleteForEveryone,
-  onReact,
-  showEdit,
   showDeleteForEveryone,
-  myReaction,
+  onClearConversation,
+  showEdit,
 }: MessageMenuV2Props) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="bottom"
-        className="max-h-[min(85vh,540px)] rounded-t-2xl border-t border-gray-200 bg-white p-0 dark:border-zinc-700 dark:bg-zinc-900"
+        className="max-h-[min(88vh,620px)] rounded-t-2xl border-t border-gray-200 bg-white p-0 dark:border-zinc-700 dark:bg-zinc-900"
       >
         <SheetHeader className="border-b border-gray-100 px-4 pb-2 pt-2 dark:border-zinc-800">
           <div className="flex items-center justify-between gap-2">
@@ -117,24 +138,41 @@ export function MessageMenuV2({
           </div>
 
           <MenuRow icon={Reply} label="Reply" onClick={onReply} />
-          <MenuRow icon={Forward} label="Forward" onClick={onForward} />
-          <MenuRow icon={Copy} label="Copy text" onClick={onCopyFull} />
+          <MenuRow icon={Copy} label="Copy" onClick={onCopy} />
           <MenuRow
             icon={Copy}
             label="Copy selected text"
             onClick={onCopySelected}
             disabled={!selectedText.trim()}
           />
+          <MenuRow icon={Forward} label="Forward" onClick={onForward} />
+          <MenuRow
+            icon={Star}
+            label={isStarred ? "Unstar message" : "Star message"}
+            onClick={onToggleStar}
+          />
 
-          {showEdit && onEdit ? <MenuRow icon={Edit3} label="Edit" onClick={onEdit} /> : null}
+          {isMine && showEdit && onEdit ? <MenuRow icon={Edit3} label="Edit" onClick={onEdit} /> : null}
+          {isMine && onPin ? <MenuRow icon={Pin} label="Pin" onClick={onPin} /> : null}
+          <MenuRow icon={Info} label="Info" onClick={onInfo} />
 
-          <div className="my-2 border-t border-gray-100 dark:border-zinc-800" />
-          <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-zinc-500">
-            Delete
-          </p>
-          <MenuRow icon={Trash2} label="Delete for me" onClick={onDeleteForMe} destructive />
-          {showDeleteForEveryone && onDeleteForEveryone ? (
-            <MenuRow icon={Trash2} label="Delete for everyone" onClick={onDeleteForEveryone} destructive />
+          {isMine ? (
+            <>
+              <div className="my-2 border-t border-gray-100 dark:border-zinc-800" />
+              <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-zinc-500">
+                Delete
+              </p>
+              {onDeleteForMe ? <MenuRow icon={Trash2} label="Delete for me" onClick={onDeleteForMe} destructive /> : null}
+              {showDeleteForEveryone && onDeleteForEveryone ? (
+                <MenuRow icon={Trash2} label="Delete for everyone" onClick={onDeleteForEveryone} destructive />
+              ) : null}
+              {onClearConversation ? (
+                <>
+                  <div className="my-2 border-t border-gray-100 dark:border-zinc-800" />
+                  <MenuRow icon={Eraser} label="Clear all messages" onClick={onClearConversation} destructive />
+                </>
+              ) : null}
+            </>
           ) : null}
         </div>
       </SheetContent>

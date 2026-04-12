@@ -13,11 +13,13 @@ import {
   Mic,
   MoreVertical,
   Package,
+  Pin,
   Reply,
   Search,
   Send,
   Share2,
   Smile,
+  Star,
   Trash2,
   User,
   UserCheck,
@@ -41,14 +43,30 @@ import {
   type ConversationRow,
 } from "../../utils/chatConversations";
 import {
+  clearConversationMessages,
+  fetchPinnedMessage,
+  fetchSavedMessageIds,
+  toggleSavedMessage,
+  unpinConversation,
+  upsertPinnedMessage,
+  type PinnedMessageRow,
+} from "../../utils/chatMessageExtras";
+import {
   CHAT_MESSAGE_BASE_COLUMNS,
+  CHAT_MESSAGE_DELETED_PLACEHOLDER,
+  canDeleteMessageForEveryone,
+  canEditMessage,
   fetchChatMessagesForConversation,
+  fetchMessageReactions,
+  isDeletedForEveryone,
+  isMessageHiddenForViewer,
   markConversationMessagesDelivered,
   markConversationMessagesRead,
   normalizeChatMessageRow,
   outgoingReceiptPhase,
+  removeOwnMessageReaction,
   resolveChatMessageReplyPreviews,
-  fetchMessageReactions,
+  setMessageReaction,
   type ChatMessageRow,
   type MessageReactionsState,
 } from "../../utils/chatMessages";
@@ -66,6 +84,7 @@ import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuSeparator,
   ContextMenuTrigger,
 } from "../ui/context-menu";
 import {
@@ -76,12 +95,20 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "../ui/sheet";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import { Button } from "../ui/button";
 import { cn } from "../ui/utils";
-import { MessageBubble } from "./MessageBubble";
 import { ChatPortraitProductCard } from "./ChatPortraitProductCard";
+import { MessageInfoDialog } from "./MessageInfoDialog";
+import { MessageBubble } from "./MessageBubble";
+import { MessageMenuV2, MESSAGE_QUICK_REACTIONS } from "./MessageMenuV2";
 
 const CHAT_MEDIA_BUCKETS = ["chat-media", "chat-images", "chat-attachments"] as const;
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
@@ -221,11 +248,7 @@ type StripProduct = {
   condition: string | null;
 };
 
-type PendingConfirm =
-  | { kind: "delete-message"; message: ChatMessageRow }
-  | { kind: "delete-conversation" }
-  | { kind: "clear-chat" }
-  | null;
+type PendingConfirm = { kind: "delete-conversation" } | { kind: "clear-chat" } | null;
 
 async function uploadChatMedia(path: string, file: File, contentType?: string): Promise<string> {
   let lastErr: Error | null = null;
@@ -269,6 +292,16 @@ export default function ChatWorkspace() {
   const [threadSearch, setThreadSearch] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [mobileSheetMsg, setMobileSheetMsg] = useState<ChatMessageRow | null>(null);
+  const [menuSelectedText, setMenuSelectedText] = useState("");
+  const [savedMessageIds, setSavedMessageIds] = useState<Set<string>>(() => new Set());
+  const [pinnedRow, setPinnedRow] = useState<PinnedMessageRow | null>(null);
+  const [infoMsg, setInfoMsg] = useState<ChatMessageRow | null>(null);
+  const [infoOpen, setInfoOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editText, setEditText] = useState("");
+  const [editTarget, setEditTarget] = useState<ChatMessageRow | null>(null);
+  const [forwardOpen, setForwardOpen] = useState(false);
+  const [forwardTarget, setForwardTarget] = useState<ChatMessageRow | null>(null);
 
   const atBottomRef = useRef(true);
   const [showJumpBottom, setShowJumpBottom] = useState(false);
@@ -427,6 +460,64 @@ export default function ChatWorkspace() {
   useEffect(() => {
     void refreshReactions();
   }, [messageIdsKey, refreshReactions]);
+
+  useEffect(() => {
+    if (!authUser?.id) {
+      setSavedMessageIds(new Set());
+      return;
+    }
+    const ids = messages.map((m) => m.id).filter((id) => !String(id).startsWith("pending-"));
+    if (ids.length === 0) {
+      setSavedMessageIds(new Set());
+      return;
+    }
+    let cancelled = false;
+    void fetchSavedMessageIds(supabase, authUser.id, ids).then(({ ids: s, error }) => {
+      if (cancelled || error) return;
+      setSavedMessageIds(s);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [authUser?.id, messageIdsKey]);
+
+  useEffect(() => {
+    if (!conversation?.id) {
+      setPinnedRow(null);
+      return;
+    }
+    const cid = conversation.id;
+    const load = () => {
+      void fetchPinnedMessage(supabase, cid).then(({ data, error }) => {
+        if (!error) setPinnedRow(data);
+      });
+    };
+    load();
+    const ch = supabase
+      .channel(`pinned-msg-ws:${cid}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "pinned_messages",
+          filter: `conversation_id=eq.${cid}`,
+        },
+        () => load(),
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(ch);
+    };
+  }, [conversation?.id]);
+
+  useEffect(() => {
+    const onSel = () => {
+      setMenuSelectedText((document.getSelection()?.toString() ?? "").trim());
+    };
+    document.addEventListener("selectionchange", onSel);
+    return () => document.removeEventListener("selectionchange", onSel);
+  }, []);
 
   useEffect(() => {
     const mq = window.matchMedia("(min-width: 768px)");
@@ -1340,9 +1431,9 @@ export default function ChatWorkspace() {
     [sendMessage],
   );
 
-  const copyText = useCallback(async (msg: ChatMessageRow) => {
+  const copyText = useCallback(async (msg: ChatMessageRow, slice?: string) => {
     try {
-      await navigator.clipboard.writeText(msg.message || "");
+      await navigator.clipboard.writeText(slice ?? (msg.message || ""));
       toast.success("Copied");
       setMobileSheetMsg(null);
     } catch {
@@ -1379,30 +1470,46 @@ export default function ChatWorkspace() {
     }
   }, [authUser?.id, peerId, isFollowingPeer]);
 
-  const forwardSingleMessage = useCallback(async (msg: ChatMessageRow) => {
-    const parts = [msg.message?.trim() ?? "", msg.image_url ? "[Image]" : "", msg.media_url ? "[Voice]" : ""].filter(
-      Boolean,
-    );
-    const text = parts.join("\n");
-    if (!text.trim()) {
-      toast.message("Nothing to forward");
-      return;
-    }
-    try {
-      if (typeof navigator.share === "function") {
-        await navigator.share({ text });
-      } else {
-        await navigator.clipboard.writeText(text);
-        toast.success("Copied for forwarding");
-      }
-    } catch {
-      /* user cancelled share */
-    }
+  const openForwardPicker = useCallback((msg: ChatMessageRow) => {
     setMobileSheetMsg(null);
+    setForwardTarget(msg);
+    setForwardOpen(true);
   }, []);
+
+  const forwardToConversation = useCallback(
+    async (targetConversationId: string) => {
+      if (!authUser?.id || !forwardTarget) return;
+      const msg = forwardTarget;
+      const parts = [msg.message?.trim() ?? "", msg.image_url ? "[Image]" : "", msg.media_url ? "[Voice]" : ""].filter(
+        Boolean,
+      );
+      const text = parts.join("\n");
+      if (!text.trim() && !msg.image_url && !msg.media_url) {
+        toast.message("Nothing to forward");
+        return;
+      }
+      const { error } = await supabase.from("chat_messages").insert({
+        conversation_id: targetConversationId,
+        sender_id: authUser.id,
+        message: text || (msg.image_url ? "Photo" : msg.media_url ? "Voice" : ""),
+        image_url: msg.image_url ?? null,
+        media_url: msg.media_url ?? null,
+        product_id: msg.product_id ?? null,
+      });
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+      setForwardOpen(false);
+      setForwardTarget(null);
+      toast.success("Forwarded");
+    },
+    [authUser?.id, forwardTarget],
+  );
 
   const openMessageActions = useCallback((msg: ChatMessageRow) => {
     if (String(msg.id).startsWith("pending-")) return;
+    setMenuSelectedText((document.getSelection()?.toString() ?? "").trim());
     setMobileSheetMsg(msg);
   }, []);
 
@@ -1428,23 +1535,178 @@ export default function ChatWorkspace() {
     });
   }, []);
 
-  const deleteMessage = useCallback((msg: ChatMessageRow) => {
+  const deleteForMe = useCallback(
+    async (msg: ChatMessageRow) => {
+      if (!authUser?.id) return;
+      setMobileSheetMsg(null);
+      const prev = msg.deleted_for ?? [];
+      if (prev.includes(authUser.id)) return;
+      const { error } = await supabase
+        .from("chat_messages")
+        .update({ deleted_for: [...prev, authUser.id] })
+        .eq("id", msg.id);
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+      setMessages((m) =>
+        m.map((row) => (row.id === msg.id ? { ...row, deleted_for: [...prev, authUser.id] } : row)),
+      );
+      toast.success("Removed from this chat");
+    },
+    [authUser?.id],
+  );
+
+  const deleteForEveryone = useCallback(
+    async (msg: ChatMessageRow) => {
+      if (!authUser?.id || !canDeleteMessageForEveryone(msg, authUser.id)) return;
+      setMobileSheetMsg(null);
+      const { error } = await supabase
+        .from("chat_messages")
+        .update({
+          deleted_for_everyone: true,
+          message: CHAT_MESSAGE_DELETED_PLACEHOLDER,
+          image_url: null,
+          media_url: null,
+          product_id: null,
+        })
+        .eq("id", msg.id);
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+      toast.success("Deleted for everyone");
+    },
+    [authUser?.id],
+  );
+
+  const startEdit = useCallback((msg: ChatMessageRow) => {
+    if (!canEditMessage(msg, authUser?.id)) return;
     setMobileSheetMsg(null);
-    setPendingConfirm({ kind: "delete-message", message: msg });
+    setEditTarget(msg);
+    setEditText(msg.message || "");
+    setEditOpen(true);
+  }, [authUser?.id]);
+
+  const saveEdit = useCallback(async () => {
+    if (!authUser?.id || !editTarget) return;
+    const text = editText.trim();
+    if (!text) {
+      toast.error("Message cannot be empty.");
+      return;
+    }
+    const { error } = await supabase
+      .from("chat_messages")
+      .update({
+        message: text,
+        edited: true,
+        edited_at: new Date().toISOString(),
+      })
+      .eq("id", editTarget.id);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    setEditOpen(false);
+    setEditTarget(null);
+    toast.success("Message updated");
+  }, [authUser?.id, editTarget, editText]);
+
+  const toggleStarMsg = useCallback(
+    async (msg: ChatMessageRow) => {
+      if (!authUser?.id) return;
+      const starred = savedMessageIds.has(msg.id);
+      const { error } = await toggleSavedMessage(supabase, {
+        userId: authUser.id,
+        messageId: msg.id,
+        currentlyStarred: starred,
+      });
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+      setSavedMessageIds((prev) => {
+        const n = new Set(prev);
+        if (starred) n.delete(msg.id);
+        else n.add(msg.id);
+        return n;
+      });
+      setMobileSheetMsg(null);
+      toast.message(starred ? "Removed from saved" : "Saved");
+    },
+    [authUser?.id, savedMessageIds],
+  );
+
+  const pinMsg = useCallback(
+    async (msg: ChatMessageRow) => {
+      if (!authUser?.id || !conversation?.id) return;
+      setMobileSheetMsg(null);
+      const { error } = await upsertPinnedMessage(supabase, {
+        conversationId: conversation.id,
+        messageId: msg.id,
+        pinnedBy: authUser.id,
+      });
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+      void fetchPinnedMessage(supabase, conversation.id).then(({ data, error: e }) => {
+        if (!e && data) setPinnedRow(data);
+      });
+      toast.success("Pinned");
+    },
+    [authUser?.id, conversation?.id],
+  );
+
+  const openInfo = useCallback((msg: ChatMessageRow) => {
+    setMobileSheetMsg(null);
+    setInfoMsg(msg);
+    setInfoOpen(true);
   }, []);
+
+  const unpinBanner = useCallback(async () => {
+    if (!conversation?.id) return;
+    const { error } = await unpinConversation(supabase, conversation.id);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    setPinnedRow(null);
+    toast.message("Unpinned");
+  }, [conversation?.id]);
+
+  const onReactFromMenu = useCallback(
+    async (emoji: string, msg: ChatMessageRow) => {
+      if (!conversation?.id || !authUser?.id) return;
+      const mid = msg.id;
+      const cur = reactionByMessage[mid]?.myEmoji;
+      try {
+        if (cur === emoji) {
+          const { error } = await removeOwnMessageReaction(supabase, mid, authUser.id);
+          if (error) throw new Error(error.message);
+        } else {
+          const { error } = await setMessageReaction(supabase, {
+            conversationId: conversation.id,
+            messageId: mid,
+            userId: authUser.id,
+            emoji,
+          });
+          if (error) throw new Error(error.message);
+        }
+        setMobileSheetMsg(null);
+        await refreshReactions();
+      } catch (e: unknown) {
+        toast.error(e instanceof Error ? e.message : "Could not react");
+      }
+    },
+    [conversation?.id, authUser?.id, reactionByMessage, refreshReactions],
+  );
 
   const runConfirm = useCallback(async () => {
     if (!pendingConfirm || actionBusy) return;
     setActionBusy(true);
     try {
-      if (pendingConfirm.kind === "delete-message") {
-        const target = pendingConfirm.message;
-        const { error } = await supabase.from("chat_messages").delete().eq("id", target.id);
-        if (error) throw error;
-        setMessages((prev) => prev.filter((m) => m.id !== target.id));
-        setReplyingTo((c) => (c?.id === target.id ? null : c));
-        toast.success("Message deleted");
-      } else if (pendingConfirm.kind === "delete-conversation") {
+      if (pendingConfirm.kind === "delete-conversation") {
         const cid = conversation?.id;
         if (!cid) {
           toast.error("Conversation not ready.");
@@ -1461,10 +1723,11 @@ export default function ChatWorkspace() {
           toast.error("Conversation not ready.");
           return;
         }
-        const { error } = await supabase.from("chat_messages").delete().eq("conversation_id", cid);
-        if (error) throw error;
+        const { error } = await clearConversationMessages(supabase, cid);
+        if (error) throw new Error(error.message);
         setMessages([]);
         setReplyingTo(null);
+        setPinnedRow(null);
         toast.success("Chat cleared");
       }
     } catch (e: unknown) {
@@ -1495,6 +1758,14 @@ export default function ChatWorkspace() {
     if (!q) return messages;
     return messages.filter((m) => (m.message || "").toLowerCase().includes(q));
   }, [messages, threadSearch]);
+
+  const pinnedPreviewText = useMemo(() => {
+    if (!pinnedRow) return "";
+    const m = messages.find((x) => x.id === pinnedRow.message_id);
+    return m ? messagePreviewText(m.message, m.image_url) : "Original message unavailable";
+  }, [pinnedRow, messages]);
+
+  const menuMine = mobileSheetMsg ? isMessageFromViewer(mobileSheetMsg.sender_id, authUser?.id) : false;
 
   if (authLoading || loading) {
     return (
@@ -1869,7 +2140,40 @@ export default function ChatWorkspace() {
             className="chat-messages min-h-0 flex-1 overflow-y-auto overscroll-y-contain bg-[#e5ddd5] px-2 py-2 sm:px-3 [-webkit-overflow-scrolling:touch] dark:bg-zinc-950"
           >
             <div className="flex flex-col pb-1">
+              {pinnedRow ? (
+                <div className="mb-2 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/90 px-2 py-2 dark:border-amber-900 dark:bg-amber-950/40">
+                  <Pin className="h-4 w-4 shrink-0 text-amber-700 dark:text-amber-400" aria-hidden />
+                  <button
+                    type="button"
+                    className="min-w-0 flex-1 text-left text-sm"
+                    onClick={() => jumpToMessage(pinnedRow.message_id)}
+                  >
+                    <span className="font-semibold text-amber-900 dark:text-amber-200">Pinned message</span>
+                    <p className="truncate text-xs text-amber-900/80 dark:text-amber-100/80">{pinnedPreviewText}</p>
+                  </button>
+                  <Button type="button" variant="ghost" size="sm" className="shrink-0" onClick={() => void unpinBanner()}>
+                    Unpin
+                  </Button>
+                </div>
+              ) : null}
               {messages.map((msg, i) => {
+                if (authUser?.id && isMessageHiddenForViewer(msg, authUser.id)) {
+                  return (
+                    <div
+                      key={msg.id}
+                      ref={(node) => {
+                        if (node) messageRefs.current.set(msg.id, node);
+                        else messageRefs.current.delete(msg.id);
+                      }}
+                      className="mb-2 flex w-full justify-center"
+                    >
+                      <span className="rounded-full bg-black/5 px-3 py-1 text-[11px] text-gray-500 dark:bg-white/10 dark:text-zinc-400">
+                        You deleted this message
+                      </span>
+                    </div>
+                  );
+                }
+
                 const prev = i > 0 ? messages[i - 1] : null;
                 const next = i < messages.length - 1 ? messages[i + 1] : null;
                 const showDayDivider = !prev || dayKey(prev.created_at) !== dayKey(msg.created_at);
@@ -1887,8 +2191,9 @@ export default function ChatWorkspace() {
                 const quotedSender = replyPreview ? senderLabel(replyPreview.sender_id) : "Message";
                 const isHighlighted = highlightedMessageId === msg.id;
                 const productCard = resolveMessageProductCard(msg);
+                const dfe = isDeletedForEveryone(msg);
 
-                const actionsDisabled = String(msg.id).startsWith("pending-");
+                const actionsDisabled = String(msg.id).startsWith("pending-") || dfe;
 
                 const messageBubbleEl = (
                   <MessageBubble
@@ -1927,7 +2232,7 @@ export default function ChatWorkspace() {
                       ) : null
                     }
                     belowBubbleSlot={
-                      productCard ? (
+                      productCard && !dfe ? (
                         <ChatPortraitProductCard
                           productId={productCard.strip.id}
                           title={productCard.strip.title}
@@ -1939,7 +2244,7 @@ export default function ChatWorkspace() {
                     }
                   >
                     <div className="space-y-2">
-                      {msg.image_url ? (
+                      {msg.image_url && !dfe ? (
                         <img
                           src={msg.image_url}
                           alt=""
@@ -1949,7 +2254,7 @@ export default function ChatWorkspace() {
                           onClick={(e) => e.stopPropagation()}
                         />
                       ) : null}
-                      {msg.media_url ? (
+                      {msg.media_url && !dfe ? (
                         <audio
                           src={msg.media_url}
                           controls
@@ -1959,11 +2264,16 @@ export default function ChatWorkspace() {
                           onClick={(e) => e.stopPropagation()}
                         />
                       ) : null}
-                      {msg.message?.trim() ? (
+                      {msg.message?.trim() && !dfe ? (
                         <p
                           className={`whitespace-pre-wrap break-words text-sm leading-relaxed ${mine ? "text-white" : "text-inherit"}`}
                         >
                           {msg.message}
+                        </p>
+                      ) : null}
+                      {dfe ? (
+                        <p className={`text-sm italic ${mine ? "text-white/90" : "text-gray-600 dark:text-zinc-300"}`}>
+                          This message was deleted.
                         </p>
                       ) : null}
                       {msg.client_sending ? (
@@ -1979,8 +2289,26 @@ export default function ChatWorkspace() {
                   <div className="block w-full min-w-0 flex-1 touch-manipulation">{messageBubbleEl}</div>
                 );
 
+                const ctxReactions = (
+                  <div className="flex flex-wrap gap-1 border-b border-gray-100 px-1 py-2 dark:border-zinc-800">
+                    {MESSAGE_QUICK_REACTIONS.map((emoji) => (
+                      <button
+                        key={emoji}
+                        type="button"
+                        className="flex h-9 w-9 items-center justify-center rounded-full text-lg hover:bg-gray-100 dark:hover:bg-zinc-800"
+                        onClick={() => {
+                          void onReactFromMenu(emoji, msg);
+                        }}
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
+                );
+
                 const menuItems = (
                   <>
+                    {ctxReactions}
                     <ContextMenuItem
                       onSelect={() => {
                         setReplyingTo(msg);
@@ -1994,18 +2322,44 @@ export default function ChatWorkspace() {
                       <Copy className="mr-2 h-4 w-4" />
                       Copy
                     </ContextMenuItem>
-                    <ContextMenuItem onSelect={() => void forwardSingleMessage(msg)}>
+                    <ContextMenuItem
+                      disabled={!menuSelectedText.trim()}
+                      onSelect={() => void copyText(msg, menuSelectedText)}
+                    >
+                      <Copy className="mr-2 h-4 w-4" />
+                      Copy selected text
+                    </ContextMenuItem>
+                    <ContextMenuItem onSelect={() => openForwardPicker(msg)}>
                       <Share2 className="mr-2 h-4 w-4" />
                       Forward
                     </ContextMenuItem>
+                    <ContextMenuItem onSelect={() => void toggleStarMsg(msg)}>
+                      <Star className="mr-2 h-4 w-4" />
+                      {savedMessageIds.has(msg.id) ? "Unstar message" : "Star message"}
+                    </ContextMenuItem>
+                    {mine && canEditMessage(msg, authUser?.id) ? (
+                      <ContextMenuItem onSelect={() => startEdit(msg)}>Edit</ContextMenuItem>
+                    ) : null}
+                    {mine ? <ContextMenuItem onSelect={() => void pinMsg(msg)}>Pin</ContextMenuItem> : null}
+                    <ContextMenuItem onSelect={() => openInfo(msg)}>Info</ContextMenuItem>
                     {mine ? (
-                      <ContextMenuItem
-                        className="text-red-600"
-                        onSelect={() => setPendingConfirm({ kind: "delete-message", message: msg })}
-                      >
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        Delete
-                      </ContextMenuItem>
+                      <>
+                        <ContextMenuSeparator />
+                        <ContextMenuItem variant="destructive" onSelect={() => void deleteForMe(msg)}>
+                          Delete for me
+                        </ContextMenuItem>
+                        {canDeleteMessageForEveryone(msg, authUser?.id) ? (
+                          <ContextMenuItem variant="destructive" onSelect={() => void deleteForEveryone(msg)}>
+                            Delete for everyone
+                          </ContextMenuItem>
+                        ) : null}
+                        <ContextMenuItem
+                          variant="destructive"
+                          onSelect={() => setPendingConfirm({ kind: "clear-chat" })}
+                        >
+                          Clear all messages
+                        </ContextMenuItem>
+                      </>
                     ) : null}
                   </>
                 );
@@ -2172,65 +2526,131 @@ export default function ChatWorkspace() {
         </div>
       </div>
 
-      <Sheet open={mobileSheetMsg != null} onOpenChange={(open) => !open && setMobileSheetMsg(null)}>
-        <SheetContent side="bottom" className="rounded-t-3xl px-0 pb-[max(1rem,env(safe-area-inset-bottom))]">
-          <SheetHeader className="px-4 pb-2">
-            <SheetTitle>Message</SheetTitle>
-            <SheetDescription>Reply, forward, copy, or delete.</SheetDescription>
-          </SheetHeader>
-          {mobileSheetMsg ? (
-            <div className="grid gap-2 px-4 pb-2">
-              <Button
-                className="h-12 w-full"
-                onClick={() => {
-                  setReplyingTo(mobileSheetMsg);
+      {mobileSheetMsg ? (
+        <MessageMenuV2
+          open={!!mobileSheetMsg}
+          onOpenChange={(o) => {
+            if (!o) setMobileSheetMsg(null);
+          }}
+          selectedText={menuSelectedText}
+          isMine={menuMine}
+          onReply={() => {
+            setReplyingTo(mobileSheetMsg);
+            jumpToMessage(mobileSheetMsg.id);
+            setMobileSheetMsg(null);
+          }}
+          onCopy={() => void copyText(mobileSheetMsg)}
+          onCopySelected={() => void copyText(mobileSheetMsg, menuSelectedText)}
+          onForward={() => openForwardPicker(mobileSheetMsg)}
+          onToggleStar={() => void toggleStarMsg(mobileSheetMsg)}
+          isStarred={savedMessageIds.has(mobileSheetMsg.id)}
+          onInfo={() => openInfo(mobileSheetMsg)}
+          onEdit={menuMine && canEditMessage(mobileSheetMsg, authUser?.id) ? () => startEdit(mobileSheetMsg) : undefined}
+          onPin={menuMine ? () => void pinMsg(mobileSheetMsg) : undefined}
+          onDeleteForMe={menuMine ? () => void deleteForMe(mobileSheetMsg) : undefined}
+          onDeleteForEveryone={
+            menuMine && canDeleteMessageForEveryone(mobileSheetMsg, authUser?.id)
+              ? () => void deleteForEveryone(mobileSheetMsg)
+              : undefined
+          }
+          onClearConversation={
+            menuMine
+              ? () => {
                   setMobileSheetMsg(null);
-                }}
-              >
-                <Reply className="mr-2 h-4 w-4" />
-                Reply
-              </Button>
-              <Button variant="outline" className="h-12 w-full" onClick={() => void forwardSingleMessage(mobileSheetMsg)}>
-                <Share2 className="mr-2 h-4 w-4" />
-                Forward
-              </Button>
-              <Button variant="outline" className="h-12 w-full" onClick={() => void copyText(mobileSheetMsg)}>
-                <Copy className="mr-2 h-4 w-4" />
-                Copy
-              </Button>
-              {isMessageFromViewer(mobileSheetMsg.sender_id, authUser?.id) ? (
-                <Button
-                  variant="destructive"
-                  className="h-12 w-full"
-                  onClick={() => {
-                    deleteMessage(mobileSheetMsg);
-                  }}
-                >
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Delete
-                </Button>
-              ) : null}
-            </div>
-          ) : null}
-        </SheetContent>
-      </Sheet>
+                  setPendingConfirm({ kind: "clear-chat" });
+                }
+              : undefined
+          }
+          onReact={(emoji) => void onReactFromMenu(emoji, mobileSheetMsg)}
+          showEdit={!!(menuMine && canEditMessage(mobileSheetMsg, authUser?.id))}
+          showDeleteForEveryone={!!(menuMine && canDeleteMessageForEveryone(mobileSheetMsg, authUser?.id))}
+          myReaction={reactionByMessage[mobileSheetMsg.id]?.myEmoji ?? null}
+        />
+      ) : null}
+
+      <MessageInfoDialog
+        open={infoOpen}
+        onOpenChange={(o) => {
+          setInfoOpen(o);
+          if (!o) setInfoMsg(null);
+        }}
+        message={infoMsg}
+        isMine={infoMsg ? isMessageFromViewer(infoMsg.sender_id, authUser?.id) : false}
+        peerFirstName={peerFirstName}
+      />
+
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit message</DialogTitle>
+          </DialogHeader>
+          <textarea
+            value={editText}
+            onChange={(e) => setEditText(e.target.value)}
+            rows={5}
+            className="w-full rounded-lg border border-gray-200 bg-white p-3 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+          />
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setEditOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={() => void saveEdit()}>
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={forwardOpen} onOpenChange={setForwardOpen}>
+        <DialogContent className="max-h-[min(80vh,560px)] sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Forward to…</DialogTitle>
+          </DialogHeader>
+          <div className="max-h-[50vh] overflow-y-auto overscroll-contain">
+            {conversation &&
+              inboxFiltered
+                .filter((row) => row.id !== conversation.id)
+                .map((row) => {
+                  const oid = inboxOtherPartyUserId(row);
+                  if (!oid) return null;
+                  const p = inboxProfiles.get(oid);
+                  const name = p?.full_name?.trim() || "Member";
+                  const av = getAvatarUrl(p?.avatar_url ?? null, p?.gender ?? null, name);
+                  return (
+                    <button
+                      key={row.id}
+                      type="button"
+                      className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left hover:bg-gray-100 dark:hover:bg-zinc-800"
+                      onClick={() => void forwardToConversation(row.id)}
+                    >
+                      <img src={av} alt="" className="h-10 w-10 rounded-full object-cover" />
+                      <span className="font-medium">{name}</span>
+                    </button>
+                  );
+                })}
+            {conversation &&
+            inboxFiltered.filter((row) => row.id !== conversation.id).length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">No other conversations yet.</p>
+            ) : null}
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setForwardOpen(false)}>
+              Cancel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={pendingConfirm != null} onOpenChange={(open) => !open && setPendingConfirm(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {pendingConfirm?.kind === "delete-message"
-                ? "Delete message?"
-                : pendingConfirm?.kind === "delete-conversation"
-                  ? "Delete conversation?"
-                  : "Clear chat?"}
+              {pendingConfirm?.kind === "delete-conversation" ? "Delete conversation?" : "Clear all messages?"}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {pendingConfirm?.kind === "delete-message"
-                ? "This removes the message for everyone in the thread."
-                : pendingConfirm?.kind === "delete-conversation"
-                  ? "This deletes the conversation and returns you to the inbox."
-                  : "This removes all messages in this chat."}
+              {pendingConfirm?.kind === "delete-conversation"
+                ? "This deletes the conversation and returns you to the inbox."
+                : `This removes all messages in this chat for both you and ${peerFirstName}. This cannot be undone.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

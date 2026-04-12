@@ -1,6 +1,6 @@
 import React, { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
-import { ArrowLeft, Loader2, Paperclip, Send, Smile, UserCheck, UserPlus } from "lucide-react";
+import { ArrowLeft, Loader2, Paperclip, Pin, Send, Smile, UserCheck, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../context/AuthContext";
@@ -8,6 +8,15 @@ import { useCurrency } from "../../hooks/useCurrency";
 import { useInboxConversationList } from "../../hooks/useInboxConversationList";
 import { getAvatarUrl } from "../../utils/getAvatar";
 import { getProductPrice } from "../../utils/getProductPrice";
+import {
+  clearConversationMessages,
+  fetchPinnedMessage,
+  fetchSavedMessageIds,
+  toggleSavedMessage,
+  unpinConversation,
+  upsertPinnedMessage,
+  type PinnedMessageRow,
+} from "../../utils/chatMessageExtras";
 import {
   fetchConversationById,
   otherPartyUserId,
@@ -43,6 +52,16 @@ import {
   ContextMenuTrigger,
 } from "../ui/context-menu";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "../ui/alert-dialog";
+import {
   Dialog,
   DialogContent,
   DialogFooter,
@@ -52,6 +71,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import { cn } from "../ui/utils";
 import { ChatPortraitProductCard } from "./ChatPortraitProductCard";
+import { MessageInfoDialog } from "./MessageInfoDialog";
 import { MessageBubbleV2 } from "./MessageBubbleV2";
 import { MessageMenuV2, MESSAGE_QUICK_REACTIONS } from "./MessageMenuV2";
 
@@ -225,6 +245,13 @@ export default function ChatRoomV2() {
   const [forwardOpen, setForwardOpen] = useState(false);
   const [forwardTarget, setForwardTarget] = useState<ChatMessageRow | null>(null);
 
+  const [savedMessageIds, setSavedMessageIds] = useState<Set<string>>(() => new Set());
+  const [pinnedRow, setPinnedRow] = useState<PinnedMessageRow | null>(null);
+  const [infoMsg, setInfoMsg] = useState<ChatMessageRow | null>(null);
+  const [infoOpen, setInfoOpen] = useState(false);
+  const [clearChatOpen, setClearChatOpen] = useState(false);
+  const [clearBusy, setClearBusy] = useState(false);
+
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
   const peerHeaderRef = useRef<HTMLElement | null>(null);
   const [peerHeaderHeight, setPeerHeaderHeight] = useState(120);
@@ -321,6 +348,56 @@ export default function ChatRoomV2() {
   useEffect(() => {
     void refreshReactions();
   }, [messageIdsKey, refreshReactions]);
+
+  useEffect(() => {
+    if (!authUser?.id) {
+      setSavedMessageIds(new Set());
+      return;
+    }
+    const ids = messages.map((m) => m.id).filter((id) => !String(id).startsWith("pending-"));
+    if (ids.length === 0) {
+      setSavedMessageIds(new Set());
+      return;
+    }
+    let cancelled = false;
+    void fetchSavedMessageIds(supabase, authUser.id, ids).then(({ ids: s, error }) => {
+      if (cancelled || error) return;
+      setSavedMessageIds(s);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [authUser?.id, messageIdsKey]);
+
+  useEffect(() => {
+    if (!conversation?.id) {
+      setPinnedRow(null);
+      return;
+    }
+    const cid = conversation.id;
+    const load = () => {
+      void fetchPinnedMessage(supabase, cid).then(({ data, error }) => {
+        if (!error) setPinnedRow(data);
+      });
+    };
+    load();
+    const ch = supabase
+      .channel(`pinned-msg-v2:${cid}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "pinned_messages",
+          filter: `conversation_id=eq.${cid}`,
+        },
+        () => load(),
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(ch);
+    };
+  }, [conversation?.id]);
 
   useEffect(() => {
     const mq = window.matchMedia("(min-width: 768px)");
@@ -1185,6 +1262,87 @@ export default function ChatRoomV2() {
     [conversation?.id, authUser?.id, menuMsg, reactionByMessage, refreshReactions],
   );
 
+  const toggleStarMsg = useCallback(
+    async (msg: ChatMessageRow) => {
+      if (!authUser?.id) return;
+      const starred = savedMessageIds.has(msg.id);
+      const { error } = await toggleSavedMessage(supabase, {
+        userId: authUser.id,
+        messageId: msg.id,
+        currentlyStarred: starred,
+      });
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+      setSavedMessageIds((prev) => {
+        const n = new Set(prev);
+        if (starred) n.delete(msg.id);
+        else n.add(msg.id);
+        return n;
+      });
+      setMenuMsg(null);
+      toast.message(starred ? "Removed from saved" : "Saved");
+    },
+    [authUser?.id, savedMessageIds],
+  );
+
+  const pinMsg = useCallback(
+    async (msg: ChatMessageRow) => {
+      if (!authUser?.id || !conversation?.id) return;
+      setMenuMsg(null);
+      const { error } = await upsertPinnedMessage(supabase, {
+        conversationId: conversation.id,
+        messageId: msg.id,
+        pinnedBy: authUser.id,
+      });
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+      void fetchPinnedMessage(supabase, conversation.id).then(({ data, error: e }) => {
+        if (!e && data) setPinnedRow(data);
+      });
+      toast.success("Pinned");
+    },
+    [authUser?.id, conversation?.id],
+  );
+
+  const openInfo = useCallback((msg: ChatMessageRow) => {
+    setMenuMsg(null);
+    setInfoMsg(msg);
+    setInfoOpen(true);
+  }, []);
+
+  const unpinBanner = useCallback(async () => {
+    if (!conversation?.id) return;
+    const { error } = await unpinConversation(supabase, conversation.id);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    setPinnedRow(null);
+    toast.message("Unpinned");
+  }, [conversation?.id]);
+
+  const runClearChat = useCallback(async () => {
+    if (!conversation?.id) return;
+    setClearBusy(true);
+    try {
+      const { error } = await clearConversationMessages(supabase, conversation.id);
+      if (error) throw new Error(error.message);
+      setMessages([]);
+      setReplyingTo(null);
+      setPinnedRow(null);
+      setClearChatOpen(false);
+      toast.success("All messages cleared");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Could not clear chat");
+    } finally {
+      setClearBusy(false);
+    }
+  }, [conversation?.id]);
+
   const chatShellStyle = {
     ...(viewportHeight ? { ["--chat-viewport-height" as string]: `${viewportHeight}px` } : {}),
     ["--chat-header-height" as string]: `${peerHeaderHeight}px`,
@@ -1233,6 +1391,14 @@ export default function ChatRoomV2() {
   }
 
   const menuMine = menuMsg ? isMessageFromViewer(menuMsg.sender_id, authUser.id) : false;
+
+  const pinnedPreviewText =
+    pinnedRow != null
+      ? (() => {
+          const m = messages.find((x) => x.id === pinnedRow.message_id);
+          return m ? messagePreviewText(m.message, m.image_url) : "Original message unavailable";
+        })()
+      : "";
 
   return (
     <div style={chatShellStyle} className={`flex ${shellHeight} min-h-0 flex-col bg-[#e5ddd5] dark:bg-zinc-950`}>
@@ -1316,6 +1482,22 @@ export default function ChatRoomV2() {
 
       <div ref={scrollRef} onScroll={updateScrollState} className="chat-messages min-h-0 flex-1 overflow-y-auto px-2 py-2 sm:px-3">
         <div className="flex flex-col pb-1">
+          {pinnedRow ? (
+            <div className="mb-2 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/90 px-2 py-2 dark:border-amber-900 dark:bg-amber-950/40">
+              <Pin className="h-4 w-4 shrink-0 text-amber-700 dark:text-amber-400" aria-hidden />
+              <button
+                type="button"
+                className="min-w-0 flex-1 text-left text-sm"
+                onClick={() => jumpToMessage(pinnedRow.message_id)}
+              >
+                <span className="font-semibold text-amber-900 dark:text-amber-200">Pinned message</span>
+                <p className="truncate text-xs text-amber-900/80 dark:text-amber-100/80">{pinnedPreviewText}</p>
+              </button>
+              <Button type="button" variant="ghost" size="sm" className="shrink-0" onClick={() => void unpinBanner()}>
+                Unpin
+              </Button>
+            </div>
+          ) : null}
           {messages.map((msg, i) => {
             if (authUser?.id && isMessageHiddenForViewer(msg, authUser.id)) {
               return (
@@ -1501,25 +1683,43 @@ export default function ChatRoomV2() {
                         >
                           Reply
                         </ContextMenuItem>
-                        <ContextMenuItem onSelect={() => openForwardPicker(msg)}>Forward</ContextMenuItem>
-                        <ContextMenuItem onSelect={() => void copyText(msg)}>Copy text</ContextMenuItem>
+                        <ContextMenuItem onSelect={() => void copyText(msg)}>Copy</ContextMenuItem>
                         <ContextMenuItem
                           disabled={!menuSelectedText.trim()}
                           onSelect={() => void copyText(msg, menuSelectedText)}
                         >
                           Copy selected text
                         </ContextMenuItem>
+                        <ContextMenuItem onSelect={() => openForwardPicker(msg)}>Forward</ContextMenuItem>
+                        <ContextMenuItem onSelect={() => void toggleStarMsg(msg)}>
+                          {savedMessageIds.has(msg.id) ? "Unstar message" : "Star message"}
+                        </ContextMenuItem>
                         {mine && canEditMessage(msg, authUser?.id) ? (
                           <ContextMenuItem onSelect={() => startEdit(msg)}>Edit</ContextMenuItem>
                         ) : null}
-                        <ContextMenuSeparator />
-                        <ContextMenuItem variant="destructive" onSelect={() => void deleteForMe(msg)}>
-                          Delete for me
-                        </ContextMenuItem>
-                        {mine && canDeleteMessageForEveryone(msg, authUser?.id) ? (
-                          <ContextMenuItem variant="destructive" onSelect={() => void deleteForEveryone(msg)}>
-                            Delete for everyone
-                          </ContextMenuItem>
+                        {mine ? <ContextMenuItem onSelect={() => void pinMsg(msg)}>Pin</ContextMenuItem> : null}
+                        <ContextMenuItem onSelect={() => openInfo(msg)}>Info</ContextMenuItem>
+                        {mine ? (
+                          <>
+                            <ContextMenuSeparator />
+                            <ContextMenuItem variant="destructive" onSelect={() => void deleteForMe(msg)}>
+                              Delete for me
+                            </ContextMenuItem>
+                            {canDeleteMessageForEveryone(msg, authUser?.id) ? (
+                              <ContextMenuItem variant="destructive" onSelect={() => void deleteForEveryone(msg)}>
+                                Delete for everyone
+                              </ContextMenuItem>
+                            ) : null}
+                            <ContextMenuItem
+                              variant="destructive"
+                              onSelect={() => {
+                                setMenuMsg(null);
+                                setClearChatOpen(true);
+                              }}
+                            >
+                              Clear all messages
+                            </ContextMenuItem>
+                          </>
                         ) : null}
                       </ContextMenuContent>
                     </ContextMenu>
@@ -1625,19 +1825,32 @@ export default function ChatRoomV2() {
             if (!o) setMenuMsg(null);
           }}
           selectedText={menuSelectedText}
+          isMine={menuMine}
           onReply={() => {
             setReplyingTo(menuMsg);
             jumpToMessage(menuMsg.id);
             setMenuMsg(null);
           }}
-          onForward={() => openForwardPicker(menuMsg)}
-          onCopyFull={() => void copyText(menuMsg)}
+          onCopy={() => void copyText(menuMsg)}
           onCopySelected={() => void copyText(menuMsg, menuSelectedText)}
+          onForward={() => openForwardPicker(menuMsg)}
+          onToggleStar={() => void toggleStarMsg(menuMsg)}
+          isStarred={savedMessageIds.has(menuMsg.id)}
+          onInfo={() => openInfo(menuMsg)}
           onEdit={menuMine && canEditMessage(menuMsg, authUser?.id) ? () => startEdit(menuMsg) : undefined}
-          onDeleteForMe={() => void deleteForMe(menuMsg)}
+          onPin={menuMine ? () => void pinMsg(menuMsg) : undefined}
+          onDeleteForMe={menuMine ? () => void deleteForMe(menuMsg) : undefined}
           onDeleteForEveryone={
             menuMine && canDeleteMessageForEveryone(menuMsg, authUser?.id)
               ? () => void deleteForEveryone(menuMsg)
+              : undefined
+          }
+          onClearConversation={
+            menuMine
+              ? () => {
+                  setMenuMsg(null);
+                  setClearChatOpen(true);
+                }
               : undefined
           }
           onReact={(emoji) => void onReactFromMenu(emoji)}
@@ -1646,6 +1859,41 @@ export default function ChatRoomV2() {
           myReaction={reactionByMessage[menuMsg.id]?.myEmoji ?? null}
         />
       ) : null}
+
+      <MessageInfoDialog
+        open={infoOpen}
+        onOpenChange={(o) => {
+          setInfoOpen(o);
+          if (!o) setInfoMsg(null);
+        }}
+        message={infoMsg}
+        isMine={infoMsg ? isMessageFromViewer(infoMsg.sender_id, authUser?.id) : false}
+        peerFirstName={peerFirstName}
+      />
+
+      <AlertDialog open={clearChatOpen} onOpenChange={setClearChatOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Clear all messages?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This removes every message in this chat for both you and {peerFirstName}. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={clearBusy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700"
+              disabled={clearBusy}
+              onClick={(e) => {
+                e.preventDefault();
+                void runClearChat();
+              }}
+            >
+              {clearBusy ? "…" : "Clear chat"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent className="sm:max-w-md">

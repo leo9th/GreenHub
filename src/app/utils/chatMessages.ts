@@ -140,8 +140,13 @@ export function normalizeChatMessageRow(raw: Record<string, unknown>): ChatMessa
   };
 }
 
+function viewerOwnsMessage(senderId: string, userId: string | undefined): boolean {
+  if (!userId) return false;
+  return String(senderId).toLowerCase() === String(userId).toLowerCase();
+}
+
 export function canEditMessage(msg: ChatMessageRow, userId: string | undefined): boolean {
-  if (!userId || msg.sender_id !== userId) return false;
+  if (!viewerOwnsMessage(msg.sender_id, userId)) return false;
   if (msg.client_sending) return false;
   if (msg.deleted_for_everyone) return false;
   if ((msg.deleted_for ?? []).includes(userId)) return false;
@@ -152,7 +157,7 @@ export function canEditMessage(msg: ChatMessageRow, userId: string | undefined):
 
 /** WhatsApp-style unsend window (15 minutes) for delete-for-everyone. */
 export function canDeleteMessageForEveryone(msg: ChatMessageRow, userId: string | undefined): boolean {
-  if (!userId || msg.sender_id !== userId) return false;
+  if (!viewerOwnsMessage(msg.sender_id, userId)) return false;
   if (msg.client_sending) return false;
   if (msg.deleted_for_everyone) return false;
   if ((msg.deleted_for ?? []).includes(userId)) return false;

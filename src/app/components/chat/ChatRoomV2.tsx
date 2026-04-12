@@ -1,6 +1,6 @@
 import React, { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
-import { ArrowLeft, Loader2, Paperclip, Pin, Send, Smile, UserCheck, UserPlus } from "lucide-react";
+import { ArrowLeft, Loader2, Paperclip, Pin, Send, Smile, Trash2, UserCheck, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../context/AuthContext";
@@ -9,7 +9,7 @@ import { useInboxConversationList } from "../../hooks/useInboxConversationList";
 import { getAvatarUrl } from "../../utils/getAvatar";
 import { getProductPrice } from "../../utils/getProductPrice";
 import {
-  clearConversationMessages,
+  clearConversationForMe,
   fetchPinnedMessage,
   fetchSavedMessageIds,
   toggleSavedMessage,
@@ -49,6 +49,9 @@ import {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "../ui/context-menu";
 import {
@@ -1329,13 +1332,15 @@ export default function ChatRoomV2() {
     if (!conversation?.id) return;
     setClearBusy(true);
     try {
-      const { error } = await clearConversationMessages(supabase, conversation.id);
+      const { error } = await clearConversationForMe(supabase, conversation.id);
       if (error) throw new Error(error.message);
-      setMessages([]);
+      const { data: msgs, error: mErr } = await fetchChatMessagesForConversation(supabase, conversation.id);
+      if (mErr) throw new Error(mErr.message);
+      setMessages(msgs);
       setReplyingTo(null);
       setPinnedRow(null);
       setClearChatOpen(false);
-      toast.success("All messages cleared");
+      toast.success("Chat cleared for you");
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Could not clear chat");
     } finally {
@@ -1425,6 +1430,17 @@ export default function ChatRoomV2() {
           </div>
           <Button
             type="button"
+            variant="ghost"
+            size="icon"
+            className="shrink-0 text-gray-700 hover:bg-black/[0.06] dark:text-zinc-200 dark:hover:bg-white/10"
+            aria-label="Clear all messages"
+            title="Clear all messages"
+            onClick={() => setClearChatOpen(true)}
+          >
+            <Trash2 className="h-5 w-5" aria-hidden />
+          </Button>
+          <Button
+            type="button"
             variant="secondary"
             size="sm"
             disabled={followBusy}
@@ -1500,20 +1516,7 @@ export default function ChatRoomV2() {
           ) : null}
           {messages.map((msg, i) => {
             if (authUser?.id && isMessageHiddenForViewer(msg, authUser.id)) {
-              return (
-                <div
-                  key={msg.id}
-                  ref={(node) => {
-                    if (node) messageRefs.current.set(msg.id, node);
-                    else messageRefs.current.delete(msg.id);
-                  }}
-                  className="mb-2 flex w-full justify-center"
-                >
-                  <span className="rounded-full bg-black/5 px-3 py-1 text-[11px] text-gray-500 dark:bg-white/10 dark:text-zinc-400">
-                    You deleted this message
-                  </span>
-                </div>
-              );
+              return <Fragment key={msg.id} />;
             }
 
             const prev = i > 0 ? messages[i - 1] : null;
@@ -1691,36 +1694,31 @@ export default function ChatRoomV2() {
                           Copy selected text
                         </ContextMenuItem>
                         <ContextMenuItem onSelect={() => openForwardPicker(msg)}>Forward</ContextMenuItem>
-                        <ContextMenuItem onSelect={() => void toggleStarMsg(msg)}>
-                          {savedMessageIds.has(msg.id) ? "Unstar message" : "Star message"}
-                        </ContextMenuItem>
                         {mine && canEditMessage(msg, authUser?.id) ? (
                           <ContextMenuItem onSelect={() => startEdit(msg)}>Edit</ContextMenuItem>
                         ) : null}
                         {mine ? <ContextMenuItem onSelect={() => void pinMsg(msg)}>Pin</ContextMenuItem> : null}
+                        <ContextMenuItem onSelect={() => void toggleStarMsg(msg)}>
+                          {savedMessageIds.has(msg.id) ? "Unstar message" : "Star message"}
+                        </ContextMenuItem>
                         <ContextMenuItem onSelect={() => openInfo(msg)}>Info</ContextMenuItem>
-                        {mine ? (
-                          <>
-                            <ContextMenuSeparator />
+                        <ContextMenuSeparator />
+                        <ContextMenuSub>
+                          <ContextMenuSubTrigger className="text-destructive focus:text-destructive data-[state=open]:text-destructive">
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Delete
+                          </ContextMenuSubTrigger>
+                          <ContextMenuSubContent className="min-w-[12rem]">
                             <ContextMenuItem variant="destructive" onSelect={() => void deleteForMe(msg)}>
                               Delete for me
                             </ContextMenuItem>
-                            {canDeleteMessageForEveryone(msg, authUser?.id) ? (
+                            {mine && canDeleteMessageForEveryone(msg, authUser?.id) ? (
                               <ContextMenuItem variant="destructive" onSelect={() => void deleteForEveryone(msg)}>
                                 Delete for everyone
                               </ContextMenuItem>
                             ) : null}
-                            <ContextMenuItem
-                              variant="destructive"
-                              onSelect={() => {
-                                setMenuMsg(null);
-                                setClearChatOpen(true);
-                              }}
-                            >
-                              Clear all messages
-                            </ContextMenuItem>
-                          </>
-                        ) : null}
+                          </ContextMenuSubContent>
+                        </ContextMenuSub>
                       </ContextMenuContent>
                     </ContextMenu>
                   ) : (
@@ -1839,18 +1837,10 @@ export default function ChatRoomV2() {
           onInfo={() => openInfo(menuMsg)}
           onEdit={menuMine && canEditMessage(menuMsg, authUser?.id) ? () => startEdit(menuMsg) : undefined}
           onPin={menuMine ? () => void pinMsg(menuMsg) : undefined}
-          onDeleteForMe={menuMine ? () => void deleteForMe(menuMsg) : undefined}
+          onDeleteForMe={() => void deleteForMe(menuMsg)}
           onDeleteForEveryone={
             menuMine && canDeleteMessageForEveryone(menuMsg, authUser?.id)
               ? () => void deleteForEveryone(menuMsg)
-              : undefined
-          }
-          onClearConversation={
-            menuMine
-              ? () => {
-                  setMenuMsg(null);
-                  setClearChatOpen(true);
-                }
               : undefined
           }
           onReact={(emoji) => void onReactFromMenu(emoji)}
@@ -1876,7 +1866,7 @@ export default function ChatRoomV2() {
           <AlertDialogHeader>
             <AlertDialogTitle>Clear all messages?</AlertDialogTitle>
             <AlertDialogDescription>
-              This removes every message in this chat for both you and {peerFirstName}. This cannot be undone.
+              All messages in this chat will be hidden only for you. {peerFirstName} will still see the full history.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

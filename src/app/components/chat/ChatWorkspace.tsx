@@ -43,7 +43,7 @@ import {
   type ConversationRow,
 } from "../../utils/chatConversations";
 import {
-  clearConversationMessages,
+  clearConversationForMe,
   fetchPinnedMessage,
   fetchSavedMessageIds,
   toggleSavedMessage,
@@ -85,6 +85,9 @@ import {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "../ui/context-menu";
 import {
@@ -1723,12 +1726,14 @@ export default function ChatWorkspace() {
           toast.error("Conversation not ready.");
           return;
         }
-        const { error } = await clearConversationMessages(supabase, cid);
+        const { error } = await clearConversationForMe(supabase, cid);
         if (error) throw new Error(error.message);
-        setMessages([]);
+        const { data: msgs, error: mErr } = await fetchChatMessagesForConversation(supabase, cid);
+        if (mErr) throw new Error(mErr.message);
+        setMessages(msgs);
         setReplyingTo(null);
         setPinnedRow(null);
-        toast.success("Chat cleared");
+        toast.success("Chat cleared for you");
       }
     } catch (e: unknown) {
       toast.error(errorMessage(e, "Action failed"));
@@ -2033,6 +2038,15 @@ export default function ChatWorkspace() {
               <button
                 type="button"
                 className="flex h-11 min-w-[44px] shrink-0 items-center justify-center rounded-full hover:bg-black/[0.05] dark:hover:bg-white/10"
+                aria-label="Clear chat"
+                title="Clear chat"
+                onClick={() => setPendingConfirm({ kind: "clear-chat" })}
+              >
+                <Trash2 className="h-5 w-5 text-gray-700 dark:text-zinc-200" />
+              </button>
+              <button
+                type="button"
+                className="flex h-11 min-w-[44px] shrink-0 items-center justify-center rounded-full hover:bg-black/[0.05] dark:hover:bg-white/10"
                 aria-label="Search in chat"
                 onClick={() => setSearchOpen((v) => !v)}
               >
@@ -2158,20 +2172,7 @@ export default function ChatWorkspace() {
               ) : null}
               {messages.map((msg, i) => {
                 if (authUser?.id && isMessageHiddenForViewer(msg, authUser.id)) {
-                  return (
-                    <div
-                      key={msg.id}
-                      ref={(node) => {
-                        if (node) messageRefs.current.set(msg.id, node);
-                        else messageRefs.current.delete(msg.id);
-                      }}
-                      className="mb-2 flex w-full justify-center"
-                    >
-                      <span className="rounded-full bg-black/5 px-3 py-1 text-[11px] text-gray-500 dark:bg-white/10 dark:text-zinc-400">
-                        You deleted this message
-                      </span>
-                    </div>
-                  );
+                  return <Fragment key={msg.id} />;
                 }
 
                 const prev = i > 0 ? messages[i - 1] : null;
@@ -2337,30 +2338,28 @@ export default function ChatWorkspace() {
                       <Star className="mr-2 h-4 w-4" />
                       {savedMessageIds.has(msg.id) ? "Unstar message" : "Star message"}
                     </ContextMenuItem>
+                    <ContextMenuItem onSelect={() => openInfo(msg)}>Info</ContextMenuItem>
                     {mine && canEditMessage(msg, authUser?.id) ? (
                       <ContextMenuItem onSelect={() => startEdit(msg)}>Edit</ContextMenuItem>
                     ) : null}
                     {mine ? <ContextMenuItem onSelect={() => void pinMsg(msg)}>Pin</ContextMenuItem> : null}
-                    <ContextMenuItem onSelect={() => openInfo(msg)}>Info</ContextMenuItem>
-                    {mine ? (
-                      <>
-                        <ContextMenuSeparator />
+                    <ContextMenuSeparator />
+                    <ContextMenuSub>
+                      <ContextMenuSubTrigger className="text-destructive focus:text-destructive data-[state=open]:text-destructive">
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Delete
+                      </ContextMenuSubTrigger>
+                      <ContextMenuSubContent className="min-w-[12rem]">
                         <ContextMenuItem variant="destructive" onSelect={() => void deleteForMe(msg)}>
                           Delete for me
                         </ContextMenuItem>
-                        {canDeleteMessageForEveryone(msg, authUser?.id) ? (
+                        {mine && canDeleteMessageForEveryone(msg, authUser?.id) ? (
                           <ContextMenuItem variant="destructive" onSelect={() => void deleteForEveryone(msg)}>
                             Delete for everyone
                           </ContextMenuItem>
                         ) : null}
-                        <ContextMenuItem
-                          variant="destructive"
-                          onSelect={() => setPendingConfirm({ kind: "clear-chat" })}
-                        >
-                          Clear all messages
-                        </ContextMenuItem>
-                      </>
-                    ) : null}
+                      </ContextMenuSubContent>
+                    </ContextMenuSub>
                   </>
                 );
 
@@ -2547,18 +2546,10 @@ export default function ChatWorkspace() {
           onInfo={() => openInfo(mobileSheetMsg)}
           onEdit={menuMine && canEditMessage(mobileSheetMsg, authUser?.id) ? () => startEdit(mobileSheetMsg) : undefined}
           onPin={menuMine ? () => void pinMsg(mobileSheetMsg) : undefined}
-          onDeleteForMe={menuMine ? () => void deleteForMe(mobileSheetMsg) : undefined}
+          onDeleteForMe={() => void deleteForMe(mobileSheetMsg)}
           onDeleteForEveryone={
             menuMine && canDeleteMessageForEveryone(mobileSheetMsg, authUser?.id)
               ? () => void deleteForEveryone(mobileSheetMsg)
-              : undefined
-          }
-          onClearConversation={
-            menuMine
-              ? () => {
-                  setMobileSheetMsg(null);
-                  setPendingConfirm({ kind: "clear-chat" });
-                }
               : undefined
           }
           onReact={(emoji) => void onReactFromMenu(emoji, mobileSheetMsg)}
@@ -2645,12 +2636,12 @@ export default function ChatWorkspace() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {pendingConfirm?.kind === "delete-conversation" ? "Delete conversation?" : "Clear all messages?"}
+              {pendingConfirm?.kind === "delete-conversation" ? "Delete conversation?" : "Clear chat?"}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {pendingConfirm?.kind === "delete-conversation"
                 ? "This deletes the conversation and returns you to the inbox."
-                : `This removes all messages in this chat for both you and ${peerFirstName}. This cannot be undone.`}
+                : `All messages in this chat will be hidden only for you. ${peerFirstName} will still see the full history.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

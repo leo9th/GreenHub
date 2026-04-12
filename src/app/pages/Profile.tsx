@@ -14,10 +14,7 @@ import {
   Shield,
   ShieldAlert,
   Clock,
-  UserPlus,
-  UserCheck,
 } from "lucide-react";
-import { toast } from "sonner";
 import { useAuth, type UserProfile } from "../context/AuthContext";
 import { getAvatarUrl } from "../utils/getAvatar";
 import { VerifiedBadge } from "../components/VerifiedBadge";
@@ -26,6 +23,7 @@ import { supabase } from "../../lib/supabase";
 import { useCurrency } from "../hooks/useCurrency";
 import { getProductPrice } from "../utils/getProductPrice";
 import { isOnlineFromLastActive, formatLastSeen } from "../utils/presence";
+import { FollowButton } from "../components/FollowButton";
 
 type TabId = "products" | "reviews" | "about" | "contact";
 
@@ -152,8 +150,6 @@ export default function Profile() {
   const [profileMissing, setProfileMissing] = useState(false);
   const [followerCount, setFollowerCount] = useState(0);
   const [followingCount, setFollowingCount] = useState(0);
-  const [isFollowing, setIsFollowing] = useState(false);
-  const [followBusy, setFollowBusy] = useState(false);
 
   const displayName =
     viewProfile?.full_name?.trim() ||
@@ -234,7 +230,6 @@ export default function Profile() {
     setProfileMissing(false);
     setFollowerCount(0);
     setFollowingCount(0);
-    setIsFollowing(false);
 
     try {
       let profRow: UserProfile | null = null;
@@ -450,17 +445,6 @@ export default function Profile() {
         setFollowingCount(0);
       }
 
-      if (!isOwnProfile && authUser?.id) {
-        const { data: edge } = await supabase
-          .from("profile_follows")
-          .select("follower_id")
-          .eq("follower_id", authUser.id)
-          .eq("following_id", targetUserId)
-          .maybeSingle();
-        setIsFollowing(!!edge);
-      } else {
-        setIsFollowing(false);
-      }
     } catch (e: unknown) {
       console.error(e);
       setLoadError(e instanceof Error ? e.message : "Could not load profile data");
@@ -471,35 +455,6 @@ export default function Profile() {
       setDataLoading(false);
     }
   }, [targetUserId, isOwnProfile, authUser, routeUserId]);
-
-  const toggleFollow = useCallback(async () => {
-    if (!authUser?.id || !targetUserId || isOwnProfile || profileMissing) return;
-    setFollowBusy(true);
-    try {
-      if (isFollowing) {
-        const { error } = await supabase
-          .from("profile_follows")
-          .delete()
-          .eq("follower_id", authUser.id)
-          .eq("following_id", targetUserId);
-        if (error) throw error;
-        setIsFollowing(false);
-        setFollowerCount((n) => Math.max(0, n - 1));
-      } else {
-        const { error } = await supabase.from("profile_follows").insert({
-          follower_id: authUser.id,
-          following_id: targetUserId,
-        });
-        if (error) throw error;
-        setIsFollowing(true);
-        setFollowerCount((n) => n + 1);
-      }
-    } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Could not update follow");
-    } finally {
-      setFollowBusy(false);
-    }
-  }, [authUser?.id, targetUserId, isOwnProfile, profileMissing, isFollowing]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -632,14 +587,20 @@ export default function Profile() {
 
             {!dataLoading && !profileMissing ? (
               <div className="mt-3 flex justify-center gap-6 border-t border-gray-100 pt-3 lg:justify-start">
-                <div className="text-center lg:text-left">
+                <Link
+                  to={`/profile/${targetUserId}/followers`}
+                  className="text-center transition-opacity hover:opacity-80 lg:text-left"
+                >
                   <p className="text-base font-semibold tabular-nums text-gray-900">{followerCount}</p>
                   <p className="text-[11px] font-medium text-gray-500">Followers</p>
-                </div>
-                <div className="text-center lg:text-left">
+                </Link>
+                <Link
+                  to={`/profile/${targetUserId}/following`}
+                  className="text-center transition-opacity hover:opacity-80 lg:text-left"
+                >
                   <p className="text-base font-semibold tabular-nums text-gray-900">{followingCount}</p>
                   <p className="text-[11px] font-medium text-gray-500">Following</p>
-                </div>
+                </Link>
               </div>
             ) : null}
 
@@ -678,25 +639,11 @@ export default function Profile() {
                 </Link>
               ) : (
                 <div className="flex flex-col gap-2 sm:flex-row sm:w-full">
-                  <button
-                    type="button"
-                    onClick={() => void toggleFollow()}
-                    disabled={followBusy || dataLoading || profileMissing}
-                    className={`inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-1.5 text-sm font-semibold shadow-sm transition-colors disabled:opacity-50 ${
-                      isFollowing
-                        ? "border border-gray-200 bg-gray-50 text-gray-800 hover:bg-gray-100"
-                        : "border border-[#22c55e]/40 bg-white text-[#15803d] hover:bg-[#f0fdf4]"
-                    }`}
-                  >
-                    {followBusy ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : isFollowing ? (
-                      <UserCheck className="w-3.5 h-3.5" />
-                    ) : (
-                      <UserPlus className="w-3.5 h-3.5" />
-                    )}
-                    {isFollowing ? "Following" : "Follow"}
-                  </button>
+                  <FollowButton
+                    targetUserId={targetUserId}
+                    profileMissing={profileMissing || dataLoading}
+                    onFollowersDelta={(d) => setFollowerCount((n) => Math.max(0, n + d))}
+                  />
                   <Link
                     to={`/messages/u/${targetUserId}`}
                     className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#22c55e] px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-[#16a34a]"

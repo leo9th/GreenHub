@@ -39,6 +39,7 @@ import WriteReview from "./pages/WriteReview";
 import WriteProductReview from "./pages/WriteProductReview";
 import SellerReviews from "./pages/SellerReviews";
 import Profile from "./pages/Profile";
+import ProfileFollowList from "./pages/ProfileFollowList";
 import ProfileEdit from "./pages/ProfileEdit";
 import Settings from "./pages/Settings";
 import AdminDashboard from "./pages/admin/Dashboard";
@@ -145,6 +146,8 @@ export const router = createBrowserRouter([
       { path: "seller/boosts", Component: MyBoosts },
       { path: "reviews/:orderId", Component: WriteReview },
       { path: "seller/:id/reviews", Component: SellerReviews },
+      { path: "profile/:id/followers", Component: ProfileFollowList },
+      { path: "profile/:id/following", Component: ProfileFollowList },
       { path: "profile/:id", Component: Profile },
       { path: "profile", Component: Profile },
       { path: "favorites", Component: LegacyFavoritesRedirect },

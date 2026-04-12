@@ -19,6 +19,18 @@ export async function clearConversationMessages(
   return { error: null };
 }
 
+/** Mark every message in the thread as deleted for the current user only (WhatsApp-style clear chat for me). */
+export async function clearConversationForMe(
+  supabase: SupabaseClient,
+  conversationId: string,
+): Promise<{ error: { message: string } | null }> {
+  const { error } = await supabase.rpc("clear_conversation_for_me", {
+    p_conversation_id: conversationId,
+  });
+  if (error) return { error: { message: error.message } };
+  return { error: null };
+}
+
 /** Whether `messageId` is saved by this user. */
 export async function fetchSavedMessageIds(
   supabase: SupabaseClient,

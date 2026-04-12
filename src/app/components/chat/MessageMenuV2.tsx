@@ -1,8 +1,9 @@
 import type { LucideIcon } from "lucide-react";
+import { useEffect, useState } from "react";
 import {
+  ChevronUp,
   Copy,
   Edit3,
-  Eraser,
   Forward,
   Info,
   Pin,
@@ -38,7 +39,6 @@ export type MessageMenuV2Props = {
   onDeleteForMe?: () => void;
   onDeleteForEveryone?: () => void;
   showDeleteForEveryone: boolean;
-  onClearConversation?: () => void;
   showEdit: boolean;
 };
 
@@ -96,9 +96,16 @@ export function MessageMenuV2({
   onDeleteForMe,
   onDeleteForEveryone,
   showDeleteForEveryone,
-  onClearConversation,
   showEdit,
 }: MessageMenuV2Props) {
+  const [deleteExpanded, setDeleteExpanded] = useState(false);
+
+  useEffect(() => {
+    if (!open) setDeleteExpanded(false);
+  }, [open]);
+
+  const hasDeleteSubmenu = !!(onDeleteForMe || (showDeleteForEveryone && onDeleteForEveryone));
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
@@ -146,33 +153,65 @@ export function MessageMenuV2({
             disabled={!selectedText.trim()}
           />
           <MenuRow icon={Forward} label="Forward" onClick={onForward} />
+
+          {isMine && showEdit && onEdit ? <MenuRow icon={Edit3} label="Edit" onClick={onEdit} /> : null}
+          {isMine && onPin ? <MenuRow icon={Pin} label="Pin" onClick={onPin} /> : null}
+
           <MenuRow
             icon={Star}
             label={isStarred ? "Unstar message" : "Star message"}
             onClick={onToggleStar}
           />
-
-          {isMine && showEdit && onEdit ? <MenuRow icon={Edit3} label="Edit" onClick={onEdit} /> : null}
-          {isMine && onPin ? <MenuRow icon={Pin} label="Pin" onClick={onPin} /> : null}
           <MenuRow icon={Info} label="Info" onClick={onInfo} />
 
-          {isMine ? (
-            <>
-              <div className="my-2 border-t border-gray-100 dark:border-zinc-800" />
-              <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-zinc-500">
-                Delete
-              </p>
-              {onDeleteForMe ? <MenuRow icon={Trash2} label="Delete for me" onClick={onDeleteForMe} destructive /> : null}
-              {showDeleteForEveryone && onDeleteForEveryone ? (
-                <MenuRow icon={Trash2} label="Delete for everyone" onClick={onDeleteForEveryone} destructive />
+          {hasDeleteSubmenu ? (
+            <div className="mt-2 border-t border-gray-100 pt-2 dark:border-zinc-800">
+              <button
+                type="button"
+                onClick={() => setDeleteExpanded((v) => !v)}
+                className={cn(
+                  "flex w-full items-center justify-between gap-2 rounded-xl px-3 py-3 text-left text-sm font-semibold text-white shadow-sm transition",
+                  "bg-red-600 hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-600",
+                )}
+                aria-expanded={deleteExpanded}
+              >
+                <span className="flex items-center gap-3">
+                  <Trash2 className="h-5 w-5 shrink-0 opacity-95" />
+                  Delete
+                </span>
+                <ChevronUp className={cn("h-5 w-5 shrink-0 transition", deleteExpanded ? "" : "rotate-180")} />
+              </button>
+              {deleteExpanded ? (
+                <div className="mt-1 space-y-0.5 rounded-xl border border-red-100 bg-red-50/50 p-1 dark:border-red-900/50 dark:bg-red-950/30">
+                  {onDeleteForMe ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onDeleteForMe();
+                        onOpenChange(false);
+                      }}
+                      className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-red-700 hover:bg-red-100 dark:text-red-300 dark:hover:bg-red-950/60"
+                    >
+                      <Trash2 className="h-4 w-4 shrink-0 opacity-90" />
+                      Delete for me
+                    </button>
+                  ) : null}
+                  {showDeleteForEveryone && onDeleteForEveryone ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onDeleteForEveryone();
+                        onOpenChange(false);
+                      }}
+                      className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-red-700 hover:bg-red-100 dark:text-red-300 dark:hover:bg-red-950/60"
+                    >
+                      <Trash2 className="h-4 w-4 shrink-0 opacity-90" />
+                      Delete for everyone
+                    </button>
+                  ) : null}
+                </div>
               ) : null}
-              {onClearConversation ? (
-                <>
-                  <div className="my-2 border-t border-gray-100 dark:border-zinc-800" />
-                  <MenuRow icon={Eraser} label="Clear all messages" onClick={onClearConversation} destructive />
-                </>
-              ) : null}
-            </>
+            </div>
           ) : null}
         </div>
       </SheetContent>

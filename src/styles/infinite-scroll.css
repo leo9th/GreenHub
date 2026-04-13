@@ -1,3 +1,30 @@
+/* Puzzle pan (Home featured grid): hidden scrollbars, transform-driven pan */
+.gh-puzzle-viewport {
+  position: relative;
+  overflow: hidden;
+  overscroll-behavior: contain;
+  max-height: min(78vh, 920px);
+  min-height: 240px;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.gh-puzzle-viewport::-webkit-scrollbar {
+  display: none;
+}
+
+.gh-puzzle-viewport:active {
+  cursor: grabbing;
+}
+
+.gh-puzzle-content {
+  min-width: min(100%, 100vw - 2rem);
+  will-change: transform;
+}
+
 /* Endless product grid — vertical + horizontal scroll on same viewport */
 .gh-endless-viewport {
   overflow: auto;

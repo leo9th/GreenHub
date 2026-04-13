@@ -19,6 +19,8 @@ function dedupeById(rows: Array<Record<string, unknown>>, existing: Map<string, 
   return out;
 }
 
+export type ProductFeedPanMode = "native" | "puzzle";
+
 export type UseBidirectionalProductFeedOptions = {
   supabase: SupabaseClient;
   pageSize: number;
@@ -27,10 +29,25 @@ export type UseBidirectionalProductFeedOptions = {
   sortBy: ListingSort;
   /** When this string changes, feed resets */
   resetKey: string;
+  /** Transform-based pan (overflow hidden); use with contentMeasureRef + panTranslateRef */
+  panMode?: ProductFeedPanMode;
+  panTranslateRef?: React.MutableRefObject<{ x: number; y: number }>;
+  contentMeasureRef?: React.RefObject<HTMLDivElement | null>;
 };
 
 export function useBidirectionalProductFeed(opts: UseBidirectionalProductFeedOptions) {
-  const { supabase, pageSize, searchTerm, filterOpts, sortBy, resetKey } = opts;
+  const {
+    supabase,
+    pageSize,
+    searchTerm,
+    filterOpts,
+    sortBy,
+    resetKey,
+    panMode = "native",
+    panTranslateRef,
+    contentMeasureRef,
+  } = opts;
+  const isPuzzle = panMode === "puzzle" && panTranslateRef != null && contentMeasureRef != null;
 
   const [products, setProducts] = useState<Array<Record<string, unknown>>>([]);
   const [totalCount, setTotalCount] = useState<number | null>(null);
@@ -154,8 +171,17 @@ export function useBidirectionalProductFeed(opts: UseBidirectionalProductFeedOpt
     loadingUpRef.current = true;
     setIsLoadingUp(true);
     const el = scrollRef.current;
-    const prevScrollHeight = el?.scrollHeight ?? 0;
-    const prevScrollTop = el?.scrollTop ?? 0;
+    const ct = contentMeasureRef?.current;
+    let prevScrollHeight: number;
+    let prevScrollTop = 0;
+    let prevTy = 0;
+    if (isPuzzle && ct && panTranslateRef) {
+      prevScrollHeight = ct.scrollHeight;
+      prevTy = panTranslateRef.current.y;
+    } else {
+      prevScrollHeight = el?.scrollHeight ?? 0;
+      prevScrollTop = el?.scrollTop ?? 0;
+    }
 
     const nextStart = Math.max(0, so - pageSize);
     try {
@@ -176,6 +202,16 @@ export function useBidirectionalProductFeed(opts: UseBidirectionalProductFeedOpt
       setStartOffset(nextStart);
 
       requestAnimationFrame(() => {
+        if (isPuzzle && panTranslateRef && ct) {
+          const newH = ct.scrollHeight;
+          const delta = newH - prevScrollHeight;
+          panTranslateRef.current = {
+            x: panTranslateRef.current.x,
+            y: prevTy - delta,
+          };
+          ct.style.transform = `translate3d(${panTranslateRef.current.x}px, ${panTranslateRef.current.y}px, 0)`;
+          return;
+        }
         const box = scrollRef.current;
         if (!box) return;
         const delta = box.scrollHeight - prevScrollHeight;
@@ -187,7 +223,7 @@ export function useBidirectionalProductFeed(opts: UseBidirectionalProductFeedOpt
       setIsLoadingUp(false);
       loadingUpRef.current = false;
     }
-  }, [supabase, searchTerm, filterOpts, sortBy, pageSize]);
+  }, [supabase, searchTerm, filterOpts, sortBy, pageSize, isPuzzle, panTranslateRef, contentMeasureRef]);
 
   /**
    * Scroll events only fire when the viewport actually overflows. If the first page is shorter
@@ -196,10 +232,38 @@ export function useBidirectionalProductFeed(opts: UseBidirectionalProductFeedOpt
    * have scrollWidth === clientWidth; left/right then map to keyboard nudges, not extra loads).
    */
   const runEdgeCheck = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el || isInitialLoadingRef.current) return;
+    if (isInitialLoadingRef.current) return;
 
-    const { scrollTop, scrollLeft, clientHeight, clientWidth, scrollHeight, scrollWidth } = el;
+    let scrollTop: number;
+    let scrollLeft: number;
+    let clientHeight: number;
+    let clientWidth: number;
+    let scrollHeight: number;
+    let scrollWidth: number;
+
+    if (isPuzzle && panTranslateRef && contentMeasureRef?.current && scrollRef.current) {
+      const vp = scrollRef.current;
+      const ct = contentMeasureRef.current;
+      const { x, y } = panTranslateRef.current;
+      clientHeight = vp.clientHeight;
+      clientWidth = vp.clientWidth;
+      scrollHeight = ct.scrollHeight;
+      scrollWidth = ct.scrollWidth;
+      scrollTop = -y;
+      scrollLeft = -x;
+    } else {
+      const el = scrollRef.current;
+      if (!el) return;
+      ({
+        scrollTop,
+        scrollLeft,
+        clientHeight,
+        clientWidth,
+        scrollHeight,
+        scrollWidth,
+      } = el);
+    }
+
     const verticalOverflow = scrollHeight > clientHeight + OVERFLOW_SLACK_PX;
     const horizontalOverflow = scrollWidth > clientWidth + OVERFLOW_SLACK_PX;
 
@@ -223,16 +287,17 @@ export function useBidirectionalProductFeed(opts: UseBidirectionalProductFeedOpt
     if ((nearTop || nearLeft) && start > 0 && !loadingUpRef.current) {
       void loadMoreUp();
     }
-  }, [loadMoreDown, loadMoreUp]);
+  }, [loadMoreDown, loadMoreUp, isPuzzle, panTranslateRef, contentMeasureRef]);
 
   const onScroll = useCallback(() => {
+    if (isPuzzle) return;
     const el = scrollRef.current;
     if (!el) return;
     if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
     scrollTimerRef.current = setTimeout(() => {
       runEdgeCheck();
     }, SCROLL_DEBOUNCE_MS);
-  }, [runEdgeCheck]);
+  }, [isPuzzle, runEdgeCheck]);
 
   useEffect(() => {
     return () => {
@@ -248,18 +313,63 @@ export function useBidirectionalProductFeed(opts: UseBidirectionalProductFeedOpt
 
   useEffect(() => {
     const el = scrollRef.current;
+    const ct = contentMeasureRef?.current;
     if (!el || typeof ResizeObserver === "undefined") return;
     const ro = new ResizeObserver(() => {
       runEdgeCheck();
     });
     ro.observe(el);
+    if (isPuzzle && ct) ro.observe(ct);
     return () => {
       ro.disconnect();
     };
-  }, [runEdgeCheck]);
+  }, [runEdgeCheck, isPuzzle, contentMeasureRef, products.length]);
+
+  const clampPuzzlePan = useCallback(() => {
+    if (!isPuzzle || !panTranslateRef || !contentMeasureRef?.current || !scrollRef.current) return;
+    const vp = scrollRef.current;
+    const ct = contentMeasureRef.current;
+    const Hv = vp.clientHeight;
+    const Wv = vp.clientWidth;
+    const Hc = ct.scrollHeight;
+    const Wc = ct.scrollWidth;
+    let { x: nx, y: ny } = panTranslateRef.current;
+    if (Wc > Wv) nx = Math.min(0, Math.max(-(Wc - Wv), nx));
+    else nx = 0;
+    if (Hc > Hv) ny = Math.min(0, Math.max(-(Hc - Hv), ny));
+    else ny = 0;
+    panTranslateRef.current = { x: nx, y: ny };
+    ct.style.transform = `translate3d(${nx}px, ${ny}px, 0)`;
+  }, [isPuzzle, panTranslateRef, contentMeasureRef]);
 
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
+      if (isPuzzle && panTranslateRef && contentMeasureRef?.current && scrollRef.current) {
+        const ct = contentMeasureRef.current;
+        const step = 120;
+        let dx = 0;
+        let dy = 0;
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          dy = -step;
+        } else if (e.key === "ArrowUp") {
+          e.preventDefault();
+          dy = step;
+        } else if (e.key === "ArrowRight") {
+          e.preventDefault();
+          dx = -step;
+        } else if (e.key === "ArrowLeft") {
+          e.preventDefault();
+          dx = step;
+        } else {
+          return;
+        }
+        const { x, y } = panTranslateRef.current;
+        panTranslateRef.current = { x: x + dx, y: y + dy };
+        clampPuzzlePan();
+        runEdgeCheck();
+        return;
+      }
       const el = scrollRef.current;
       if (!el) return;
       const step = 120;
@@ -277,7 +387,7 @@ export function useBidirectionalProductFeed(opts: UseBidirectionalProductFeedOpt
         el.scrollLeft -= step;
       }
     },
-    [],
+    [isPuzzle, panTranslateRef, contentMeasureRef, clampPuzzlePan, runEdgeCheck],
   );
 
   const cursor = useMemo(
@@ -307,5 +417,8 @@ export function useBidirectionalProductFeed(opts: UseBidirectionalProductFeedOpt
     onScroll,
     onKeyDown,
     reload: resetFeed,
+    runEdgeCheck,
+    clampPuzzlePan,
+    panMode: panMode ?? "native",
   };
 }

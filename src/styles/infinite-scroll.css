@@ -1,13 +1,17 @@
-/* Puzzle pan (Home featured grid): hidden scrollbars, transform-driven pan */
+/* Puzzle pan (Home featured grid): hidden scrollbars, transform-driven pan.
+   Fixed height is required — otherwise the box grows with content and there is nothing to pan inside. */
 .gh-puzzle-viewport {
   position: relative;
+  box-sizing: border-box;
   overflow: hidden;
   overscroll-behavior: contain;
+  /* Definite height so inner content can be taller/wider than the viewport */
+  height: clamp(240px, 78vh, 920px);
   max-height: min(78vh, 920px);
-  min-height: 240px;
   cursor: grab;
   user-select: none;
   -webkit-user-select: none;
+  touch-action: none;
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
@@ -37,6 +41,11 @@
 
 @media (min-width: 1024px) {
   .gh-endless-viewport {
+    max-height: min(82vh, 960px);
+  }
+
+  .gh-puzzle-viewport {
+    height: clamp(240px, 82vh, 960px);
     max-height: min(82vh, 960px);
   }
 }

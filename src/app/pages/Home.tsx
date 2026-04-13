@@ -111,7 +111,7 @@ export default function Home() {
   runHomeEdgeCheckRef.current = runHomeEdgeCheck;
 
   const homePuzzleEnabled = !isLoadingProducts && products.length > 0;
-  const { puzzleProps: homePuzzleProps } = usePuzzleScroll({
+  usePuzzleScroll({
     enabled: homePuzzleEnabled,
     viewportRef: homeProductsScrollRef,
     contentRef: homePuzzleContentRef,
@@ -707,7 +707,6 @@ export default function Home() {
                 <div
                   ref={homeProductsScrollRef}
                   tabIndex={0}
-                  {...homePuzzleProps}
                   onScroll={onHomeFeedScroll}
                   onKeyDown={onHomeFeedKeyDown}
                   className="gh-puzzle-viewport gh-endless-grid-inner rounded-xl border border-gray-100 bg-white/50 p-2 sm:p-3 outline-none focus-visible:ring-2 focus-visible:ring-[#22c55e]/30"

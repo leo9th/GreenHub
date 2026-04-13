@@ -1,21 +1,20 @@
-/* Loaded by some cached HTML; must not assume DOM nodes exist. */
-(function () {
-  "use strict";
-
-  function shareFunction(e) {
-    if (e && typeof e.preventDefault === "function") e.preventDefault();
-    var url = window.location.href;
+(function() {
+  function shareFunction() {
     if (navigator.share) {
-      navigator
-        .share({ title: document.title, url: url })
-        .catch(function () {});
-    } else if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(url).catch(function () {});
+      navigator.share({
+        title: document.title,
+        url: window.location.href
+      }).catch(console.error);
+    } else {
+      navigator.clipboard.writeText(window.location.href)
+        .then(() => alert('Link copied!'))
+        .catch(console.error);
     }
   }
 
-  const shareButton = document.getElementById("shareButton");
+  // Safe event listener attachment
+  const shareButton = document.getElementById('shareButton');
   if (shareButton) {
-    shareButton.addEventListener("click", shareFunction);
+    shareButton.addEventListener('click', shareFunction);
   }
 })();

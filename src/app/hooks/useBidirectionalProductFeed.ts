@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { fetchProductsListingRpc, mapProductRow, type ListingFilterOpts, type ListingSort } from "../utils/productSearch";
 import { getCachedListingBatch, setCachedListingBatch } from "../utils/infiniteScrollCache";
 
 const EDGE_PX = 220;
 const SCROLL_DEBOUNCE_MS = 120;
+/** Ignore sub-pixel scrollbar / rounding differences */
+const OVERFLOW_SLACK_PX = 2;
 
 function dedupeById(rows: Array<Record<string, unknown>>, existing: Map<string, Record<string, unknown>>) {
   const out: Array<Record<string, unknown>> = [];
@@ -43,6 +45,7 @@ export function useBidirectionalProductFeed(opts: UseBidirectionalProductFeedOpt
   const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadingDownRef = useRef(false);
   const loadingUpRef = useRef(false);
+  const isInitialLoadingRef = useRef(true);
   const endOffsetRef = useRef(0);
   const startOffsetRef = useRef(0);
   const totalRef = useRef<number | null>(null);
@@ -56,6 +59,9 @@ export function useBidirectionalProductFeed(opts: UseBidirectionalProductFeedOpt
   useEffect(() => {
     totalRef.current = totalCount;
   }, [totalCount]);
+  useEffect(() => {
+    isInitialLoadingRef.current = isInitialLoading;
+  }, [isInitialLoading]);
 
   const hasMoreUp = startOffset > 0;
   const hasMoreDown = totalCount != null && endOffset < totalCount;
@@ -183,28 +189,74 @@ export function useBidirectionalProductFeed(opts: UseBidirectionalProductFeedOpt
     }
   }, [supabase, searchTerm, filterOpts, sortBy, pageSize]);
 
+  /**
+   * Scroll events only fire when the viewport actually overflows. If the first page is shorter
+   * than max-height, we must still load more — same for ResizeObserver after layout changes.
+   * Horizontal edges only apply when there is real horizontal overflow (wrapping grids usually
+   * have scrollWidth === clientWidth; left/right then map to keyboard nudges, not extra loads).
+   */
+  const runEdgeCheck = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el || isInitialLoadingRef.current) return;
+
+    const { scrollTop, scrollLeft, clientHeight, clientWidth, scrollHeight, scrollWidth } = el;
+    const verticalOverflow = scrollHeight > clientHeight + OVERFLOW_SLACK_PX;
+    const horizontalOverflow = scrollWidth > clientWidth + OVERFLOW_SLACK_PX;
+
+    const total = totalRef.current;
+    const end = endOffsetRef.current;
+    const start = startOffsetRef.current;
+
+    const nearBottom =
+      verticalOverflow && scrollTop + clientHeight >= scrollHeight - EDGE_PX;
+    const nearTop = verticalOverflow && scrollTop <= EDGE_PX;
+    const nearRight =
+      horizontalOverflow && scrollLeft + clientWidth >= scrollWidth - EDGE_PX;
+    const nearLeft = horizontalOverflow && scrollLeft <= EDGE_PX;
+
+    const needsMoreToFillViewport =
+      !verticalOverflow && total != null && end < total && !loadingDownRef.current;
+
+    if ((nearBottom || nearRight || needsMoreToFillViewport) && !loadingDownRef.current) {
+      void loadMoreDown();
+    }
+    if ((nearTop || nearLeft) && start > 0 && !loadingUpRef.current) {
+      void loadMoreUp();
+    }
+  }, [loadMoreDown, loadMoreUp]);
+
   const onScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
     if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
     scrollTimerRef.current = setTimeout(() => {
-      const { scrollTop, scrollLeft, clientHeight, clientWidth, scrollHeight, scrollWidth } = el;
-
-      const nearBottom = scrollTop + clientHeight >= scrollHeight - EDGE_PX;
-      const nearTop = scrollTop <= EDGE_PX;
-      const nearRight = scrollLeft + clientWidth >= scrollWidth - EDGE_PX;
-      const nearLeft = scrollLeft <= EDGE_PX;
-
-      if (nearBottom || nearRight) void loadMoreDown();
-      if ((nearTop || nearLeft) && hasMoreUp) void loadMoreUp();
+      runEdgeCheck();
     }, SCROLL_DEBOUNCE_MS);
-  }, [loadMoreDown, loadMoreUp, hasMoreUp]);
+  }, [runEdgeCheck]);
 
   useEffect(() => {
     return () => {
       if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
     };
   }, []);
+
+  /** Re-check when data or layout changes — fixes “no scroll event” when content is shorter than the box */
+  useLayoutEffect(() => {
+    if (isInitialLoading) return;
+    runEdgeCheck();
+  }, [isInitialLoading, products.length, totalCount, endOffset, startOffset, resetKey, runEdgeCheck]);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      runEdgeCheck();
+    });
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+    };
+  }, [runEdgeCheck]);
 
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent) => {

@@ -223,7 +223,7 @@ export function sortProductsWithBoostFirst(
   return arr;
 }
 
-/** Maps app sort keys to `rpc_products_listing_simple` (default p_sort = 'newest'). */
+/** Maps app sort keys to `get_products` (default p_sort = 'newest'). */
 export function listingSortToSimpleRpc(sort: ListingSort): string {
   switch (sort) {
     case "recent":
@@ -239,7 +239,7 @@ export function listingSortToSimpleRpc(sort: ListingSort): string {
   }
 }
 
-/** True when filters need columns not exposed on `rpc_products_listing_simple` (use PostgREST fallback). */
+/** True when filters need columns not exposed on `get_products` (use PostgREST fallback). */
 export function hasExtendedListingFilters(filterOpts: ListingFilterOpts): boolean {
   return (
     (filterOpts.state != null && filterOpts.state !== "all") ||
@@ -297,7 +297,7 @@ export async function fetchProductsListingRpc(
   const term = sanitizeSearchTerm(opts.searchTerm);
   const { min: pMin, max: pMax } = priceRangeToMinMax(opts.filterOpts.priceRange);
 
-  const { data, error } = await client.rpc("rpc_products_listing_simple", {
+  const { data, error } = await client.rpc("get_products", {
     p_search: term || null,
     p_category: opts.filterOpts.category === "all" ? null : opts.filterOpts.category,
     p_condition: opts.filterOpts.condition === "all" ? null : opts.filterOpts.condition,

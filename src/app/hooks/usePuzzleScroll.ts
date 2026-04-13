@@ -20,6 +20,7 @@ export type UsePuzzleScrollOptions = {
  * Pair with a fixed-height .gh-puzzle-viewport so content can exceed the viewport.
  */
 export function usePuzzleScroll(opts: UsePuzzleScrollOptions) {
+  const { enabled } = opts;
   const optsRef = useRef(opts);
   optsRef.current = opts;
 

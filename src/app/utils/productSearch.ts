@@ -223,7 +223,36 @@ export function sortProductsWithBoostFirst(
   return arr;
 }
 
-export async function fetchProductsListingRpc(
+/** Maps app sort keys to `rpc_products_listing_simple` (default p_sort = 'newest'). */
+export function listingSortToSimpleRpc(sort: ListingSort): string {
+  switch (sort) {
+    case "recent":
+      return "newest";
+    case "price-low":
+      return "price-low";
+    case "price-high":
+      return "price-high";
+    case "rating":
+      return "rating";
+    default:
+      return "newest";
+  }
+}
+
+/** True when filters need columns not exposed on `rpc_products_listing_simple` (use PostgREST fallback). */
+export function hasExtendedListingFilters(filterOpts: ListingFilterOpts): boolean {
+  return (
+    (filterOpts.state != null && filterOpts.state !== "all") ||
+    (filterOpts.carBrand != null && filterOpts.carBrand !== "all") ||
+    (filterOpts.subcategory != null && filterOpts.subcategory !== "all")
+  );
+}
+
+/**
+ * Same paging semantics as the listing RPC: active products, filters, sort, range.
+ * Used when sidebar filters need state / car brand / subcategory.
+ */
+export async function fetchProductsListingPostgrest(
   client: SupabaseClient,
   opts: {
     searchTerm: string;
@@ -234,18 +263,47 @@ export async function fetchProductsListingRpc(
   },
 ): Promise<{ rows: Record<string, unknown>[]; total: number; error: string | null }> {
   const term = sanitizeSearchTerm(opts.searchTerm);
+  let q = listingBaseQuery(client);
+  if (term) q = withSearchOr(q, term);
+  q = applyListingFilters(q, opts.filterOpts);
+  q = applyListingSort(q, opts.sortBy);
+  const from = opts.offset;
+  const to = opts.offset + Math.max(opts.limit, 1) - 1;
+  const { data, error, count } = await q.range(from, to);
+
+  if (error) {
+    return { rows: [], total: 0, error: error.message };
+  }
+
+  const rows = Array.isArray(data) ? (data as Record<string, unknown>[]) : [];
+  const total = typeof count === "number" ? count : rows.length;
+  return { rows, total, error: null };
+}
+
+export async function fetchProductsListingRpc(
+  client: SupabaseClient,
+  opts: {
+    searchTerm: string;
+    filterOpts: ListingFilterOpts;
+    sortBy: ListingSort;
+    limit: number;
+    offset: number;
+  },
+): Promise<{ rows: Record<string, unknown>[]; total: number; error: string | null }> {
+  if (hasExtendedListingFilters(opts.filterOpts)) {
+    return fetchProductsListingPostgrest(client, opts);
+  }
+
+  const term = sanitizeSearchTerm(opts.searchTerm);
   const { min: pMin, max: pMax } = priceRangeToMinMax(opts.filterOpts.priceRange);
 
-  const { data, error } = await client.rpc("rpc_products_listing", {
+  const { data, error } = await client.rpc("rpc_products_listing_simple", {
     p_search: term || null,
     p_category: opts.filterOpts.category === "all" ? null : opts.filterOpts.category,
     p_condition: opts.filterOpts.condition === "all" ? null : opts.filterOpts.condition,
-    p_car_brand: opts.filterOpts.carBrand === "all" ? null : opts.filterOpts.carBrand,
-    p_subcategory: opts.filterOpts.subcategory === "all" ? null : opts.filterOpts.subcategory,
-    p_state: opts.filterOpts.state === "all" ? null : opts.filterOpts.state,
     p_price_min: pMin,
     p_price_max: pMax,
-    p_sort: opts.sortBy,
+    p_sort: listingSortToSimpleRpc(opts.sortBy),
     p_limit: opts.limit,
     p_offset: opts.offset,
   });

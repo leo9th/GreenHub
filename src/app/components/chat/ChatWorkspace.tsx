@@ -397,12 +397,41 @@ export default function ChatWorkspace() {
   const productParam = searchParams.get("product");
   const validProductId = useMemo(() => parseProductQueryParam(productParam), [productParam]);
 
-  /** Prefer `?product=` from the listing link so the strip loads even before DB sync. */
+  /** Captures `?product=` so listing attachment survives URL cleanup and `/messages/u` → `/messages/c` redirects. */
+  const [productIdFromQuery, setProductIdFromQuery] = useState<number | null>(() => {
+    if (typeof window === "undefined") return null;
+    return parseProductQueryParam(new URLSearchParams(window.location.search).get("product"));
+  });
+
+  const routePeerOrThreadKey = `${threadIdParam ?? ""}|${peerRouteParam ?? ""}|${legacyThreadId ?? ""}`;
+  const prevRouteKeyRef = useRef<string | null>(null);
+
+  useLayoutEffect(() => {
+    const pid = parseProductQueryParam(searchParams.get("product"));
+    const routeChanged = prevRouteKeyRef.current !== routePeerOrThreadKey;
+    prevRouteKeyRef.current = routePeerOrThreadKey;
+
+    if (pid != null) {
+      setProductIdFromQuery(pid);
+      const raw = searchParams.get("product");
+      if (raw != null && raw !== "") {
+        const next = new URLSearchParams(searchParams);
+        next.delete("product");
+        const qs = next.toString();
+        navigate({ pathname: location.pathname, search: qs ? `?${qs}` : "" }, { replace: true });
+      }
+    } else if (routeChanged) {
+      setProductIdFromQuery(null);
+    }
+  }, [searchParams, navigate, location.pathname, routePeerOrThreadKey]);
+
+  /** Prefer persisted link intent, then current `?product=`, then conversation row. */
   const stripProductSourceId = useMemo(() => {
+    if (productIdFromQuery != null && productIdFromQuery > 0) return productIdFromQuery;
     if (validProductId != null && validProductId > 0) return validProductId;
     const c = conversation ? parseConversationInt(conversation.context_product_id) : null;
     return c != null && c > 0 ? Math.trunc(c) : null;
-  }, [validProductId, conversation?.context_product_id]);
+  }, [productIdFromQuery, validProductId, conversation?.context_product_id]);
 
   const peerFirstName = useMemo(() => peerName.split(/\s+/)[0] || "Member", [peerName]);
 
@@ -634,6 +663,7 @@ export default function ChatWorkspace() {
     setLoadError(null);
     attachListingToFirstSendRef.current = false;
     try {
+      const listingIntent = productIdFromQuery ?? validProductId;
       let conv: ConversationRow | null = null;
       let peer: string | null = null;
 
@@ -650,11 +680,11 @@ export default function ChatWorkspace() {
         conv = data;
         peer = otherPartyUserId(conv, authUser.id);
         if (!peer) throw new Error("Not a participant");
-        if (validProductId) {
+        if (listingIntent != null && listingIntent > 0) {
           const current = parseConversationInt(conv.context_product_id);
-          if (current !== validProductId) {
-            const { error: uErr } = await setConversationContextProduct(supabase, conv.id, validProductId);
-            if (!uErr) conv = { ...conv, context_product_id: validProductId };
+          if (current !== listingIntent) {
+            const { error: uErr } = await setConversationContextProduct(supabase, conv.id, listingIntent);
+            if (!uErr) conv = { ...conv, context_product_id: listingIntent };
           }
         }
       } else {
@@ -683,7 +713,7 @@ export default function ChatWorkspace() {
             supabase,
             authUser.id,
             peerFromUrl,
-            { contextProductId: validProductId ?? undefined },
+            { contextProductId: listingIntent ?? undefined },
           );
           if (insErr) {
             if (isDuplicateConversationError(insErr)) {
@@ -696,16 +726,16 @@ export default function ChatWorkspace() {
           }
         } else {
           conv = found;
-          if (validProductId) {
-            const { error: uErr } = await setConversationContextProduct(supabase, found.id, validProductId);
-            if (!uErr) conv = { ...conv, context_product_id: validProductId };
+          if (listingIntent != null && listingIntent > 0) {
+            const { error: uErr } = await setConversationContextProduct(supabase, found.id, listingIntent);
+            if (!uErr) conv = { ...conv, context_product_id: listingIntent };
           }
         }
         peer = peerFromUrl;
         if (conv && !threadIdParam && !legacyThreadId) {
           const productQs =
-            validProductId != null && Number.isFinite(validProductId) && validProductId > 0
-              ? `?product=${validProductId}`
+            listingIntent != null && Number.isFinite(listingIntent) && listingIntent > 0
+              ? `?product=${listingIntent}`
               : "";
           navigate(`/messages/c/${conv.id}${productQs}`, { replace: true });
         }
@@ -781,8 +811,9 @@ export default function ChatWorkspace() {
         }
       })();
 
+      const attachPid = listingIntent ?? parseConversationInt(conv.context_product_id);
       attachListingToFirstSendRef.current =
-        validProductId != null && Number.isFinite(validProductId) && validProductId > 0;
+        attachPid != null && Number.isFinite(attachPid) && attachPid > 0;
     } catch (e: unknown) {
       console.error(e);
       const msg = e instanceof Error ? e.message : "Could not open chat";
@@ -797,7 +828,7 @@ export default function ChatWorkspace() {
     } finally {
       setLoading(false);
     }
-  }, [authUser?.id, threadIdParam, peerRouteParam, legacyThreadId, validProductId, navigate]);
+  }, [authUser?.id, threadIdParam, peerRouteParam, legacyThreadId, validProductId, productIdFromQuery, navigate]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -856,21 +887,22 @@ export default function ChatWorkspace() {
     };
   }, [stripProductSourceId]);
 
-  /** Keep `conversations.context_product_id` aligned with `?product=` from the product page. */
+  /** Keep `conversations.context_product_id` aligned with `?product=` / persisted link intent. */
   useEffect(() => {
-    if (!conversation?.id || validProductId == null) return;
+    const intent = productIdFromQuery ?? validProductId;
+    if (!conversation?.id || intent == null) return;
     const cur = parseConversationInt(conversation.context_product_id);
-    if (cur === validProductId) return;
+    if (cur === intent) return;
     let cancelled = false;
     void (async () => {
-      const { error } = await setConversationContextProduct(supabase, conversation.id, validProductId);
+      const { error } = await setConversationContextProduct(supabase, conversation.id, intent);
       if (cancelled || error) return;
-      setConversation((c) => (c ? { ...c, context_product_id: validProductId } : c));
+      setConversation((c) => (c ? { ...c, context_product_id: intent } : c));
     })();
     return () => {
       cancelled = true;
     };
-  }, [conversation?.id, conversation?.context_product_id, validProductId]);
+  }, [conversation?.id, conversation?.context_product_id, productIdFromQuery, validProductId]);
 
   useEffect(() => {
     setMobileProductStripCollapsed(false);
@@ -1247,13 +1279,13 @@ export default function ChatWorkspace() {
 
       let productId = opts?.productId ?? null;
       if (productId == null && attachListingToFirstSendRef.current) {
-        const ctx = conversation.context_product_id;
-        if (ctx != null) {
-          const n = parseConversationInt(ctx);
-          if (n != null && n > 0) {
-            productId = n;
-            attachListingToFirstSendRef.current = false;
-          }
+        let n = parseConversationInt(conversation.context_product_id);
+        if (n == null || n <= 0) {
+          n = stripProductSourceId;
+        }
+        if (n != null && n > 0) {
+          productId = n;
+          attachListingToFirstSendRef.current = false;
         }
       } else if (productId != null) {
         attachListingToFirstSendRef.current = false;
@@ -1343,6 +1375,9 @@ export default function ChatWorkspace() {
             prev.map((m) => (m.id === tempId ? { ...row, client_sending: false } : m)),
           ),
         );
+        if (productId != null) {
+          setProductIdFromQuery(null);
+        }
       } catch (e: unknown) {
         console.error("[chat_messages insert]", e);
         if (e && typeof e === "object" && "code" in e) {
@@ -1356,17 +1391,17 @@ export default function ChatWorkspace() {
         setSendBusy(false);
       }
     },
-    [authUser?.id, conversation, draft, replyingTo, scrollToBottom],
+    [authUser?.id, conversation, draft, replyingTo, scrollToBottom, stripProductSourceId],
   );
 
   const sendProductCard = useCallback(() => {
-    const pid = conversation?.context_product_id ?? stripProduct?.id ?? null;
+    const pid = conversation?.context_product_id ?? stripProduct?.id ?? stripProductSourceId ?? null;
     if (pid == null) {
       toast.message("No listing linked to this chat.");
       return;
     }
     void sendMessage({ text: "", productId: pid });
-  }, [conversation?.context_product_id, stripProduct?.id, sendMessage]);
+  }, [conversation?.context_product_id, stripProduct?.id, stripProductSourceId, sendMessage]);
 
   const stopRecordingCleanup = useCallback(() => {
     if (recordTimerRef.current) {
@@ -2027,6 +2062,11 @@ export default function ChatWorkspace() {
                 <span className="h-9 w-24 shrink-0 rounded-md bg-gray-200 dark:bg-zinc-700" />
               </div>
             </div>
+          ) : stripProductSourceId != null && !stripProduct && !listingStripLoading && !productStripDismissed ? (
+            <div className="shrink-0 border-b border-[#d1d7db] bg-amber-50/90 px-3 py-2 text-sm text-amber-950 dark:border-zinc-700 dark:bg-amber-950/40 dark:text-amber-100 sm:px-4">
+              <span className="font-medium">Listing #{stripProductSourceId}</span>
+              <span className="text-amber-800/90 dark:text-amber-200/90"> — details couldn&apos;t be loaded. You can still message about this product.</span>
+            </div>
           ) : stripProduct && !productStripDismissed ? (
             <div className="shrink-0 border-b border-[#d1d7db] bg-white dark:border-zinc-700 dark:bg-zinc-800/80">
               {mobileProductStripCollapsed ? (
@@ -2539,13 +2579,13 @@ export default function ChatWorkspace() {
                 </div>
               ) : null}
 
-              {stripProduct && !productStripDismissed ? (
+              {stripProductSourceId != null && !productStripDismissed ? (
                 <div className="mb-2 md:hidden">
                   <ComposerAttachedListing
-                    productId={stripProduct.id}
-                    title={stripProduct.title}
-                    priceLabel={formatPrice(stripProduct.price)}
-                    imageUrl={stripProduct.image}
+                    productId={stripProduct?.id ?? stripProductSourceId}
+                    title={stripProduct?.title ?? "Listing"}
+                    priceLabel={stripProduct ? formatPrice(stripProduct.price) : "…"}
+                    imageUrl={stripProduct?.image ?? null}
                     onDismiss={() => setProductStripDismissed(true)}
                   />
                 </div>
@@ -2573,7 +2613,7 @@ export default function ChatWorkspace() {
                     type="button"
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => void sendProductCard()}
-                    disabled={!conversation?.context_product_id && !stripProduct}
+                    disabled={stripProductSourceId == null}
                     className="flex h-11 min-w-[44px] shrink-0 items-center justify-center rounded-full text-gray-700 transition-colors duration-200 hover:bg-black/[0.06] disabled:opacity-40 dark:text-zinc-200 dark:hover:bg-white/10"
                     aria-label="Share listing"
                     title="Share product card"

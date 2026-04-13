@@ -114,6 +114,7 @@ import { Button } from "../ui/button";
 import { cn } from "../ui/utils";
 import { ChatInputBar } from "./ChatInputBar";
 import { ChatPortraitProductCard } from "./ChatPortraitProductCard";
+import { ComposerAttachedListing } from "./ComposerAttachedListing";
 import { ReportUserDialog } from "./ReportUserDialog";
 import { MessageInfoDialog } from "./MessageInfoDialog";
 import { MessageBubble } from "./MessageBubble";
@@ -2525,6 +2526,18 @@ export default function ChatWorkspace() {
                   >
                     <X className="h-4 w-4" />
                   </button>
+                </div>
+              ) : null}
+
+              {stripProduct && !productStripDismissed ? (
+                <div className="mb-2 md:hidden">
+                  <ComposerAttachedListing
+                    productId={stripProduct.id}
+                    title={stripProduct.title}
+                    priceLabel={formatPrice(stripProduct.price)}
+                    imageUrl={stripProduct.image}
+                    onDismiss={() => setProductStripDismissed(true)}
+                  />
                 </div>
               ) : null}
 

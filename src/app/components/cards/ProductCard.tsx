@@ -44,6 +44,8 @@ export interface ProductCardProps {
   sellerFollowerCount?: number;
   /** Seller display name from profiles (optional). */
   sellerName?: string;
+  /** Opens DM with seller and this listing attached (`?product=`). Requires `sellerId`. */
+  messageSellerHref?: string;
 }
 
 export function ProductCard({
@@ -65,6 +67,7 @@ export function ProductCard({
   sellerId,
   sellerFollowerCount,
   sellerName,
+  messageSellerHref,
 }: ProductCardProps) {
   const formatPrice = useCurrency();
   const navigate = useNavigate();
@@ -80,9 +83,10 @@ export function ProductCard({
   const displayLikes = likeCount ?? likesCount;
 
   return (
+    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden rounded-xl border border-transparent bg-white shadow-sm transition hover:shadow-md dark:border-border dark:bg-card">
     <Link
       to={linkTo}
-      className="flex h-full min-h-0 w-full flex-col overflow-hidden rounded-xl border border-transparent bg-white shadow-sm transition hover:shadow-md dark:border-border dark:bg-card"
+      className="flex min-h-0 flex-1 flex-col overflow-hidden"
     >
       {/* Image ~75% of card height visually; fixed px so thumbnails stay large in narrow grids */}
       <div className="relative h-[160px] w-full shrink-0 overflow-hidden bg-gray-100 dark:bg-muted md:h-[200px]">
@@ -165,6 +169,16 @@ export function ProductCard({
         ) : null}
       </div>
     </Link>
+      {messageSellerHref ? (
+        <Link
+          to={messageSellerHref}
+          className="flex shrink-0 items-center justify-center gap-2 border-t border-gray-100 bg-emerald-50/90 px-3 py-2 text-xs font-semibold text-[#15803d] transition hover:bg-emerald-100 dark:border-border dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-950/70"
+        >
+          <span aria-hidden>💬</span>
+          Message seller
+        </Link>
+      ) : null}
+    </div>
   );
 }
 

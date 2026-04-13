@@ -892,6 +892,11 @@ export default function Products() {
                       sellerId={sid || undefined}
                       sellerFollowerCount={sid ? sellerFollowerCounts[sid] : undefined}
                       sellerName={sid ? sellerDisplayNames[sid] : undefined}
+                      messageSellerHref={
+                        sid && product.id != null
+                          ? `/messages/u/${encodeURIComponent(sid)}?product=${encodeURIComponent(String(product.id))}`
+                          : undefined
+                      }
                     />
                   );
                 })}

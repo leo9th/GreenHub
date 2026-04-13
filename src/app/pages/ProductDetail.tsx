@@ -933,12 +933,6 @@ export default function ProductDetail() {
     ),
   };
 
-  const handleChatClick = () => {
-    console.log("Chat clicked - product.id:", product.id);
-    console.log("Chat clicked - sellerId:", sellerId);
-    console.log("Chat URL:", `/messages/u/${sellerId}?product=${product.id}`);
-  };
-
   const handlePrevImage = () => {
     if (product.images.length <= 1) return;
     setCurrentImageIndex((prev) => (prev === 0 ? product.images.length - 1 : prev - 1));
@@ -1244,10 +1238,9 @@ export default function ProductDetail() {
               >
                 <Link
                   to={chatToSellerUrl}
-                  onClick={handleChatClick}
                   className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#15803d]/30 bg-white text-[#15803d] shadow-sm transition hover:bg-[#15803d] hover:text-white"
-                  title="Chat about this listing"
-                  aria-label="Chat about this listing"
+                  title="Message seller about this listing"
+                  aria-label="Message seller about this listing"
                 >
                   <MessageCircle className="h-[18px] w-[18px]" strokeWidth={2} aria-hidden />
                 </Link>
@@ -1265,11 +1258,10 @@ export default function ProductDetail() {
             <div className="mb-3 hidden items-center justify-end gap-2 md:flex" role="group" aria-label="Contact">
               <Link
                 to={chatToSellerUrl}
-                onClick={handleChatClick}
                 className="inline-flex items-center gap-2 rounded-full border border-[#15803d]/30 bg-white px-3 py-1.5 text-sm font-semibold text-[#15803d] shadow-sm transition hover:bg-[#15803d] hover:text-white"
               >
                 <MessageCircle className="h-4 w-4 shrink-0" aria-hidden />
-                Chat
+                Message seller
               </Link>
               <a
                 href={callHref}
@@ -1475,11 +1467,10 @@ export default function ProductDetail() {
                   {canMessageSeller ? (
                     <Link
                       to={chatToSellerUrl}
-                      onClick={handleChatClick}
                       className="flex-1 min-h-[46px] inline-flex items-center justify-center gap-2 rounded-xl bg-[#16a34a] text-white text-sm font-semibold px-4 hover:bg-[#15803d] shadow-sm"
                     >
                       <MessageCircle className="w-4 h-4 shrink-0" aria-hidden />
-                      Chat
+                      Message seller
                     </Link>
                   ) : (
                     <p className="flex-1 min-h-[46px] flex items-center justify-center rounded-xl bg-gray-50 px-3 text-center text-xs text-gray-500 ring-1 ring-gray-100">
@@ -1797,10 +1788,9 @@ export default function ProductDetail() {
               {canMessageSeller ? (
                 <Link
                   to={chatToSellerUrl}
-                  onClick={handleChatClick}
                   className="hidden sm:inline-flex px-4 py-3 rounded-xl ring-1 ring-gray-200 text-sm font-semibold text-gray-800 items-center justify-center hover:bg-gray-50"
                 >
-                  Chat
+                  Message seller
                 </Link>
               ) : null}
               <button

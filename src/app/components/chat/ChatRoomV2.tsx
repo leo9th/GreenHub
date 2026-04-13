@@ -8,6 +8,7 @@ import { useCurrency } from "../../hooks/useCurrency";
 import { formatListTime, useInboxConversationList } from "../../hooks/useInboxConversationList";
 import { getAvatarUrl } from "../../utils/getAvatar";
 import { getProductPrice } from "../../utils/getProductPrice";
+import { getProductThumbnailUrl } from "../../utils/productImages";
 import {
   clearConversationForMe,
   clearConversationMessages,
@@ -616,7 +617,7 @@ export default function ChatRoomV2() {
       try {
         const { data, error } = await supabase
           .from("products")
-          .select("id, title, price, price_local, image, like_count, condition")
+          .select("id, title, price, price_local, image, images, like_count, condition")
           .eq("id", pid)
           .maybeSingle();
         if (cancelled) return;
@@ -628,11 +629,12 @@ export default function ChatRoomV2() {
         const lcRaw = row.like_count;
         const likeCount =
           typeof lcRaw === "number" && Number.isFinite(lcRaw) ? lcRaw : Number(lcRaw) || 0;
+        const thumb = getProductThumbnailUrl(row as { image?: unknown; images?: unknown }).trim();
         setStripProduct({
           id: Number(row.id),
           title: String(row.title ?? "Listing"),
           price: getProductPrice(row as { price?: unknown; price_local?: unknown }),
-          image: typeof row.image === "string" ? row.image : null,
+          image: thumb || null,
           like_count: likeCount,
           condition: typeof row.condition === "string" && row.condition.trim() ? row.condition.trim() : null,
         });
@@ -710,7 +712,7 @@ export default function ChatRoomV2() {
     void (async () => {
       const { data, error } = await supabase
         .from("products")
-        .select("id, title, price, price_local, image, like_count, condition")
+        .select("id, title, price, price_local, image, images, like_count, condition")
         .in("id", list);
       if (cancelled) return;
       if (error || !data) return;
@@ -721,11 +723,12 @@ export default function ChatRoomV2() {
         const lcRaw = row.like_count;
         const likeCount =
           typeof lcRaw === "number" && Number.isFinite(lcRaw) ? lcRaw : Number(lcRaw) || 0;
+        const thumb = getProductThumbnailUrl(row as { image?: unknown; images?: unknown }).trim();
         next.set(id, {
           id,
           title: String(row.title ?? "Listing"),
           price: getProductPrice(row as { price?: unknown; price_local?: unknown }),
-          image: typeof row.image === "string" ? row.image : null,
+          image: thumb || null,
           like_count: likeCount,
           condition: typeof row.condition === "string" && row.condition.trim() ? row.condition.trim() : null,
         });

@@ -24,6 +24,8 @@ export interface UserProfile {
   last_active?: string | null;
   show_phone_on_profile?: boolean | null;
   show_email_on_profile?: boolean | null;
+  /** Permanent GreenHub member id (GH-XXXX-XXXX-XX) when migration applied */
+  unique_id?: string | null;
 }
 
 interface AuthContextType {

@@ -31,6 +31,8 @@ import {
   type ListingFilterOpts,
   type ListingSort,
 } from "../utils/productSearch";
+import { useBidirectionalProductFeed } from "../hooks/useBidirectionalProductFeed";
+import { InfiniteScrollIndicators } from "../components/InfiniteScrollIndicators";
 import { getRelatedSearchSuggestions } from "../utils/searchSuggestions";
 import { getProductThumbnailUrl } from "../utils/productImages";
 import { useVerifiedSellerIds } from "../hooks/useVerifiedSellerIds";
@@ -50,12 +52,7 @@ export default function Home() {
 
   // Custom Ad State
   const [customBanner, setCustomBanner] = useState<string | null>(null);
-  const [products, setProducts] = useState<Array<Record<string, unknown>>>([]);
   const [categoryAdCounts, setCategoryAdCounts] = useState<Record<string, number>>({});
-  const [isLoadingProducts, setIsLoadingProducts] = useState<boolean>(true);
-  const [isLoadingMoreHome, setIsLoadingMoreHome] = useState(false);
-  const [homeTotalCount, setHomeTotalCount] = useState<number | null>(null);
-  const [productLoadError, setProductLoadError] = useState<string | null>(null);
   const [likedProductIds, setLikedProductIds] = useState<Set<string>>(new Set());
   const [pendingLikeIds, setPendingLikeIds] = useState<Set<string>>(new Set());
   const [commentCounts, setCommentCounts] = useState<Record<string, number>>({});
@@ -72,9 +69,34 @@ export default function Home() {
       state: "all",
       priceRange: "all",
       carBrand: "all",
+      subcategory: "all",
     }),
     [],
   );
+
+  const homeFeedResetKey = useMemo(() => `${activeRegion.id}|${homeSort}`, [activeRegion.id, homeSort]);
+
+  const {
+    products,
+    setProducts,
+    totalCount: homeTotalCount,
+    scrollRef: homeProductsScrollRef,
+    isInitialLoading: isLoadingProducts,
+    isLoadingUp: isHomeLoadingUp,
+    isLoadingDown: isHomeLoadingDown,
+    isLoadingLeft: isHomeLoadingLeft,
+    isLoadingRight: isHomeLoadingRight,
+    loadError: productLoadError,
+    onScroll: onHomeFeedScroll,
+    onKeyDown: onHomeFeedKeyDown,
+  } = useBidirectionalProductFeed({
+    supabase,
+    pageSize: HOME_PAGE_SIZE,
+    searchTerm: "",
+    filterOpts: homeFilterOpts,
+    sortBy: homeSort,
+    resetKey: homeFeedResetKey,
+  });
 
   const homeCardIds = useMemo(() => {
     const seen = new Set<string>();
@@ -297,66 +319,6 @@ export default function Home() {
       cancelled = true;
     };
   }, [activeRegion.id]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const loadFirstBatch = async () => {
-      setIsLoadingProducts(true);
-      setProductLoadError(null);
-      setProducts([]);
-      try {
-        const { rows, total, error } = await fetchProductsListingRpc(supabase, {
-          searchTerm: "",
-          filterOpts: homeFilterOpts,
-          sortBy: homeSort,
-          limit: HOME_PAGE_SIZE,
-          offset: 0,
-        });
-        if (cancelled) return;
-        if (error) throw new Error(error);
-        const mapped = rows.map((row) => mapProductRow(row));
-        setProducts(mapped);
-        setHomeTotalCount(total);
-      } catch (error: unknown) {
-        console.error("Error loading products from Supabase:", error);
-        if (!cancelled) {
-          setProductLoadError(error instanceof Error ? error.message : "Unable to load products");
-          setProducts([]);
-          setHomeTotalCount(0);
-        }
-      } finally {
-        if (!cancelled) setIsLoadingProducts(false);
-      }
-    };
-    void loadFirstBatch();
-    return () => {
-      cancelled = true;
-    };
-  }, [activeRegion.id, homeSort, homeFilterOpts]);
-
-  const loadMoreHome = useCallback(async () => {
-    if (isLoadingProducts || isLoadingMoreHome) return;
-    if (homeTotalCount != null && products.length >= homeTotalCount) return;
-    setIsLoadingMoreHome(true);
-    try {
-      const from = products.length;
-      const { rows, error } = await fetchProductsListingRpc(supabase, {
-        searchTerm: "",
-        filterOpts: homeFilterOpts,
-        sortBy: homeSort,
-        limit: HOME_PAGE_SIZE,
-        offset: from,
-      });
-      if (error) throw new Error(error);
-      const mapped = rows.map((row) => mapProductRow(row));
-      setProducts((prev) => [...prev, ...mapped]);
-    } catch (error: unknown) {
-      console.error("Load more (home):", error);
-      toast.error(error instanceof Error ? error.message : "Could not load more listings.");
-    } finally {
-      setIsLoadingMoreHome(false);
-    }
-  }, [isLoadingProducts, isLoadingMoreHome, homeTotalCount, products.length, homeSort, homeFilterOpts]);
 
   const loadRecentViewed = useCallback(async () => {
     const ids = getRecentProductIds();
@@ -706,6 +668,20 @@ export default function Home() {
                 No products found yet. Listings with status &quot;active&quot; will appear here.
               </p>
             ) : (
+              <>
+                <InfiniteScrollIndicators
+                  loadingUp={isHomeLoadingUp}
+                  loadingDown={isHomeLoadingDown}
+                  loadingLeft={isHomeLoadingLeft}
+                  loadingRight={isHomeLoadingRight}
+                />
+                <div
+                  ref={homeProductsScrollRef}
+                  tabIndex={0}
+                  onScroll={onHomeFeedScroll}
+                  onKeyDown={onHomeFeedKeyDown}
+                  className="gh-endless-viewport gh-endless-grid-inner rounded-xl border border-gray-100 bg-white/50 p-2 sm:p-3 outline-none focus-visible:ring-2 focus-visible:ring-[#22c55e]/30"
+                >
               <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 [&>*]:h-full [&>*]:min-h-0 [&>*]:min-w-0 [&>*]:w-full">
                 {products.map((product) => {
                   const row = product as Record<string, unknown>;
@@ -740,21 +716,16 @@ export default function Home() {
                   );
                 })}
               </div>
+                </div>
+              </>
             )}
-            {!isLoadingProducts &&
-            !productLoadError &&
-            homeTotalCount != null &&
-            products.length < homeTotalCount ? (
-              <div className="mt-6 flex justify-center">
-                <button
-                  type="button"
-                  onClick={() => void loadMoreHome()}
-                  disabled={isLoadingMoreHome}
-                  className="rounded-xl border-2 border-[#22c55e] bg-white px-8 py-3 text-sm font-semibold text-[#15803d] shadow-sm transition-colors hover:bg-[#22c55e]/10 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {isLoadingMoreHome ? "Loading…" : `Load more (${products.length} of ${homeTotalCount})`}
-                </button>
-              </div>
+            {!isLoadingProducts && productLoadError ? (
+              <p className="mt-2 text-center text-xs text-amber-800">{productLoadError}</p>
+            ) : null}
+            {!isLoadingProducts && !productLoadError && homeTotalCount != null && products.length < homeTotalCount ? (
+              <p className="mt-3 text-center text-xs text-gray-500">
+                Loaded {products.length} of {homeTotalCount} — scroll the grid for more
+              </p>
             ) : null}
           </div>
 

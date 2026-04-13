@@ -1,0 +1,81 @@
+/* Endless product grid — vertical + horizontal scroll on same viewport */
+.gh-endless-viewport {
+  overflow: auto;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  max-height: min(78vh, 920px);
+  min-height: 240px;
+}
+
+@media (min-width: 1024px) {
+  .gh-endless-viewport {
+    max-height: min(82vh, 960px);
+  }
+}
+
+.gh-endless-grid-inner {
+  min-width: min(100%, 100vw - 2rem);
+}
+
+/* Fixed loading chips (radium-tinted) */
+.gh-scroll-indicator {
+  position: fixed;
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.9rem;
+  border-radius: 9999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: white;
+  background: rgba(16, 185, 129, 0.92);
+  box-shadow: 0 4px 20px rgba(16, 185, 129, 0.35);
+  pointer-events: none;
+}
+
+.gh-scroll-indicator--top {
+  top: 72px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.gh-scroll-indicator--bottom {
+  bottom: 88px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.gh-scroll-indicator--left {
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.gh-scroll-indicator--right {
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+@media (min-width: 768px) {
+  .gh-scroll-indicator--bottom {
+    bottom: 24px;
+  }
+}
+
+.gh-radium-spin {
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: white;
+  border-radius: 9999px;
+  animation: gh-radium-spin 0.7s linear infinite;
+}
+
+@keyframes gh-radium-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

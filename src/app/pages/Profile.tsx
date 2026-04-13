@@ -801,6 +801,32 @@ export default function Profile() {
 
             <p className="mt-1 text-xs text-gray-400 lg:text-left">Member since {memberSince}</p>
 
+            {viewProfile?.unique_id ? (
+              <div className="unique-id-card mt-3 rounded-xl border border-emerald-100 bg-emerald-50/80 px-3 py-2.5 text-left">
+                <div className="flex items-start gap-2">
+                  <span className="text-lg" aria-hidden>
+                    🆔
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-800/80">GreenHub ID</p>
+                    <p className="font-mono text-sm font-semibold text-gray-900 tabular-nums break-all">{viewProfile.unique_id}</p>
+                    {isOwnProfile ? (
+                      <button
+                        type="button"
+                        className="mt-1.5 text-xs font-semibold text-[#15803d] hover:underline"
+                        onClick={() => {
+                          void navigator.clipboard.writeText(viewProfile.unique_id ?? "");
+                          toast.success("ID copied");
+                        }}
+                      >
+                        📋 Copy
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
             {!dataLoading && !profileMissing ? (
               <div className="mt-3 flex justify-center gap-6 border-t border-gray-100 pt-3 lg:justify-start">
                 <Link

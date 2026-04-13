@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, type ReactNode, type MouseEvent } from "react";
 import { Link, useSearchParams } from "react-router";
-import { Search, Filter, ArrowLeft, X, BadgeCheck, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, Filter, ArrowLeft, X, BadgeCheck } from "lucide-react";
 import { toast } from "sonner";
 import { categories, nigerianStates } from "../data/catalogConstants";
 import { labelForCarBrandValue, NIGERIA_CAR_BRAND_OPTIONS } from "../data/carBrands";
@@ -21,17 +21,9 @@ import {
   type ProductPk,
 } from "../utils/engagement";
 import { BoostCardBadge } from "../components/BoostBadge";
-import {
-  fetchProductsListingRpc,
-  mapProductRow,
-  listingPaginationItems,
-  parseListingPageParam,
-  parseListingSort,
-  PRODUCTS_PAGE_SIZE,
-  sanitizeSearchTerm,
-  type ListingFilterOpts,
-  type ListingSort,
-} from "../utils/productSearch";
+import { parseListingSort, PRODUCTS_PAGE_SIZE, sanitizeSearchTerm, type ListingFilterOpts, type ListingSort } from "../utils/productSearch";
+import { useBidirectionalProductFeed } from "../hooks/useBidirectionalProductFeed";
+import { InfiniteScrollIndicators } from "../components/InfiniteScrollIndicators";
 import { getRelatedSearchSuggestions } from "../utils/searchSuggestions";
 import { getProductThumbnailUrl } from "../utils/productImages";
 import { fetchProfileDisplayNamesForUsers, fetchProfileFollowerCountsForUsers } from "../utils/profileFollowCounts";
@@ -326,33 +318,11 @@ export default function Products() {
     [searchParams],
   );
 
-  const [totalCount, setTotalCount] = useState<number | null>(null);
-
-  const [products, setProducts] = useState<Array<Record<string, unknown>>>([]);
-  const [isLoadingProducts, setIsLoadingProducts] = useState<boolean>(true);
-  const [productLoadError, setProductLoadError] = useState<string | null>(null);
   const [commentCounts, setCommentCounts] = useState<Record<string, number>>({});
   const [sellerFollowerCounts, setSellerFollowerCounts] = useState<Record<string, number>>({});
   const [sellerDisplayNames, setSellerDisplayNames] = useState<Record<string, string>>({});
   const [likedProductIds, setLikedProductIds] = useState<Set<string>>(new Set());
   const [pendingLikeIds, setPendingLikeIds] = useState<Set<string>>(new Set());
-  const verifiedSellerIds = useVerifiedSellerIds(supabase, products);
-  const verifiedAdvertiserIds = useVerifiedAdvertiserIds(supabase, products);
-  const productIds = useMemo(() => {
-    const seen = new Set<string>();
-    const out: ProductPk[] = [];
-    for (const p of products) {
-      const pk = normalizeProductPk(p.id);
-      if (pk == null) continue;
-      const k = productLikeSetKey(pk);
-      if (seen.has(k)) continue;
-      seen.add(k);
-      out.push(pk);
-    }
-    return out;
-  }, [products]);
-  const productIdsKey = useMemo(() => productIds.map(productLikeSetKey).join(","), [productIds]);
-  const productIdStrings = useMemo(() => productIds.map(String), [productIds]);
 
   const filterOpts: ListingFilterOpts = useMemo(
     () => ({
@@ -361,6 +331,7 @@ export default function Products() {
       state: selectedState,
       priceRange,
       carBrand: selectedCategory === "vehicles" ? selectedCarBrand : "all",
+      subcategory: "all",
     }),
     [selectedCategory, selectedCondition, selectedState, priceRange, selectedCarBrand],
   );
@@ -378,6 +349,46 @@ export default function Products() {
       ].join("|"),
     [urlSearch, selectedCategory, selectedCarBrand, selectedCondition, selectedState, priceRange, sortBy],
   );
+
+  const {
+    products,
+    setProducts,
+    totalCount,
+    scrollRef: productsScrollRef,
+    isInitialLoading: isLoadingProducts,
+    isLoadingUp: isLoadingProductsUp,
+    isLoadingDown: isLoadingProductsDown,
+    isLoadingLeft: isLoadingProductsLeft,
+    isLoadingRight: isLoadingProductsRight,
+    loadError: productLoadError,
+    onScroll: onProductsFeedScroll,
+    onKeyDown: onProductsFeedKeyDown,
+  } = useBidirectionalProductFeed({
+    supabase,
+    pageSize: PRODUCTS_PAGE_SIZE,
+    searchTerm: sanitizeSearchTerm(urlSearch),
+    filterOpts,
+    sortBy,
+    resetKey: filterSignal,
+  });
+
+  const verifiedSellerIds = useVerifiedSellerIds(supabase, products);
+  const verifiedAdvertiserIds = useVerifiedAdvertiserIds(supabase, products);
+  const productIds = useMemo(() => {
+    const seen = new Set<string>();
+    const out: ProductPk[] = [];
+    for (const p of products) {
+      const pk = normalizeProductPk(p.id);
+      if (pk == null) continue;
+      const k = productLikeSetKey(pk);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(pk);
+    }
+    return out;
+  }, [products]);
+  const productIdsKey = useMemo(() => productIds.map(productLikeSetKey).join(","), [productIds]);
+  const productIdStrings = useMemo(() => productIds.map(String), [productIds]);
 
   const listingSellerIdsKey = useMemo(() => {
     const seen = new Set<string>();
@@ -477,8 +488,6 @@ export default function Products() {
     };
   }, [productIdsKey]);
 
-  const currentPage = parseListingPageParam(searchParams.get("page"));
-
   const onProductLike = useCallback(
     async (e: MouseEvent, row: Record<string, unknown>) => {
       e.preventDefault();
@@ -536,50 +545,6 @@ export default function Products() {
     [authUser?.id, likedProductIds, pendingLikeIds],
   );
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const run = async () => {
-      setIsLoadingProducts(true);
-      setProductLoadError(null);
-
-      try {
-        const term = sanitizeSearchTerm(urlSearch);
-        const from = (currentPage - 1) * PRODUCTS_PAGE_SIZE;
-        const { rows, total, error } = await fetchProductsListingRpc(supabase, {
-          searchTerm: term,
-          filterOpts,
-          sortBy,
-          limit: PRODUCTS_PAGE_SIZE,
-          offset: from,
-        });
-        if (cancelled) return;
-        if (error) throw new Error(error);
-
-        const mapped = rows.map((row) => mapProductRow(row));
-
-        setProducts(mapped.length ? mapped : []);
-        setTotalCount(total);
-      } catch (err: unknown) {
-        if (!cancelled) {
-          console.error(err);
-          setProductLoadError(err instanceof Error ? err.message : "Unable to load products");
-          setProducts([]);
-          setTotalCount(0);
-        }
-      } finally {
-        if (!cancelled) {
-          setIsLoadingProducts(false);
-        }
-      }
-    };
-
-    void run();
-    return () => {
-      cancelled = true;
-    };
-  }, [currentPage, filterSignal, filterOpts, sortBy, urlSearch]);
-
   const commitSearch = () => {
     const next = new URLSearchParams(searchParams);
     next.delete("page");
@@ -588,30 +553,6 @@ export default function Products() {
     else next.delete("search");
     setSearchParams(next);
   };
-
-  const totalPages = Math.max(1, totalCount != null ? Math.ceil(totalCount / PRODUCTS_PAGE_SIZE) : 1);
-
-  const goToPage = useCallback(
-    (p: number) => {
-      const target = Math.min(Math.max(1, p), totalPages);
-      setSearchParamsSoft((sp) => {
-        if (target <= 1) sp.delete("page");
-        else sp.set("page", String(target));
-      });
-    },
-    [setSearchParamsSoft, totalPages],
-  );
-
-  useEffect(() => {
-    if (totalCount == null || totalCount <= 0) return;
-    const tp = Math.max(1, Math.ceil(totalCount / PRODUCTS_PAGE_SIZE));
-    if (currentPage > tp) {
-      setSearchParamsSoft((sp) => {
-        if (tp <= 1) sp.delete("page");
-        else sp.set("page", String(tp));
-      });
-    }
-  }, [totalCount, currentPage, setSearchParamsSoft]);
 
   const clearAllFilters = () => {
     setSelectedCategory("all");
@@ -649,16 +590,6 @@ export default function Products() {
         return null;
     }
   };
-
-  const paginationItems = useMemo(
-    () => listingPaginationItems(currentPage, totalPages),
-    [currentPage, totalPages],
-  );
-
-  const showingFrom =
-    totalCount != null && totalCount > 0 ? (currentPage - 1) * PRODUCTS_PAGE_SIZE + 1 : 0;
-  const showingTo =
-    totalCount != null ? Math.min(currentPage * PRODUCTS_PAGE_SIZE, totalCount) : 0;
 
   const showChips =
     sanitizeSearchTerm(urlSearch) ||
@@ -882,7 +813,7 @@ export default function Products() {
                   <span>
                     {totalCount === 0
                       ? "No products"
-                      : `Showing ${showingFrom}–${showingTo} of ${totalCount} products`}
+                      : `Loaded ${products.length} of ${totalCount} — scroll for more`}
                   </span>
                 ) : (
                   <span>{products.length} products</span>
@@ -917,6 +848,19 @@ export default function Products() {
             </div>
           ) : (
             <>
+              <InfiniteScrollIndicators
+                loadingUp={isLoadingProductsUp}
+                loadingDown={isLoadingProductsDown}
+                loadingLeft={isLoadingProductsLeft}
+                loadingRight={isLoadingProductsRight}
+              />
+              <div
+                ref={productsScrollRef}
+                tabIndex={0}
+                onScroll={onProductsFeedScroll}
+                onKeyDown={onProductsFeedKeyDown}
+                className="gh-endless-viewport gh-endless-grid-inner rounded-xl border border-gray-100 bg-white/40 p-2 sm:p-3 outline-none focus-visible:ring-2 focus-visible:ring-[#22c55e]/30"
+              >
               <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 [&>*]:min-h-0 [&>*]:min-w-0 [&>*]:w-full">
                 {products.map((product) => {
                   const pid = Number(product.id);
@@ -952,66 +896,7 @@ export default function Products() {
                   );
                 })}
               </div>
-
-              {!productLoadError && totalPages > 1 ? (
-                <nav
-                  className="mt-8 flex flex-col items-center gap-3 sm:flex-row sm:justify-center"
-                  aria-label="Product list pagination"
-                >
-                  <div className="flex flex-wrap items-center justify-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => goToPage(currentPage - 1)}
-                      disabled={isLoadingProducts || currentPage <= 1}
-                      className="inline-flex h-9 items-center gap-1 rounded-lg border border-gray-200 bg-white px-2.5 text-sm font-medium text-gray-800 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-45"
-                      aria-label="Previous page"
-                    >
-                      <ChevronLeft className="h-4 w-4" />
-                      <span className="hidden sm:inline">Previous</span>
-                    </button>
-                    {paginationItems.map((item, idx) =>
-                      item === "ellipsis" ? (
-                        <span
-                          key={`e-${idx}`}
-                          className="px-1 text-sm text-gray-400"
-                          aria-hidden
-                        >
-                          …
-                        </span>
-                      ) : (
-                        <button
-                          key={item}
-                          type="button"
-                          onClick={() => goToPage(item)}
-                          disabled={isLoadingProducts}
-                          aria-label={`Page ${item}`}
-                          aria-current={item === currentPage ? "page" : undefined}
-                          className={`inline-flex h-9 min-w-[2.25rem] items-center justify-center rounded-lg border text-sm font-semibold shadow-sm transition-colors disabled:opacity-45 ${
-                            item === currentPage
-                              ? "border-[#16a34a] bg-[#16a34a] text-white"
-                              : "border-gray-200 bg-white text-gray-800 hover:bg-gray-50"
-                          }`}
-                        >
-                          {item}
-                        </button>
-                      ),
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => goToPage(currentPage + 1)}
-                      disabled={isLoadingProducts || currentPage >= totalPages}
-                      className="inline-flex h-9 items-center gap-1 rounded-lg border border-gray-200 bg-white px-2.5 text-sm font-medium text-gray-800 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-45"
-                      aria-label="Next page"
-                    >
-                      <span className="hidden sm:inline">Next</span>
-                      <ChevronRight className="h-4 w-4" />
-                    </button>
-                  </div>
-                  <p className="text-xs text-gray-500 tabular-nums">
-                    Page {currentPage} of {totalPages}
-                  </p>
-                </nav>
-              ) : null}
+              </div>
             </>
           )}
 

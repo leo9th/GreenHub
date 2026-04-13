@@ -1120,6 +1120,17 @@ export default function ChatRoomV2() {
     }
   }, []);
 
+  const beginReplyTo = useCallback((msg: ChatMessageRow | null | undefined) => {
+    if (!msg) return;
+    setReplyingTo(msg);
+    setMenuMsg(null);
+    requestAnimationFrame(() => {
+      const ta = draftTextareaRef.current;
+      ta?.focus();
+      ta?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+  }, []);
+
   const deleteForMe = useCallback(
     async (msg: ChatMessageRow) => {
       if (!authUser?.id) return;
@@ -1765,8 +1776,7 @@ export default function ChatRoomV2() {
                         {ctxReactions}
                         <ContextMenuItem
                           onSelect={() => {
-                            setReplyingTo(msg);
-                            jumpToMessage(msg.id);
+                            beginReplyTo(msg);
                           }}
                         >
                           Reply
@@ -1892,9 +1902,7 @@ export default function ChatRoomV2() {
           selectedText={menuSelectedText}
           isMine={menuMine}
           onReply={() => {
-            setReplyingTo(menuMsg);
-            jumpToMessage(menuMsg.id);
-            setMenuMsg(null);
+            beginReplyTo(menuMsg);
           }}
           onCopy={() => void copyText(menuMsg)}
           onCopySelected={() => void copyText(menuMsg, menuSelectedText)}

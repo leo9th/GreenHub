@@ -1811,6 +1811,17 @@ export default function ChatWorkspace() {
     }
   }, []);
 
+  const beginReplyTo = useCallback((msg: ChatMessageRow | null | undefined) => {
+    if (!msg) return;
+    setReplyingTo(msg);
+    setMobileSheetMsg(null);
+    requestAnimationFrame(() => {
+      const ta = draftTextareaRef.current;
+      ta?.focus();
+      ta?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+  }, []);
+
   const chatShellStyle = {
     ...(viewportHeight ? { ["--chat-viewport-height" as string]: `${viewportHeight}px` } : {}),
     ["--chat-header-height" as string]: `${peerHeaderHeight}px`,
@@ -2381,8 +2392,7 @@ export default function ChatWorkspace() {
                     {ctxReactions}
                     <ContextMenuItem
                       onSelect={() => {
-                        setReplyingTo(msg);
-                        jumpToMessage(msg.id);
+                        beginReplyTo(msg);
                       }}
                     >
                       <Reply className="mr-2 h-4 w-4" />
@@ -2586,9 +2596,7 @@ export default function ChatWorkspace() {
           selectedText={menuSelectedText}
           isMine={menuMine}
           onReply={() => {
-            setReplyingTo(mobileSheetMsg);
-            jumpToMessage(mobileSheetMsg.id);
-            setMobileSheetMsg(null);
+            beginReplyTo(mobileSheetMsg);
           }}
           onCopy={() => void copyText(mobileSheetMsg)}
           onCopySelected={() => void copyText(mobileSheetMsg, menuSelectedText)}

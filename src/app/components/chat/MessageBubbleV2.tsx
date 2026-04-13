@@ -160,7 +160,17 @@ export function MessageBubbleV2({
               ))}
             </div>
           ) : null}
-          {belowBubbleSlot}
+          {belowBubbleSlot ? (
+            <div
+              className="relative z-[3]"
+              onPointerDown={(e) => e.stopPropagation()}
+              onPointerMove={(e) => e.stopPropagation()}
+              onPointerUp={(e) => e.stopPropagation()}
+              onPointerCancel={(e) => e.stopPropagation()}
+            >
+              {belowBubbleSlot}
+            </div>
+          ) : null}
         </div>
 
         {showMeta ? (

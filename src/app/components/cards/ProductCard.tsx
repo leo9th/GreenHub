@@ -1,4 +1,5 @@
 import { Link, useNavigate } from "react-router";
+import { MapPin } from "lucide-react";
 import { useCurrency } from "../../hooks/useCurrency";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { VerifiedBadge } from "../VerifiedBadge";
@@ -150,8 +151,9 @@ export function ProductCard({
         ) : null}
         <p className="text-base font-bold leading-tight text-green-600 dark:text-primary">{formatPrice(price)}</p>
         {location ? (
-          <p className="flex items-center gap-1 text-xs text-gray-500 dark:text-muted-foreground">
-            <span>📍</span> {location}
+          <p className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-muted-foreground">
+            <MapPin className="h-3.5 w-3.5 shrink-0 text-gray-400 dark:text-zinc-500" strokeWidth={2} aria-hidden />
+            <span className="min-w-0">{location}</span>
           </p>
         ) : null}
         {sellerId ? (

@@ -880,8 +880,6 @@ export default function Products() {
                       priceDisplay={formatPrice(Number(product.price) || 0)}
                       location={String(product.location ?? "")}
                       city={String((product as Record<string, unknown>).city ?? "")}
-                      state={String((product as Record<string, unknown>).state ?? "")}
-                      lga={String((product as Record<string, unknown>).lga ?? "")}
                       rating={Number(product.rating) || 0}
                       reviews={product.reviews != null ? Number(product.reviews) : undefined}
                       productId={Number.isFinite(pid) ? pid : String(row.id ?? "")}

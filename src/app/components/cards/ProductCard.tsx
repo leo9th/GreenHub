@@ -14,12 +14,10 @@ export interface ProductCardProps {
   title: string;
   price: number;
   image?: string;
-  /** Primary area label (often state or “City, State”). */
+  /** `products.location` — preferred (e.g. “Garki, Abuja”). */
   location?: string;
-  /** Fallback when `location` is empty (some rows use `city` only). */
+  /** `products.city` — used when `location` is empty. */
   city?: string;
-  state?: string;
-  lga?: string;
   condition?: string;
   href?: string;
   commentCount?: number;
@@ -61,8 +59,6 @@ export function ProductCard({
   image,
   location,
   city,
-  state,
-  lga,
   condition,
   href,
   commentCount,
@@ -90,16 +86,8 @@ export function ProductCard({
   const displayViews = viewCount ?? viewsCount;
   const displayLikes = likeCount ?? likesCount;
 
-  const locationLine = (() => {
-    const loc = location?.trim();
-    if (loc) return loc;
-    const c = city?.trim();
-    if (c) return c;
-    const l = lga?.trim();
-    const s = state?.trim();
-    if (l && s) return `${l}, ${s}`;
-    return l || s || "";
-  })();
+  const locationDisplayText =
+    location?.trim() || city?.trim() || "Location not specified";
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col overflow-hidden rounded-xl border border-transparent bg-white shadow-sm transition hover:shadow-md dark:border-border dark:bg-card">
@@ -168,14 +156,12 @@ export function ProductCard({
           </div>
         ) : null}
         <p className="text-base font-bold leading-tight text-green-600 dark:text-primary">{formatPrice(price)}</p>
-        {locationLine ? (
-          <p className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-muted-foreground">
-            <span className="shrink-0 select-none text-[13px] leading-none" aria-hidden>
-              📍
-            </span>
-            <span className="min-w-0">{locationLine}</span>
-          </p>
-        ) : null}
+        <p className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-muted-foreground">
+          <span className="shrink-0 select-none text-[13px] leading-none" aria-hidden>
+            📍
+          </span>
+          <span className="min-w-0">{locationDisplayText}</span>
+        </p>
         {sellerId ? (
           <button
             type="button"

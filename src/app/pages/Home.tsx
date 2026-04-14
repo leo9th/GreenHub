@@ -729,6 +729,9 @@ export default function Home() {
                       price={Number((product as { price?: number }).price) || 0}
                       priceDisplay={formatPrice(Number((product as { price?: number }).price) || 0)}
                       location={String((product as { location?: string }).location ?? "")}
+                      city={String(row.city ?? "")}
+                      state={String(row.state ?? "")}
+                      lga={String(row.lga ?? "")}
                       rating={Number(row.rating) || 0}
                       reviews={row.reviews != null ? Number(row.reviews) : undefined}
                       productId={Number.isFinite(pid) ? pid : String(row.id ?? "")}
@@ -790,6 +793,9 @@ export default function Home() {
                       price={Number((product as { price?: number }).price) || 0}
                       priceDisplay={formatPrice(Number((product as { price?: number }).price) || 0)}
                       location={String((product as { location?: string }).location ?? "")}
+                      city={String(row.city ?? "")}
+                      state={String(row.state ?? "")}
+                      lga={String(row.lga ?? "")}
                       rating={Number(row.rating) || 0}
                       reviews={row.reviews != null ? Number(row.reviews) : undefined}
                       productId={Number.isFinite(pid) ? pid : String(row.id ?? "")}

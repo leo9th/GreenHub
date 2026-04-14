@@ -1,5 +1,4 @@
 import { Link, useNavigate } from "react-router";
-import { MapPin } from "lucide-react";
 import { useCurrency } from "../../hooks/useCurrency";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { VerifiedBadge } from "../VerifiedBadge";
@@ -15,7 +14,12 @@ export interface ProductCardProps {
   title: string;
   price: number;
   image?: string;
+  /** Primary area label (often state or “City, State”). */
   location?: string;
+  /** Fallback when `location` is empty (some rows use `city` only). */
+  city?: string;
+  state?: string;
+  lga?: string;
   condition?: string;
   href?: string;
   commentCount?: number;
@@ -56,6 +60,9 @@ export function ProductCard({
   price,
   image,
   location,
+  city,
+  state,
+  lga,
   condition,
   href,
   commentCount,
@@ -82,6 +89,17 @@ export function ProductCard({
 
   const displayViews = viewCount ?? viewsCount;
   const displayLikes = likeCount ?? likesCount;
+
+  const locationLine = (() => {
+    const loc = location?.trim();
+    if (loc) return loc;
+    const c = city?.trim();
+    if (c) return c;
+    const l = lga?.trim();
+    const s = state?.trim();
+    if (l && s) return `${l}, ${s}`;
+    return l || s || "";
+  })();
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col overflow-hidden rounded-xl border border-transparent bg-white shadow-sm transition hover:shadow-md dark:border-border dark:bg-card">
@@ -150,10 +168,12 @@ export function ProductCard({
           </div>
         ) : null}
         <p className="text-base font-bold leading-tight text-green-600 dark:text-primary">{formatPrice(price)}</p>
-        {location ? (
+        {locationLine ? (
           <p className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-muted-foreground">
-            <MapPin className="h-3.5 w-3.5 shrink-0 text-gray-400 dark:text-zinc-500" strokeWidth={2} aria-hidden />
-            <span className="min-w-0">{location}</span>
+            <span className="shrink-0 select-none text-[13px] leading-none" aria-hidden>
+              📍
+            </span>
+            <span className="min-w-0">{locationLine}</span>
           </p>
         ) : null}
         {sellerId ? (

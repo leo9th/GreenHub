@@ -183,6 +183,40 @@ function parseProductQueryParam(param: string | null): number | null {
   return i >= 1 ? i : null;
 }
 
+/** Survives `?product=` strip from URL + SPA remounts until send or switching chats. Scoped to route so another chat doesn’t inherit a stale id. */
+const CHAT_LISTING_SESSION_KEY = "greenhub:pendingListingProductId";
+
+type StoredListingPayload = { p: number; k: string };
+
+function persistListingProductId(id: number, routeKey: string) {
+  try {
+    const payload: StoredListingPayload = { p: Math.trunc(id), k: routeKey };
+    sessionStorage.setItem(CHAT_LISTING_SESSION_KEY, JSON.stringify(payload));
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
+function readStoredListingProductId(routeKey: string): number | null {
+  try {
+    const raw = sessionStorage.getItem(CHAT_LISTING_SESSION_KEY);
+    if (!raw) return null;
+    const o = JSON.parse(raw) as Partial<StoredListingPayload>;
+    if (typeof o.p !== "number" || typeof o.k !== "string" || o.k !== routeKey) return null;
+    return o.p >= 1 ? Math.trunc(o.p) : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearStoredListingProductId() {
+  try {
+    sessionStorage.removeItem(CHAT_LISTING_SESSION_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
 function isDuplicateConversationError(err: { code?: string; message?: string }): boolean {
   const c = String(err.code ?? "");
   const m = String(err.message ?? "").toLowerCase();
@@ -373,6 +407,8 @@ export default function ChatWorkspace() {
   const [peerFollowerCount, setPeerFollowerCount] = useState<number | null>(null);
   /** Hide listing strip locally (X); resets when listing changes */
   const [productStripDismissed, setProductStripDismissed] = useState(false);
+  /** User dismissed the listing chip; ignore `conversation.context_product_id` until a fresh `?product=` link. */
+  const [listingAttachmentOptOut, setListingAttachmentOptOut] = useState(false);
   const [reactionByMessage, setReactionByMessage] = useState<Record<string, MessageReactionsState>>({});
   const threadMessagesRef = useRef<ChatMessageRow[]>([]);
   const refreshReactionsRef = useRef<() => Promise<void>>(async () => {});
@@ -412,10 +448,22 @@ export default function ChatWorkspace() {
     const prevKey = prevRouteKeyRef.current;
     /** True when switching peer/thread — not first mount (`prevKey === null`). */
     const switchedPeerOrThread = prevKey !== null && prevKey !== routePeerOrThreadKey;
+    const prevParts = (prevKey ?? "").split("|");
+    const curParts = routePeerOrThreadKey.split("|");
+    /** `/messages/u/:peer` → `/messages/c/:conversationId` keeps listing intent; inbox → other thread does not. */
+    const likelyPeerToConversationHandoff =
+      !prevParts[0] &&
+      Boolean(prevParts[1]) &&
+      !prevParts[2] &&
+      Boolean(curParts[0]) &&
+      !curParts[1] &&
+      !curParts[2];
     prevRouteKeyRef.current = routePeerOrThreadKey;
 
     if (pid != null) {
+      setListingAttachmentOptOut(false);
       setProductIdFromQuery(pid);
+      persistListingProductId(pid, routePeerOrThreadKey);
       const raw = searchParams.get("product");
       if (raw != null && raw !== "") {
         const next = new URLSearchParams(searchParams);
@@ -423,21 +471,76 @@ export default function ChatWorkspace() {
         const qs = next.toString();
         navigate({ pathname: location.pathname, search: qs ? `?${qs}` : "" }, { replace: true });
       }
-    } else if (switchedPeerOrThread) {
+    } else if (switchedPeerOrThread && !likelyPeerToConversationHandoff) {
       // Drop stale `?product=` intent when opening a different chat without a new listing param.
-      // Do not clear on first paint or on `routeChanged` alone — that broke `/messages/u` → `/messages/c`
-      // and React Strict Mode remounts after we strip the query from the URL.
+      // Do not clear on first paint, on u→c redirect, or on Strict Mode remount after stripping `?product=`.
+      setListingAttachmentOptOut(false);
       setProductIdFromQuery(null);
+      clearStoredListingProductId();
+    } else {
+      const restored = readStoredListingProductId(routePeerOrThreadKey);
+      if (restored != null) {
+        setProductIdFromQuery((prev) => prev ?? restored);
+      }
     }
   }, [searchParams, navigate, location.pathname, routePeerOrThreadKey]);
 
+  /** Belt-and-suspenders: same as `searchParams` but re-read from `location` if router state lags. */
+  const productIdFromLocationSearch = useMemo(
+    () => parseProductQueryParam(new URLSearchParams(location.search).get("product")),
+    [location.search],
+  );
+
   /** Prefer persisted link intent, then current `?product=`, then conversation row. */
   const stripProductSourceId = useMemo(() => {
+    const freshUrlIntent =
+      (productIdFromQuery != null && productIdFromQuery > 0) ||
+      (validProductId != null && validProductId > 0) ||
+      (productIdFromLocationSearch != null && productIdFromLocationSearch > 0);
+    if (listingAttachmentOptOut && !freshUrlIntent) {
+      return null;
+    }
     if (productIdFromQuery != null && productIdFromQuery > 0) return productIdFromQuery;
     if (validProductId != null && validProductId > 0) return validProductId;
+    if (productIdFromLocationSearch != null && productIdFromLocationSearch > 0) return productIdFromLocationSearch;
     const c = conversation ? parseConversationInt(conversation.context_product_id) : null;
     return c != null && c > 0 ? Math.trunc(c) : null;
-  }, [productIdFromQuery, validProductId, conversation?.context_product_id]);
+  }, [
+    listingAttachmentOptOut,
+    productIdFromQuery,
+    validProductId,
+    productIdFromLocationSearch,
+    conversation?.context_product_id,
+  ]);
+
+  const clearListingAttachment = useCallback(() => {
+    setListingAttachmentOptOut(true);
+    setProductStripDismissed(true);
+    setProductIdFromQuery(null);
+    clearStoredListingProductId();
+    attachListingToFirstSendRef.current = false;
+  }, []);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    console.log("🔍 [chat] Product ID from query (state):", productIdFromQuery);
+  }, [productIdFromQuery]);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    console.log("📦 [chat] Strip product source ID:", stripProductSourceId);
+  }, [stripProductSourceId]);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    console.log("🖼️ [chat] Pinned / strip product row:", stripProduct);
+  }, [stripProduct]);
+
+  /** After `/messages/u` → `/messages/c`, re-key session storage so `readStoredListingProductId` matches the thread route. */
+  useEffect(() => {
+    if (productIdFromQuery == null || productIdFromQuery <= 0) return;
+    persistListingProductId(productIdFromQuery, routePeerOrThreadKey);
+  }, [productIdFromQuery, routePeerOrThreadKey]);
 
   const peerFirstName = useMemo(() => peerName.split(/\s+/)[0] || "Member", [peerName]);
 
@@ -669,7 +772,11 @@ export default function ChatWorkspace() {
     setLoadError(null);
     attachListingToFirstSendRef.current = false;
     try {
-      const listingIntent = productIdFromQuery ?? validProductId;
+      const listingIntent =
+        productIdFromQuery ??
+        validProductId ??
+        productIdFromLocationSearch ??
+        readStoredListingProductId(routePeerOrThreadKey);
       let conv: ConversationRow | null = null;
       let peer: string | null = null;
 
@@ -834,7 +941,17 @@ export default function ChatWorkspace() {
     } finally {
       setLoading(false);
     }
-  }, [authUser?.id, threadIdParam, peerRouteParam, legacyThreadId, validProductId, productIdFromQuery, navigate]);
+  }, [
+    authUser?.id,
+    threadIdParam,
+    peerRouteParam,
+    legacyThreadId,
+    validProductId,
+    productIdFromQuery,
+    productIdFromLocationSearch,
+    routePeerOrThreadKey,
+    navigate,
+  ]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -1385,6 +1502,9 @@ export default function ChatWorkspace() {
         );
         if (productId != null) {
           setProductIdFromQuery(null);
+          clearStoredListingProductId();
+          setListingAttachmentOptOut(true);
+          setProductStripDismissed(true);
         }
       } catch (e: unknown) {
         console.error("[chat_messages insert]", e);
@@ -2124,7 +2244,7 @@ export default function ChatWorkspace() {
                 </Button>
                 <button
                   type="button"
-                  onClick={() => setProductStripDismissed(true)}
+                  onClick={() => clearListingAttachment()}
                   className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-gray-500 hover:bg-gray-100 dark:hover:bg-zinc-700"
                   aria-label="Dismiss product banner"
                 >
@@ -2588,13 +2708,13 @@ export default function ChatWorkspace() {
               ) : null}
 
               {stripProductSourceId != null && !productStripDismissed ? (
-                <div className="mb-2 md:hidden">
+                <div className="mb-2">
                   <ComposerAttachedListing
                     productId={stripProduct?.id ?? stripProductSourceId}
                     title={stripProduct?.title ?? "Listing"}
                     priceLabel={stripProduct ? formatPrice(stripProduct.price) : "…"}
                     imageUrl={stripProduct?.image ?? null}
-                    onDismiss={() => setProductStripDismissed(true)}
+                    onDismiss={() => clearListingAttachment()}
                   />
                 </div>
               ) : null}

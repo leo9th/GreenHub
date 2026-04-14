@@ -100,6 +100,10 @@ export default function TopNav() {
     [navigate, refreshNotifications],
   );
 
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [location.pathname]);
+
   if (isHidden) return null;
 
   const bgClass = isHome
@@ -116,10 +120,6 @@ export default function TopNav() {
   const themeBtnHover = isHome ? "hover:bg-white/15" : "hover:bg-gray-100 dark:hover:bg-zinc-800";
 
   const navIconClass = `w-5 h-5 sm:w-6 sm:h-6 shrink-0 transition-colors ${iconClass}`;
-
-  useEffect(() => {
-    setMobileMenuOpen(false);
-  }, [location.pathname]);
 
   const messageBadgeEl =
     messageUnread > 0 ? (

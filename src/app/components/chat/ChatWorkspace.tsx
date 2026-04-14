@@ -409,7 +409,9 @@ export default function ChatWorkspace() {
 
   useLayoutEffect(() => {
     const pid = parseProductQueryParam(searchParams.get("product"));
-    const routeChanged = prevRouteKeyRef.current !== routePeerOrThreadKey;
+    const prevKey = prevRouteKeyRef.current;
+    /** True when switching peer/thread — not first mount (`prevKey === null`). */
+    const switchedPeerOrThread = prevKey !== null && prevKey !== routePeerOrThreadKey;
     prevRouteKeyRef.current = routePeerOrThreadKey;
 
     if (pid != null) {
@@ -421,7 +423,10 @@ export default function ChatWorkspace() {
         const qs = next.toString();
         navigate({ pathname: location.pathname, search: qs ? `?${qs}` : "" }, { replace: true });
       }
-    } else if (routeChanged) {
+    } else if (switchedPeerOrThread) {
+      // Drop stale `?product=` intent when opening a different chat without a new listing param.
+      // Do not clear on first paint or on `routeChanged` alone — that broke `/messages/u` → `/messages/c`
+      // and React Strict Mode remounts after we strip the query from the URL.
       setProductIdFromQuery(null);
     }
   }, [searchParams, navigate, location.pathname, routePeerOrThreadKey]);

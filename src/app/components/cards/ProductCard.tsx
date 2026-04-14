@@ -3,6 +3,7 @@ import { useCurrency } from "../../hooks/useCurrency";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { VerifiedBadge } from "../VerifiedBadge";
 import { VerifiedAdvertiserBadge } from "../VerifiedAdvertiserBadge";
+import { derivePeerHandle } from "../chat/ChatPeerHeaderModern";
 
 /**
  * Listing card — image uses fixed height (mobile/desktop); footer is below (no overlap).
@@ -45,8 +46,10 @@ export interface ProductCardProps {
   sellerId?: string;
   /** Loaded follower count for `sellerId` (omit until loaded). */
   sellerFollowerCount?: number;
-  /** Seller display name from profiles (optional). */
+  /** Legacy: full name from profiles — used to derive @handle when `sellerUsername` is omitted. */
   sellerName?: string;
+  /** Public @username (preferred over `sellerName` for display). */
+  sellerUsername?: string;
   /** Opens DM with seller and this listing attached (`?product=`). Requires `sellerId`. */
   messageSellerHref?: string;
 }
@@ -71,6 +74,7 @@ export function ProductCard({
   sellerId,
   sellerFollowerCount,
   sellerName,
+  sellerUsername,
   messageSellerHref,
 }: ProductCardProps) {
   const formatPrice = useCurrency();
@@ -83,11 +87,26 @@ export function ProductCard({
         : "";
   const linkTo = href || (resolvedId ? `/products/${resolvedId}` : "/products");
 
+  /** DM deep link — callers can override via `messageSellerHref`. */
+  const messageToSellerHref =
+    messageSellerHref ??
+    (sellerId && resolvedId
+      ? `/messages/u/${encodeURIComponent(sellerId)}?product=${encodeURIComponent(resolvedId)}`
+      : undefined);
+
   const displayViews = viewCount ?? viewsCount;
   const displayLikes = likeCount ?? likesCount;
 
   const locationDisplayText =
     location?.trim() || city?.trim() || "Location not specified";
+
+  const sellerHandleLabel = (() => {
+    const raw = sellerUsername?.trim();
+    if (raw) return raw.startsWith("@") ? raw : `@${raw}`;
+    const name = sellerName?.trim();
+    if (name) return derivePeerHandle(name);
+    return null;
+  })();
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col overflow-hidden rounded-xl border border-transparent bg-white shadow-sm transition hover:shadow-md dark:border-border dark:bg-card">
@@ -172,14 +191,14 @@ export function ProductCard({
               navigate(`/profile/${sellerId}`);
             }}
           >
-            Seller · {sellerName?.trim() || "View profile"}
+            Seller · {sellerHandleLabel ?? "View profile"}
           </button>
         ) : null}
       </div>
     </Link>
-      {messageSellerHref ? (
+      {messageToSellerHref ? (
         <Link
-          to={messageSellerHref}
+          to={messageToSellerHref}
           className="flex shrink-0 items-center justify-center gap-2 border-t border-gray-100 bg-emerald-50/90 px-3 py-2 text-xs font-semibold text-[#15803d] transition hover:bg-emerald-100 dark:border-border dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-950/70"
         >
           <span aria-hidden>💬</span>

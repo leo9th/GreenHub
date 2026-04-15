@@ -34,6 +34,7 @@ import {
   fetchConversationById,
   findConversationByPair,
   insertConversationPair,
+  isDuplicateConversationError,
   otherPartyUserId,
   setConversationContextProduct,
   updateConversationLastRead,
@@ -215,12 +216,6 @@ function clearStoredListingProductId() {
   } catch {
     /* ignore */
   }
-}
-
-function isDuplicateConversationError(err: { code?: string; message?: string }): boolean {
-  const c = String(err.code ?? "");
-  const m = String(err.message ?? "").toLowerCase();
-  return c === "23505" || m.includes("duplicate") || m.includes("unique") || m.includes("conversations_pair");
 }
 
 function isValidConversationUUID(id: string): boolean {

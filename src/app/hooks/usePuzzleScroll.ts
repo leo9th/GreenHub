@@ -6,6 +6,28 @@ const INERTIA_FRICTION = 0.88;
 const MIN_INERTIA_SPEED = 0.35;
 const DRAG_CLICK_THRESHOLD = 10;
 
+/** If pan captures the pointer, nested links/buttons never receive a proper click — skip pan for these. */
+function isPointerOnInteractiveTarget(target: EventTarget | null): boolean {
+  const el = target instanceof Element ? target : null;
+  if (!el) return false;
+  return Boolean(
+    el.closest(
+      [
+        "a[href]",
+        "button",
+        "input",
+        "textarea",
+        "select",
+        "label",
+        '[role="button"]',
+        '[role="link"]',
+        "[contenteditable]",
+        "[data-gh-pan-exempt]",
+      ].join(","),
+    ),
+  );
+}
+
 export type UsePuzzleScrollOptions = {
   enabled: boolean;
   viewportRef: React.RefObject<HTMLDivElement | null>;
@@ -154,6 +176,7 @@ export function usePuzzleScroll(opts: UsePuzzleScrollOptions) {
 
     const onPointerDown = (e: PointerEvent) => {
       if (e.pointerType === "mouse" && e.button !== 0) return;
+      if (isPointerOnInteractiveTarget(e.target)) return;
 
       stopInertia();
       state.dragging = true;

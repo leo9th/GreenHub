@@ -110,6 +110,13 @@ export async function fetchConversationById(
   };
 }
 
+/** Postgres unique violation / duplicate pair — retry with `findConversationByPair`. */
+export function isDuplicateConversationError(err: { code?: string; message?: string }): boolean {
+  const c = String(err.code ?? "");
+  const m = String(err.message ?? "").toLowerCase();
+  return c === "23505" || m.includes("duplicate") || m.includes("unique") || m.includes("conversations_pair");
+}
+
 export type InsertConversationOpts = {
   contextProductId?: number | null;
 };

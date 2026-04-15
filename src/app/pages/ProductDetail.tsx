@@ -57,6 +57,7 @@ import { EditProductModal } from "../components/EditProductModal";
 import { PriceNegotiation } from "../components/PriceNegotiation";
 import { MarketPricePrediction } from "../components/MarketPricePrediction";
 import { SimilarProductsLinks } from "../components/SimilarProductsLinks";
+import { ProductDetailInlineChat } from "../components/ProductDetailInlineChat";
 
 type ParsedDeliveryOption = { name: string; fee: number; duration: string };
 
@@ -316,8 +317,6 @@ export default function ProductDetail() {
   const [sellerIdVerified, setSellerIdVerified] = useState(false);
   const [sellerVerifiedAdvertiser, setSellerVerifiedAdvertiser] = useState(false);
   const [sellerInfoReady, setSellerInfoReady] = useState(false);
-  const [phoneMenuOpen, setPhoneMenuOpen] = useState(false);
-  const phoneMenuRef = useRef<HTMLDivElement>(null);
   const [serverProduct, setServerProduct] = useState<any>(null);
   const [isServerProductLoading, setIsServerProductLoading] = useState<boolean>(true);
   const [relatedProducts, setRelatedProducts] = useState<RelatedCarouselItem[]>([]);
@@ -797,17 +796,6 @@ export default function ProductDetail() {
     };
   }, [serverProduct?.seller_id, serverProduct?.sellerId]);
 
-  useEffect(() => {
-    if (!phoneMenuOpen) return;
-    const onDown = (e: MouseEvent) => {
-      if (phoneMenuRef.current && !phoneMenuRef.current.contains(e.target as Node)) {
-        setPhoneMenuOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [phoneMenuOpen]);
-
   if (isServerProductLoading) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center p-4 text-gray-500 text-sm">
@@ -840,17 +828,6 @@ export default function ProductDetail() {
     sellerPeerIdRaw != null && String(sellerPeerIdRaw).trim() !== "" ? String(sellerPeerIdRaw).trim() : "";
   const isOwner = Boolean(authUser?.id && sellerPeerId && authUser.id === sellerPeerId);
   const canMessageSeller = Boolean(sellerPeerId);
-
-  /** Stable listing id for chat query (must match `searchParams` `product` in ChatWorkspace). */
-  const productIdForChat =
-    foundProduct.id != null && String(foundProduct.id).trim() !== ""
-      ? String(foundProduct.id)
-      : normalizeRouteProductId(id) ?? "";
-
-  const chatToSellerUrl =
-    sellerPeerId && productIdForChat
-      ? `/messages/u/${sellerPeerId}?product=${encodeURIComponent(productIdForChat)}`
-      : "/messages";
 
   const galleryImages = parseProductImagesFromRow(foundProduct as { image?: unknown; images?: unknown });
 
@@ -1033,6 +1010,13 @@ export default function ProductDetail() {
   const productRatingTotal = hasLoadedProductReviews ? productReviews.length : dbProductTotal;
   const userHasProductReview = Boolean(authUser && productReviews.some((r) => r.user_id === authUser.id));
   const productIdForReviewLink = normalizeRouteProductId(id) ?? String(foundProduct?.id ?? "");
+
+  const scrollToInlineChat = () => {
+    setMobileDetailTab("seller");
+    queueMicrotask(() => {
+      document.getElementById("product-inline-chat")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  };
 
   return (
     <div className="min-h-screen bg-gray-100 text-gray-900 pb-28 md:pb-8">
@@ -1236,14 +1220,16 @@ export default function ProductDetail() {
                 role="group"
                 aria-label="Contact"
               >
-                <Link
-                  to={chatToSellerUrl}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#15803d]/30 bg-white text-[#15803d] shadow-sm transition hover:bg-[#15803d] hover:text-white"
-                  title="Message seller about this listing"
-                  aria-label="Message seller about this listing"
+                <button
+                  type="button"
+                  disabled={!canMessageSeller || isOwner}
+                  onClick={() => scrollToInlineChat()}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#15803d]/30 bg-white text-[#15803d] shadow-sm transition hover:bg-[#15803d] hover:text-white disabled:pointer-events-none disabled:opacity-40"
+                  title="Message seller on this page"
+                  aria-label="Message seller on this page"
                 >
                   <MessageCircle className="h-[18px] w-[18px]" strokeWidth={2} aria-hidden />
-                </Link>
+                </button>
                 <a
                   href={callHref}
                   className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#15803d]/30 bg-white text-[#15803d] shadow-sm transition hover:bg-[#15803d] hover:text-white"
@@ -1256,13 +1242,15 @@ export default function ProductDetail() {
             </div>
 
             <div className="mb-3 hidden items-center justify-end gap-2 md:flex" role="group" aria-label="Contact">
-              <Link
-                to={chatToSellerUrl}
-                className="inline-flex items-center gap-2 rounded-full border border-[#15803d]/30 bg-white px-3 py-1.5 text-sm font-semibold text-[#15803d] shadow-sm transition hover:bg-[#15803d] hover:text-white"
+              <button
+                type="button"
+                disabled={!canMessageSeller || isOwner}
+                onClick={() => scrollToInlineChat()}
+                className="inline-flex items-center gap-2 rounded-full border border-[#15803d]/30 bg-white px-3 py-1.5 text-sm font-semibold text-[#15803d] shadow-sm transition hover:bg-[#15803d] hover:text-white disabled:pointer-events-none disabled:opacity-40"
               >
                 <MessageCircle className="h-4 w-4 shrink-0" aria-hidden />
                 Message seller
-              </Link>
+              </button>
               <a
                 href={callHref}
                 className="inline-flex items-center gap-2 rounded-full border border-[#15803d]/30 bg-white px-3 py-1.5 text-sm font-semibold text-[#15803d] shadow-sm transition hover:bg-[#15803d] hover:text-white"
@@ -1462,69 +1450,28 @@ export default function ProductDetail() {
                   </div>
                 </div>
               )}
-              <div className="mt-4 flex flex-col gap-2">
-                <div className="flex gap-2 items-stretch">
-                  {canMessageSeller ? (
-                    <Link
-                      to={chatToSellerUrl}
-                      className="flex-1 min-h-[46px] inline-flex items-center justify-center gap-2 rounded-xl bg-[#16a34a] text-white text-sm font-semibold px-4 hover:bg-[#15803d] shadow-sm"
-                    >
-                      <MessageCircle className="w-4 h-4 shrink-0" aria-hidden />
-                      Message seller
-                    </Link>
-                  ) : (
-                    <p className="flex-1 min-h-[46px] flex items-center justify-center rounded-xl bg-gray-50 px-3 text-center text-xs text-gray-500 ring-1 ring-gray-100">
-                      Seller account unavailable for chat.
-                    </p>
-                  )}
-                  <div className="relative shrink-0" ref={phoneMenuRef}>
-                    <button
-                      type="button"
-                      disabled={!sellerTelHref}
-                      onClick={() => {
-                        if (sellerTelHref) setPhoneMenuOpen((o) => !o);
-                      }}
-                      className={`min-h-[46px] min-w-[46px] inline-flex items-center justify-center rounded-xl ring-1 shrink-0 ${
-                        sellerTelHref
-                          ? "ring-gray-200 text-gray-800 hover:bg-gray-50"
-                          : "ring-gray-100 text-gray-300 cursor-not-allowed"
-                      }`}
-                      title={sellerTelHref ? "Call or WhatsApp" : "No phone number available"}
-                      aria-label={sellerTelHref ? "Phone options" : "No phone number available"}
-                      aria-expanded={phoneMenuOpen}
-                      aria-haspopup="menu"
-                    >
-                      <Phone className="w-4 h-4" aria-hidden />
-                    </button>
-                    {phoneMenuOpen && sellerTelHref ? (
-                      <div
-                        className="absolute right-0 top-full z-50 mt-1 min-w-[10.5rem] overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-lg"
-                        role="menu"
-                      >
-                        <a
-                          href={sellerTelHref}
-                          role="menuitem"
-                          className="block px-3 py-2.5 text-sm font-medium text-gray-900 hover:bg-gray-50"
-                          onClick={() => setPhoneMenuOpen(false)}
-                        >
-                          Call
-                        </a>
-                        {whatsappHref ? (
-                          <a
-                            href={whatsappHref}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            role="menuitem"
-                            className="block px-3 py-2.5 text-sm font-medium text-gray-900 hover:bg-gray-50"
-                            onClick={() => setPhoneMenuOpen(false)}
-                          >
-                            WhatsApp
-                          </a>
-                        ) : null}
-                      </div>
-                    ) : null}
-                  </div>
+              {canMessageSeller ? (
+                <div id="product-inline-chat" className="mt-4 scroll-mt-24">
+                  <ProductDetailInlineChat
+                    sellerId={sellerPeerId}
+                    sellerName={product.seller.name}
+                    sellerCreatedAt={sellerProfile?.created_at ?? null}
+                    sellerVerified={sellerIdVerified}
+                    sellerOnline={sellerOnline}
+                    sellerLastActive={sellerProfile?.last_active ?? null}
+                    productId={foundProduct.id}
+                    authUserId={authUser?.id}
+                    isOwner={isOwner}
+                    sellerTelHref={sellerTelHref}
+                    whatsappHref={whatsappHref}
+                  />
                 </div>
+              ) : (
+                <p className="mt-4 rounded-xl bg-gray-50 px-3 py-3 text-center text-xs text-gray-500 ring-1 ring-gray-100">
+                  Seller account unavailable for chat.
+                </p>
+              )}
+              <div className="mt-4 flex flex-col gap-2">
                 {canMessageSeller ? (
                   <Link
                     to={`/profile/${sellerPeerId}`}
@@ -1786,12 +1733,13 @@ export default function ProductDetail() {
           ) : (
             <>
               {canMessageSeller ? (
-                <Link
-                  to={chatToSellerUrl}
+                <button
+                  type="button"
+                  onClick={() => scrollToInlineChat()}
                   className="hidden sm:inline-flex px-4 py-3 rounded-xl ring-1 ring-gray-200 text-sm font-semibold text-gray-800 items-center justify-center hover:bg-gray-50"
                 >
                   Message seller
-                </Link>
+                </button>
               ) : null}
               <button
                 type="button"

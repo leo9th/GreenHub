@@ -112,11 +112,6 @@ export function ProductCard({
     return null;
   })();
 
-  const onMessageSellerClick = () => {
-    // eslint-disable-next-line no-console
-    console.log("[ProductCard] Message seller click", { messageToSellerHref, sellerId, productId: resolvedId });
-  };
-
   return (
     <div className="flex h-full min-h-0 w-full min-w-0 max-w-full flex-col overflow-hidden rounded-xl border border-transparent bg-white shadow-sm transition hover:shadow-md dark:border-border dark:bg-card">
       {/* Image: only the image is inside the listing <Link> — overlays stay outside (valid HTML). */}
@@ -220,8 +215,8 @@ export function ProductCard({
       {messageToSellerHref ? (
         <Link
           to={messageToSellerHref}
-          className="relative z-10 flex min-h-[48px] w-full shrink-0 touch-manipulation items-center justify-center gap-2 border-t border-gray-100 bg-emerald-50/90 px-3 py-3 text-xs font-semibold text-[#15803d] transition hover:bg-emerald-100 active:bg-emerald-200 dark:border-border dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-950/70 sm:py-2.5"
-          onClick={onMessageSellerClick}
+          data-gh-pan-exempt
+          className="message-seller-link relative z-20 flex min-h-[48px] w-full shrink-0 cursor-pointer touch-manipulation items-center justify-center gap-2 border-t border-gray-100 bg-emerald-50/90 px-3 py-3 text-center text-xs font-semibold text-[#15803d] no-underline transition hover:bg-emerald-100 active:bg-emerald-200 dark:border-border dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-950/70 sm:py-2.5"
         >
           <span aria-hidden>💬</span>
           Message seller

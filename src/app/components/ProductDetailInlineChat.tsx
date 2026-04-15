@@ -236,6 +236,18 @@ export function ProductDetailInlineChat({
         </button>
       </div>
 
+      {whatsappHref ? (
+        <a
+          href={whatsappHref}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="whatsapp-btn mt-2 inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl bg-[#25D366] px-4 text-sm font-semibold text-white shadow-sm transition hover:opacity-95"
+        >
+          <span aria-hidden>💬</span>
+          Chat on WhatsApp
+        </a>
+      ) : null}
+
       {showContact ? (
         <div className="mt-3 rounded-xl border border-gray-100 bg-gray-50/90 px-3 py-3 text-sm">
           {sellerTelHref ? (

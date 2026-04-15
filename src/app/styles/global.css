@@ -110,6 +110,15 @@ body {
   background-size: 200% 100%;
 }
 
+/* Optional subtitle next to verified check (profiles.verified_badge) */
+.verified-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 4px;
+  color: #3b82f6;
+  font-size: 0.75rem;
+}
+
 /* Larger tap targets on touch devices for unstyled controls */
 @media (pointer: coarse) {
   button,

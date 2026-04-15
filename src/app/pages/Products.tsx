@@ -8,7 +8,9 @@ import { ProductCard } from "../components/cards/ProductCard";
 import { ProductCardSkeletonGrid } from "../components/cards/ProductCardSkeleton";
 import { SortBar } from "../components/SortBar";
 import { parseListingSort, PRODUCTS_PAGE_SIZE, sanitizeSearchTerm, type ListingFilterOpts, type ListingSort } from "../utils/productSearch";
+import { getAdaptiveListingPageSize } from "../utils/listingConnection";
 import { useBidirectionalProductFeed } from "../hooks/useBidirectionalProductFeed";
+import { useSellerTrustFlags } from "../hooks/useSellerTrustFlags";
 import { InfiniteScrollIndicators } from "../components/InfiniteScrollIndicators";
 import { getRelatedSearchSuggestions } from "../utils/searchSuggestions";
 import { getProductThumbnailUrl, parseProductImagesFromRow } from "../utils/productImages";
@@ -301,6 +303,7 @@ export default function Products() {
   );
 
   const [sellerDisplayNames, setSellerDisplayNames] = useState<Record<string, string>>({});
+  const [productsListingPageSize] = useState(() => getAdaptiveListingPageSize(PRODUCTS_PAGE_SIZE));
 
   const filterOpts: ListingFilterOpts = useMemo(
     () => ({
@@ -330,7 +333,6 @@ export default function Products() {
 
   const {
     products,
-    setProducts,
     totalCount,
     scrollRef: productsScrollRef,
     isInitialLoading: isLoadingProducts,
@@ -343,12 +345,15 @@ export default function Products() {
     onKeyDown: onProductsFeedKeyDown,
   } = useBidirectionalProductFeed({
     supabase,
-    pageSize: PRODUCTS_PAGE_SIZE,
+    pageSize: productsListingPageSize,
     searchTerm: sanitizeSearchTerm(urlSearch),
     filterOpts,
     sortBy,
     resetKey: filterSignal,
   });
+
+  const productsForTrust = useMemo(() => products as Array<Record<string, unknown>>, [products]);
+  const { verifiedSellerIds, verifiedBadgeBySellerId } = useSellerTrustFlags(supabase, productsForTrust);
 
   const listingSellerIdsKey = useMemo(() => {
     const seen = new Set<string>();
@@ -658,7 +663,7 @@ export default function Products() {
           {isLoadingProducts ? (
             <div className="py-4">
               <div className="rounded-xl border border-gray-100 bg-white/40 p-3">
-                <ProductCardSkeletonGrid count={PRODUCTS_PAGE_SIZE} />
+                <ProductCardSkeletonGrid count={productsListingPageSize} />
               </div>
               <p className="mt-4 text-center text-sm text-gray-500">Loading products…</p>
             </div>
@@ -694,6 +699,8 @@ export default function Products() {
                       city={String((product as Record<string, unknown>).city ?? "")}
                       productId={Number.isFinite(pid) ? pid : String(row.id ?? "")}
                       sellerName={sid ? sellerDisplayNames[sid] : undefined}
+                      sellerVerified={sid ? verifiedSellerIds.has(sid) : false}
+                      verifiedSellerBadge={sid ? verifiedBadgeBySellerId.get(sid) : undefined}
                     />
                   );
                 })}

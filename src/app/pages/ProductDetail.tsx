@@ -33,7 +33,7 @@ import { isOnlineFromLastActive, formatLastSeen } from "../utils/presence";
 import { getAvatarUrl } from "../utils/getAvatar";
 import { getProductPrice } from "../utils/getProductPrice";
 import { activeProductsQuery, mapProductRow } from "../utils/productSearch";
-import { getProductThumbnailUrl, parseProductImagesFromRow } from "../utils/productImages";
+import { getProductThumbnailUrl, optimizeListingImageUrl, parseProductImagesFromRow } from "../utils/productImages";
 import { recordProductView } from "../utils/recentlyViewedProducts";
 import { toast } from "sonner";
 import { BoostDetailBadge } from "../components/BoostBadge";
@@ -169,6 +169,8 @@ type SellerProfileRow = {
   phone?: string | null;
   last_active?: string | null;
   is_verified_advertiser?: boolean | null;
+  is_verified?: boolean | null;
+  verified_badge?: string | null;
 };
 
 type SellerReviewPreview = {
@@ -250,7 +252,7 @@ function RelatedProductsCarousel({
                 <div className="relative aspect-[16/9] w-full overflow-hidden bg-gray-100">
                   {item.image ? (
                     <img
-                      src={item.image}
+                      src={optimizeListingImageUrl(item.image, { width: 400, quality: 70 })}
                       alt={item.title}
                       className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
                     />
@@ -718,7 +720,7 @@ export default function ProductDetail() {
       const [profRes, ratingsRes, previewRes, verRes] = await Promise.all([
         supabase
           .from("profiles")
-          .select("id, full_name, avatar_url, gender, state, lga, created_at, phone, last_active, is_verified_advertiser")
+          .select("id, full_name, avatar_url, gender, state, lga, created_at, phone, last_active, is_verified_advertiser, is_verified, verified_badge")
           .eq("id", idStr)
           .maybeSingle(),
         supabase.from("seller_reviews").select("rating").eq("seller_id", idStr),
@@ -740,7 +742,7 @@ export default function ProductDetail() {
       if (!prof) {
         const pub = await supabase
           .from("profiles_public")
-          .select("id, full_name, avatar_url, gender, state, lga, created_at, last_active, phone, is_verified_advertiser")
+          .select("id, full_name, avatar_url, gender, state, lga, created_at, last_active, phone, is_verified_advertiser, is_verified, verified_badge")
           .eq("id", idStr)
           .maybeSingle();
         if (cancelled) return;
@@ -786,7 +788,9 @@ export default function ProductDetail() {
         })),
       );
 
-      setSellerIdVerified(Boolean(verRes.data) && !verRes.error);
+      const approvedVerification = Boolean(verRes.data) && !verRes.error;
+      const profileVerified = Boolean(prof?.is_verified);
+      setSellerIdVerified(approvedVerification || profileVerified);
       setSellerInfoReady(true);
     };
 
@@ -993,7 +997,9 @@ export default function ProductDetail() {
   const sellerPhoneRaw = sellerProfile?.phone != null ? String(sellerProfile.phone).trim() : "";
   const sellerTelHref = sellerPhoneRaw ? `tel:${sellerPhoneRaw.replace(/\s/g, "")}` : "";
   const whatsappDigits = sellerPhoneRaw.replace(/\D/g, "");
-  const whatsappHref = whatsappDigits ? `https://wa.me/${whatsappDigits}` : "";
+  const whatsappHref = whatsappDigits
+    ? `https://wa.me/${whatsappDigits}?text=${encodeURIComponent(`Hi, I'm interested in ${product.title}`)}`
+    : "";
   /** When the seller has no phone on profile, fall back to GreenHub support (same as footer). */
   const supportTelHref = "tel:+2348125221542";
   const callHref = sellerTelHref || supportTelHref;
@@ -1050,7 +1056,7 @@ export default function ProductDetail() {
                 >
                   {product.images.length > 0 ? (
                     <img
-                      src={product.images[currentImageIndex]}
+                      src={optimizeListingImageUrl(product.images[currentImageIndex], { width: 960, quality: 75 })}
                       alt={product.title}
                       className="absolute inset-0 z-0 w-full h-full cursor-default object-cover select-none"
                       draggable={false}
@@ -1171,7 +1177,11 @@ export default function ProductDetail() {
                         aria-current={index === currentImageIndex ? "true" : undefined}
                       >
                         {src ? (
-                          <img src={src} alt="" className="h-full w-full object-cover" />
+                          <img
+                            src={optimizeListingImageUrl(src, { width: 128, quality: 70 })}
+                            alt=""
+                            className="h-full w-full object-cover"
+                          />
                         ) : (
                           <div className="h-full w-full bg-gray-200" aria-hidden />
                         )}
@@ -1374,6 +1384,9 @@ export default function ProductDetail() {
                       {sellerIdVerified ? (
                         <VerifiedBadge title="Verified seller" size="md" className="shrink-0" />
                       ) : null}
+                      {sellerIdVerified && sellerProfile?.verified_badge?.trim() ? (
+                        <span className="verified-badge">{sellerProfile.verified_badge.trim()}</span>
+                      ) : null}
                       {sellerVerifiedAdvertiser ? <VerifiedAdvertiserBadge size="md" /> : null}
                       {!sellerIdVerified && sellerTierLower === "crown" ? (
                         <BadgeCheck className="w-4 h-4 text-amber-500 fill-amber-400 shrink-0" title="Crown tier" />
@@ -1421,6 +1434,9 @@ export default function ProductDetail() {
                       </span>
                       {sellerIdVerified ? (
                         <VerifiedBadge title="Verified seller" size="md" className="shrink-0" />
+                      ) : null}
+                      {sellerIdVerified && sellerProfile?.verified_badge?.trim() ? (
+                        <span className="verified-badge">{sellerProfile.verified_badge.trim()}</span>
                       ) : null}
                       {sellerVerifiedAdvertiser ? <VerifiedAdvertiserBadge size="md" /> : null}
                       {!sellerIdVerified && sellerTierLower === "crown" ? (

@@ -47,6 +47,29 @@ export function getProductThumbnailUrl(row: { image?: unknown; images?: unknown 
   return urls[0] ?? "";
 }
 
+const OBJECT_PUBLIC_SEGMENT = "/storage/v1/object/public/";
+
+/**
+ * Supabase Storage image transformation for listing thumbnails (smaller JPEG/WebP over the wire).
+ * Non-Supabase URLs are returned unchanged.
+ */
+export function optimizeListingImageUrl(
+  raw: string,
+  opts: { width?: number; quality?: number } = {},
+): string {
+  const width = opts.width ?? 400;
+  const quality = opts.quality ?? 70;
+  const trimmed = String(raw ?? "").trim();
+  if (!trimmed) return trimmed;
+  const lower = trimmed.toLowerCase();
+  if (lower.includes("placehold.co")) return trimmed;
+  const base = trimmed.split("?")[0] ?? trimmed;
+  if (!base.includes(OBJECT_PUBLIC_SEGMENT)) return trimmed;
+  const renderUrl = base.replace(OBJECT_PUBLIC_SEGMENT, "/storage/v1/render/image/public/");
+  const sep = renderUrl.includes("?") ? "&" : "?";
+  return `${renderUrl}${sep}width=${width}&quality=${quality}`;
+}
+
 const MARKER = (bucket: string) => `/object/public/${bucket}/`;
 
 /** Extract storage object path from a single Supabase public URL, or null if not from this bucket. */

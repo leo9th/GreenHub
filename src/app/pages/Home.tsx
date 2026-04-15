@@ -34,7 +34,8 @@ import { useBidirectionalProductFeed } from "../hooks/useBidirectionalProductFee
 import { InfiniteScrollIndicators } from "../components/InfiniteScrollIndicators";
 import { getRelatedSearchSuggestions } from "../utils/searchSuggestions";
 import { getProductThumbnailUrl, parseProductImagesFromRow } from "../utils/productImages";
-import { useVerifiedSellerIds } from "../hooks/useVerifiedSellerIds";
+import { getAdaptiveListingPageSize } from "../utils/listingConnection";
+import { useSellerTrustFlags } from "../hooks/useSellerTrustFlags";
 import { useVerifiedAdvertiserIds } from "../hooks/useVerifiedAdvertiserIds";
 import { getRecentProductIds, RECENT_VIEWED_EVENT } from "../utils/recentlyViewedProducts";
 import { fetchProfileDisplayNamesForUsers, fetchProfileFollowerCountsForUsers } from "../utils/profileFollowCounts";
@@ -60,6 +61,7 @@ export default function Home() {
   const [homeSort, setHomeSort] = useState<ListingSort>("recent");
   const [recentViewedProducts, setRecentViewedProducts] = useState<Array<Record<string, unknown>>>([]);
   const [recentViewedLoading, setRecentViewedLoading] = useState(() => getRecentProductIds().length > 0);
+  const [homeListingPageSize] = useState(() => getAdaptiveListingPageSize(HOME_PAGE_SIZE));
 
   const homeFilterOpts: ListingFilterOpts = useMemo(
     () => ({
@@ -84,7 +86,7 @@ export default function Home() {
     loadError: productLoadError,
   } = useBidirectionalProductFeed({
     supabase,
-    pageSize: HOME_PAGE_SIZE,
+    pageSize: homeListingPageSize,
     searchTerm: "",
     filterOpts: homeFilterOpts,
     sortBy: homeSort,
@@ -126,7 +128,7 @@ export default function Home() {
     return [...seen].sort().join(",");
   }, [productsForVerification]);
 
-  const verifiedSellerIds = useVerifiedSellerIds(supabase, productsForVerification);
+  const { verifiedSellerIds, verifiedBadgeBySellerId } = useSellerTrustFlags(supabase, productsForVerification);
   const verifiedAdvertiserIds = useVerifiedAdvertiserIds(supabase, productsForVerification);
 
   useEffect(() => {
@@ -657,7 +659,7 @@ export default function Home() {
 
             {isLoadingProducts ? (
               <div className="rounded-xl border border-gray-100 bg-white/50 p-3">
-                <ProductCardSkeletonGrid count={HOME_PAGE_SIZE} />
+                <ProductCardSkeletonGrid count={homeListingPageSize} />
               </div>
             ) : products.length === 0 ? (
               <p className="text-sm text-gray-600 py-8 text-center rounded-xl border border-dashed border-gray-200 bg-white">
@@ -689,6 +691,8 @@ export default function Home() {
                       city={String(row.city ?? "")}
                       productId={Number.isFinite(pid) ? pid : String(row.id ?? "")}
                       sellerName={sid ? sellerDisplayNames[sid] : undefined}
+                      sellerVerified={sid ? verifiedSellerIds.has(sid) : false}
+                      verifiedSellerBadge={sid ? verifiedBadgeBySellerId.get(sid) : undefined}
                     />
                   );
                 })}
@@ -730,6 +734,8 @@ export default function Home() {
                       city={String(row.city ?? "")}
                       productId={Number.isFinite(pid) ? pid : String(row.id ?? "")}
                       sellerName={sid ? sellerDisplayNames[sid] : undefined}
+                      sellerVerified={sid ? verifiedSellerIds.has(sid) : false}
+                      verifiedSellerBadge={sid ? verifiedBadgeBySellerId.get(sid) : undefined}
                     />
                   );
                 })}

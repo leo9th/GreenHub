@@ -2,6 +2,8 @@ import { Link } from "react-router";
 import { useCurrency } from "../../hooks/useCurrency";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { derivePeerHandle } from "../chat/ChatPeerHeaderModern";
+import { VerifiedBadge } from "../VerifiedBadge";
+import { optimizeListingImageUrl } from "../../utils/productImages";
 
 const PLACEHOLDER_IMG = "https://placehold.co/400x400/e5e7eb/9ca3af?text=No+Image";
 
@@ -40,6 +42,8 @@ export interface ProductCardProps {
   sellerFollowerCount?: number;
   sellerName?: string;
   sellerUsername?: string;
+  /** Sub-label from `profiles.verified_badge` (e.g. ID, Business) */
+  verifiedSellerBadge?: string;
 }
 
 export function ProductCard({
@@ -54,6 +58,8 @@ export function ProductCard({
   href,
   sellerName,
   sellerUsername,
+  sellerVerified,
+  verifiedSellerBadge,
 }: ProductCardProps) {
   const formatPrice = useCurrency();
   const resolvedId =
@@ -77,7 +83,8 @@ export function ProductCard({
 
   const firstFromImages =
     Array.isArray(images) && images.length > 0 && typeof images[0] === "string" ? images[0].trim() : "";
-  const imgSrc = (image?.trim() || firstFromImages || PLACEHOLDER_IMG) as string;
+  const rawImg = (image?.trim() || firstFromImages || PLACEHOLDER_IMG) as string;
+  const imgSrc = optimizeListingImageUrl(rawImg, { width: 400, quality: 70 });
 
   return (
     <div className="product-card w-full min-w-[160px] max-w-full border border-gray-200 bg-white shadow-sm dark:border-border dark:bg-card">
@@ -94,6 +101,7 @@ export function ProductCard({
             decoding="async"
             draggable={false}
             onError={(e) => {
+              e.currentTarget.onerror = null;
               e.currentTarget.src = PLACEHOLDER_IMG;
             }}
           />
@@ -118,12 +126,16 @@ export function ProductCard({
             </span>
             <span className="align-middle">{locationDisplay}</span>
           </p>
-          {sellerLine ? (
+          {sellerLine || sellerVerified ? (
             <p
-              className="line-clamp-2 min-w-0 leading-snug text-gray-400 dark:text-zinc-500"
+              className="flex min-w-0 flex-wrap items-center gap-1 leading-snug text-gray-400 dark:text-zinc-500"
               style={{ fontSize: "0.75rem" }}
             >
-              {sellerLine}
+              {sellerLine ? <span className="line-clamp-2 min-w-0">{sellerLine}</span> : null}
+              {sellerVerified ? <VerifiedBadge title="Verified seller" size="sm" className="shrink-0" /> : null}
+              {sellerVerified && verifiedSellerBadge ? (
+                <span className="verified-badge shrink-0">{verifiedSellerBadge}</span>
+              ) : null}
             </p>
           ) : null}
         </div>

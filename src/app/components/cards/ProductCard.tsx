@@ -1,4 +1,4 @@
-import { Link, useNavigate } from "react-router";
+import { Link } from "react-router";
 import { useCurrency } from "../../hooks/useCurrency";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { VerifiedBadge } from "../VerifiedBadge";
@@ -82,7 +82,6 @@ export function ProductCard({
   messageSellerHref,
 }: ProductCardProps) {
   const formatPrice = useCurrency();
-  const navigate = useNavigate();
   const resolvedId =
     id != null && String(id).trim() !== ""
       ? String(id)
@@ -139,18 +138,15 @@ export function ProductCard({
         ) : null}
         <div className="pointer-events-auto absolute bottom-2 right-2 z-[2] flex flex-col items-end gap-1">
           {sellerId && sellerFollowerCount !== undefined ? (
-            <button
-              type="button"
+            <Link
+              to={`/profile/${sellerId}/followers`}
+              data-gh-pan-exempt
               className="flex min-h-[32px] min-w-[32px] touch-manipulation items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-xs text-white hover:bg-black/75"
               aria-label="Seller followers"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                navigate(`/profile/${sellerId}/followers`);
-              }}
+              onClick={(e) => e.stopPropagation()}
             >
               👥 {sellerFollowerCount}
-            </button>
+            </Link>
           ) : null}
           <div className="flex flex-wrap justify-end gap-2">
             {displayViews !== undefined && displayViews > 0 ? (
@@ -198,17 +194,14 @@ export function ProductCard({
 
       {sellerId ? (
         <div className="shrink-0 border-t border-gray-100 bg-white px-3 pb-2 pt-0 dark:border-border dark:bg-card">
-          <button
-            type="button"
-            className="w-full min-h-[44px] touch-manipulation text-left text-xs font-medium text-[#15803d] hover:underline dark:text-emerald-400"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              navigate(`/profile/${sellerId}`);
-            }}
+          <Link
+            to={`/profile/${sellerId}`}
+            data-gh-pan-exempt
+            className="flex w-full min-h-[44px] touch-manipulation items-center text-left text-xs font-medium text-[#15803d] hover:underline dark:text-emerald-400"
+            onClick={(e) => e.stopPropagation()}
           >
             Seller · {sellerHandleLabel ?? "View profile"}
-          </button>
+          </Link>
         </div>
       ) : null}
 

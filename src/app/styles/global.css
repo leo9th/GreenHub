@@ -6,6 +6,24 @@
 html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+/* Listing cards — avoid compositor-heavy effects (grid scroll performance) */
+.product-card {
+  will-change: auto;
+  transform: none;
+  transition: none;
+}
+
+.product-card img {
+  content-visibility: auto;
 }
 
 *,

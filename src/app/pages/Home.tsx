@@ -532,7 +532,7 @@ export default function Home() {
               </button>
               <button
                 type="submit"
-                className="hidden md:flex items-center justify-center bg-[#15803d] text-white px-8 py-3 rounded-r-lg font-semibold hover:bg-[#166534] transition-colors"
+                className="hidden md:flex items-center justify-center bg-[#15803d] text-white px-8 py-3 rounded-r-lg font-semibold hover:bg-[#166534]"
               >
                 <Search className="w-5 h-5 mr-2" />
                 Search
@@ -572,7 +572,7 @@ export default function Home() {
               <Link
                 key={category.id}
                 to={`/products?category=${category.id}`}
-                className="flex flex-col md:flex-row items-center md:items-center gap-2 md:gap-4 min-w-[72px] md:min-w-0 md:px-4 md:py-3 md:border-b md:border-gray-100 last:border-0 hover:bg-gray-50 transition-colors"
+                className="flex flex-col md:flex-row items-center md:items-center gap-2 md:gap-4 min-w-[72px] md:min-w-0 md:px-4 md:py-3 md:border-b md:border-gray-100 last:border-0 hover:bg-gray-50"
               >
                 <div className="w-14 h-14 md:w-10 md:h-10 bg-gray-100 rounded-full flex items-center justify-center text-2xl md:text-xl shrink-0">
                   {category.emoji}
@@ -593,23 +593,23 @@ export default function Home() {
           
           {/* Primary Navigation Icons (Moved to Top) */}
           <div className="grid grid-cols-4 gap-2 md:gap-4 mb-6 bg-white py-4 md:py-6 border-b border-gray-200 md:border md:rounded-xl md:shadow-sm">
-            <Link to="/" className="flex flex-col items-center justify-center gap-2 group cursor-pointer text-[#22c55e]">
-              <HomeIcon className="w-6 h-6 md:w-8 md:h-8 transition-transform group-hover:scale-110" />
+            <Link to="/" className="flex flex-col items-center justify-center gap-2 cursor-pointer text-[#22c55e]">
+              <HomeIcon className="w-6 h-6 md:w-8 md:h-8" />
               <span className="font-medium text-xs md:text-sm">Home</span>
             </Link>
-            <Link to="/products" className="flex flex-col items-center justify-center gap-2 group cursor-pointer text-gray-600 hover:text-[#22c55e]">
-              <Search className="w-6 h-6 md:w-8 md:h-8 transition-transform group-hover:scale-110" />
+            <Link to="/products" className="flex flex-col items-center justify-center gap-2 cursor-pointer text-gray-600 hover:text-[#22c55e]">
+              <Search className="w-6 h-6 md:w-8 md:h-8" />
               <span className="font-medium text-xs md:text-sm">Search</span>
             </Link>
-            <Link to="/seller/products/new" className="flex flex-col items-center justify-center gap-2 group cursor-pointer text-gray-600 hover:text-[#22c55e]">
-              <PlusCircle className="w-6 h-6 md:w-8 md:h-8 transition-transform group-hover:scale-110" />
+            <Link to="/seller/products/new" className="flex flex-col items-center justify-center gap-2 cursor-pointer text-gray-600 hover:text-[#22c55e]">
+              <PlusCircle className="w-6 h-6 md:w-8 md:h-8" />
               <span className="font-medium text-xs md:text-sm">Sell</span>
             </Link>
             <Link
               to="/messages"
-              className="relative flex flex-col items-center justify-center gap-2 group cursor-pointer text-gray-600 hover:text-[#22c55e]"
+              className="relative flex flex-col items-center justify-center gap-2 cursor-pointer text-gray-600 hover:text-[#22c55e]"
             >
-              <MessageCircle className="w-6 h-6 md:w-8 md:h-8 transition-transform group-hover:scale-110" />
+              <MessageCircle className="w-6 h-6 md:w-8 md:h-8" />
               {messageUnread > 0 ? (
                 <span className="absolute top-0 right-1/4 translate-x-2 min-w-[1.1rem] h-4 px-0.5 rounded-full bg-[#ef4444] text-white text-[9px] font-bold flex items-center justify-center border border-white">
                   {messageUnread > 99 ? "99+" : messageUnread}

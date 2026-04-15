@@ -112,7 +112,7 @@ export function ProductCard({
   })();
 
   return (
-    <div className="flex h-full min-h-0 w-full min-w-0 max-w-full flex-col overflow-hidden rounded-xl border border-transparent bg-white shadow-sm transition hover:shadow-md dark:border-border dark:bg-card">
+    <div className="product-card flex h-full min-h-0 w-full min-w-0 max-w-full flex-col overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-border dark:bg-card">
       {/* Image: only the image is inside the listing <Link> — overlays stay outside (valid HTML). */}
       <div className="relative h-[min(200px,42vw)] w-full min-h-[140px] shrink-0 overflow-hidden bg-gray-100 dark:bg-muted sm:h-[160px] md:h-[200px]">
         <Link
@@ -125,6 +125,7 @@ export function ProductCard({
             alt=""
             className="h-full w-full object-cover"
             loading="lazy"
+            decoding="async"
             draggable={false}
           />
         </Link>
@@ -171,7 +172,7 @@ export function ProductCard({
       {/* Title / price / location: single link — no buttons inside */}
       <Link
         to={linkTo}
-        className="flex min-h-0 shrink-0 flex-col gap-1 border-t border-gray-100 bg-white px-3 py-2 text-left no-underline transition-opacity hover:opacity-95 dark:border-border dark:bg-card"
+        className="flex min-h-0 shrink-0 flex-col gap-1 border-t border-gray-100 bg-white px-3 py-2 text-left no-underline dark:border-border dark:bg-card"
       >
         <h3 className="flex flex-wrap items-start gap-1 text-sm font-semibold leading-snug text-gray-800 dark:text-card-foreground">
           <span className="line-clamp-2 min-w-0 flex-1">{title}</span>
@@ -209,7 +210,7 @@ export function ProductCard({
         <Link
           to={messageToSellerHref}
           data-gh-pan-exempt
-          className="message-seller-link relative z-20 flex min-h-[48px] w-full shrink-0 cursor-pointer touch-manipulation items-center justify-center gap-2 border-t border-gray-100 bg-emerald-50/90 px-3 py-3 text-center text-xs font-semibold text-[#15803d] no-underline transition hover:bg-emerald-100 active:bg-emerald-200 dark:border-border dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-950/70 sm:py-2.5"
+          className="message-seller-link relative z-20 flex min-h-[48px] w-full shrink-0 cursor-pointer touch-manipulation items-center justify-center gap-2 border-t border-gray-100 bg-emerald-50/90 px-3 py-3 text-center text-xs font-semibold text-[#15803d] no-underline hover:bg-emerald-100 dark:border-border dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-950/70 sm:py-2.5"
         >
           <span aria-hidden>💬</span>
           Message seller

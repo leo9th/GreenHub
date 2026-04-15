@@ -1,4 +1,4 @@
-﻿import { Link } from "react-router";
+import { Link } from "react-router";
 import { useCurrency } from "../../hooks/useCurrency";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { VerifiedBadge } from "../VerifiedBadge";
@@ -101,19 +101,22 @@ export function ProductCard({
     return null;
   })();
 
+  const placeholderImage = "https://placehold.co/400x400/png?text=No+Image";
+  const imageSrc = image?.trim() ? image.trim() : placeholderImage;
+
   return (
     <div className="product-card flex aspect-[4/5] h-full min-h-0 w-full min-w-[140px] max-w-full flex-col overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-border dark:bg-card">
       {/* Image: only the image is inside the listing <Link> — overlays stay outside (valid HTML). */}
       <div className="product-image relative min-h-0 w-full flex-[3] shrink-0 overflow-hidden bg-gray-100 dark:bg-muted">
         <Link
           to={linkTo}
-          className="absolute inset-0 z-0 block outline-none ring-offset-2 focus-visible:ring-2 focus-visible:ring-[#22c55e]"
+          className="absolute inset-0 z-0 block h-full w-full outline-none ring-offset-2 focus-visible:ring-2 focus-visible:ring-[#22c55e]"
           aria-label={`View listing: ${title}`}
         >
           <img
-            src={image || "https://placehold.co/400x400/png?text=No+Image"}
+            src={imageSrc}
             alt=""
-            className="h-full w-full object-cover"
+            className="block h-full w-full object-cover"
             loading="lazy"
             decoding="async"
             draggable={false}

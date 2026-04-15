@@ -6,7 +6,7 @@ import { derivePeerHandle } from "../chat/ChatPeerHeaderModern";
 const PLACEHOLDER_IMG = "https://placehold.co/400x400/e5e7eb/9ca3af?text=No+Image";
 
 /**
- * Minimal listing card: 3:4 aspect, 75% image / 25% text — image, title, price, location, @seller only.
+ * Minimal listing card: fixed-height image, auto-height text — title, price, location, @seller only.
  * Extra props are accepted for call-site compatibility; social/boost/like UI is not rendered.
  */
 export interface ProductCardProps {
@@ -80,31 +80,16 @@ export function ProductCard({
   const imgSrc = (image?.trim() || firstFromImages || PLACEHOLDER_IMG) as string;
 
   return (
-    <div className="product-card flex aspect-[3/4] w-full min-h-0 min-w-[160px] max-w-full flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-border dark:bg-card">
+    <div className="product-card w-full min-w-[160px] max-w-full border border-gray-200 bg-white shadow-sm dark:border-border dark:bg-card">
       <Link
         to={linkTo}
-        className="flex h-full min-h-0 flex-1 flex-col overflow-hidden text-inherit no-underline outline-none ring-offset-2 focus-visible:ring-2 focus-visible:ring-[#22c55e]"
+        className="flex flex-col text-inherit no-underline outline-none ring-offset-2 focus-visible:ring-2 focus-visible:ring-[#22c55e]"
         aria-label={`View listing: ${title}`}
       >
-        <div
-          className="product-image relative shrink-0"
-          style={{
-            height: "75%",
-            width: "100%",
-            overflow: "hidden",
-            backgroundColor: "#f3f4f6",
-          }}
-        >
+        <div className="product-image relative">
           <img
             src={imgSrc}
             alt={title}
-            style={{
-              width: "100%",
-              height: "100%",
-              objectFit: "cover",
-              objectPosition: "center",
-              display: "block",
-            }}
             loading="lazy"
             decoding="async"
             draggable={false}
@@ -114,12 +99,9 @@ export function ProductCard({
           />
         </div>
 
-        <div
-          className="flex min-h-0 w-full flex-1 flex-col justify-center overflow-hidden border-t border-gray-100 bg-white dark:border-border dark:bg-card"
-          style={{ padding: "8px 12px", gap: "2px", maxHeight: "25%" }}
-        >
+        <div className="product-details border-t border-gray-100 dark:border-border">
           <h3
-            className="line-clamp-2 min-w-0 font-bold leading-tight text-gray-800 dark:text-card-foreground"
+            className="line-clamp-2 min-w-0 font-bold leading-snug text-gray-800 dark:text-card-foreground"
             style={{ fontSize: "0.875rem" }}
           >
             {title}
@@ -128,7 +110,7 @@ export function ProductCard({
             {formatPrice(price)}
           </p>
           <p
-            className="line-clamp-1 min-w-0 leading-tight text-gray-500 dark:text-muted-foreground"
+            className="line-clamp-2 min-w-0 leading-snug text-gray-500 dark:text-muted-foreground"
             style={{ fontSize: "0.75rem" }}
           >
             <span className="select-none" aria-hidden>
@@ -138,7 +120,7 @@ export function ProductCard({
           </p>
           {sellerLine ? (
             <p
-              className="line-clamp-1 min-w-0 leading-tight text-gray-400 dark:text-zinc-500"
+              className="line-clamp-2 min-w-0 leading-snug text-gray-400 dark:text-zinc-500"
               style={{ fontSize: "0.75rem" }}
             >
               {sellerLine}

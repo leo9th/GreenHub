@@ -21,17 +21,23 @@ video {
   height: auto;
 }
 
-/* Listing cards — avoid compositor-heavy effects (grid scroll performance) */
+/* Listing cards — content-sized height, fixed tall image, text area grows */
 .product-card {
+  display: flex;
+  flex-direction: column;
+  height: auto;
+  border-radius: 12px;
+  overflow: hidden;
   will-change: auto;
   transform: none;
   transition: none;
-  aspect-ratio: 3 / 4;
 }
 
-/* Do not use content-visibility on card images — it can skip paint / size in grid layouts. */
-
 .product-card .product-image {
+  height: 220px;
+  width: 100%;
+  flex-shrink: 0;
+  overflow: hidden;
   background-color: #f3f4f6;
 }
 
@@ -48,6 +54,20 @@ video {
   max-height: none;
   object-fit: cover;
   object-position: center;
+}
+
+.product-card .product-details {
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: #ffffff;
+  flex: 0 1 auto;
+  min-height: 0;
+}
+
+.dark .product-card .product-details {
+  background: var(--card);
 }
 
 *,

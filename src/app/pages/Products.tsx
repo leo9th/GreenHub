@@ -615,7 +615,7 @@ export default function Products() {
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
-        <div className="px-4 py-3 max-w-7xl mx-auto">
+        <div className="px-2 py-3 w-full mx-auto">
           <div className="flex items-center gap-3 mb-3">
             <Link to="/" className="p-2 -ml-2" aria-label="Back to home">
               <ArrowLeft className="w-5 h-5 text-gray-700" />
@@ -718,8 +718,8 @@ export default function Products() {
       </header>
 
       {relatedSearches.length > 0 ? (
-        <div className="border-b border-gray-100 bg-gray-50/80 px-4 py-3">
-          <div className="mx-auto max-w-7xl">
+        <div className="border-b border-gray-100 bg-gray-50/80 px-2 py-3">
+          <div className="mx-auto w-full">
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Related searches</p>
             <div className="flex flex-wrap gap-2">
               {relatedSearches.map((s) => (
@@ -737,16 +737,16 @@ export default function Products() {
       ) : null}
 
       {!isLoadingProducts && sanitizeSearchTerm(urlSearch).length >= 2 && products.length === 0 ? (
-        <div className="border-b border-amber-100 bg-amber-50/50 px-4 py-3">
-          <div className="mx-auto max-w-7xl text-sm text-amber-950">
+        <div className="border-b border-amber-100 bg-amber-50/50 px-2 py-3">
+          <div className="mx-auto w-full text-sm text-amber-950">
             <span className="font-semibold">Did you mean? </span>
             <span className="text-amber-900/90">Try a related search above, or broaden your filters.</span>
           </div>
         </div>
       ) : null}
 
-      <div className="border-b border-gray-200 bg-white px-4 py-3">
-        <div className="mx-auto max-w-7xl space-y-3">
+      <div className="border-b border-gray-200 bg-white px-2 py-3">
+        <div className="mx-auto w-full space-y-3">
           <div>
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Quick filters</p>
             <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
@@ -827,7 +827,7 @@ export default function Products() {
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 py-4 flex gap-8 items-start">
+      <div className="w-full mx-auto px-2 py-4 flex gap-8 items-start">
         <aside className="hidden lg:block w-72 shrink-0 sticky top-28 self-start">
           <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm space-y-6">
             <div className="flex items-center justify-between">
@@ -859,9 +859,9 @@ export default function Products() {
                 tabIndex={0}
                 onScroll={onProductsFeedScroll}
                 onKeyDown={onProductsFeedKeyDown}
-                className="gh-endless-viewport gh-endless-grid-inner rounded-xl border border-gray-100 bg-white/40 p-2 sm:p-3 outline-none focus-visible:ring-2 focus-visible:ring-[#22c55e]/30"
+                className="gh-endless-viewport gh-endless-grid-inner rounded-xl border border-gray-100 bg-white/40 p-2 outline-none focus-visible:ring-2 focus-visible:ring-[#22c55e]/30"
               >
-              <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 [&>*]:min-h-0 [&>*]:min-w-0 [&>*]:w-full">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 [&>*]:min-h-0 [&>*]:min-w-0 [&>*]:w-full">
                 {products.map((product) => {
                   const pid = Number(product.id);
                   const row = product as Record<string, unknown>;
@@ -893,12 +893,7 @@ export default function Products() {
                       sellerId={sid || undefined}
                       sellerFollowerCount={sid ? sellerFollowerCounts[sid] : undefined}
                       sellerName={sid ? sellerDisplayNames[sid] : undefined}
-                      messageSellerHref={
-                        sid && product.id != null
-                          ? `/messages/u/${encodeURIComponent(sid)}?product=${encodeURIComponent(String(product.id))}`
-                          : undefined
-                      }
-                    />
+/>
                   );
                 })}
               </div>

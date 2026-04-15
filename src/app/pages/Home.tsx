@@ -564,7 +564,7 @@ export default function Home() {
         </div>
       </header>
 
-      <div className="max-w-7xl mx-auto md:px-4 md:py-6 md:flex md:gap-6 md:items-start">
+      <div className="w-full mx-auto md:px-2 md:py-6 md:flex md:gap-6 md:items-start">
         {/* Categories Sidebar (Desktop) / Scroller (Mobile) */}
         <div className="bg-white border-b border-gray-200 md:border md:rounded-xl md:w-64 md:shrink-0 md:sticky md:top-36 md:mb-0 mb-4 px-4 py-4 md:p-0">
           <div className="flex md:flex-col overflow-x-auto no-scrollbar gap-6 md:gap-0">
@@ -589,7 +589,7 @@ export default function Home() {
         </div>
 
         {/* Main Content */}
-        <div className="flex-1 min-w-0 px-4 py-0 md:px-0">
+        <div className="flex-1 min-w-0 px-2 py-0 md:px-0">
           
           {/* Primary Navigation Icons (Moved to Top) */}
           <div className="grid grid-cols-4 gap-2 md:gap-4 mb-6 bg-white py-4 md:py-6 border-b border-gray-200 md:border md:rounded-xl md:shadow-sm">
@@ -670,8 +670,8 @@ export default function Home() {
                   loadingLeft={false}
                   loadingRight={false}
                 />
-                <div className="gh-endless-grid-inner rounded-xl border border-gray-100 bg-white/50 p-2 sm:p-3">
-                  <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 [&>*]:h-full [&>*]:min-h-0 [&>*]:min-w-0 [&>*]:w-full">
+                <div className="gh-endless-grid-inner rounded-xl border border-gray-100 bg-white/50 p-2">
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 [&>*]:min-h-0 [&>*]:min-w-0 [&>*]:w-full">
                 {products.map((product) => {
                   const row = product as Record<string, unknown>;
                   const pid = Number(row.id);
@@ -702,12 +702,7 @@ export default function Home() {
                       sellerId={sid || undefined}
                       sellerFollowerCount={sid ? sellerFollowerCounts[sid] : undefined}
                       sellerName={sid ? sellerDisplayNames[sid] : undefined}
-                      messageSellerHref={
-                        sid && product.id != null
-                          ? `/messages/u/${encodeURIComponent(sid)}?product=${encodeURIComponent(String(product.id))}`
-                          : undefined
-                      }
-                    />
+/>
                   );
                 })}
                   </div>
@@ -727,7 +722,7 @@ export default function Home() {
           {/* Recently Viewed — persisted in localStorage, synced when you open a product */}
           <div className="mb-6">
             <h2 className="font-semibold text-gray-800 mb-3">Recently Viewed</h2>
-            <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 [&>*]:h-full [&>*]:min-h-0 [&>*]:min-w-0 [&>*]:w-full">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 [&>*]:min-h-0 [&>*]:min-w-0 [&>*]:w-full">
               {recentViewedLoading && getRecentProductIds().length > 0 ? (
                 <div className="col-span-full">
                   <ProductCardSkeletonGrid count={Math.min(4, getRecentProductIds().length)} />
@@ -763,12 +758,7 @@ export default function Home() {
                       sellerId={sid || undefined}
                       sellerFollowerCount={sid ? sellerFollowerCounts[sid] : undefined}
                       sellerName={sid ? sellerDisplayNames[sid] : undefined}
-                      messageSellerHref={
-                        sid && product.id != null
-                          ? `/messages/u/${encodeURIComponent(sid)}?product=${encodeURIComponent(String(product.id))}`
-                          : undefined
-                      }
-                    />
+/>
                   );
                 })
               ) : (

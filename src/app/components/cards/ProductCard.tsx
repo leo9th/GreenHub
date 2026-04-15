@@ -8,6 +8,8 @@ import { derivePeerHandle } from "../chat/ChatPeerHeaderModern";
 /**
  * Listing card — image uses fixed height (mobile/desktop); footer is below (no overlap).
  * Extra props are accepted so Home/Products/DesignSystem call sites stay type-compatible.
+ *
+ * Note: Do not nest <button> inside <Link> (<a>) — invalid HTML and breaks taps/clicks on some browsers.
  */
 export interface ProductCardProps {
   id?: string;
@@ -71,6 +73,8 @@ export function ProductCard({
   likesCount,
   sellerVerified,
   verifiedAdvertiser,
+  titleAdornment,
+  topRightBadge,
   sellerId,
   sellerFollowerCount,
   sellerName,
@@ -108,31 +112,41 @@ export function ProductCard({
     return null;
   })();
 
+  const onMessageSellerClick = () => {
+    // eslint-disable-next-line no-console
+    console.log("[ProductCard] Message seller click", { messageToSellerHref, sellerId, productId: resolvedId });
+  };
+
   return (
-    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden rounded-xl border border-transparent bg-white shadow-sm transition hover:shadow-md dark:border-border dark:bg-card">
-    <Link
-      to={linkTo}
-      className="flex min-h-0 flex-1 flex-col overflow-hidden"
-    >
-      {/* Image ~75% of card height visually; fixed px so thumbnails stay large in narrow grids */}
-      <div className="relative h-[160px] w-full shrink-0 overflow-hidden bg-gray-100 dark:bg-muted md:h-[200px]">
-        <img
-          src={image || "https://placehold.co/400x400/png?text=No+Image"}
-          alt={title}
-          className="h-full w-full object-cover"
-          loading="lazy"
-          draggable={false}
-        />
+    <div className="flex h-full min-h-0 w-full min-w-0 max-w-full flex-col overflow-hidden rounded-xl border border-transparent bg-white shadow-sm transition hover:shadow-md dark:border-border dark:bg-card">
+      {/* Image: only the image is inside the listing <Link> — overlays stay outside (valid HTML). */}
+      <div className="relative h-[min(200px,42vw)] w-full min-h-[140px] shrink-0 overflow-hidden bg-gray-100 dark:bg-muted sm:h-[160px] md:h-[200px]">
+        <Link
+          to={linkTo}
+          className="absolute inset-0 z-0 block outline-none ring-offset-2 focus-visible:ring-2 focus-visible:ring-[#22c55e]"
+          aria-label={`View listing: ${title}`}
+        >
+          <img
+            src={image || "https://placehold.co/400x400/png?text=No+Image"}
+            alt=""
+            className="h-full w-full object-cover"
+            loading="lazy"
+            draggable={false}
+          />
+        </Link>
+        {topRightBadge ? (
+          <div className="pointer-events-none absolute right-2 top-2 z-[3] max-w-[45%]">{topRightBadge}</div>
+        ) : null}
         {condition ? (
-          <span className="absolute left-2 top-2 rounded-full bg-black/60 px-2 py-0.5 text-xs text-white">
+          <span className="pointer-events-none absolute left-2 top-2 z-[1] rounded-full bg-black/60 px-2 py-0.5 text-xs text-white">
             {condition}
           </span>
         ) : null}
-        <div className="absolute bottom-2 right-2 flex flex-col items-end gap-1">
+        <div className="pointer-events-auto absolute bottom-2 right-2 z-[2] flex flex-col items-end gap-1">
           {sellerId && sellerFollowerCount !== undefined ? (
             <button
               type="button"
-              className="flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-xs text-white hover:bg-black/75"
+              className="flex min-h-[32px] min-w-[32px] touch-manipulation items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-xs text-white hover:bg-black/75"
               aria-label="Seller followers"
               onClick={(e) => {
                 e.preventDefault();
@@ -143,7 +157,7 @@ export function ProductCard({
               👥 {sellerFollowerCount}
             </button>
           ) : null}
-          <div className="flex gap-2">
+          <div className="flex flex-wrap justify-end gap-2">
             {displayViews !== undefined && displayViews > 0 ? (
               <span className="flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-xs text-white">
                 👁 {displayViews}
@@ -163,10 +177,14 @@ export function ProductCard({
         </div>
       </div>
 
-      {/* Footer — below image, compact spacing */}
-      <div className="flex shrink-0 flex-col gap-1 border-t border-gray-100 dark:border-border bg-white dark:bg-card px-3 py-2">
+      {/* Title / price / location: single link — no buttons inside */}
+      <Link
+        to={linkTo}
+        className="flex min-h-0 shrink-0 flex-col gap-1 border-t border-gray-100 bg-white px-3 py-2 text-left no-underline transition-opacity hover:opacity-95 dark:border-border dark:bg-card"
+      >
         <h3 className="flex flex-wrap items-start gap-1 text-sm font-semibold leading-snug text-gray-800 dark:text-card-foreground">
           <span className="line-clamp-2 min-w-0 flex-1">{title}</span>
+          {titleAdornment}
           {sellerVerified ? <VerifiedBadge title="Verified seller" size="sm" className="mt-0.5 shrink-0" /> : null}
         </h3>
         {verifiedAdvertiser ? (
@@ -175,16 +193,19 @@ export function ProductCard({
           </div>
         ) : null}
         <p className="text-base font-bold leading-tight text-green-600 dark:text-primary">{formatPrice(price)}</p>
-        <p className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-muted-foreground">
-          <span className="shrink-0 select-none text-[13px] leading-none" aria-hidden>
+        <p className="flex items-start gap-1.5 text-xs text-gray-500 dark:text-muted-foreground">
+          <span className="mt-0.5 shrink-0 select-none text-[13px] leading-none" aria-hidden>
             📍
           </span>
-          <span className="min-w-0">{locationDisplayText}</span>
+          <span className="min-w-0 break-words">{locationDisplayText}</span>
         </p>
-        {sellerId ? (
+      </Link>
+
+      {sellerId ? (
+        <div className="shrink-0 border-t border-gray-100 bg-white px-3 pb-2 pt-0 dark:border-border dark:bg-card">
           <button
             type="button"
-            className="w-full text-left text-xs font-medium text-[#15803d] hover:underline dark:text-emerald-400"
+            className="w-full min-h-[44px] touch-manipulation text-left text-xs font-medium text-[#15803d] hover:underline dark:text-emerald-400"
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
@@ -193,13 +214,14 @@ export function ProductCard({
           >
             Seller · {sellerHandleLabel ?? "View profile"}
           </button>
-        ) : null}
-      </div>
-    </Link>
+        </div>
+      ) : null}
+
       {messageToSellerHref ? (
         <Link
           to={messageToSellerHref}
-          className="flex shrink-0 items-center justify-center gap-2 border-t border-gray-100 bg-emerald-50/90 px-3 py-2 text-xs font-semibold text-[#15803d] transition hover:bg-emerald-100 dark:border-border dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-950/70"
+          className="relative z-10 flex min-h-[48px] w-full shrink-0 touch-manipulation items-center justify-center gap-2 border-t border-gray-100 bg-emerald-50/90 px-3 py-3 text-xs font-semibold text-[#15803d] transition hover:bg-emerald-100 active:bg-emerald-200 dark:border-border dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-950/70 sm:py-2.5"
+          onClick={onMessageSellerClick}
         >
           <span aria-hidden>💬</span>
           Message seller

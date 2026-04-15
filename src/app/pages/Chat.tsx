@@ -57,7 +57,9 @@ function ChatErrorBoundary({ children }: { children: React.ReactNode }) {
 export default function Chat() {
   return (
     <ChatErrorBoundary>
-      <ChatWorkspace />
+      <div className="flex min-h-0 min-w-0 w-full max-w-[100vw] flex-1 flex-col overflow-x-hidden">
+        <ChatWorkspace />
+      </div>
     </ChatErrorBoundary>
   );
 }

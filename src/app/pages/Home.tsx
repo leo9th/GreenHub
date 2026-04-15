@@ -3,7 +3,7 @@ import { Search, ChevronDown, Star, Globe, Home as HomeIcon, PlusCircle, Message
 import { categories } from "../data/catalogConstants";
 import { useRegion, regions } from "../context/RegionContext";
 import { useCurrency } from "../hooks/useCurrency";
-import { useState, useEffect, useMemo, useCallback, useRef, useLayoutEffect } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "../../lib/supabase";
 import { ProductCard } from "../components/cards/ProductCard";
 import { ProductCardSkeletonGrid } from "../components/cards/ProductCardSkeleton";
@@ -32,7 +32,6 @@ import {
   type ListingSort,
 } from "../utils/productSearch";
 import { useBidirectionalProductFeed } from "../hooks/useBidirectionalProductFeed";
-import { usePuzzleScroll } from "../hooks/usePuzzleScroll";
 import { InfiniteScrollIndicators } from "../components/InfiniteScrollIndicators";
 import { getRelatedSearchSuggestions } from "../utils/searchSuggestions";
 import { getProductThumbnailUrl } from "../utils/productImages";
@@ -77,24 +76,13 @@ export default function Home() {
 
   const homeFeedResetKey = useMemo(() => `${activeRegion.id}|${homeSort}`, [activeRegion.id, homeSort]);
 
-  const homePuzzleTranslateRef = useRef({ x: 0, y: 0 });
-  const homePuzzleContentRef = useRef<HTMLDivElement>(null);
-
   const {
     products,
     setProducts,
     totalCount: homeTotalCount,
-    scrollRef: homeProductsScrollRef,
     isInitialLoading: isLoadingProducts,
-    isLoadingUp: isHomeLoadingUp,
     isLoadingDown: isHomeLoadingDown,
-    isLoadingLeft: isHomeLoadingLeft,
-    isLoadingRight: isHomeLoadingRight,
     loadError: productLoadError,
-    onScroll: onHomeFeedScroll,
-    onKeyDown: onHomeFeedKeyDown,
-    runEdgeCheck: runHomeEdgeCheck,
-    clampPuzzlePan: clampHomePuzzlePan,
   } = useBidirectionalProductFeed({
     supabase,
     pageSize: HOME_PAGE_SIZE,
@@ -102,30 +90,8 @@ export default function Home() {
     filterOpts: homeFilterOpts,
     sortBy: homeSort,
     resetKey: homeFeedResetKey,
-    panMode: "puzzle",
-    panTranslateRef: homePuzzleTranslateRef,
-    contentMeasureRef: homePuzzleContentRef,
+    scrollRoot: "window",
   });
-
-  const runHomeEdgeCheckRef = useRef(runHomeEdgeCheck);
-  runHomeEdgeCheckRef.current = runHomeEdgeCheck;
-
-  const homePuzzleEnabled = !isLoadingProducts && products.length > 0;
-  usePuzzleScroll({
-    enabled: homePuzzleEnabled,
-    viewportRef: homeProductsScrollRef,
-    contentRef: homePuzzleContentRef,
-    translateRef: homePuzzleTranslateRef,
-    runEdgeCheck: runHomeEdgeCheck,
-    clampPuzzlePan: clampHomePuzzlePan,
-  });
-
-  useLayoutEffect(() => {
-    homePuzzleTranslateRef.current = { x: 0, y: 0 };
-    const inner = homePuzzleContentRef.current;
-    if (inner) inner.style.transform = "translate3d(0,0,0)";
-    queueMicrotask(() => runHomeEdgeCheckRef.current());
-  }, [homeFeedResetKey]);
 
   const homeCardIds = useMemo(() => {
     const seen = new Set<string>();
@@ -699,20 +665,13 @@ export default function Home() {
             ) : (
               <>
                 <InfiniteScrollIndicators
-                  loadingUp={isHomeLoadingUp}
+                  loadingUp={false}
                   loadingDown={isHomeLoadingDown}
-                  loadingLeft={isHomeLoadingLeft}
-                  loadingRight={isHomeLoadingRight}
+                  loadingLeft={false}
+                  loadingRight={false}
                 />
-                <div
-                  ref={homeProductsScrollRef}
-                  tabIndex={0}
-                  onScroll={onHomeFeedScroll}
-                  onKeyDown={onHomeFeedKeyDown}
-                  className="gh-puzzle-viewport gh-endless-grid-inner rounded-xl border border-gray-100 bg-white/50 p-2 sm:p-3 outline-none focus-visible:ring-2 focus-visible:ring-[#22c55e]/30"
-                >
-                  <div ref={homePuzzleContentRef} className="gh-puzzle-content">
-                    <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 [&>*]:h-full [&>*]:min-h-0 [&>*]:min-w-0 [&>*]:w-full">
+                <div className="gh-endless-grid-inner rounded-xl border border-gray-100 bg-white/50 p-2 sm:p-3">
+                  <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 [&>*]:h-full [&>*]:min-h-0 [&>*]:min-w-0 [&>*]:w-full">
                 {products.map((product) => {
                   const row = product as Record<string, unknown>;
                   const pid = Number(row.id);
@@ -751,7 +710,6 @@ export default function Home() {
                     />
                   );
                 })}
-                    </div>
                   </div>
                 </div>
               </>
@@ -761,7 +719,7 @@ export default function Home() {
             ) : null}
             {!isLoadingProducts && !productLoadError && homeTotalCount != null && products.length < homeTotalCount ? (
               <p className="mt-3 text-center text-xs text-gray-500">
-                Loaded {products.length} of {homeTotalCount} — scroll the grid for more
+                Loaded {products.length} of {homeTotalCount} — scroll down for more
               </p>
             ) : null}
           </div>

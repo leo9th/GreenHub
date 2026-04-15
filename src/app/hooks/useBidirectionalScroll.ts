@@ -1,5 +1,5 @@
 /**
- * Bidirectional infinite product feed (vertical + horizontal scroll edges).
+ * Infinite product feed (vertical: load more near bottom of scroll container or window).
  * @see useBidirectionalProductFeed.ts
  */
 export { useBidirectionalProductFeed as useBidirectionalScroll } from "./useBidirectionalProductFeed";

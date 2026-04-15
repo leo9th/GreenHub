@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { fetchProductsListingRpc, mapProductRow, type ListingFilterOpts, type ListingSort } from "../utils/productSearch";
 import { getCachedListingBatch, setCachedListingBatch } from "../utils/infiniteScrollCache";
 
-const EDGE_PX = 220;
+const BOTTOM_EDGE_PX = 200;
 const SCROLL_DEBOUNCE_MS = 120;
 /** Ignore sub-pixel scrollbar / rounding differences */
 const OVERFLOW_SLACK_PX = 2;
@@ -19,8 +19,6 @@ function dedupeById(rows: Array<Record<string, unknown>>, existing: Map<string, 
   return out;
 }
 
-export type ProductFeedPanMode = "native" | "puzzle";
-
 export type UseBidirectionalProductFeedOptions = {
   supabase: SupabaseClient;
   pageSize: number;
@@ -29,50 +27,33 @@ export type UseBidirectionalProductFeedOptions = {
   sortBy: ListingSort;
   /** When this string changes, feed resets */
   resetKey: string;
-  /** Transform-based pan (overflow hidden); use with contentMeasureRef + panTranslateRef */
-  panMode?: ProductFeedPanMode;
-  panTranslateRef?: React.MutableRefObject<{ x: number; y: number }>;
-  contentMeasureRef?: React.RefObject<HTMLDivElement | null>;
+  /**
+   * `window` — page scroll (e.g. Home). `element` — scrollable container ref (e.g. Products grid).
+   */
+  scrollRoot?: "window" | "element";
 };
 
 export function useBidirectionalProductFeed(opts: UseBidirectionalProductFeedOptions) {
-  const {
-    supabase,
-    pageSize,
-    searchTerm,
-    filterOpts,
-    sortBy,
-    resetKey,
-    panMode = "native",
-    panTranslateRef,
-    contentMeasureRef,
-  } = opts;
-  const isPuzzle = panMode === "puzzle" && panTranslateRef != null && contentMeasureRef != null;
+  const { supabase, pageSize, searchTerm, filterOpts, sortBy, resetKey, scrollRoot = "element" } = opts;
+  const isWindowScroll = scrollRoot === "window";
 
   const [products, setProducts] = useState<Array<Record<string, unknown>>>([]);
   const [totalCount, setTotalCount] = useState<number | null>(null);
-  const [startOffset, setStartOffset] = useState(0);
   const [endOffset, setEndOffset] = useState(0);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
-  const [isLoadingUp, setIsLoadingUp] = useState(false);
   const [isLoadingDown, setIsLoadingDown] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadingDownRef = useRef(false);
-  const loadingUpRef = useRef(false);
   const isInitialLoadingRef = useRef(true);
   const endOffsetRef = useRef(0);
-  const startOffsetRef = useRef(0);
   const totalRef = useRef<number | null>(null);
 
   useEffect(() => {
     endOffsetRef.current = endOffset;
   }, [endOffset]);
-  useEffect(() => {
-    startOffsetRef.current = startOffset;
-  }, [startOffset]);
   useEffect(() => {
     totalRef.current = totalCount;
   }, [totalCount]);
@@ -80,14 +61,12 @@ export function useBidirectionalProductFeed(opts: UseBidirectionalProductFeedOpt
     isInitialLoadingRef.current = isInitialLoading;
   }, [isInitialLoading]);
 
-  const hasMoreUp = startOffset > 0;
   const hasMoreDown = totalCount != null && endOffset < totalCount;
 
   const resetFeed = useCallback(async () => {
     setIsInitialLoading(true);
     setLoadError(null);
     setProducts([]);
-    setStartOffset(0);
     setEndOffset(0);
     setTotalCount(null);
 
@@ -96,7 +75,6 @@ export function useBidirectionalProductFeed(opts: UseBidirectionalProductFeedOpt
     if (cached) {
       setProducts(cached.rows.map((r) => mapProductRow(r)));
       setTotalCount(cached.total);
-      setStartOffset(cached.startOffset);
       setEndOffset(cached.endOffset);
       setIsInitialLoading(false);
       return;
@@ -114,7 +92,6 @@ export function useBidirectionalProductFeed(opts: UseBidirectionalProductFeedOpt
       const mapped = rows.map((r) => mapProductRow(r));
       setProducts(mapped);
       setTotalCount(total);
-      setStartOffset(0);
       setEndOffset(mapped.length);
       setCachedListingBatch(cacheKey, {
         rows,
@@ -165,139 +142,49 @@ export function useBidirectionalProductFeed(opts: UseBidirectionalProductFeedOpt
     }
   }, [supabase, searchTerm, filterOpts, sortBy, pageSize]);
 
-  const loadMoreUp = useCallback(async () => {
-    const so = startOffsetRef.current;
-    if (loadingUpRef.current || so <= 0) return;
-    loadingUpRef.current = true;
-    setIsLoadingUp(true);
-    const el = scrollRef.current;
-    const ct = contentMeasureRef?.current;
-    let prevScrollHeight: number;
-    let prevScrollTop = 0;
-    let prevTy = 0;
-    if (isPuzzle && ct && panTranslateRef) {
-      prevScrollHeight = ct.scrollHeight;
-      prevTy = panTranslateRef.current.y;
-    } else {
-      prevScrollHeight = el?.scrollHeight ?? 0;
-      prevScrollTop = el?.scrollTop ?? 0;
-    }
-
-    const nextStart = Math.max(0, so - pageSize);
-    try {
-      const { rows, error } = await fetchProductsListingRpc(supabase, {
-        searchTerm,
-        filterOpts,
-        sortBy,
-        limit: pageSize,
-        offset: nextStart,
-      });
-      if (error) throw new Error(error);
-      const mapped = rows.map((r) => mapProductRow(r));
-      setProducts((prev) => {
-        const mapById = new Map(prev.map((p) => [String(p.id), p]));
-        const merged = dedupeById(mapped, mapById);
-        return [...merged, ...prev];
-      });
-      setStartOffset(nextStart);
-
-      requestAnimationFrame(() => {
-        if (isPuzzle && panTranslateRef && ct) {
-          const newH = ct.scrollHeight;
-          const delta = newH - prevScrollHeight;
-          panTranslateRef.current = {
-            x: panTranslateRef.current.x,
-            y: prevTy - delta,
-          };
-          ct.style.transform = `translate3d(${panTranslateRef.current.x}px, ${panTranslateRef.current.y}px, 0)`;
-          return;
-        }
-        const box = scrollRef.current;
-        if (!box) return;
-        const delta = box.scrollHeight - prevScrollHeight;
-        box.scrollTop = prevScrollTop + delta;
-      });
-    } catch (e: unknown) {
-      console.warn("loadMoreUp", e);
-    } finally {
-      setIsLoadingUp(false);
-      loadingUpRef.current = false;
-    }
-  }, [supabase, searchTerm, filterOpts, sortBy, pageSize, isPuzzle, panTranslateRef, contentMeasureRef]);
-
-  /**
-   * Scroll events only fire when the viewport actually overflows. If the first page is shorter
-   * than max-height, we must still load more — same for ResizeObserver after layout changes.
-   * Horizontal edges only apply when there is real horizontal overflow (wrapping grids usually
-   * have scrollWidth === clientWidth; left/right then map to keyboard nudges, not extra loads).
-   */
   const runEdgeCheck = useCallback(() => {
     if (isInitialLoadingRef.current) return;
 
     let scrollTop: number;
-    let scrollLeft: number;
     let clientHeight: number;
-    let clientWidth: number;
     let scrollHeight: number;
-    let scrollWidth: number;
 
-    if (isPuzzle && panTranslateRef && contentMeasureRef?.current && scrollRef.current) {
-      const vp = scrollRef.current;
-      const ct = contentMeasureRef.current;
-      const { x, y } = panTranslateRef.current;
-      clientHeight = vp.clientHeight;
-      clientWidth = vp.clientWidth;
-      scrollHeight = ct.scrollHeight;
-      scrollWidth = ct.scrollWidth;
-      scrollTop = -y;
-      scrollLeft = -x;
+    if (isWindowScroll) {
+      scrollTop = window.scrollY;
+      clientHeight = window.innerHeight;
+      scrollHeight = document.documentElement.scrollHeight;
     } else {
       const el = scrollRef.current;
       if (!el) return;
-      ({
-        scrollTop,
-        scrollLeft,
-        clientHeight,
-        clientWidth,
-        scrollHeight,
-        scrollWidth,
-      } = el);
+      scrollTop = el.scrollTop;
+      clientHeight = el.clientHeight;
+      scrollHeight = el.scrollHeight;
     }
 
     const verticalOverflow = scrollHeight > clientHeight + OVERFLOW_SLACK_PX;
-    const horizontalOverflow = scrollWidth > clientWidth + OVERFLOW_SLACK_PX;
-
     const total = totalRef.current;
     const end = endOffsetRef.current;
-    const start = startOffsetRef.current;
 
-    const nearBottom =
-      verticalOverflow && scrollTop + clientHeight >= scrollHeight - EDGE_PX;
-    const nearTop = verticalOverflow && scrollTop <= EDGE_PX;
-    const nearRight =
-      horizontalOverflow && scrollLeft + clientWidth >= scrollWidth - EDGE_PX;
-    const nearLeft = horizontalOverflow && scrollLeft <= EDGE_PX;
-
+    const nearBottom = verticalOverflow && scrollTop + clientHeight >= scrollHeight - BOTTOM_EDGE_PX;
     const needsMoreToFillViewport =
       !verticalOverflow && total != null && end < total && !loadingDownRef.current;
 
-    if ((nearBottom || nearRight || needsMoreToFillViewport) && !loadingDownRef.current) {
+    if ((nearBottom || needsMoreToFillViewport) && !loadingDownRef.current) {
       void loadMoreDown();
     }
-    if ((nearTop || nearLeft) && start > 0 && !loadingUpRef.current) {
-      void loadMoreUp();
-    }
-  }, [loadMoreDown, loadMoreUp, isPuzzle, panTranslateRef, contentMeasureRef]);
+  }, [isWindowScroll, loadMoreDown]);
 
-  const onScroll = useCallback(() => {
-    if (isPuzzle) return;
-    const el = scrollRef.current;
-    if (!el) return;
+  const scheduleEdgeCheck = useCallback(() => {
     if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
     scrollTimerRef.current = setTimeout(() => {
       runEdgeCheck();
     }, SCROLL_DEBOUNCE_MS);
-  }, [isPuzzle, runEdgeCheck]);
+  }, [runEdgeCheck]);
+
+  const onScroll = useCallback(() => {
+    if (isWindowScroll) return;
+    scheduleEdgeCheck();
+  }, [isWindowScroll, scheduleEdgeCheck]);
 
   useEffect(() => {
     return () => {
@@ -305,71 +192,44 @@ export function useBidirectionalProductFeed(opts: UseBidirectionalProductFeedOpt
     };
   }, []);
 
-  /** Re-check when data or layout changes — fixes “no scroll event” when content is shorter than the box */
+  useEffect(() => {
+    if (!isWindowScroll) return;
+    const onWin = () => scheduleEdgeCheck();
+    window.addEventListener("scroll", onWin, { passive: true });
+    window.addEventListener("resize", onWin);
+    return () => {
+      window.removeEventListener("scroll", onWin);
+      window.removeEventListener("resize", onWin);
+    };
+  }, [isWindowScroll, scheduleEdgeCheck]);
+
   useLayoutEffect(() => {
     if (isInitialLoading) return;
     runEdgeCheck();
-  }, [isInitialLoading, products.length, totalCount, endOffset, startOffset, resetKey, runEdgeCheck]);
+  }, [isInitialLoading, products.length, totalCount, endOffset, resetKey, runEdgeCheck]);
 
   useEffect(() => {
     const el = scrollRef.current;
-    const ct = contentMeasureRef?.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
+    if (!el || typeof ResizeObserver === "undefined" || isWindowScroll) return;
     const ro = new ResizeObserver(() => {
       runEdgeCheck();
     });
     ro.observe(el);
-    if (isPuzzle && ct) ro.observe(ct);
     return () => {
       ro.disconnect();
     };
-  }, [runEdgeCheck, isPuzzle, contentMeasureRef, products.length]);
+  }, [runEdgeCheck, isWindowScroll, products.length]);
 
-  const clampPuzzlePan = useCallback(() => {
-    if (!isPuzzle || !panTranslateRef || !contentMeasureRef?.current || !scrollRef.current) return;
-    const vp = scrollRef.current;
-    const ct = contentMeasureRef.current;
-    const Hv = vp.clientHeight;
-    const Wv = vp.clientWidth;
-    const Hc = ct.scrollHeight;
-    const Wc = ct.scrollWidth;
-    let { x: nx, y: ny } = panTranslateRef.current;
-    if (Wc > Wv) nx = Math.min(0, Math.max(-(Wc - Wv), nx));
-    else nx = 0;
-    if (Hc > Hv) ny = Math.min(0, Math.max(-(Hc - Hv), ny));
-    else ny = 0;
-    panTranslateRef.current = { x: nx, y: ny };
-    ct.style.transform = `translate3d(${nx}px, ${ny}px, 0)`;
-  }, [isPuzzle, panTranslateRef, contentMeasureRef]);
+  useEffect(() => {
+    if (!isWindowScroll || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => scheduleEdgeCheck());
+    ro.observe(document.documentElement);
+    return () => ro.disconnect();
+  }, [isWindowScroll, scheduleEdgeCheck]);
 
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (isPuzzle && panTranslateRef && contentMeasureRef?.current && scrollRef.current) {
-        const ct = contentMeasureRef.current;
-        const step = 120;
-        let dx = 0;
-        let dy = 0;
-        if (e.key === "ArrowDown") {
-          e.preventDefault();
-          dy = -step;
-        } else if (e.key === "ArrowUp") {
-          e.preventDefault();
-          dy = step;
-        } else if (e.key === "ArrowRight") {
-          e.preventDefault();
-          dx = -step;
-        } else if (e.key === "ArrowLeft") {
-          e.preventDefault();
-          dx = step;
-        } else {
-          return;
-        }
-        const { x, y } = panTranslateRef.current;
-        panTranslateRef.current = { x: x + dx, y: y + dy };
-        clampPuzzlePan();
-        runEdgeCheck();
-        return;
-      }
+      if (isWindowScroll) return;
       const el = scrollRef.current;
       if (!el) return;
       const step = 120;
@@ -379,27 +239,21 @@ export function useBidirectionalProductFeed(opts: UseBidirectionalProductFeedOpt
       } else if (e.key === "ArrowUp") {
         e.preventDefault();
         el.scrollTop -= step;
-      } else if (e.key === "ArrowRight") {
-        e.preventDefault();
-        el.scrollLeft += step;
-      } else if (e.key === "ArrowLeft") {
-        e.preventDefault();
-        el.scrollLeft -= step;
       }
     },
-    [isPuzzle, panTranslateRef, contentMeasureRef, clampPuzzlePan, runEdgeCheck],
+    [isWindowScroll],
   );
 
   const cursor = useMemo(
     () => ({
-      startOffset,
+      startOffset: 0,
       endOffset,
-      hasMoreUp,
+      hasMoreUp: false,
       hasMoreDown,
-      hasMoreLeft: hasMoreUp,
-      hasMoreRight: hasMoreDown,
+      hasMoreLeft: false,
+      hasMoreRight: false,
     }),
-    [startOffset, endOffset, hasMoreUp, hasMoreDown],
+    [endOffset, hasMoreDown],
   );
 
   return {
@@ -409,16 +263,15 @@ export function useBidirectionalProductFeed(opts: UseBidirectionalProductFeedOpt
     scrollRef,
     cursor,
     isInitialLoading,
-    isLoadingUp,
+    isLoadingUp: false,
     isLoadingDown,
-    isLoadingLeft: isLoadingUp,
-    isLoadingRight: isLoadingDown,
+    isLoadingLeft: false,
+    isLoadingRight: false,
     loadError,
     onScroll,
     onKeyDown,
     reload: resetFeed,
     runEdgeCheck,
-    clampPuzzlePan,
-    panMode: panMode ?? "native",
+    scrollRoot,
   };
 }

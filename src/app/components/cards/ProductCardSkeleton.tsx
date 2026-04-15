@@ -3,25 +3,34 @@ type Props = {
   className?: string;
 };
 
-/** Placeholder tiles matching `ProductCard` layout while listings load. */
+/** Placeholder tiles matching ProductCard: 3:4, 75/25, shimmer image + 3 text bars. */
 export function ProductCardSkeletonGrid({ count = 8, className = "" }: Props) {
   return (
     <div
-      className={`grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 [&>*]:min-h-0 [&>*]:min-w-0 [&>*]:w-full ${className}`.trim()}
+      className={`product-card-skeleton-grid grid w-full [grid-template-columns:repeat(auto-fill,minmax(160px,1fr))] gap-4 [&>*]:min-h-0 [&>*]:min-w-0 [&>*]:w-full ${className}`.trim()}
       aria-hidden
     >
       {Array.from({ length: count }, (_, i) => (
         <div
           key={i}
-          className="product-card grid aspect-[4/5] w-full min-w-[140px] grid-rows-[minmax(0,3fr)_minmax(0,1fr)] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-border dark:bg-card"
+          className="product-card flex aspect-[3/4] w-full min-w-[160px] flex-col overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-border dark:bg-card"
         >
-          <div className="product-image min-h-0 w-full bg-gray-100 dark:bg-muted">
-            <div className="h-full min-h-[4rem] w-full animate-pulse bg-gradient-to-br from-gray-100 via-gray-50 to-gray-100 dark:from-zinc-800 dark:via-zinc-900 dark:to-zinc-800" />
-          </div>
-          <div className="product-details flex min-h-0 flex-col gap-2 border-t border-gray-100 bg-white p-2 dark:border-border dark:bg-card">
-            <div className="h-3.5 w-full rounded bg-gray-100 dark:bg-zinc-700 animate-pulse" />
-            <div className="h-4 w-1/2 rounded bg-gray-100 dark:bg-zinc-700 animate-pulse" />
-            <div className="h-3 w-2/3 rounded bg-gray-200/80 dark:bg-zinc-600/80 animate-pulse" />
+          <div
+            className="product-card-skeleton__image shrink-0"
+            style={{
+              height: "75%",
+              width: "100%",
+              overflow: "hidden",
+              backgroundColor: "#e5e7eb",
+            }}
+          />
+          <div
+            className="flex min-h-0 flex-1 flex-col justify-center border-t border-gray-100 bg-white dark:border-border dark:bg-card"
+            style={{ padding: "8px 12px", gap: "6px", maxHeight: "25%" }}
+          >
+            <div className="h-3.5 w-full animate-pulse rounded bg-gray-200 dark:bg-zinc-700" />
+            <div className="h-3.5 w-2/5 animate-pulse rounded bg-emerald-100 dark:bg-emerald-900/40" />
+            <div className="h-3 w-4/5 animate-pulse rounded bg-gray-100 dark:bg-zinc-600/80" />
           </div>
         </div>
       ))}

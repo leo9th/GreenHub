@@ -21,7 +21,6 @@ import {
 } from "../utils/engagement";
 import { toast } from "sonner";
 import { SortBar } from "../components/SortBar";
-import { BoostCardBadge } from "../components/BoostBadge";
 import {
   fetchProductsListingRpc,
   HOME_PAGE_SIZE,
@@ -34,7 +33,7 @@ import {
 import { useBidirectionalProductFeed } from "../hooks/useBidirectionalProductFeed";
 import { InfiniteScrollIndicators } from "../components/InfiniteScrollIndicators";
 import { getRelatedSearchSuggestions } from "../utils/searchSuggestions";
-import { getProductThumbnailUrl } from "../utils/productImages";
+import { getProductThumbnailUrl, parseProductImagesFromRow } from "../utils/productImages";
 import { useVerifiedSellerIds } from "../hooks/useVerifiedSellerIds";
 import { useVerifiedAdvertiserIds } from "../hooks/useVerifiedAdvertiserIds";
 import { getRecentProductIds, RECENT_VIEWED_EVENT } from "../utils/recentlyViewedProducts";
@@ -657,7 +656,9 @@ export default function Home() {
             </div>
 
             {isLoadingProducts ? (
-              <ProductCardSkeletonGrid count={HOME_PAGE_SIZE} />
+              <div className="rounded-xl border border-gray-100 bg-white/50 p-3">
+                <ProductCardSkeletonGrid count={HOME_PAGE_SIZE} />
+              </div>
             ) : products.length === 0 ? (
               <p className="text-sm text-gray-600 py-8 text-center rounded-xl border border-dashed border-gray-200 bg-white">
                 No products found yet. Listings with status &quot;active&quot; will appear here.
@@ -670,8 +671,8 @@ export default function Home() {
                   loadingLeft={false}
                   loadingRight={false}
                 />
-                <div className="gh-endless-grid-inner rounded-xl border border-gray-100 bg-white/50 p-2">
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 [&>*]:min-h-0 [&>*]:min-w-0 [&>*]:w-full">
+                <div className="gh-endless-grid-inner rounded-xl border border-gray-100 bg-white/50 p-3">
+                  <div className="grid [grid-template-columns:repeat(auto-fill,minmax(160px,1fr))] gap-4 [&>*]:min-h-0 [&>*]:min-w-0 [&>*]:w-full">
                 {products.map((product) => {
                   const row = product as Record<string, unknown>;
                   const pid = Number(row.id);
@@ -681,26 +682,12 @@ export default function Home() {
                       key={String(product.id)}
                       href={`/products/${product.id}`}
                       image={getProductThumbnailUrl(row)}
-                      condition={String((product as { condition?: string }).condition ?? "Good")}
+                      images={parseProductImagesFromRow(row as { image?: unknown; images?: unknown })}
                       title={String((product as { title?: string }).title ?? "")}
-                      sellerVerified={Boolean(sid && verifiedSellerIds.has(sid))}
-                      verifiedAdvertiser={Boolean(sid && verifiedAdvertiserIds.has(sid))}
                       price={Number((product as { price?: number }).price) || 0}
-                      priceDisplay={formatPrice(Number((product as { price?: number }).price) || 0)}
                       location={String((product as { location?: string }).location ?? "")}
                       city={String(row.city ?? "")}
-                      rating={Number(row.rating) || 0}
-                      reviews={row.reviews != null ? Number(row.reviews) : undefined}
                       productId={Number.isFinite(pid) ? pid : String(row.id ?? "")}
-                      viewsCount={Number(row.views ?? 0)}
-                      likesCount={Number(row.like_count ?? 0)}
-                      commentCount={commentCounts[String(product.id)] ?? 0}
-                      liked={likedProductIds.has(productRowKey(product.id))}
-                      likeDisabled={pendingLikeIds.has(productRowKey(product.id))}
-                      onLikeClick={(ev) => void onProductLike(ev, row)}
-                      topRightBadge={<BoostCardBadge row={row} />}
-                      sellerId={sid || undefined}
-                      sellerFollowerCount={sid ? sellerFollowerCounts[sid] : undefined}
                       sellerName={sid ? sellerDisplayNames[sid] : undefined}
                     />
                   );
@@ -722,13 +709,12 @@ export default function Home() {
           {/* Recently Viewed — persisted in localStorage, synced when you open a product */}
           <div className="mb-6">
             <h2 className="font-semibold text-gray-800 mb-3">Recently Viewed</h2>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 [&>*]:min-h-0 [&>*]:min-w-0 [&>*]:w-full">
+            <div className="rounded-xl border border-gray-100 bg-white/50 p-3">
               {recentViewedLoading && getRecentProductIds().length > 0 ? (
-                <div className="col-span-full">
-                  <ProductCardSkeletonGrid count={Math.min(4, getRecentProductIds().length)} />
-                </div>
+                <ProductCardSkeletonGrid count={Math.min(4, getRecentProductIds().length)} />
               ) : recentViewedProducts.length > 0 ? (
-                recentViewedProducts.map((product) => {
+                <div className="grid [grid-template-columns:repeat(auto-fill,minmax(160px,1fr))] gap-4 [&>*]:min-h-0 [&>*]:min-w-0 [&>*]:w-full">
+                {recentViewedProducts.map((product) => {
                   const row = product as Record<string, unknown>;
                   const pid = Number(row.id);
                   const sid = row.seller_id != null ? String(row.seller_id) : "";
@@ -737,32 +723,19 @@ export default function Home() {
                       key={String(product.id)}
                       href={`/products/${product.id}`}
                       image={getProductThumbnailUrl(row)}
-                      condition={String((product as { condition?: string }).condition ?? "Good")}
+                      images={parseProductImagesFromRow(row as { image?: unknown; images?: unknown })}
                       title={String((product as { title?: string }).title ?? "")}
-                      sellerVerified={Boolean(sid && verifiedSellerIds.has(sid))}
-                      verifiedAdvertiser={Boolean(sid && verifiedAdvertiserIds.has(sid))}
                       price={Number((product as { price?: number }).price) || 0}
-                      priceDisplay={formatPrice(Number((product as { price?: number }).price) || 0)}
                       location={String((product as { location?: string }).location ?? "")}
                       city={String(row.city ?? "")}
-                      rating={Number(row.rating) || 0}
-                      reviews={row.reviews != null ? Number(row.reviews) : undefined}
                       productId={Number.isFinite(pid) ? pid : String(row.id ?? "")}
-                      viewsCount={Number(row.views ?? 0)}
-                      likesCount={Number(row.like_count ?? 0)}
-                      commentCount={commentCounts[String(product.id)] ?? 0}
-                      liked={likedProductIds.has(productRowKey(product.id))}
-                      likeDisabled={pendingLikeIds.has(productRowKey(product.id))}
-                      onLikeClick={(ev) => void onProductLike(ev, row)}
-                      topRightBadge={<BoostCardBadge row={row} />}
-                      sellerId={sid || undefined}
-                      sellerFollowerCount={sid ? sellerFollowerCounts[sid] : undefined}
                       sellerName={sid ? sellerDisplayNames[sid] : undefined}
                     />
                   );
-                })
+                })}
+                </div>
               ) : (
-                <p className="text-sm text-gray-500 col-span-full">
+                <p className="text-sm text-gray-500">
                   Open a product page to build your recent list here.
                 </p>
               )}

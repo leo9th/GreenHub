@@ -1,16 +1,13 @@
-import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { useCurrency } from "../../hooks/useCurrency";
-import type { MouseEvent as ReactMouseEvent, ReactNode, SyntheticEvent } from "react";
-import { VerifiedBadge } from "../VerifiedBadge";
-import { VerifiedAdvertiserBadge } from "../VerifiedAdvertiserBadge";
+import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { derivePeerHandle } from "../chat/ChatPeerHeaderModern";
 
+const PLACEHOLDER_IMG = "https://placehold.co/400x400/e5e7eb/9ca3af?text=No+Image";
+
 /**
- * Listing card — 4:5 aspect, ~75% image / ~25% details (flex 3:1).
- * Extra props are accepted so Home/Products/DesignSystem call sites stay type-compatible.
- *
- * Note: Do not nest <button> inside <Link> (<a>) — invalid HTML and breaks taps/clicks on some browsers.
+ * Minimal listing card: 3:4 aspect, 75% image / 25% text — image, title, price, location, @seller only.
+ * Extra props are accepted for call-site compatibility; social/boost/like UI is not rendered.
  */
 export interface ProductCardProps {
   id?: string;
@@ -18,26 +15,20 @@ export interface ProductCardProps {
   title: string;
   price: number;
   image?: string;
-  /** `products.location` — preferred (e.g. “Garki, Abuja”). */
+  images?: string[];
   location?: string;
-  /** `products.city` — used when `location` is empty. */
   city?: string;
   condition?: string;
   href?: string;
   commentCount?: number;
   viewCount?: number;
-  /** Alias for `viewCount` (listing pages) */
   viewsCount?: number;
   likeCount?: number;
-  /** Alias for `likeCount` (listing pages) */
   likesCount?: number;
-  /** @deprecated ignored — kept for compatibility */
   priceDisplay?: string;
   rating?: number;
   reviews?: number;
-  /** Approved ID verification for listing seller */
   sellerVerified?: boolean;
-  /** Paid boost / ads — profiles.is_verified_advertiser */
   verifiedAdvertiser?: boolean;
   titleAdornment?: ReactNode;
   topRightBadge?: ReactNode;
@@ -45,13 +36,9 @@ export interface ProductCardProps {
   liked?: boolean;
   likeDisabled?: boolean;
   onLikeClick?: (e: ReactMouseEvent) => void;
-  /** Seller uuid — when set with `sellerFollowerCount`, shows a followers chip above the ❤️ row. */
   sellerId?: string;
-  /** Loaded follower count for `sellerId` (omit until loaded). */
   sellerFollowerCount?: number;
-  /** Legacy: full name from profiles — used to derive @handle when `sellerUsername` is omitted. */
   sellerName?: string;
-  /** Public @username (preferred over `sellerName` for display). */
   sellerUsername?: string;
 }
 
@@ -61,21 +48,10 @@ export function ProductCard({
   title,
   price,
   image,
+  images,
   location,
   city,
-  condition,
   href,
-  commentCount,
-  viewCount,
-  viewsCount,
-  likeCount,
-  likesCount,
-  sellerVerified,
-  verifiedAdvertiser,
-  titleAdornment,
-  topRightBadge,
-  sellerId,
-  sellerFollowerCount,
   sellerName,
   sellerUsername,
 }: ProductCardProps) {
@@ -88,13 +64,10 @@ export function ProductCard({
         : "";
   const linkTo = href || (resolvedId ? `/products/${resolvedId}` : "/products");
 
-  const displayViews = viewCount ?? viewsCount;
-  const displayLikes = likeCount ?? likesCount;
+  const locationLine = (location?.trim() || city?.trim() || "").trim();
+  const locationDisplay = locationLine || "—";
 
-  const locationDisplayText =
-    location?.trim() || city?.trim() || "Location not specified";
-
-  const sellerHandleLabel = (() => {
+  const sellerLine = (() => {
     const raw = sellerUsername?.trim();
     if (raw) return raw.startsWith("@") ? raw : `@${raw}`;
     const name = sellerName?.trim();
@@ -102,122 +75,77 @@ export function ProductCard({
     return null;
   })();
 
-  const placeholderImage = "https://placehold.co/400x400/png?text=No+Image";
-  const imageSrc = image?.trim() ? image.trim() : placeholderImage;
-  const [displaySrc, setDisplaySrc] = useState(imageSrc);
-  const imgErrorFallbackUsed = useRef(false);
-
-  useEffect(() => {
-    imgErrorFallbackUsed.current = false;
-    setDisplaySrc(imageSrc);
-  }, [imageSrc]);
-
-  const onImgError = (_e: SyntheticEvent<HTMLImageElement>) => {
-    if (imgErrorFallbackUsed.current) return;
-    imgErrorFallbackUsed.current = true;
-    setDisplaySrc(placeholderImage);
-  };
+  const firstFromImages =
+    Array.isArray(images) && images.length > 0 && typeof images[0] === "string" ? images[0].trim() : "";
+  const imgSrc = (image?.trim() || firstFromImages || PLACEHOLDER_IMG) as string;
 
   return (
-    <div className="product-card grid aspect-[4/5] w-full min-h-0 min-w-[140px] max-w-full grid-rows-[minmax(0,3fr)_minmax(0,1fr)] overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-border dark:bg-card">
-      {/* Image: only the image is inside the listing <Link> — overlays stay outside (valid HTML). */}
-      <div className="product-image relative min-h-0 w-full overflow-hidden bg-gray-100 dark:bg-muted">
-        <Link
-          to={linkTo}
-          className="absolute inset-0 z-0 block h-full min-h-0 w-full outline-none ring-offset-2 focus-visible:ring-2 focus-visible:ring-[#22c55e]"
-          aria-label={`View listing: ${title}`}
+    <div className="product-card flex aspect-[3/4] w-full min-h-0 min-w-[160px] max-w-full flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-border dark:bg-card">
+      <Link
+        to={linkTo}
+        className="flex h-full min-h-0 flex-1 flex-col overflow-hidden text-inherit no-underline outline-none ring-offset-2 focus-visible:ring-2 focus-visible:ring-[#22c55e]"
+        aria-label={`View listing: ${title}`}
+      >
+        <div
+          className="product-image relative shrink-0"
+          style={{
+            height: "75%",
+            width: "100%",
+            overflow: "hidden",
+            backgroundColor: "#f3f4f6",
+          }}
         >
           <img
-            src={displaySrc}
-            alt=""
-            className="block h-full w-full object-cover"
+            src={imgSrc}
+            alt={title}
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+              objectPosition: "center",
+              display: "block",
+            }}
             loading="lazy"
             decoding="async"
             draggable={false}
-            onError={onImgError}
+            onError={(e) => {
+              e.currentTarget.src = PLACEHOLDER_IMG;
+            }}
           />
-        </Link>
-        {topRightBadge ? (
-          <div className="pointer-events-none absolute right-2 top-2 z-[3] max-w-[45%]">{topRightBadge}</div>
-        ) : null}
-        {condition ? (
-          <span className="pointer-events-none absolute left-2 top-2 z-[1] rounded-full bg-black/60 px-2 py-0.5 text-xs text-white">
-            {condition}
-          </span>
-        ) : null}
-        <div className="pointer-events-auto absolute bottom-2 right-2 z-[2] flex flex-col items-end gap-1">
-          {sellerId && sellerFollowerCount !== undefined ? (
-            <Link
-              to={`/profile/${sellerId}/followers`}
-              data-gh-pan-exempt
-              className="flex min-h-[32px] min-w-[32px] touch-manipulation items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-xs text-white hover:bg-black/75"
-              aria-label="Seller followers"
-              onClick={(e) => e.stopPropagation()}
-            >
-              👥 {sellerFollowerCount}
-            </Link>
-          ) : null}
-          <div className="flex flex-wrap justify-end gap-2">
-            {displayViews !== undefined && displayViews > 0 ? (
-              <span className="flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-xs text-white">
-                👁 {displayViews}
-              </span>
-            ) : null}
-            {displayLikes !== undefined && displayLikes > 0 ? (
-              <span className="flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-xs text-white">
-                ❤️ {displayLikes}
-              </span>
-            ) : null}
-            {commentCount !== undefined && commentCount > 0 ? (
-              <span
-                className="flex items-center justify-center rounded-full bg-black/60 px-2 py-0.5 text-xs tabular-nums text-white"
-                aria-label={`${commentCount} comments`}
-              >
-                {commentCount}
-              </span>
-            ) : null}
-          </div>
         </div>
-      </div>
 
-      <div className="product-details flex min-h-0 w-full min-w-0 flex-col overflow-hidden border-t border-gray-100 bg-white dark:border-border dark:bg-card">
-        {/* Title / price / location: single link — no buttons inside */}
-        <Link
-          to={linkTo}
-          className="flex min-h-0 flex-1 flex-col gap-1 px-2 py-2 text-left no-underline"
+        <div
+          className="flex min-h-0 w-full flex-1 flex-col justify-center overflow-hidden border-t border-gray-100 bg-white dark:border-border dark:bg-card"
+          style={{ padding: "8px 12px", gap: "2px", maxHeight: "25%" }}
         >
-          <h3 className="flex flex-wrap items-start gap-1 text-sm font-semibold leading-snug text-gray-800 dark:text-card-foreground">
-            <span className="line-clamp-2 min-w-0 flex-1">{title}</span>
-            {titleAdornment}
-            {sellerVerified ? <VerifiedBadge title="Verified seller" size="sm" className="mt-0.5 shrink-0" /> : null}
+          <h3
+            className="line-clamp-2 min-w-0 font-bold leading-tight text-gray-800 dark:text-card-foreground"
+            style={{ fontSize: "0.875rem" }}
+          >
+            {title}
           </h3>
-          {verifiedAdvertiser ? (
-            <div className="flex flex-wrap gap-1">
-              <VerifiedAdvertiserBadge size="sm" />
-            </div>
-          ) : null}
-          <p className="text-base font-bold leading-tight text-green-600 dark:text-primary">{formatPrice(price)}</p>
-          <p className="flex items-start gap-1.5 text-xs text-gray-500 dark:text-muted-foreground">
-            <span className="mt-0.5 shrink-0 select-none text-[13px] leading-none" aria-hidden>
-              📍
-            </span>
-            <span className="min-w-0 break-words">{locationDisplayText}</span>
+          <p className="min-w-0 font-bold leading-tight" style={{ fontSize: "0.875rem", color: "#10b981" }}>
+            {formatPrice(price)}
           </p>
-        </Link>
-
-        {sellerId ? (
-          <div className="shrink-0 border-t border-gray-100 bg-white px-2 pb-2 pt-0 dark:border-border dark:bg-card">
-            <Link
-              to={`/profile/${sellerId}`}
-              data-gh-pan-exempt
-              className="flex w-full min-h-[44px] touch-manipulation items-center text-left text-xs font-medium text-[#15803d] hover:underline dark:text-emerald-400"
-              onClick={(e) => e.stopPropagation()}
+          <p
+            className="line-clamp-1 min-w-0 leading-tight text-gray-500 dark:text-muted-foreground"
+            style={{ fontSize: "0.75rem" }}
+          >
+            <span className="select-none" aria-hidden>
+              📍{" "}
+            </span>
+            <span className="align-middle">{locationDisplay}</span>
+          </p>
+          {sellerLine ? (
+            <p
+              className="line-clamp-1 min-w-0 leading-tight text-gray-400 dark:text-zinc-500"
+              style={{ fontSize: "0.75rem" }}
             >
-              Seller · {sellerHandleLabel ?? "View profile"}
-            </Link>
-          </div>
-        ) : null}
-      </div>
+              {sellerLine}
+            </p>
+          ) : null}
+        </div>
+      </Link>
     </div>
   );
 }

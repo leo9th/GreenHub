@@ -1,6 +1,7 @@
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { useCurrency } from "../../hooks/useCurrency";
-import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
+import type { MouseEvent as ReactMouseEvent, ReactNode, SyntheticEvent } from "react";
 import { VerifiedBadge } from "../VerifiedBadge";
 import { VerifiedAdvertiserBadge } from "../VerifiedAdvertiserBadge";
 import { derivePeerHandle } from "../chat/ChatPeerHeaderModern";
@@ -103,23 +104,37 @@ export function ProductCard({
 
   const placeholderImage = "https://placehold.co/400x400/png?text=No+Image";
   const imageSrc = image?.trim() ? image.trim() : placeholderImage;
+  const [displaySrc, setDisplaySrc] = useState(imageSrc);
+  const imgErrorFallbackUsed = useRef(false);
+
+  useEffect(() => {
+    imgErrorFallbackUsed.current = false;
+    setDisplaySrc(imageSrc);
+  }, [imageSrc]);
+
+  const onImgError = (_e: SyntheticEvent<HTMLImageElement>) => {
+    if (imgErrorFallbackUsed.current) return;
+    imgErrorFallbackUsed.current = true;
+    setDisplaySrc(placeholderImage);
+  };
 
   return (
-    <div className="product-card flex aspect-[4/5] h-full min-h-0 w-full min-w-[140px] max-w-full flex-col overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-border dark:bg-card">
+    <div className="product-card grid aspect-[4/5] w-full min-h-0 min-w-[140px] max-w-full grid-rows-[minmax(0,3fr)_minmax(0,1fr)] overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-border dark:bg-card">
       {/* Image: only the image is inside the listing <Link> — overlays stay outside (valid HTML). */}
-      <div className="product-image relative min-h-0 w-full flex-[3] shrink-0 overflow-hidden bg-gray-100 dark:bg-muted">
+      <div className="product-image relative min-h-0 w-full overflow-hidden bg-gray-100 dark:bg-muted">
         <Link
           to={linkTo}
-          className="absolute inset-0 z-0 block h-full w-full outline-none ring-offset-2 focus-visible:ring-2 focus-visible:ring-[#22c55e]"
+          className="absolute inset-0 z-0 block h-full min-h-0 w-full outline-none ring-offset-2 focus-visible:ring-2 focus-visible:ring-[#22c55e]"
           aria-label={`View listing: ${title}`}
         >
           <img
-            src={imageSrc}
+            src={displaySrc}
             alt=""
             className="block h-full w-full object-cover"
             loading="lazy"
             decoding="async"
             draggable={false}
+            onError={onImgError}
           />
         </Link>
         {topRightBadge ? (
@@ -165,7 +180,7 @@ export function ProductCard({
         </div>
       </div>
 
-      <div className="product-details flex min-h-0 w-full min-w-0 flex-[1] flex-col overflow-hidden border-t border-gray-100 bg-white dark:border-border dark:bg-card">
+      <div className="product-details flex min-h-0 w-full min-w-0 flex-col overflow-hidden border-t border-gray-100 bg-white dark:border-border dark:bg-card">
         {/* Title / price / location: single link — no buttons inside */}
         <Link
           to={linkTo}

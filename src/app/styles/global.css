@@ -15,6 +15,12 @@ html {
   }
 }
 
+img,
+video {
+  max-width: 100%;
+  height: auto;
+}
+
 /* Listing cards — avoid compositor-heavy effects (grid scroll performance) */
 .product-card {
   will-change: auto;
@@ -25,7 +31,6 @@ html {
 
 /* Do not use content-visibility on card images — it can skip paint / size in grid layouts. */
 
-/* Global `img { height: auto }` — card thumbnails fill the image region */
 .product-card .product-image {
   background-color: #f3f4f6;
 }
@@ -34,12 +39,15 @@ html {
   background-color: rgb(39 39 42);
 }
 
+/* Must come after generic `img` rules so thumbnails fill the tile (width/height/object-fit). */
 .product-card .product-image img {
   display: block;
   width: 100%;
   height: 100%;
+  max-width: none;
   max-height: none;
   object-fit: cover;
+  object-position: center;
 }
 
 *,
@@ -59,12 +67,6 @@ body {
   width: 100%;
   max-width: 100vw;
   overflow-x: clip;
-}
-
-img,
-video {
-  max-width: 100%;
-  height: auto;
 }
 
 /* Larger tap targets on touch devices for unstyled controls */

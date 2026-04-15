@@ -702,7 +702,7 @@ export default function Home() {
                       sellerId={sid || undefined}
                       sellerFollowerCount={sid ? sellerFollowerCounts[sid] : undefined}
                       sellerName={sid ? sellerDisplayNames[sid] : undefined}
-/>
+                    />
                   );
                 })}
                   </div>
@@ -758,7 +758,7 @@ export default function Home() {
                       sellerId={sid || undefined}
                       sellerFollowerCount={sid ? sellerFollowerCounts[sid] : undefined}
                       sellerName={sid ? sellerDisplayNames[sid] : undefined}
-/>
+                    />
                   );
                 })
               ) : (

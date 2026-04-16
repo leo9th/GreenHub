@@ -68,7 +68,7 @@ export default function Home() {
 
   const homeFilterOpts: ListingFilterOpts = useMemo(
     () => ({
-      category: "all",
+      category: "Fashion",
       condition: "all",
       state: "all",
       priceRange: "all",

@@ -1,22 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useSearchParams } from "react-router";
-import { categories } from "../data/catalogConstants";
+import { Link } from "react-router";
 import { supabase } from "../../lib/supabase";
+import CategoryFilter, { type CategoryFilterSelection } from "../components/CategoryFilter";
 import SimpleProductGrid from "../components/SimpleProductGrid";
 
 type ProductRow = Record<string, unknown>;
 
 export default function Products() {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const selectedCategory = searchParams.get("category") || "all";
-
+  const [selectedCategory, setSelectedCategory] = useState<CategoryFilterSelection>("All");
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const categoryLabel = useMemo(() => {
-    if (selectedCategory === "all") return "All Categories";
-    return categories.find((category) => category.id === selectedCategory)?.name ?? selectedCategory;
+    if (selectedCategory === "All") return "All Categories";
+    return selectedCategory;
   }, [selectedCategory]);
 
   useEffect(() => {
@@ -33,7 +31,7 @@ export default function Products() {
         .order("created_at", { ascending: false })
         .limit(20);
 
-      if (selectedCategory !== "all") {
+      if (selectedCategory !== "All") {
         query = query.eq("category", selectedCategory);
       }
 
@@ -61,46 +59,16 @@ export default function Products() {
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="mx-auto max-w-7xl px-4 py-6">
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <Link to="/" className="rounded-full border border-gray-300 bg-white px-3 py-1 text-sm text-gray-700">
+        <div className="mb-4">
+          <Link
+            to="/"
+            className="inline-block rounded-full border border-gray-300 bg-white px-3 py-1 text-sm text-gray-700 hover:bg-gray-50"
+          >
             Home
           </Link>
-          <button
-            type="button"
-            onClick={() => setSearchParams((prev) => {
-              const next = new URLSearchParams(prev);
-              next.delete("category");
-              return next;
-            })}
-            className={`rounded-full border px-3 py-1 text-sm ${
-              selectedCategory === "all"
-                ? "border-[#16a34a] bg-[#16a34a]/10 text-[#15803d]"
-                : "border-gray-300 bg-white text-gray-700"
-            }`}
-          >
-            All
-          </button>
-          {categories.map((category) => (
-            <button
-              key={category.id}
-              type="button"
-              onClick={() =>
-                setSearchParams((prev) => {
-                  const next = new URLSearchParams(prev);
-                  next.set("category", category.id);
-                  return next;
-                })
-              }
-              className={`rounded-full border px-3 py-1 text-sm ${
-                selectedCategory === category.id
-                  ? "border-[#16a34a] bg-[#16a34a]/10 text-[#15803d]"
-                  : "border-gray-300 bg-white text-gray-700"
-              }`}
-            >
-              {category.emoji} {category.name}
-            </button>
-          ))}
         </div>
+
+        <CategoryFilter selectedCategory={selectedCategory} onCategoryChange={setSelectedCategory} />
 
         <div className="mb-5 flex items-center justify-between">
           <h1 className="text-xl font-semibold text-gray-900">Shop - {categoryLabel}</h1>

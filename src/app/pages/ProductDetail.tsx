@@ -1050,7 +1050,7 @@ export default function ProductDetail() {
             <div className="relative w-full max-w-[520px] md:max-w-none mx-auto">
               <div className="relative rounded-2xl overflow-hidden bg-white shadow-sm ring-1 ring-gray-200/90">
                 <div
-                  className="relative aspect-[3/4] w-full bg-gray-100 md:min-h-[min(70vh,560px)] md:aspect-auto md:h-[min(70vh,560px)] touch-manipulation"
+                  className="relative flex h-[500px] max-h-[500px] w-full items-center justify-center bg-gray-100 touch-manipulation"
                   role="region"
                   aria-label="Product gallery"
                   aria-roledescription="carousel"
@@ -1061,7 +1061,7 @@ export default function ProductDetail() {
                     <img
                       src={optimizeListingImageUrl(product.images[currentImageIndex], { width: 960, quality: 75 })}
                       alt={product.title}
-                      className="absolute inset-0 z-0 w-full h-full cursor-default object-cover select-none"
+                      className="absolute inset-0 z-0 m-auto h-full w-full cursor-default object-contain select-none"
                       draggable={false}
                       onDoubleClick={onMainImageDoubleClick}
                     />

@@ -2,7 +2,6 @@ import { Link } from "react-router";
 import { useEffect } from "react";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { useCurrency } from "../../hooks/useCurrency";
-import { derivePeerHandle } from "../chat/ChatPeerHeaderModern";
 import { optimizeListingImageUrl } from "../../utils/productImages";
 
 const PLACEHOLDER_IMG = "https://placehold.co/400x400/e5e7eb/9ca3af?text=No+Image";
@@ -16,6 +15,7 @@ export interface ProductCardProps {
   images?: string[];
   location?: string;
   city?: string;
+  state?: string;
   condition?: string;
   href?: string;
   commentCount?: number;
@@ -50,6 +50,7 @@ export function ProductCard({
   images,
   location,
   city,
+  state,
   href,
   sellerName,
   sellerUsername,
@@ -64,12 +65,16 @@ export function ProductCard({
         : "";
   const linkTo = href || (resolvedId ? `/products/${resolvedId}` : "/products");
 
-  const locationDisplay = (location?.trim() || city?.trim() || "").trim() || "—";
+  const locationDisplay =
+    (city?.trim() || state?.trim() || location?.trim() || "").trim() || "Location not specified";
   const sellerDisplay = (() => {
     const username = sellerUsername?.trim();
     if (username) return username.startsWith("@") ? username : `@${username}`;
     const name = sellerName?.trim();
-    if (name) return derivePeerHandle(name);
+    if (name) {
+      const derived = name.toLowerCase().replace(/\s+/g, "_").replace(/^@+/, "");
+      return `@${derived}`;
+    }
     return "@seller";
   })();
 

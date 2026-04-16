@@ -4,17 +4,17 @@ import { Search, Filter, ArrowLeft, X } from "lucide-react";
 import { categories, nigerianStates } from "../data/catalogConstants";
 import { labelForCarBrandValue, NIGERIA_CAR_BRAND_OPTIONS } from "../data/carBrands";
 import { supabase } from "../../lib/supabase";
-import { ProductCard } from "../components/cards/ProductCard";
-import { ProductCardSkeletonGrid } from "../components/cards/ProductCardSkeleton";
+import ProductGrid from "../components/ProductGrid";
 import { SortBar } from "../components/SortBar";
-import { parseListingSort, PRODUCTS_PAGE_SIZE, sanitizeSearchTerm, type ListingFilterOpts, type ListingSort } from "../utils/productSearch";
-import { getAdaptiveListingPageSize } from "../utils/listingConnection";
-import { useBidirectionalProductFeed } from "../hooks/useBidirectionalProductFeed";
-import { useSellerTrustFlags } from "../hooks/useSellerTrustFlags";
-import { InfiniteScrollIndicators } from "../components/InfiniteScrollIndicators";
+import {
+  fetchProductsListingRpc,
+  mapProductRow,
+  parseListingSort,
+  sanitizeSearchTerm,
+  type ListingFilterOpts,
+  type ListingSort,
+} from "../utils/productSearch";
 import { getRelatedSearchSuggestions } from "../utils/searchSuggestions";
-import { getProductThumbnailUrl, parseProductImagesFromRow } from "../utils/productImages";
-import { fetchProfileDisplayNamesForUsers } from "../utils/profileFollowCounts";
 
 const conditions = ["New", "Like New", "Good Fair"];
 const priceRanges = [
@@ -302,8 +302,10 @@ export default function Products() {
     [searchParams],
   );
 
-  const [sellerDisplayNames, setSellerDisplayNames] = useState<Record<string, string>>({});
-  const [productsListingPageSize] = useState(() => getAdaptiveListingPageSize(PRODUCTS_PAGE_SIZE));
+  const [products, setProducts] = useState<Array<Record<string, unknown>>>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [isLoadingProducts, setIsLoadingProducts] = useState(true);
+  const [productLoadError, setProductLoadError] = useState<string | null>(null);
 
   const filterOpts: ListingFilterOpts = useMemo(
     () => ({
@@ -319,67 +321,43 @@ export default function Products() {
     [selectedCategory, selectedCondition, selectedState, priceRange, selectedCarBrand],
   );
 
-  const filterSignal = useMemo(
-    () =>
-      [
-        sanitizeSearchTerm(urlSearch),
-        selectedCategory,
-        selectedCarBrand,
-        selectedCondition,
-        selectedState,
-        priceRange,
-        sortBy,
-      ].join("|"),
-    [urlSearch, selectedCategory, selectedCarBrand, selectedCondition, selectedState, priceRange, sortBy],
-  );
-
-  const {
-    products,
-    totalCount,
-    scrollRef: productsScrollRef,
-    isInitialLoading: isLoadingProducts,
-    isLoadingUp: isLoadingProductsUp,
-    isLoadingDown: isLoadingProductsDown,
-    isLoadingLeft: isLoadingProductsLeft,
-    isLoadingRight: isLoadingProductsRight,
-    loadError: productLoadError,
-    onScroll: onProductsFeedScroll,
-    onKeyDown: onProductsFeedKeyDown,
-  } = useBidirectionalProductFeed({
-    supabase,
-    pageSize: productsListingPageSize,
-    searchTerm: sanitizeSearchTerm(urlSearch),
-    filterOpts,
-    sortBy,
-    resetKey: filterSignal,
-  });
-
-  const productsForTrust = useMemo(() => products as Array<Record<string, unknown>>, [products]);
-  const { verifiedSellerIds, verifiedBadgeBySellerId } = useSellerTrustFlags(supabase, productsForTrust);
-
-  const listingSellerIdsKey = useMemo(() => {
-    const seen = new Set<string>();
-    for (const p of products) {
-      const sid = (p as Record<string, unknown>).seller_id;
-      if (sid != null && String(sid).trim() !== "") seen.add(String(sid));
-    }
-    return [...seen].sort().join(",");
-  }, [products]);
-
   useEffect(() => {
-    const ids = listingSellerIdsKey.split(",").filter(Boolean);
-    if (ids.length === 0) {
-      setSellerDisplayNames({});
-      return;
-    }
     let cancelled = false;
-    void fetchProfileDisplayNamesForUsers(supabase, ids).then((names) => {
-      if (!cancelled) setSellerDisplayNames(names);
-    });
+    const loadProducts = async () => {
+      setIsLoadingProducts(true);
+      setProductLoadError(null);
+      try {
+        const { rows, total, error } = await fetchProductsListingRpc(supabase, {
+          searchTerm: sanitizeSearchTerm(urlSearch),
+          filterOpts,
+          sortBy,
+          limit: 20,
+          offset: 0,
+        });
+        if (cancelled) return;
+        if (error) {
+          setProductLoadError(error);
+          setProducts([]);
+          setTotalCount(0);
+          return;
+        }
+        setProducts(rows.map((row) => mapProductRow(row)));
+        setTotalCount(total);
+      } catch (error: unknown) {
+        if (cancelled) return;
+        const message = error instanceof Error && error.message ? error.message : "Could not load products";
+        setProductLoadError(message);
+        setProducts([]);
+        setTotalCount(0);
+      } finally {
+        if (!cancelled) setIsLoadingProducts(false);
+      }
+    };
+    void loadProducts();
     return () => {
       cancelled = true;
     };
-  }, [listingSellerIdsKey]);
+  }, [urlSearch, filterOpts, sortBy]);
 
   useEffect(() => {
     setSearchInput(urlSearch);
@@ -632,9 +610,7 @@ export default function Products() {
                   <span>Loading…</span>
                 ) : totalCount != null ? (
                   <span>
-                    {totalCount === 0
-                      ? "No products"
-                      : `Loaded ${products.length} of ${totalCount} — scroll for more`}
+                    {totalCount === 0 ? "No products" : `Showing ${products.length} of ${totalCount}`}
                   </span>
                 ) : (
                   <span>{products.length} products</span>
@@ -662,55 +638,8 @@ export default function Products() {
         </aside>
 
         <main className="flex-1 min-w-0">
-          {isLoadingProducts ? (
-            <div className="py-4">
-              <div className="rounded-xl border border-gray-100 bg-white/40 p-3">
-                <ProductCardSkeletonGrid count={productsListingPageSize} />
-              </div>
-              <p className="mt-4 text-center text-sm text-gray-500">Loading products…</p>
-            </div>
-          ) : (
-            <>
-              <InfiniteScrollIndicators
-                loadingUp={isLoadingProductsUp}
-                loadingDown={isLoadingProductsDown}
-                loadingLeft={isLoadingProductsLeft}
-                loadingRight={isLoadingProductsRight}
-              />
-              <div
-                ref={productsScrollRef}
-                tabIndex={0}
-                onScroll={onProductsFeedScroll}
-                onKeyDown={onProductsFeedKeyDown}
-                className="gh-endless-viewport gh-endless-grid-inner rounded-xl border border-gray-100 bg-white/40 p-3 outline-none focus-visible:ring-2 focus-visible:ring-[#22c55e]/30"
-              >
-              <div className="grid [grid-template-columns:repeat(auto-fill,minmax(160px,1fr))] gap-4 [&>*]:min-h-0 [&>*]:min-w-0 [&>*]:w-full">
-                {products.map((product) => {
-                  const pid = Number(product.id);
-                  const row = product as Record<string, unknown>;
-                  const sid = row.seller_id != null ? String(row.seller_id) : "";
-                  return (
-                    <ProductCard
-                      key={String(product.id)}
-                      href={`/products/${product.id}`}
-                      image={getProductThumbnailUrl(row)}
-                      images={parseProductImagesFromRow(row as { image?: unknown; images?: unknown })}
-                      title={String(product.title ?? "")}
-                      price={Number(product.price) || 0}
-                      location={String(product.location ?? "")}
-                      city={String((product as Record<string, unknown>).city ?? "")}
-                      state={String((product as Record<string, unknown>).state ?? "")}
-                      productId={Number.isFinite(pid) ? pid : String(row.id ?? "")}
-                      sellerName={sid ? sellerDisplayNames[sid] : undefined}
-                      sellerVerified={sid ? verifiedSellerIds.has(sid) : false}
-                      verifiedSellerBadge={sid ? verifiedBadgeBySellerId.get(sid) : undefined}
-                    />
-                  );
-                })}
-              </div>
-              </div>
-            </>
-          )}
+          <ProductGrid products={products} loading={isLoadingProducts} />
+          {isLoadingProducts ? <p className="mt-4 text-center text-sm text-gray-500">Loading products…</p> : null}
 
           {!isLoadingProducts && products.length === 0 && (
             <div className="text-center py-12 max-w-md mx-auto">

@@ -3,49 +3,29 @@ import { Search, ChevronDown, Star, Globe, Home as HomeIcon, PlusCircle, Message
 import { categories } from "../data/catalogConstants";
 import { useRegion, regions } from "../context/RegionContext";
 import { useCurrency } from "../hooks/useCurrency";
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "../../lib/supabase";
-// Old import (keep it commented)
-// import ProductCard from "../components/cards/ProductCard";
-// New import
 import ProductCard from "../components/cards/NewProductCard";
+import ProductGrid from "../components/ProductGrid";
 import { ProductCardSkeletonGrid } from "../components/cards/ProductCardSkeleton";
-import { useAuth } from "../context/AuthContext";
 import { useInboxNotifications } from "../context/InboxNotificationsContext";
-import {
-  fetchLikedProductIdsForUser,
-  fetchProductLikeCount,
-  normalizeProductPk,
-  productLikeSetKey,
-  productRowKey,
-  subscribeToProductLikes,
-  toggleProductLike,
-  type ProductPk,
-} from "../utils/engagement";
-import { toast } from "sonner";
 import { SortBar } from "../components/SortBar";
 import {
   fetchProductsListingRpc,
-  HOME_PAGE_SIZE,
   mapProductRow,
   sanitizeSearchTerm,
   sortProductsWithBoostFirst,
   type ListingFilterOpts,
   type ListingSort,
 } from "../utils/productSearch";
-import { useBidirectionalProductFeed } from "../hooks/useBidirectionalProductFeed";
-import { InfiniteScrollIndicators } from "../components/InfiniteScrollIndicators";
 import { getRelatedSearchSuggestions } from "../utils/searchSuggestions";
 import { getProductThumbnailUrl, parseProductImagesFromRow } from "../utils/productImages";
-import { getAdaptiveListingPageSize } from "../utils/listingConnection";
 import { useSellerTrustFlags } from "../hooks/useSellerTrustFlags";
-import { useVerifiedAdvertiserIds } from "../hooks/useVerifiedAdvertiserIds";
 import { getRecentProductIds, RECENT_VIEWED_EVENT } from "../utils/recentlyViewedProducts";
-import { fetchProfileDisplayNamesForUsers, fetchProfileFollowerCountsForUsers } from "../utils/profileFollowCounts";
+import { fetchProfileDisplayNamesForUsers } from "../utils/profileFollowCounts";
 
 export default function Home() {
   const navigate = useNavigate();
-  const { user: authUser } = useAuth();
   const { messageUnread } = useInboxNotifications();
   const { activeRegion, setRegion } = useRegion();
   const [showRegionDropdown, setShowRegionDropdown] = useState(false);
@@ -56,15 +36,13 @@ export default function Home() {
   // Custom Ad State
   const [customBanner, setCustomBanner] = useState<string | null>(null);
   const [categoryAdCounts, setCategoryAdCounts] = useState<Record<string, number>>({});
-  const [likedProductIds, setLikedProductIds] = useState<Set<string>>(new Set());
-  const [pendingLikeIds, setPendingLikeIds] = useState<Set<string>>(new Set());
-  const [commentCounts, setCommentCounts] = useState<Record<string, number>>({});
-  const [sellerFollowerCounts, setSellerFollowerCounts] = useState<Record<string, number>>({});
   const [sellerDisplayNames, setSellerDisplayNames] = useState<Record<string, string>>({});
   const [homeSort, setHomeSort] = useState<ListingSort>("recent");
   const [recentViewedProducts, setRecentViewedProducts] = useState<Array<Record<string, unknown>>>([]);
   const [recentViewedLoading, setRecentViewedLoading] = useState(() => getRecentProductIds().length > 0);
-  const [homeListingPageSize] = useState(() => getAdaptiveListingPageSize(HOME_PAGE_SIZE));
+  const [products, setProducts] = useState<Array<Record<string, unknown>>>([]);
+  const [isLoadingProducts, setIsLoadingProducts] = useState(true);
+  const [productLoadError, setProductLoadError] = useState<string | null>(null);
 
   const homeFilterOpts: ListingFilterOpts = useMemo(
     () => ({
@@ -78,39 +56,40 @@ export default function Home() {
     [],
   );
 
-  const homeFeedResetKey = useMemo(() => `${activeRegion.id}|${homeSort}`, [activeRegion.id, homeSort]);
-
-  const {
-    products,
-    setProducts,
-    totalCount: homeTotalCount,
-    isInitialLoading: isLoadingProducts,
-    isLoadingDown: isHomeLoadingDown,
-    loadError: productLoadError,
-  } = useBidirectionalProductFeed({
-    supabase,
-    pageSize: homeListingPageSize,
-    searchTerm: "",
-    filterOpts: homeFilterOpts,
-    sortBy: homeSort,
-    resetKey: homeFeedResetKey,
-    scrollRoot: "window",
-  });
-
-  const homeCardIds = useMemo(() => {
-    const seen = new Set<string>();
-    const out: ProductPk[] = [];
-    for (const p of [...products, ...recentViewedProducts]) {
-      const pk = normalizeProductPk(p.id);
-      if (pk == null) continue;
-      const k = productLikeSetKey(pk);
-      if (seen.has(k)) continue;
-      seen.add(k);
-      out.push(pk);
-    }
-    return out;
-  }, [products, recentViewedProducts]);
-  const homeCardIdsKey = useMemo(() => homeCardIds.map(productLikeSetKey).join(","), [homeCardIds]);
+  useEffect(() => {
+    let cancelled = false;
+    const loadFeaturedProducts = async () => {
+      setIsLoadingProducts(true);
+      setProductLoadError(null);
+      try {
+        const { rows, error } = await fetchProductsListingRpc(supabase, {
+          searchTerm: "",
+          filterOpts: homeFilterOpts,
+          sortBy: homeSort,
+          limit: 20,
+          offset: 0,
+        });
+        if (cancelled) return;
+        if (error) {
+          setProductLoadError(error);
+          setProducts([]);
+          return;
+        }
+        setProducts(rows.map((row) => mapProductRow(row)));
+      } catch (error: unknown) {
+        if (cancelled) return;
+        const message = error instanceof Error && error.message ? error.message : "Could not load products";
+        setProductLoadError(message);
+        setProducts([]);
+      } finally {
+        if (!cancelled) setIsLoadingProducts(false);
+      }
+    };
+    void loadFeaturedProducts();
+    return () => {
+      cancelled = true;
+    };
+  }, [homeFilterOpts, homeSort]);
 
   const homeRelatedSearches = useMemo(
     () => getRelatedSearchSuggestions(searchQuery),
@@ -132,22 +111,15 @@ export default function Home() {
   }, [productsForVerification]);
 
   const { verifiedSellerIds, verifiedBadgeBySellerId } = useSellerTrustFlags(supabase, productsForVerification);
-  const verifiedAdvertiserIds = useVerifiedAdvertiserIds(supabase, productsForVerification);
-
   useEffect(() => {
     const ids = listingSellerIdsKey.split(",").filter(Boolean);
     if (ids.length === 0) {
-      setSellerFollowerCounts({});
       setSellerDisplayNames({});
       return;
     }
     let cancelled = false;
-    void Promise.all([
-      fetchProfileFollowerCountsForUsers(supabase, ids),
-      fetchProfileDisplayNamesForUsers(supabase, ids),
-    ]).then(([counts, names]) => {
+    void fetchProfileDisplayNamesForUsers(supabase, ids).then((names) => {
       if (!cancelled) {
-        setSellerFollowerCounts(counts);
         setSellerDisplayNames(names);
       }
     });
@@ -155,138 +127,6 @@ export default function Home() {
       cancelled = true;
     };
   }, [listingSellerIdsKey]);
-
-  useEffect(() => {
-    if (!authUser?.id || homeCardIds.length === 0) {
-      setLikedProductIds(new Set());
-      return;
-    }
-    let cancelled = false;
-    void fetchLikedProductIdsForUser(supabase, authUser.id, homeCardIds).then((set) => {
-      if (!cancelled) setLikedProductIds(set);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [authUser?.id, homeCardIdsKey]);
-
-  useEffect(() => {
-    if (homeCardIds.length === 0) {
-      setCommentCounts({});
-      return;
-    }
-    let cancelled = false;
-    const loadCounts = async () => {
-      const { data, error } = await supabase
-        .from("product_comments")
-        .select("product_id")
-        .in("product_id", homeCardIds.map(String));
-      if (cancelled) return;
-      if (error) {
-        console.warn("Home comment counts:", error.message);
-        setCommentCounts({});
-        return;
-      }
-      const map: Record<string, number> = {};
-      for (const row of (data ?? []) as { product_id: string | number }[]) {
-        if (row.product_id != null) {
-          const key = String(row.product_id);
-          map[key] = (map[key] ?? 0) + 1;
-        }
-      }
-      setCommentCounts(map);
-    };
-    void loadCounts();
-    return () => {
-      cancelled = true;
-    };
-  }, [homeCardIdsKey]);
-
-  useEffect(() => {
-    if (homeCardIds.length === 0) return;
-    const channels = homeCardIds.map((id) =>
-      subscribeToProductLikes(supabase, id, (count) => {
-        const key = productLikeSetKey(id);
-        setProducts((prev) =>
-          prev.map((p) => (productRowKey(p.id) === key ? { ...p, like_count: count } : p)),
-        );
-        setRecentViewedProducts((prev) =>
-          prev.map((p) => (productRowKey(p.id) === key ? { ...p, like_count: count } : p)),
-        );
-      }),
-    );
-    return () => {
-      channels.forEach((channel) => {
-        void supabase.removeChannel(channel);
-      });
-    };
-  }, [homeCardIdsKey]);
-
-  const onProductLike = useCallback(
-    async (e: React.MouseEvent, row: Record<string, unknown>) => {
-      e.preventDefault();
-      e.stopPropagation();
-      if (!authUser?.id) {
-        toast.message("Login to like");
-        return;
-      }
-      const id = normalizeProductPk(row.id);
-      if (id == null) return;
-      const rowKey = productLikeSetKey(id);
-      if (pendingLikeIds.has(rowKey)) return;
-      const liked = likedProductIds.has(rowKey);
-      const prevCount = Number(row.like_count ?? 0);
-      const nextLiked = !liked;
-      const nextCount = nextLiked ? prevCount + 1 : Math.max(0, prevCount - 1);
-      setPendingLikeIds((prev) => new Set(prev).add(rowKey));
-      setLikedProductIds((prev) => {
-        const n = new Set(prev);
-        if (nextLiked) n.add(rowKey);
-        else n.delete(rowKey);
-        return n;
-      });
-      setProducts((prev) =>
-        prev.map((p) => (productRowKey(p.id) === rowKey ? { ...p, like_count: nextCount } : p)),
-      );
-      setRecentViewedProducts((prev) =>
-        prev.map((p) => (productRowKey(p.id) === rowKey ? { ...p, like_count: nextCount } : p)),
-      );
-      try {
-        const { error } = await toggleProductLike(supabase, id, authUser.id, liked);
-        if (error) throw new Error(error);
-        const syncedCount = await fetchProductLikeCount(supabase, id);
-        setProducts((prev) =>
-          prev.map((p) => (productRowKey(p.id) === rowKey ? { ...p, like_count: syncedCount } : p)),
-        );
-        setRecentViewedProducts((prev) =>
-          prev.map((p) => (productRowKey(p.id) === rowKey ? { ...p, like_count: syncedCount } : p)),
-        );
-      } catch (error: unknown) {
-        const message =
-          error instanceof Error && error.message.trim() ? error.message : "Could not update like";
-        toast.error(message);
-        setLikedProductIds((prev) => {
-          const n = new Set(prev);
-          if (liked) n.add(rowKey);
-          else n.delete(rowKey);
-          return n;
-        });
-        setProducts((prev) =>
-          prev.map((p) => (productRowKey(p.id) === rowKey ? { ...p, like_count: prevCount } : p)),
-        );
-        setRecentViewedProducts((prev) =>
-          prev.map((p) => (productRowKey(p.id) === rowKey ? { ...p, like_count: prevCount } : p)),
-        );
-      } finally {
-        setPendingLikeIds((prev) => {
-          const next = new Set(prev);
-          next.delete(rowKey);
-          return next;
-        });
-      }
-    },
-    [authUser?.id, likedProductIds, pendingLikeIds],
-  );
 
   useEffect(() => {
     const banner = localStorage.getItem("greenhub_custom_banner");
@@ -660,56 +500,9 @@ export default function Home() {
               <SortBar id="home-sort" value={homeSort} onChange={setHomeSort} />
             </div>
 
-            {isLoadingProducts ? (
-              <div className="rounded-xl border border-gray-100 bg-white/50 p-3">
-                <ProductCardSkeletonGrid count={homeListingPageSize} />
-              </div>
-            ) : products.length === 0 ? (
-              <p className="text-sm text-gray-600 py-8 text-center rounded-xl border border-dashed border-gray-200 bg-white">
-                No products found yet. Listings with status &quot;active&quot; will appear here.
-              </p>
-            ) : (
-              <>
-                <InfiniteScrollIndicators
-                  loadingUp={false}
-                  loadingDown={isHomeLoadingDown}
-                  loadingLeft={false}
-                  loadingRight={false}
-                />
-                <div className="gh-endless-grid-inner rounded-xl border border-gray-100 bg-white/50 p-3">
-                  <div className="grid [grid-template-columns:repeat(auto-fill,minmax(160px,1fr))] gap-4 [&>*]:min-h-0 [&>*]:min-w-0 [&>*]:w-full">
-                {products.map((product) => {
-                  const row = product as Record<string, unknown>;
-                  const pid = Number(row.id);
-                  const sid = row.seller_id != null ? String(row.seller_id) : "";
-                  return (
-                    <ProductCard
-                      key={String(product.id)}
-                      href={`/products/${product.id}`}
-                      image={String((product as { image?: string }).image ?? "").trim()}
-                      images={parseProductImagesFromRow(row as { image?: unknown; images?: unknown })}
-                      title={String((product as { title?: string }).title ?? "")}
-                      price={Number((product as { price?: number }).price) || 0}
-                      location={String((product as { location?: string }).location ?? "")}
-                      city={String(row.city ?? "")}
-                      productId={Number.isFinite(pid) ? pid : String(row.id ?? "")}
-                      sellerName={sid ? sellerDisplayNames[sid] : undefined}
-                      sellerVerified={sid ? verifiedSellerIds.has(sid) : false}
-                      verifiedSellerBadge={sid ? verifiedBadgeBySellerId.get(sid) : undefined}
-                    />
-                  );
-                })}
-                  </div>
-                </div>
-              </>
-            )}
+            <ProductGrid products={products} loading={isLoadingProducts} />
             {!isLoadingProducts && productLoadError ? (
               <p className="mt-2 text-center text-xs text-amber-800">{productLoadError}</p>
-            ) : null}
-            {!isLoadingProducts && !productLoadError && homeTotalCount != null && products.length < homeTotalCount ? (
-              <p className="mt-3 text-center text-xs text-gray-500">
-                Loaded {products.length} of {homeTotalCount} — scroll down for more
-              </p>
             ) : null}
           </div>
 

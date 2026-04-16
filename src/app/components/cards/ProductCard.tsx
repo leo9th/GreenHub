@@ -89,11 +89,11 @@ export function ProductCard({
         className="flex h-full flex-col text-inherit no-underline outline-none ring-offset-2 focus-visible:ring-2 focus-visible:ring-[#22c55e]"
         aria-label={`View listing: ${title}`}
       >
-        <div className="relative h-72 md:h-80 overflow-hidden bg-gray-50">
+        <div className="relative h-72 w-full overflow-hidden rounded-t-xl bg-gray-50 md:h-80">
           <img
             src={imageUrl}
             alt={title}
-            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
+            className="h-full w-full scale-105 object-cover object-center transition-transform duration-500 group-hover:scale-110"
             loading="lazy"
             decoding="async"
             draggable={false}
@@ -102,8 +102,9 @@ export function ProductCard({
               e.currentTarget.src = PLACEHOLDER_IMG;
             }}
           />
+          <div className="pointer-events-none absolute inset-0 shadow-[inset_0_0_40px_rgba(0,0,0,0.05)]" />
           {condition ? (
-            <div className="absolute left-3 top-3 rounded-full bg-black/65 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-white backdrop-blur">
+            <div className="absolute left-3 top-3 z-[1] rounded-full bg-black/65 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-white backdrop-blur">
               {condition}
             </div>
           ) : null}

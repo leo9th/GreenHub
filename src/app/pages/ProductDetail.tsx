@@ -1475,7 +1475,7 @@ export default function ProductDetail() {
                     sellerVerified={sellerIdVerified}
                     sellerOnline={sellerOnline}
                     sellerLastActive={sellerProfile?.last_active ?? null}
-                    productId={foundProduct.id}
+                    productId={foundProduct.id != null ? foundProduct.id : id}
                     authUserId={authUser?.id}
                     isOwner={isOwner}
                     sellerTelHref={sellerTelHref}

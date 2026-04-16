@@ -3,23 +3,20 @@ import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
 /** Primary key value for `products` / `product_likes.product_id` (numeric id or UUID string). */
 export type ProductPk = string | number;
 
+/** UUID (any version) — same shape as v4; used for `products.id` on hosted DBs. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
- * Coerce route/row product ids for PostgREST: finite numbers, digit strings → number when safe,
- * otherwise trimmed string (UUID etc.). Avoids `Number(uuid)` → NaN.
+ * Coerce route/row product ids for PostgREST: finite numbers, digit strings → number,
+ * or canonical UUID strings. Rejects ambiguous non-UUID text.
  */
-export function normalizeProductPk(raw: unknown): ProductPk | null {
-  if (raw == null) return null;
+export function normalizeProductPk(raw: unknown): string | number | null {
+  if (raw === undefined || raw === null) return null;
   if (typeof raw === "number" && Number.isFinite(raw)) return raw;
-  if (typeof raw === "string") {
-    const t = raw.trim();
-    if (!t) return null;
-    if (/^\d+$/.test(t)) {
-      const n = Number(t);
-      if (Number.isSafeInteger(n)) return n;
-      return t;
-    }
-    return t;
-  }
+  const str = String(raw).trim();
+  if (!str) return null;
+  if (/^\d+$/.test(str)) return Number(str);
+  if (UUID_RE.test(str)) return str;
   return null;
 }
 

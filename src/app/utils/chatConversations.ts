@@ -1,10 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { normalizeProductPk, type ProductPk } from "./engagement";
 
 export type ConversationRow = {
   id: string;
   buyer_id: string;
   seller_id: string;
-  context_product_id: number | null;
+  context_product_id: ProductPk | null;
   buyer_last_read_at: string | null;
   seller_last_read_at: string | null;
 };
@@ -22,19 +23,12 @@ function pickLastMessageText(raw: Record<string, unknown>): string | null {
   return s === "" ? null : s;
 }
 
-function parseNullableBigint(v: unknown): number | null {
-  if (v == null) return null;
-  if (typeof v === "number" && Number.isFinite(v)) return v;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
-}
-
 function normalizeListRow(raw: Record<string, unknown>): ConversationListRow {
   return {
     id: String(raw.id),
     buyer_id: String(raw.buyer_id),
     seller_id: String(raw.seller_id),
-    context_product_id: parseNullableBigint(raw.context_product_id),
+    context_product_id: normalizeProductPk(raw.context_product_id),
     buyer_last_read_at: (raw.buyer_last_read_at as string | null) ?? null,
     seller_last_read_at: (raw.seller_last_read_at as string | null) ?? null,
     last_message: pickLastMessageText(raw),
@@ -118,7 +112,7 @@ export function isDuplicateConversationError(err: { code?: string; message?: str
 }
 
 export type InsertConversationOpts = {
-  contextProductId?: number | null;
+  contextProductId?: ProductPk | null;
 };
 
 /** Start a DM: current user is buyer, peer is seller (typical “message seller” flow). */
@@ -130,7 +124,7 @@ export async function insertConversationPair(
 ): Promise<{ data: ConversationRow | null; error: { message: string; code?: string } | null }> {
   const insertPayload: Record<string, unknown> = { buyer_id: buyerUserId, seller_id: sellerUserId };
   const pid = opts?.contextProductId;
-  if (pid != null && Number.isFinite(pid)) insertPayload.context_product_id = pid;
+  if (pid != null) insertPayload.context_product_id = pid;
 
   const { data, error } = await supabase
     .from("conversations")
@@ -246,7 +240,7 @@ export async function updateConversationLastRead(
 export async function setConversationContextProduct(
   supabase: SupabaseClient,
   conversationId: string,
-  productId: number,
+  productId: ProductPk,
 ): Promise<{ error: { message: string } | null }> {
   const { error } = await supabase
     .from("conversations")

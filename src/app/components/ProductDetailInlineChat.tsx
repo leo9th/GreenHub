@@ -11,6 +11,7 @@ import {
   type ConversationRow,
 } from "../utils/chatConversations";
 import { CHAT_MESSAGE_BASE_COLUMNS } from "../utils/chatMessages";
+import { normalizeProductPk, productLikeSetKey } from "../utils/engagement";
 import { VerifiedBadge } from "./VerifiedBadge";
 
 const QUICK_MESSAGES = [
@@ -40,13 +41,6 @@ function replyEstimateLabel(online: boolean, lastActive: string | null): string 
   return "Typically replies within a day";
 }
 
-function parseListingProductId(raw: string | number | undefined | null): number | null {
-  if (raw == null) return null;
-  if (typeof raw === "number" && Number.isFinite(raw)) return Math.trunc(raw);
-  const n = parseInt(String(raw).trim(), 10);
-  return Number.isFinite(n) && n > 0 ? n : null;
-}
-
 export type ProductDetailInlineChatProps = {
   sellerId: string;
   sellerName: string;
@@ -54,7 +48,8 @@ export type ProductDetailInlineChatProps = {
   sellerVerified: boolean;
   sellerOnline: boolean;
   sellerLastActive: string | null;
-  productId: string | number;
+  /** Raw `products.id` (number, string digits, UUID, bigint-serialized, etc.) */
+  productId: string | number | null | undefined;
   authUserId: string | undefined;
   isOwner: boolean;
   sellerTelHref: string;
@@ -79,37 +74,40 @@ export function ProductDetailInlineChat({
   const [showContact, setShowContact] = useState(false);
   const [sendBusy, setSendBusy] = useState(false);
 
-  const listingId = parseListingProductId(productId);
+  const listingPk = normalizeProductPk(productId);
+
+  console.log("[Chat Debug] raw productId:", productId);
+  console.log("[Chat Debug] normalized listingPk:", listingPk);
 
   const ensureConversation = useCallback(async (): Promise<ConversationRow | null> => {
     if (!authUserId) return null;
     if (authUserId === sellerId) return null;
     let conv = await findConversationByPair(supabase, authUserId, sellerId);
     if (conv) {
-      if (listingId != null) {
-        const { error: uErr } = await setConversationContextProduct(supabase, conv.id, listingId);
-        if (!uErr && conv.context_product_id !== listingId) {
-          conv = { ...conv, context_product_id: listingId };
+      if (listingPk != null) {
+        const { error: uErr } = await setConversationContextProduct(supabase, conv.id, listingPk);
+        if (!uErr) {
+          conv = { ...conv, context_product_id: listingPk };
         }
       }
       return conv;
     }
     const { data: inserted, error: insErr } = await insertConversationPair(supabase, authUserId, sellerId, {
-      contextProductId: listingId ?? undefined,
+      contextProductId: listingPk ?? undefined,
     });
     if (insErr) {
       if (isDuplicateConversationError(insErr)) {
         const again = await findConversationByPair(supabase, authUserId, sellerId);
-        if (again && listingId != null) {
-          await setConversationContextProduct(supabase, again.id, listingId);
-          return { ...again, context_product_id: listingId };
+        if (again && listingPk != null) {
+          await setConversationContextProduct(supabase, again.id, listingPk);
+          return { ...again, context_product_id: listingPk };
         }
         return again;
       }
       throw new Error(insErr.message);
     }
     return inserted;
-  }, [authUserId, sellerId, listingId]);
+  }, [authUserId, sellerId, listingPk]);
 
   const sendMessage = async () => {
     const text = message.trim();
@@ -126,7 +124,7 @@ export function ProductDetailInlineChat({
       toast.message("This is your listing.");
       return;
     }
-    if (!listingId) {
+    if (listingPk == null) {
       toast.error("This listing ID is invalid for chat.");
       return;
     }
@@ -144,7 +142,7 @@ export function ProductDetailInlineChat({
           conversation_id: conv.id,
           sender_id: authUserId,
           message: text,
-          product_id: listingId,
+          product_id: listingPk,
         })
         .select(CHAT_MESSAGE_BASE_COLUMNS)
         .single();
@@ -156,7 +154,8 @@ export function ProductDetailInlineChat({
         description: "Your message was delivered.",
         action: {
           label: "Open chat",
-          onClick: () => navigate(`/messages/c/${conv.id}?product=${listingId}`),
+          onClick: () =>
+            navigate(`/messages/c/${conv.id}?product=${encodeURIComponent(productLikeSetKey(listingPk))}`),
         },
       });
     } catch (e: unknown) {

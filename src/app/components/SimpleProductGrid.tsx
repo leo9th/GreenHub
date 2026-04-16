@@ -1,9 +1,8 @@
 import { ProductCard } from "./cards/ProductCard";
-
-type ProductRow = Record<string, unknown>;
+import type { ProductWithSeller } from "../types/productWithSeller";
 
 type SimpleProductGridProps = {
-  products: ProductRow[];
+  products: ProductWithSeller[];
   isLoading: boolean;
   hasMore: boolean;
   loadingMore: boolean;
@@ -42,15 +41,13 @@ export default function SimpleProductGrid({
     <div className="space-y-8">
       <div className="grid grid-cols-2 gap-6 md:grid-cols-3 xl:grid-cols-5 [&>*]:min-h-0 [&>*]:min-w-0 [&>*]:w-full">
         {products.map((product) => {
-          const profile =
-            (product.seller as Record<string, unknown> | null) ??
-            (product.profiles as Record<string, unknown> | null) ??
-            null;
-          const sellerUsername =
-            typeof profile?.username === "string"
-              ? profile.username
-              : typeof product.seller_username === "string"
-                ? String(product.seller_username)
+          const seller = product.seller;
+          const legacyProfile = product.profiles as { full_name?: string } | null | undefined;
+          const sellerName =
+            seller && typeof seller.full_name === "string" && seller.full_name.trim() !== ""
+              ? seller.full_name.trim()
+              : legacyProfile && typeof legacyProfile.full_name === "string" && legacyProfile.full_name.trim() !== ""
+                ? legacyProfile.full_name.trim()
                 : undefined;
 
           return (
@@ -66,8 +63,7 @@ export default function SimpleProductGrid({
               city={typeof product.city === "string" ? product.city : ""}
               state={typeof product.state === "string" ? product.state : ""}
               condition={typeof product.condition === "string" ? product.condition : ""}
-              sellerName={typeof profile?.full_name === "string" ? profile.full_name : undefined}
-              sellerUsername={sellerUsername}
+              sellerName={sellerName}
             />
           );
         })}

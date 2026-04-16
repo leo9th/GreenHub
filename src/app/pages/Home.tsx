@@ -3,21 +3,13 @@ import { Link } from "react-router";
 import { supabase } from "../../lib/supabase";
 import CategoryFilter, { type CategoryFilterSelection } from "../components/CategoryFilter";
 import SimpleProductGrid from "../components/SimpleProductGrid";
+import type { ProductWithSeller } from "../types/productWithSeller";
 
-type ProductRow = Record<string, unknown>;
-type ProductSeller = {
-  full_name: string;
-  username: string;
-  phone: string | null;
-};
-type ProductWithSeller = ProductRow & {
-  seller: ProductSeller | null;
-};
 const LIMIT = 12;
 
 export default function Home() {
   const [selectedCategory, setSelectedCategory] = useState<CategoryFilterSelection>("All");
-  const [products, setProducts] = useState<ProductRow[]>([]);
+  const [products, setProducts] = useState<ProductWithSeller[]>([]);
   const [page, setPage] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -40,7 +32,7 @@ export default function Home() {
 
     let query = supabase
       .from("products")
-      .select("*, seller:profiles!products_seller_id_fkey(full_name, username, phone)")
+      .select("*, seller:profiles!products_seller_id_fkey(full_name, avatar_url, rating)")
       .eq("status", "active")
       .order("created_at", { ascending: false });
 

@@ -7,7 +7,8 @@ export type NewProductCardProps = {
   images?: string[];
   location?: string;
   city?: string;
-  sellerUsername?: string;
+  /** From `profiles.full_name` */
+  sellerFullName?: string;
 };
 
 export default function NewProductCard({
@@ -17,12 +18,12 @@ export default function NewProductCard({
   images,
   location,
   city,
-  sellerUsername,
+  sellerFullName,
 }: NewProductCardProps) {
   const firstImage = Array.isArray(images) && typeof images[0] === "string" ? images[0].trim() : "";
   const productImage = image?.trim() || firstImage || "";
   const resolvedLocation = (location?.trim() || city?.trim() || "").trim() || "—";
-  const resolvedSellerUsername = (sellerUsername?.trim() || "seller").replace(/^@+/, "");
+  const resolvedSellerName = sellerFullName?.trim() || "Seller";
   console.log("ProductCard image prop:", image);
 
   return (
@@ -52,7 +53,7 @@ export default function NewProductCard({
         <div style={{ fontWeight: 600 }}>{title}</div>
         <div style={{ fontWeight: 700, color: "#10b981" }}>₦{price}</div>
         <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>📍 {resolvedLocation}</div>
-        <div style={{ fontSize: "0.75rem", color: "#9ca3af" }}>@{resolvedSellerUsername}</div>
+        <div style={{ fontSize: "0.75rem", color: "#9ca3af" }}>{resolvedSellerName}</div>
       </div>
     </div>
   );

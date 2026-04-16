@@ -42,7 +42,10 @@ export default function SimpleProductGrid({
     <div className="space-y-8">
       <div className="grid grid-cols-2 gap-6 md:grid-cols-3 xl:grid-cols-5 [&>*]:min-h-0 [&>*]:min-w-0 [&>*]:w-full">
         {products.map((product) => {
-          const profile = (product.profiles as Record<string, unknown> | null) ?? null;
+          const profile =
+            (product.seller as Record<string, unknown> | null) ??
+            (product.profiles as Record<string, unknown> | null) ??
+            null;
           const sellerUsername =
             typeof profile?.username === "string"
               ? profile.username

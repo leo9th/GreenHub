@@ -5,6 +5,14 @@ import CategoryFilter, { type CategoryFilterSelection } from "../components/Cate
 import SimpleProductGrid from "../components/SimpleProductGrid";
 
 type ProductRow = Record<string, unknown>;
+type ProductSeller = {
+  full_name: string;
+  username: string;
+  phone: string | null;
+};
+type ProductWithSeller = ProductRow & {
+  seller: ProductSeller | null;
+};
 const LIMIT = 12;
 
 export default function Products() {
@@ -37,7 +45,7 @@ export default function Products() {
 
     let query = supabase
       .from("products")
-      .select("*, profiles(full_name, username, phone)")
+      .select("*, seller:profiles!products_seller_id_fkey(full_name, username, phone)")
       .eq("status", "active")
       .order("created_at", { ascending: false });
 
@@ -54,7 +62,7 @@ export default function Products() {
       setHasMore(false);
       setError(queryError.message);
     } else {
-      const incoming = (data as ProductRow[]) ?? [];
+      const incoming = (data as ProductWithSeller[]) ?? [];
       setProducts((prev) => (isNewCategory ? incoming : [...prev, ...incoming]));
       setHasMore(incoming.length === LIMIT);
     }

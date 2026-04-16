@@ -57,7 +57,10 @@ import { EditProductModal } from "../components/EditProductModal";
 import { PriceNegotiation } from "../components/PriceNegotiation";
 import { MarketPricePrediction } from "../components/MarketPricePrediction";
 import { SimilarProductsLinks } from "../components/SimilarProductsLinks";
-import { ProductDetailInlineChat } from "../components/ProductDetailInlineChat";
+// Old import
+// import ProductDetailInlineChat from "../components/ProductDetailInlineChat";
+// New import
+import ProductDetailInlineChat from "../components/NewProductDetailInlineChat";
 
 type ParsedDeliveryOption = { name: string; fee: number; duration: string };
 

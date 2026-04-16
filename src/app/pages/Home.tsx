@@ -5,7 +5,10 @@ import { useRegion, regions } from "../context/RegionContext";
 import { useCurrency } from "../hooks/useCurrency";
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "../../lib/supabase";
-import { ProductCard } from "../components/cards/ProductCard";
+// Old import (keep it commented)
+// import ProductCard from "../components/cards/ProductCard";
+// New import
+import ProductCard from "../components/cards/NewProductCard";
 import { ProductCardSkeletonGrid } from "../components/cards/ProductCardSkeleton";
 import { useAuth } from "../context/AuthContext";
 import { useInboxNotifications } from "../context/InboxNotificationsContext";
@@ -683,7 +686,7 @@ export default function Home() {
                     <ProductCard
                       key={String(product.id)}
                       href={`/products/${product.id}`}
-                      image={getProductThumbnailUrl(row)}
+                      image={String((product as { image?: string }).image ?? "").trim()}
                       images={parseProductImagesFromRow(row as { image?: unknown; images?: unknown })}
                       title={String((product as { title?: string }).title ?? "")}
                       price={Number((product as { price?: number }).price) || 0}
@@ -726,7 +729,7 @@ export default function Home() {
                     <ProductCard
                       key={String(product.id)}
                       href={`/products/${product.id}`}
-                      image={getProductThumbnailUrl(row)}
+                      image={String((product as { image?: string }).image ?? "").trim()}
                       images={parseProductImagesFromRow(row as { image?: unknown; images?: unknown })}
                       title={String((product as { title?: string }).title ?? "")}
                       price={Number((product as { price?: number }).price) || 0}

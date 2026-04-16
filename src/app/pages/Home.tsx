@@ -5,50 +5,73 @@ import CategoryFilter, { type CategoryFilterSelection } from "../components/Cate
 import SimpleProductGrid from "../components/SimpleProductGrid";
 
 type ProductRow = Record<string, unknown>;
+const LIMIT = 12;
 
 export default function Home() {
   const [selectedCategory, setSelectedCategory] = useState<CategoryFilterSelection>("All");
   const [products, setProducts] = useState<ProductRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
+  const fetchProducts = async (isNewCategory = false) => {
+    const currentPage = isNewCategory ? 0 : page;
+    const from = currentPage * LIMIT;
+    const to = from + LIMIT - 1;
 
-    const loadProducts = async () => {
-      setLoading(true);
-      setError(null);
+    if (isNewCategory) {
+      setIsLoading(true);
+      setProducts([]);
+    } else {
+      setLoadingMore(true);
+    }
 
-      let query = supabase
-        .from("products")
-        .select("*, profiles(full_name, username, phone)")
-        .eq("status", "active")
-        .order("created_at", { ascending: false })
-        .limit(20);
+    setError(null);
 
-      if (selectedCategory !== "All") {
-        query = query.eq("category", selectedCategory);
-      }
+    let query = supabase
+      .from("products")
+      .select("*, profiles(full_name, username, phone)")
+      .eq("status", "active")
+      .order("created_at", { ascending: false });
 
-      const { data, error: queryError } = await query;
+    if (selectedCategory !== "All") {
+      query = query.eq("category", selectedCategory);
+    }
 
-      if (cancelled) return;
+    const { data, error: queryError } = await query.range(from, to);
 
-      if (queryError) {
+    if (queryError) {
+      if (isNewCategory) {
         setProducts([]);
-        setError(queryError.message);
-      } else {
-        setProducts((data as ProductRow[]) ?? []);
       }
+      setHasMore(false);
+      setError(queryError.message);
+    } else {
+      const incoming = (data as ProductRow[]) ?? [];
+      setProducts((prev) => (isNewCategory ? incoming : [...prev, ...incoming]));
+      setHasMore(incoming.length === LIMIT);
+    }
 
-      setLoading(false);
-    };
+    setIsLoading(false);
+    setLoadingMore(false);
+  };
 
-    void loadProducts();
+  const handleLoadMore = () => {
+    if (isLoading || loadingMore || !hasMore) return;
+    setPage((prev) => prev + 1);
+  };
 
-    return () => {
-      cancelled = true;
-    };
+  useEffect(() => {
+    if (page > 0) {
+      void fetchProducts();
+    }
+  }, [page]);
+
+  useEffect(() => {
+    setPage(0);
+    void fetchProducts(true);
   }, [selectedCategory]);
 
   return (
@@ -64,7 +87,13 @@ export default function Home() {
         <CategoryFilter selectedCategory={selectedCategory} onCategoryChange={setSelectedCategory} />
 
         {error ? <p className="mb-4 text-sm text-amber-700">{error}</p> : null}
-        <SimpleProductGrid products={products} loading={loading} />
+        <SimpleProductGrid
+          products={products}
+          isLoading={isLoading}
+          hasMore={hasMore}
+          loadingMore={loadingMore}
+          onLoadMore={handleLoadMore}
+        />
       </div>
     </div>
   );

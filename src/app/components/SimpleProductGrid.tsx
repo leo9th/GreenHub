@@ -4,7 +4,10 @@ type ProductRow = Record<string, unknown>;
 
 type SimpleProductGridProps = {
   products: ProductRow[];
-  loading: boolean;
+  isLoading: boolean;
+  hasMore: boolean;
+  loadingMore: boolean;
+  onLoadMore: () => void;
 };
 
 function SkeletonTile() {
@@ -20,18 +23,14 @@ function SkeletonTile() {
   );
 }
 
-export default function SimpleProductGrid({ products, loading }: SimpleProductGridProps) {
-  if (loading) {
-    return (
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
-        {Array.from({ length: 10 }).map((_, idx) => (
-          <SkeletonTile key={idx} />
-        ))}
-      </div>
-    );
-  }
-
-  if (products.length === 0) {
+export default function SimpleProductGrid({
+  products,
+  isLoading,
+  hasMore,
+  loadingMore,
+  onLoadMore,
+}: SimpleProductGridProps) {
+  if (!isLoading && products.length === 0) {
     return (
       <div className="rounded-lg border border-dashed border-gray-300 bg-white p-8 text-center text-sm text-gray-600">
         No products found.
@@ -40,32 +39,51 @@ export default function SimpleProductGrid({ products, loading }: SimpleProductGr
   }
 
   return (
-    <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5 [&>*]:min-h-0 [&>*]:min-w-0 [&>*]:w-full">
-      {products.map((product) => {
-        const profile = (product.profiles as Record<string, unknown> | null) ?? null;
-        const sellerUsername =
-          typeof profile?.username === "string"
-            ? profile.username
-            : typeof product.seller_username === "string"
-              ? String(product.seller_username)
-              : undefined;
+    <div className="space-y-8">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5 [&>*]:min-h-0 [&>*]:min-w-0 [&>*]:w-full">
+        {products.map((product) => {
+          const profile = (product.profiles as Record<string, unknown> | null) ?? null;
+          const sellerUsername =
+            typeof profile?.username === "string"
+              ? profile.username
+              : typeof product.seller_username === "string"
+                ? String(product.seller_username)
+                : undefined;
 
-        return (
-          <ProductCard
-            key={String(product.id)}
-            id={String(product.id ?? "")}
-            title={String(product.title ?? "")}
-            price={Number(product.price ?? product.price_local ?? 0) || 0}
-            image={typeof product.image === "string" ? product.image : ""}
-            images={Array.isArray(product.images) ? (product.images as string[]) : undefined}
-            location={typeof product.location === "string" ? product.location : ""}
-            city={typeof product.city === "string" ? product.city : ""}
-            state={typeof product.state === "string" ? product.state : ""}
-            sellerName={typeof profile?.full_name === "string" ? profile.full_name : undefined}
-            sellerUsername={sellerUsername}
-          />
-        );
-      })}
+          return (
+            <ProductCard
+              key={String(product.id)}
+              id={String(product.id ?? "")}
+              title={String(product.title ?? "")}
+              price={Number(product.price ?? product.price_local ?? 0) || 0}
+              image={typeof product.image === "string" ? product.image : ""}
+              images={Array.isArray(product.images) ? (product.images as string[]) : undefined}
+              location={typeof product.location === "string" ? product.location : ""}
+              city={typeof product.city === "string" ? product.city : ""}
+              state={typeof product.state === "string" ? product.state : ""}
+              sellerName={typeof profile?.full_name === "string" ? profile.full_name : undefined}
+              sellerUsername={sellerUsername}
+            />
+          );
+        })}
+
+        {isLoading
+          ? Array.from({ length: 10 }).map((_, idx) => <SkeletonTile key={`skeleton-${idx}`} />)
+          : null}
+      </div>
+
+      {hasMore ? (
+        <div className="flex justify-center pt-4">
+          <button
+            type="button"
+            onClick={onLoadMore}
+            disabled={loadingMore}
+            className="rounded-full border border-gray-200 bg-white px-8 py-3 text-sm font-medium text-gray-700 shadow-sm transition-all hover:border-emerald-500 hover:text-emerald-600 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {loadingMore ? "Loading..." : "Load more"}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

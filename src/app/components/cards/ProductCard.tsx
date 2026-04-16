@@ -1,4 +1,5 @@
 import { Link } from "react-router";
+import { useEffect } from "react";
 import { useCurrency } from "../../hooks/useCurrency";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { derivePeerHandle } from "../chat/ChatPeerHeaderModern";
@@ -83,8 +84,13 @@ export function ProductCard({
 
   const firstFromImages =
     Array.isArray(images) && images.length > 0 && typeof images[0] === "string" ? images[0].trim() : "";
-  const rawImg = (image?.trim() || firstFromImages || PLACEHOLDER_IMG) as string;
-  const imgSrc = optimizeListingImageUrl(rawImg, { width: 400, quality: 70 });
+  const rawForImg =
+    (image?.trim() || firstFromImages || PLACEHOLDER_IMG) as string;
+  const imgSrc = optimizeListingImageUrl(rawForImg, { width: 400, quality: 70 });
+
+  useEffect(() => {
+    console.log("Product image URL:", image, images?.[0]);
+  }, [image, images]);
 
   return (
     <div className="product-card w-full min-w-[160px] max-w-full border border-gray-200 bg-white shadow-sm dark:border-border dark:bg-card">
@@ -93,10 +99,11 @@ export function ProductCard({
         className="flex flex-col text-inherit no-underline outline-none ring-offset-2 focus-visible:ring-2 focus-visible:ring-[#22c55e]"
         aria-label={`View listing: ${title}`}
       >
-        <div className="product-image relative">
+        <div className="product-image h-3/4 w-full overflow-hidden bg-gray-100">
           <img
             src={imgSrc}
             alt={title}
+            className="w-full h-full object-contain"
             loading="lazy"
             decoding="async"
             draggable={false}

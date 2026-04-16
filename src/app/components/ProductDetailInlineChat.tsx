@@ -76,6 +76,8 @@ export function ProductDetailInlineChat({
 
   const listingPk = normalizeProductPk(productId);
 
+  alert("Raw productId: " + productId + "\nNormalized: " + listingPk);
+
   console.log("[Chat Debug] raw productId:", productId);
   console.log("[Chat Debug] normalized listingPk:", listingPk);
 

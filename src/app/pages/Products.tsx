@@ -309,7 +309,9 @@ export default function Products() {
     () => ({
       category: selectedCategory,
       condition: selectedCondition,
-      state: selectedState,
+      // When "All States" is selected we don't want to filter by state,
+      // but we do want the PostgREST path so the returned rows include city/state/location fields.
+      state: selectedState === "all" ? "" : selectedState,
       priceRange,
       carBrand: selectedCategory === "vehicles" ? selectedCarBrand : "all",
       subcategory: "all",
@@ -697,6 +699,7 @@ export default function Products() {
                       price={Number(product.price) || 0}
                       location={String(product.location ?? "")}
                       city={String((product as Record<string, unknown>).city ?? "")}
+                      state={String((product as Record<string, unknown>).state ?? "")}
                       productId={Number.isFinite(pid) ? pid : String(row.id ?? "")}
                       sellerName={sid ? sellerDisplayNames[sid] : undefined}
                       sellerVerified={sid ? verifiedSellerIds.has(sid) : false}

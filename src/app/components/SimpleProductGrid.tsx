@@ -40,7 +40,7 @@ export default function SimpleProductGrid({
 
   return (
     <div className="space-y-8">
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5 [&>*]:min-h-0 [&>*]:min-w-0 [&>*]:w-full">
+      <div className="grid grid-cols-2 gap-6 md:grid-cols-3 xl:grid-cols-5 [&>*]:min-h-0 [&>*]:min-w-0 [&>*]:w-full">
         {products.map((product) => {
           const profile = (product.profiles as Record<string, unknown> | null) ?? null;
           const sellerUsername =
@@ -55,12 +55,14 @@ export default function SimpleProductGrid({
               key={String(product.id)}
               id={String(product.id ?? "")}
               title={String(product.title ?? "")}
-              price={Number(product.price ?? product.price_local ?? 0) || 0}
+              price={Number(product.price_local ?? product.price ?? 0) || 0}
+              priceLocal={Number(product.price_local ?? 0) || undefined}
               image={typeof product.image === "string" ? product.image : ""}
               images={Array.isArray(product.images) ? (product.images as string[]) : undefined}
               location={typeof product.location === "string" ? product.location : ""}
               city={typeof product.city === "string" ? product.city : ""}
               state={typeof product.state === "string" ? product.state : ""}
+              condition={typeof product.condition === "string" ? product.condition : ""}
               sellerName={typeof profile?.full_name === "string" ? profile.full_name : undefined}
               sellerUsername={sellerUsername}
             />

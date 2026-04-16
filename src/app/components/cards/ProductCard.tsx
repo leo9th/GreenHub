@@ -1,6 +1,6 @@
 import { Link } from "react-router";
-import { useEffect } from "react";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
+import { MapPin } from "lucide-react";
 import { useCurrency } from "../../hooks/useCurrency";
 import { optimizeListingImageUrl } from "../../utils/productImages";
 
@@ -24,6 +24,7 @@ export interface ProductCardProps {
   likeCount?: number;
   likesCount?: number;
   priceDisplay?: string;
+  priceLocal?: number;
   rating?: number;
   reviews?: number;
   sellerVerified?: boolean;
@@ -52,6 +53,9 @@ export function ProductCard({
   city,
   state,
   href,
+  condition,
+  priceDisplay,
+  priceLocal,
   sellerName,
   sellerUsername,
 }: ProductCardProps) {
@@ -83,22 +87,23 @@ export function ProductCard({
   const rawImage = image?.trim() || firstFromImages || PLACEHOLDER_IMG;
   const imageUrl = optimizeListingImageUrl(rawImage, { width: 400, quality: 70 });
 
-  useEffect(() => {
-    console.log("Product image URL:", image, images?.[0]);
-  }, [image, images]);
+  const displayPrice =
+    typeof priceDisplay === "string" && priceDisplay.trim() !== ""
+      ? priceDisplay
+      : formatPrice(priceLocal ?? price);
 
   return (
-    <div className="product-card w-full overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+    <div className="group relative flex h-full w-full flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-emerald-900/10">
       <Link
         to={linkTo}
-        className="flex h-full min-h-[320px] flex-col text-inherit no-underline outline-none ring-offset-2 focus-visible:ring-2 focus-visible:ring-[#22c55e]"
+        className="flex h-full flex-col text-inherit no-underline outline-none ring-offset-2 focus-visible:ring-2 focus-visible:ring-[#22c55e]"
         aria-label={`View listing: ${title}`}
       >
-        <div className="h-3/4 w-full overflow-hidden bg-gray-100">
+        <div className="relative aspect-[4/5] overflow-hidden bg-gray-100">
           <img
             src={imageUrl}
             alt={title}
-            className="h-full w-full object-contain"
+            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
             loading="lazy"
             decoding="async"
             draggable={false}
@@ -107,13 +112,29 @@ export function ProductCard({
               e.currentTarget.src = PLACEHOLDER_IMG;
             }}
           />
+          {condition ? (
+            <div className="absolute left-3 top-3 rounded-full bg-black/65 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-white backdrop-blur">
+              {condition}
+            </div>
+          ) : null}
         </div>
 
-        <div className="flex h-1/4 flex-col gap-1 border-t border-gray-100 p-3">
-          <h3 className="line-clamp-2 text-sm font-semibold leading-snug text-gray-900">{title}</h3>
-          <p className="text-sm font-bold text-emerald-600">{formatPrice(price)}</p>
-          <p className="line-clamp-1 text-xs text-gray-600">📍 {locationDisplay}</p>
-          <p className="line-clamp-1 text-xs text-gray-500">{sellerDisplay}</p>
+        <div className="flex flex-grow flex-col p-4">
+          <h3 className="line-clamp-2 min-h-[2.5rem] text-sm font-semibold leading-5 text-gray-900 transition-colors group-hover:text-emerald-700">
+            {title}
+          </h3>
+          <div className="mt-3 flex items-center gap-1 text-gray-500">
+            <MapPin size={13} className="shrink-0" />
+            <span className="truncate text-xs">{locationDisplay}</span>
+          </div>
+          <p className="mt-1 line-clamp-1 text-xs text-gray-500">{sellerDisplay}</p>
+          <div className="mt-auto pt-3">
+            <div className="text-lg font-bold leading-none text-emerald-600">{displayPrice}</div>
+            <div className="mt-2 flex items-center gap-1 text-gray-400">
+              <MapPin size={12} />
+              <span className="truncate text-[11px]">{city?.trim() || "Nigeria"}</span>
+            </div>
+          </div>
         </div>
       </Link>
     </div>

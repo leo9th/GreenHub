@@ -37,8 +37,8 @@ export interface ProductCardProps {
   onLikeClick?: (e: ReactMouseEvent) => void;
   sellerId?: string;
   sellerFollowerCount?: number;
+  /** Seller display name from `profiles.full_name` (no username column). */
   sellerName?: string;
-  sellerUsername?: string;
   verifiedSellerBadge?: string;
 }
 
@@ -57,7 +57,6 @@ export function ProductCard({
   priceDisplay,
   priceLocal,
   sellerName,
-  sellerUsername,
 }: ProductCardProps) {
   const formatPrice = useCurrency();
 
@@ -71,16 +70,7 @@ export function ProductCard({
 
   const locationDisplay =
     (city?.trim() || state?.trim() || location?.trim() || "").trim() || "Location not specified";
-  const sellerDisplay = (() => {
-    const username = sellerUsername?.trim();
-    if (username) return username.startsWith("@") ? username : `@${username}`;
-    const name = sellerName?.trim();
-    if (name) {
-      const derived = name.toLowerCase().replace(/\s+/g, "_").replace(/^@+/, "");
-      return `@${derived}`;
-    }
-    return "@seller";
-  })();
+  const sellerDisplay = sellerName?.trim() || "Seller";
 
   const firstFromImages =
     Array.isArray(images) && typeof images[0] === "string" ? images[0].trim() : "";
@@ -99,11 +89,11 @@ export function ProductCard({
         className="flex h-full flex-col text-inherit no-underline outline-none ring-offset-2 focus-visible:ring-2 focus-visible:ring-[#22c55e]"
         aria-label={`View listing: ${title}`}
       >
-        <div className="relative aspect-[4/5] overflow-hidden bg-gray-100">
+        <div className="relative h-72 md:h-80 overflow-hidden bg-gray-50">
           <img
             src={imageUrl}
             alt={title}
-            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
             loading="lazy"
             decoding="async"
             draggable={false}

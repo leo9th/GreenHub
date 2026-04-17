@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { Link } from "react-router";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { MapPin } from "lucide-react";
@@ -60,7 +59,6 @@ export function ProductCard({
   sellerName,
 }: ProductCardProps) {
   const formatPrice = useCurrency();
-  const [useContainFit, setUseContainFit] = useState(false);
 
   const resolvedId =
     id != null && String(id).trim() !== ""
@@ -91,27 +89,49 @@ export function ProductCard({
         className="flex h-full flex-col text-inherit no-underline outline-none ring-offset-2 focus-visible:ring-2 focus-visible:ring-[#22c55e]"
         aria-label={`View listing: ${title}`}
       >
-        <div className="relative w-full h-48 bg-gray-100 overflow-hidden rounded-t-2xl">
-  <img
-    src={imageUrl}
-    alt={title}
-    className="w-full h-full object-contain object-center"
-    loading="lazy"
-    decoding="async"
-    draggable={false}
-    onError={(e) => {
-      e.currentTarget.onerror = null;
-      e.currentTarget.src = PLACEHOLDER_IMG;
-    }}
-  />
-  {condition ? (
-    <div className="absolute left-3 top-3">
-      <span className="rounded-full bg-white/80 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-700 shadow-sm backdrop-blur-md">
-        {condition}
-      </span>
-    </div>
-  ) : null}
-</div>
+        <div
+          style={{
+            width: "100%",
+            height: "192px",
+            overflow: "hidden",
+            backgroundColor: "#f3f4f6",
+            position: "relative",
+            borderRadius: "12px 12px 0 0",
+          }}
+        >
+          <img
+            src={imageUrl}
+            alt={title}
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "contain",
+              objectPosition: "center",
+            }}
+            loading="lazy"
+            onError={(e) => {
+              e.currentTarget.onerror = null;
+              e.currentTarget.src = PLACEHOLDER_IMG;
+            }}
+          />
+          {condition && (
+            <div
+              style={{
+                position: "absolute",
+                left: "8px",
+                top: "8px",
+                backgroundColor: "rgba(255,255,255,0.8)",
+                borderRadius: "999px",
+                padding: "4px 10px",
+                fontSize: "10px",
+                fontWeight: "bold",
+                textTransform: "uppercase",
+              }}
+            >
+              {condition}
+            </div>
+          )}
+        </div>
         <div className="flex flex-grow flex-col justify-between p-4">
           <div>
             <h3 className="mb-1 line-clamp-1 text-base font-semibold text-slate-900">{title}</h3>

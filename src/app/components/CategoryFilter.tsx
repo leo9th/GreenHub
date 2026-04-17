@@ -56,15 +56,15 @@ export default function CategoryFilter({ selectedCategory, onCategoryChange }: C
               onClick={() => onCategoryChange(category)}
               className={`group flex w-[5.75rem] shrink-0 snap-start flex-col items-center justify-center gap-2 rounded-2xl border px-2 py-3 text-center transition-all duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 sm:w-24 ${
                 isActive
-                  ? "scale-[1.02] border-emerald-600 bg-emerald-600 text-white shadow-md ring-1 ring-emerald-600/30 hover:scale-105 hover:shadow-lg"
+                  ? "-translate-y-1 border-emerald-500 bg-emerald-500 text-white shadow-md ring-1 ring-emerald-500/30"
                   : "border-transparent bg-gray-100 text-gray-900 shadow-sm hover:scale-105 hover:shadow-lg hover:shadow-gray-300/80"
               }`}
             >
               <span
                 className={`flex h-10 w-10 items-center justify-center rounded-xl transition-colors duration-200 ${
                   isActive
-                    ? "bg-white/15 text-white"
-                    : "bg-white/80 text-gray-700 group-hover:bg-white group-hover:text-emerald-700"
+                    ? "rounded-full border border-white/30 bg-white/15 text-white"
+                    : "rounded-full border border-slate-200 bg-white text-gray-700 group-hover:bg-white group-hover:text-emerald-700"
                 }`}
               >
                 <Icon className="h-5 w-5" strokeWidth={isActive ? 2.25 : 2} aria-hidden />

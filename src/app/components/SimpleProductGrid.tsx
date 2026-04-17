@@ -79,7 +79,7 @@ export default function SimpleProductGrid({
             type="button"
             onClick={onLoadMore}
             disabled={loadingMore}
-            className="rounded-full border border-gray-200 bg-white px-8 py-3 text-sm font-medium text-gray-700 shadow-sm transition-all hover:border-emerald-500 hover:text-emerald-600 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+            className="w-full max-w-sm rounded-full border-2 border-slate-200 bg-white px-8 py-3 text-sm font-medium text-slate-700 transition-all duration-200 hover:bg-slate-100 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loadingMore ? "Loading..." : "Load more"}
           </button>

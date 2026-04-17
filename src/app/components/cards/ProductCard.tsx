@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link } from "react-router";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { MapPin } from "lucide-react";
@@ -59,6 +60,7 @@ export function ProductCard({
   sellerName,
 }: ProductCardProps) {
   const formatPrice = useCurrency();
+  const [useContainFit, setUseContainFit] = useState(false);
 
   const resolvedId =
     id != null && String(id).trim() !== ""
@@ -83,52 +85,61 @@ export function ProductCard({
       : formatPrice(priceLocal ?? price);
 
   return (
-    <div className="group relative flex h-full w-full flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-emerald-900/10">
+    <div className="group flex h-full w-full flex-col overflow-hidden rounded-2xl border border-slate-100/50 bg-white shadow-sm transition-all duration-300 hover:shadow-xl">
       <Link
         to={linkTo}
         className="flex h-full flex-col text-inherit no-underline outline-none ring-offset-2 focus-visible:ring-2 focus-visible:ring-[#22c55e]"
         aria-label={`View listing: ${title}`}
       >
-        <div className="w-full h-64 overflow-hidden bg-gray-100">
+        <div className="relative aspect-square w-full overflow-hidden bg-slate-50">
           <img
             src={imageUrl}
             alt={title}
-            className="w-full h-full object-contain object-center"
+            className={`h-full w-full object-center ${useContainFit ? "object-contain" : "object-cover"}`}
             loading="lazy"
             decoding="async"
             draggable={false}
+            onLoad={(e) => {
+              const { naturalWidth, naturalHeight } = e.currentTarget;
+              if (!naturalWidth || !naturalHeight) return;
+              const aspectRatio = naturalWidth / naturalHeight;
+              // Extremely wide photos are better preserved with contain.
+              setUseContainFit(aspectRatio >= 1.8);
+            }}
             onError={(e) => {
               e.currentTarget.onerror = null;
               e.currentTarget.src = PLACEHOLDER_IMG;
             }}
           />
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
           {condition ? (
-            <div className="absolute left-3 top-3 rounded-full bg-black/65 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-white backdrop-blur">
-              {condition}
+            <div className="absolute left-3 top-3">
+              <span className="rounded-full bg-white/80 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-700 shadow-sm backdrop-blur-md">
+                {condition}
+              </span>
             </div>
           ) : null}
         </div>
 
-        <div className="flex flex-grow flex-col p-4">
-          <h3 className="line-clamp-2 min-h-[2.5rem] text-sm font-semibold leading-5 text-gray-900 transition-colors group-hover:text-emerald-700">
-            {title}
-          </h3>
-          <div className="mt-3 flex items-center gap-1 text-gray-500">
-            <MapPin size={13} className="shrink-0" />
-            <span className="truncate text-xs">{locationDisplay}</span>
-          </div>
-          <p className="mt-1 line-clamp-1 text-xs text-gray-500">{sellerDisplay}</p>
-          <div className="mt-auto pt-3">
-            <div className="text-lg font-bold leading-none text-emerald-600">{displayPrice}</div>
-            <div className="mt-2 flex items-center gap-1 text-gray-400">
-              <MapPin size={12} />
-              <span className="truncate text-[11px]">{city?.trim() || "Nigeria"}</span>
+        <div className="flex flex-grow flex-col justify-between p-4">
+          <div>
+            <h3 className="mb-1 line-clamp-1 text-base font-semibold text-slate-900">{title}</h3>
+
+            <div className="mb-3 flex flex-col gap-0.5">
+              <span className="flex items-center gap-1 text-[11px] text-slate-400">
+                <MapPin size={12} className="shrink-0" />
+                {locationDisplay}
+              </span>
+              <span className="text-[11px] font-medium italic text-slate-400">{sellerDisplay}</span>
             </div>
+          </div>
+
+          <div className="mt-2 flex items-center justify-between">
+            <span className="text-lg font-bold text-green-600">{displayPrice}</span>
           </div>
         </div>
       </Link>
     </div>
   );
 }
-
 export default ProductCard;

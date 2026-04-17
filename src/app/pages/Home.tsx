@@ -75,29 +75,25 @@ export default function Home() {
   }, [selectedCategory]);
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <div className="mx-auto max-w-7xl px-4 py-10">
-        <div className="mb-5 flex items-center justify-between">
+    <div className="min-h-screen bg-gray-50">
+      <div className="mx-auto max-w-7xl px-4 py-6">
+        <div className="mb-4 flex items-center justify-between">
           <h1 className="text-xl font-semibold text-gray-900">Featured Products</h1>
           <Link to="/products" className="text-sm font-medium text-[#16a34a] hover:underline">
             Go to Shop
           </Link>
         </div>
 
-        <div className="py-12">
-          <CategoryFilter selectedCategory={selectedCategory} onCategoryChange={setSelectedCategory} />
-        </div>
+        <CategoryFilter selectedCategory={selectedCategory} onCategoryChange={setSelectedCategory} />
 
         {error ? <p className="mb-4 text-sm text-amber-700">{error}</p> : null}
-        <div className="pt-4 pb-12">
-          <SimpleProductGrid
-            products={products}
-            isLoading={isLoading}
-            hasMore={hasMore}
-            loadingMore={loadingMore}
-            onLoadMore={handleLoadMore}
-          />
-        </div>
+        <SimpleProductGrid
+          products={products}
+          isLoading={isLoading}
+          hasMore={hasMore}
+          loadingMore={loadingMore}
+          onLoadMore={handleLoadMore}
+        />
       </div>
     </div>
   );

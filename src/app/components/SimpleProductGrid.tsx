@@ -39,7 +39,7 @@ export default function SimpleProductGrid({
 
   return (
     <div className="space-y-8">
-      <div className="grid grid-cols-2 gap-6 md:grid-cols-3 xl:grid-cols-5 [&>*]:min-h-0 [&>*]:min-w-0 [&>*]:w-full">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4 xl:grid-cols-5 [&>*]:min-h-0 [&>*]:min-w-0 [&>*]:w-full">
         {products.map((product) => {
           const seller = product.seller;
           const legacyProfile = product.profiles as { full_name?: string } | null | undefined;

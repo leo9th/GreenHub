@@ -308,7 +308,9 @@ export default function ProductDetail() {
   const navigate = useNavigate();
   const { addToCart } = useCart();
   const { user: authUser } = useAuth();
-  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  /** Main gallery URL: first of `images[]` or legacy `image`; synced when listing loads/changes. */
+  const [selectedImage, setSelectedImage] = useState<string>("");
+  const [lightboxOpen, setLightboxOpen] = useState(false);
   /** Mobile-only: reduces scroll by showing one section at a time. Desktop shows full stack. */
   const [mobileDetailTab, setMobileDetailTab] = useState<"details" | "seller" | "reviews" | "about">("details");
   const galleryTouchStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -463,8 +465,26 @@ export default function ProductDetail() {
   useEffect(() => {
     if (!foundProduct) return;
     const imgs = parseProductImagesFromRow(foundProduct as { image?: unknown; images?: unknown });
-    setCurrentImageIndex((i) => (imgs.length === 0 ? 0 : Math.min(Math.max(0, i), imgs.length - 1)));
+    setSelectedImage((prev) => {
+      if (imgs.length === 0) return "";
+      if (prev && imgs.includes(prev)) return prev;
+      return imgs[0] ?? "";
+    });
   }, [foundProduct?.id, foundProduct?.image, foundProduct?.images]);
+
+  useEffect(() => {
+    if (!lightboxOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setLightboxOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [lightboxOpen]);
 
   useEffect(() => {
     if (!serverProduct?.id) return;
@@ -917,14 +937,30 @@ export default function ProductDetail() {
     ),
   };
 
+  const galleryActiveIndex =
+    product.images.length === 0
+      ? -1
+      : (() => {
+          const i = product.images.findIndex((u) => u === selectedImage);
+          return i >= 0 ? i : 0;
+        })();
+  const mainDisplayImage =
+    galleryActiveIndex >= 0 && product.images[galleryActiveIndex]
+      ? product.images[galleryActiveIndex]!
+      : "";
+
   const handlePrevImage = () => {
     if (product.images.length <= 1) return;
-    setCurrentImageIndex((prev) => (prev === 0 ? product.images.length - 1 : prev - 1));
+    const cur = galleryActiveIndex >= 0 ? galleryActiveIndex : 0;
+    const next = cur === 0 ? product.images.length - 1 : cur - 1;
+    setSelectedImage(product.images[next] ?? "");
   };
 
   const handleNextImage = () => {
     if (product.images.length <= 1) return;
-    setCurrentImageIndex((prev) => (prev === product.images.length - 1 ? 0 : prev + 1));
+    const cur = galleryActiveIndex >= 0 ? galleryActiveIndex : 0;
+    const next = cur === product.images.length - 1 ? 0 : cur + 1;
+    setSelectedImage(product.images[next] ?? "");
   };
 
   const onGalleryTouchStart = (e: ReactTouchEvent<HTMLDivElement>) => {
@@ -1050,71 +1086,82 @@ export default function ProductDetail() {
             <div className="relative w-full max-w-[520px] md:max-w-none mx-auto">
               <div className="relative rounded-2xl overflow-hidden bg-white shadow-sm ring-1 ring-gray-200/90">
                 <div
-                  className="relative flex h-[500px] max-h-[500px] w-full items-center justify-center bg-gray-100 touch-manipulation"
+                  className="relative touch-manipulation"
                   role="region"
                   aria-label="Product gallery"
                   aria-roledescription="carousel"
                   onTouchStart={onGalleryTouchStart}
                   onTouchEnd={onGalleryTouchEnd}
                 >
-                  {product.images.length > 0 ? (
-                    <img
-                      src={optimizeListingImageUrl(product.images[currentImageIndex], { width: 960, quality: 75 })}
-                      alt={product.title}
-                      className="absolute inset-0 z-0 m-auto h-full w-full cursor-default object-contain select-none"
-                      draggable={false}
-                      onDoubleClick={onMainImageDoubleClick}
-                    />
-                  ) : (
-                    <div
-                      className="absolute inset-0 w-full h-full flex items-center justify-center text-gray-400 text-sm px-6 text-center"
-                      aria-hidden
-                    >
-                      No image
-                    </div>
-                  )}
-                  {heartPopSeq > 0 ? (
-                    <div
-                      key={heartPopSeq}
-                      className="gh-heart-pop pointer-events-none absolute left-1/2 top-1/2 z-[6]"
-                      aria-hidden
-                    >
-                      <Heart className="h-[4.25rem] w-[4.25rem] fill-red-500 text-red-500 drop-shadow-lg" strokeWidth={1.5} />
-                    </div>
+                  <div
+                    className="relative w-full cursor-zoom-in overflow-hidden rounded-xl bg-gray-100"
+                    onClick={() => {
+                      if (product.images.length > 0) setLightboxOpen(true);
+                    }}
+                    role="presentation"
+                  >
+                    {product.images.length > 0 && mainDisplayImage ? (
+                      <img
+                        src={optimizeListingImageUrl(mainDisplayImage, { width: 960, quality: 75 })}
+                        alt={product.title}
+                        className="mx-auto block h-auto w-full max-h-[500px] cursor-zoom-in select-none object-contain"
+                        draggable={false}
+                        onDoubleClick={onMainImageDoubleClick}
+                      />
+                    ) : (
+                      <div
+                        className="flex min-h-[240px] w-full items-center justify-center px-6 py-16 text-center text-sm text-gray-400"
+                        aria-hidden
+                      >
+                        No image
+                      </div>
+                    )}
+                    {heartPopSeq > 0 ? (
+                      <div
+                        key={heartPopSeq}
+                        className="gh-heart-pop pointer-events-none absolute left-1/2 top-1/2 z-[6] -translate-x-1/2 -translate-y-1/2"
+                        aria-hidden
+                      >
+                        <Heart className="h-[4.25rem] w-[4.25rem] fill-red-500 text-red-500 drop-shadow-lg" strokeWidth={1.5} />
+                      </div>
+                    ) : null}
+                    <span className="absolute left-3 top-3 z-[1] rounded-lg bg-[#15803d] px-2 py-1 text-[11px] font-semibold text-white shadow-sm">
+                      {product.condition}
+                    </span>
+                  </div>
+                  {product.images.length > 1 ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handlePrevImage();
+                        }}
+                        className="absolute left-2 top-1/2 z-[5] flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-gray-800 shadow-sm ring-1 ring-gray-200/80"
+                        aria-label="Previous image"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleNextImage();
+                        }}
+                        className="absolute right-2 top-1/2 z-[5] flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-gray-800 shadow-sm ring-1 ring-gray-200/80"
+                        aria-label="Next image"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </button>
+                    </>
                   ) : null}
-                {product.images.length > 1 && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={handlePrevImage}
-                      className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white/90 shadow-sm ring-1 ring-gray-200/80 flex items-center justify-center text-gray-800"
-                      aria-label="Previous image"
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleNextImage}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white/90 shadow-sm ring-1 ring-gray-200/80 flex items-center justify-center text-gray-800"
-                      aria-label="Next image"
-                    >
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
-                  </>
-                )}
-                  <span className="absolute top-3 left-3 z-[1] bg-[#15803d] text-white text-[11px] font-semibold px-2 py-1 rounded-lg shadow-sm">
-                    {product.condition}
-                  </span>
-                  <div className="absolute top-3 right-3 z-[4] flex max-w-[calc(100%-0.75rem)] flex-col items-end gap-2">
-                    <div
-                      className="flex shrink-0 items-center gap-1"
-                      role="group"
-                      aria-label="Listing actions"
-                    >
+                  <div className="absolute right-3 top-3 z-[4] flex max-w-[calc(100%-0.75rem)] flex-col items-end gap-2">
+                    <div className="flex shrink-0 items-center gap-1" role="group" aria-label="Listing actions">
                       <button
                         type="button"
                         disabled={!sellerPeerId}
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.stopPropagation();
                           if (!sellerPeerId) return;
                           navigate(`/profile/${sellerPeerId}/followers`);
                         }}
@@ -1132,7 +1179,10 @@ export default function ProductDetail() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => void handleShare()}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void handleShare();
+                        }}
                         className="rounded-full bg-black/50 p-1.5 text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-black/60"
                         aria-label="Share listing"
                       >
@@ -1141,7 +1191,10 @@ export default function ProductDetail() {
                       <button
                         type="button"
                         disabled={likeBusy}
-                        onClick={() => void handleToggleLike()}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void handleToggleLike();
+                        }}
                         className="inline-flex items-center gap-0.5 rounded-full bg-black/50 px-2 py-1.5 text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-black/60 disabled:opacity-50"
                         aria-label={liked ? "Unlike" : "Like"}
                       >
@@ -1158,41 +1211,64 @@ export default function ProductDetail() {
                   </div>
                   {product.images.length > 1 ? (
                     <span className="absolute bottom-3 right-3 z-[2] rounded-full bg-black/55 px-2.5 py-1 text-[11px] font-medium tabular-nums text-white shadow-sm">
-                      {currentImageIndex + 1}/{product.images.length}
+                      {(galleryActiveIndex >= 0 ? galleryActiveIndex : 0) + 1}/{product.images.length}
                     </span>
                   ) : null}
                 </div>
               </div>
-              {product.images.length > 1 && (
-                <div className="mt-3 w-full -mx-1 overflow-x-auto overscroll-x-contain [scrollbar-width:thin] [-webkit-overflow-scrolling:touch] touch-pan-x">
-                  <div className="flex w-max gap-2 px-1 snap-x snap-mandatory">
-                    {product.images.map((src, index) => (
-                      <button
-                        key={`${src}-${index}`}
-                        type="button"
-                        onClick={() => setCurrentImageIndex(index)}
-                        className={`relative shrink-0 snap-start rounded-lg overflow-hidden ring-2 transition-all w-16 h-16 sm:w-[4.5rem] sm:h-[4.5rem] ${
-                          index === currentImageIndex
-                            ? "ring-[#16a34a] shadow-md scale-[1.02]"
-                            : "ring-transparent opacity-85 hover:opacity-100 hover:ring-gray-200"
-                        }`}
-                        aria-label={`Show image ${index + 1} of ${product.images.length}`}
-                        aria-current={index === currentImageIndex ? "true" : undefined}
-                      >
-                        {src ? (
-                          <img
-                            src={optimizeListingImageUrl(src, { width: 128, quality: 70 })}
-                            alt=""
-                            className="h-full w-full object-cover"
-                          />
-                        ) : (
-                          <div className="h-full w-full bg-gray-200" aria-hidden />
-                        )}
-                      </button>
-                    ))}
-                  </div>
+              {product.images.length > 1 ? (
+                <div className="mt-4 flex w-full gap-2 overflow-x-auto pb-2 [-webkit-overflow-scrolling:touch]">
+                  {product.images.map((src, index) => (
+                    <button
+                      key={`${src}-${index}`}
+                      type="button"
+                      onClick={() => setSelectedImage(src)}
+                      className={`relative h-20 w-20 shrink-0 overflow-hidden rounded-md border-2 transition-colors ${
+                        index === galleryActiveIndex ? "border-emerald-500" : "border-transparent"
+                      }`}
+                      aria-label={`Show image ${index + 1} of ${product.images.length}`}
+                      aria-current={index === galleryActiveIndex ? "true" : undefined}
+                    >
+                      {src ? (
+                        <img
+                          src={optimizeListingImageUrl(src, { width: 160, quality: 70 })}
+                          alt={`Thumbnail ${index + 1}`}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <div className="h-full w-full bg-gray-200" aria-hidden />
+                      )}
+                    </button>
+                  ))}
                 </div>
-              )}
+              ) : null}
+              {lightboxOpen && product.images.length > 0 && mainDisplayImage ? (
+                <div
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label="Zoomed product image"
+                  className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 p-4"
+                  onClick={() => setLightboxOpen(false)}
+                >
+                  <button
+                    type="button"
+                    className="absolute right-4 top-4 z-[101] rounded-full p-2 text-2xl leading-none text-white hover:bg-white/10"
+                    aria-label="Close"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setLightboxOpen(false);
+                    }}
+                  >
+                    ✕
+                  </button>
+                  <img
+                    src={optimizeListingImageUrl(mainDisplayImage, { width: 1600, quality: 82 })}
+                    alt=""
+                    className="max-h-[90vh] max-w-[90vw] object-contain"
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                </div>
+              ) : null}
             </div>
           </div>
 

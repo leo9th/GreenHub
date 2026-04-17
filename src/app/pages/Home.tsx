@@ -89,7 +89,7 @@ export default function Home() {
         </div>
 
         {error ? <p className="mb-4 text-sm text-amber-700">{error}</p> : null}
-        <div className="py-12">
+        <div className="pt-4 pb-12">
           <SimpleProductGrid
             products={products}
             isLoading={isLoading}

@@ -91,36 +91,27 @@ export function ProductCard({
         className="flex h-full flex-col text-inherit no-underline outline-none ring-offset-2 focus-visible:ring-2 focus-visible:ring-[#22c55e]"
         aria-label={`View listing: ${title}`}
       >
-        <div className="relative aspect-square w-full overflow-hidden bg-slate-50">
-          <img
-            src={imageUrl}
-            alt={title}
-            className={`h-full w-full object-center ${useContainFit ? "object-contain" : "object-cover"}`}
-            loading="lazy"
-            decoding="async"
-            draggable={false}
-            onLoad={(e) => {
-              const { naturalWidth, naturalHeight } = e.currentTarget;
-              if (!naturalWidth || !naturalHeight) return;
-              const aspectRatio = naturalWidth / naturalHeight;
-              // Extremely wide photos are better preserved with contain.
-              setUseContainFit(aspectRatio >= 1.8);
-            }}
-            onError={(e) => {
-              e.currentTarget.onerror = null;
-              e.currentTarget.src = PLACEHOLDER_IMG;
-            }}
-          />
-          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
-          {condition ? (
-            <div className="absolute left-3 top-3">
-              <span className="rounded-full bg-white/80 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-700 shadow-sm backdrop-blur-md">
-                {condition}
-              </span>
-            </div>
-          ) : null}
-        </div>
-
+        <div className="relative w-full h-48 bg-gray-100 overflow-hidden rounded-t-2xl">
+  <img
+    src={imageUrl}
+    alt={title}
+    className="w-full h-full object-contain object-center"
+    loading="lazy"
+    decoding="async"
+    draggable={false}
+    onError={(e) => {
+      e.currentTarget.onerror = null;
+      e.currentTarget.src = PLACEHOLDER_IMG;
+    }}
+  />
+  {condition ? (
+    <div className="absolute left-3 top-3">
+      <span className="rounded-full bg-white/80 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-700 shadow-sm backdrop-blur-md">
+        {condition}
+      </span>
+    </div>
+  ) : null}
+</div>
         <div className="flex flex-grow flex-col justify-between p-4">
           <div>
             <h3 className="mb-1 line-clamp-1 text-base font-semibold text-slate-900">{title}</h3>

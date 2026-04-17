@@ -89,7 +89,7 @@ export function ProductCard({
         className="flex h-full flex-col text-inherit no-underline outline-none ring-offset-2 focus-visible:ring-2 focus-visible:ring-[#22c55e]"
         aria-label={`View listing: ${title}`}
       >
-        <div className="w-full aspect-square overflow-hidden bg-gray-100">
+        <div className="w-full aspect-[4/3] overflow-hidden bg-gray-100">
           <img
             src={imageUrl}
             alt={title}

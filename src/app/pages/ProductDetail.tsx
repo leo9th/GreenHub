@@ -1094,7 +1094,7 @@ export default function ProductDetail() {
                   onTouchEnd={onGalleryTouchEnd}
                 >
                   <div
-                    className="relative w-full cursor-zoom-in overflow-hidden rounded-xl bg-gray-100"
+                    className="relative w-full aspect-[4/3] cursor-zoom-in overflow-hidden rounded-xl bg-gray-100"
                     onClick={() => {
                       if (product.images.length > 0) setLightboxOpen(true);
                     }}
@@ -1104,7 +1104,7 @@ export default function ProductDetail() {
                       <img
                         src={optimizeListingImageUrl(mainDisplayImage, { width: 960, quality: 75 })}
                         alt={product.title}
-                        className="mx-auto block h-auto w-full max-h-[500px] cursor-zoom-in select-none object-contain"
+                        className="h-full w-full cursor-zoom-in select-none object-cover"
                         draggable={false}
                         onDoubleClick={onMainImageDoubleClick}
                       />
@@ -1264,7 +1264,7 @@ export default function ProductDetail() {
                   <img
                     src={optimizeListingImageUrl(mainDisplayImage, { width: 1600, quality: 82 })}
                     alt=""
-                    className="max-h-[90vh] max-w-[90vw] object-contain"
+                    className="max-h-[90vh] max-w-[90vw] object-cover"
                     onClick={(e) => e.stopPropagation()}
                   />
                 </div>

@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router";
 import { Loader2, MessageCircle, Phone, ChevronDown, ChevronUp } from "lucide-react";
 import { toast } from "sonner";
@@ -13,6 +13,7 @@ import {
 import { CHAT_MESSAGE_BASE_COLUMNS } from "../utils/chatMessages";
 import { normalizeProductPk, productLikeSetKey } from "../utils/engagement";
 import { VerifiedBadge } from "./VerifiedBadge";
+import { CommunicationButton } from "./ui/CommunicationButton";
 
 const QUICK_MESSAGES = [
   { label: "Make an offer", text: "Hi, I would like to make an offer on this item." },
@@ -76,11 +77,11 @@ export function ProductDetailInlineChat({
   const [message, setMessage] = useState("");
   const [showContact, setShowContact] = useState(false);
   const [sendBusy, setSendBusy] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const listingPk = normalizeProductPk(productId);
 
-  console.log("[Chat Debug] raw productId:", productId);
-  console.log("[Chat Debug] normalized listingPk:", listingPk);
+  const sellerPhoneDigits = sellerTelHref.replace(/^tel:/i, "").replace(/\s/g, "");
 
   const ensureConversation = useCallback(async (): Promise<ConversationRow | null> => {
     if (!authUserId) return null;
@@ -209,6 +210,7 @@ export function ProductDetailInlineChat({
       <label className="mt-3 block">
         <span className="sr-only">Message</span>
         <textarea
+          ref={textareaRef}
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           placeholder="Type a message…"
@@ -238,31 +240,20 @@ export function ProductDetailInlineChat({
         </button>
       </div>
 
-      {/* SURGERY: Replacing the conditional guard. 
-          This button will now ALWAYS show up. 
-      */}
       <div className="flex w-full gap-2 pt-2">
-        {whatsappHref ? (
-          <a
-            href={whatsappHref}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-[#25D366] py-3 text-sm font-bold text-white transition-transform active:scale-95 hover:opacity-90"
-          >
-            <span className="flex items-center gap-2">
-              <span aria-hidden>💬</span>
-              WhatsApp
-            </span>
-          </a>
-        ) : (
-          <button
-            disabled
-            className="flex flex-1 cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-slate-100 py-3 text-sm font-bold text-slate-400"
-            title="This seller has not provided a WhatsApp number"
-          >
-            WhatsApp (Unavailable)
-          </button>
-        )}
+        <CommunicationButton
+          whatsappHref={whatsappHref}
+          phoneNumber={sellerPhoneDigits}
+          productTitle={productTitle}
+          hasInternalChat={Boolean(authUserId) && !isOwner}
+          onChatClick={() => {
+            textareaRef.current?.focus();
+            textareaRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+            toast.message("Type your message below.");
+          }}
+          className="flex-1 min-h-[44px]"
+          disabled={sendBusy}
+        />
       </div>
 
       {showContact ? (

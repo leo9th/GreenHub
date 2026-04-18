@@ -1,52 +1,55 @@
 import { MessageCircle } from "lucide-react";
 
 export interface CommunicationButtonProps {
-  /** WhatsApp href link (if available) */
+  /** Full WhatsApp URL when already built (takes precedence). */
   whatsappHref?: string;
-  /** Product title for pre-filled message */
+  /** Raw digits; used to build `wa.me` when `whatsappHref` is empty. */
+  phoneNumber?: string;
   productTitle: string;
-  /** Whether internal chat is available (user is logged in and not owner) */
+  /** Whether the blue “Send Message” (internal chat) path is available. */
   hasInternalChat?: boolean;
-  /** Callback when internal chat button is clicked */
   onChatClick?: () => void;
-  /** Additional CSS classes */
   className?: string;
-  /** Whether button is in disabled/loading state */
   disabled?: boolean;
 }
 
+function buildWhatsAppHrefFromPhone(phoneNumber: string | undefined, productTitle: string): string {
+  const clean = String(phoneNumber ?? "").replace(/\D/g, "");
+  if (!clean) return "";
+  const msg = encodeURIComponent(
+    `Hi, I'm interested in your "${productTitle.trim() || "this item"}" on GreenHub!`,
+  );
+  return `https://wa.me/${clean}?text=${msg}`;
+}
+
 /**
- * Unified Communication Button Component
- *
- * Smart Logic:
- * 1. If WhatsApp is available → Green WhatsApp button with pre-filled message
- * 2. If WhatsApp unavailable but internal chat available → Blue "Send Message" button
- * 3. If neither available → Gray "Unavailable" button
- *
- * This ensures:
- * - Zero layout shift (button always occupies space)
- * - No dead ends (always provides a path forward)
- * - Professional UX (pre-filled messages with product context)
+ * Unified buyer–seller action: WhatsApp when a number exists, otherwise internal chat, else disabled.
  */
 export function CommunicationButton({
   whatsappHref,
+  phoneNumber,
   productTitle,
   hasInternalChat = true,
   onChatClick,
   className = "",
   disabled = false,
 }: CommunicationButtonProps) {
-  const isWhatsAppAvailable = !!whatsappHref && whatsappHref.trim() !== "";
+  const resolvedHref =
+    (typeof whatsappHref === "string" && whatsappHref.trim() !== ""
+      ? whatsappHref.trim()
+      : buildWhatsAppHrefFromPhone(phoneNumber, productTitle)) || "";
 
-  // WhatsApp button
+  const isWhatsAppAvailable = resolvedHref.length > 0;
+
   if (isWhatsAppAvailable) {
     return (
       <a
-        href={whatsappHref}
+        href={resolvedHref}
         target="_blank"
         rel="noopener noreferrer"
-        className={`inline-flex items-center justify-center gap-2 rounded-lg bg-[#25D366] px-3 py-2 text-xs font-bold text-white shadow-sm transition-all hover:opacity-90 active:scale-95 disabled:opacity-60 ${className}`}
+        className={`inline-flex flex-1 min-h-[40px] items-center justify-center gap-2 rounded-lg bg-[#25D366] px-3 py-2 text-xs font-bold text-white shadow-sm transition-all hover:opacity-90 active:scale-95 ${disabled ? "pointer-events-none opacity-60" : ""} ${className}`}
         aria-label={`Chat on WhatsApp about ${productTitle}`}
+        aria-disabled={disabled || undefined}
       >
         <span aria-hidden>💬</span>
         <span>WhatsApp</span>
@@ -54,13 +57,13 @@ export function CommunicationButton({
     );
   }
 
-  // Internal Chat button
-  if (hasInternalChat && !disabled) {
+  if (hasInternalChat) {
     return (
       <button
         type="button"
+        disabled={disabled}
         onClick={onChatClick}
-        className={`inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white shadow-sm transition-all hover:bg-blue-700 active:scale-95 disabled:opacity-60 ${className}`}
+        className={`inline-flex flex-1 min-h-[40px] items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white shadow-sm transition-all hover:bg-blue-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 ${className}`}
         aria-label={`Send message about ${productTitle}`}
       >
         <MessageCircle className="h-4 w-4 shrink-0" aria-hidden />
@@ -69,10 +72,9 @@ export function CommunicationButton({
     );
   }
 
-  // Unavailable state (gray button)
   return (
     <span
-      className={`inline-flex cursor-not-allowed items-center justify-center rounded-lg bg-gray-200 px-3 py-2 text-xs font-bold text-gray-500 ${className}`}
+      className={`inline-flex flex-1 min-h-[40px] cursor-not-allowed items-center justify-center rounded-lg bg-gray-200 px-3 py-2 text-xs font-bold text-gray-500 ${className}`}
       title="Seller has no contact methods available"
       role="status"
       aria-label="Contact method unavailable"

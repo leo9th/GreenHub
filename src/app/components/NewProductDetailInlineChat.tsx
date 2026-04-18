@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "../../lib/supabase";
 import { CommunicationButton } from "./ui/CommunicationButton";
@@ -24,6 +24,8 @@ type NewProductDetailInlineChatProps = {
   sellerPhone?: string;
   sellerVerified: boolean;
   productTitle?: string;
+  isOwner?: boolean;
+  authUserId?: string;
 };
 
 export default function NewProductDetailInlineChat({
@@ -33,10 +35,13 @@ export default function NewProductDetailInlineChat({
   sellerPhone,
   sellerVerified,
   productTitle,
+  isOwner = false,
+  authUserId,
 }: NewProductDetailInlineChatProps) {
   const [message, setMessage] = useState("");
   const [showContact, setShowContact] = useState(false);
   const [sending, setSending] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const cleanedPhone = useMemo(() => (sellerPhone || "").replace(/[^\d+]/g, ""), [sellerPhone]);
   const telHref = cleanedPhone ? `tel:${cleanedPhone}` : "";
@@ -47,6 +52,14 @@ export default function NewProductDetailInlineChat({
   const whatsappHref = whatsappPhone
     ? `https://wa.me/${whatsappPhone}?text=${encodeURIComponent(defaultWhatsAppText)}`
     : "";
+
+  const hasInternalChat = Boolean(authUserId) && !isOwner;
+
+  const focusComposer = () => {
+    textareaRef.current?.focus();
+    textareaRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    toast.message("Type your message below.");
+  };
 
   const ensureConversation = async (): Promise<ConversationRow | null> => {
     const { data: auth } = await supabase.auth.getUser();
@@ -114,6 +127,14 @@ export default function NewProductDetailInlineChat({
     }
   };
 
+  if (isOwner) {
+    return (
+      <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-3 text-center text-sm text-gray-600">
+        This is your listing — buyers will message you here.
+      </div>
+    );
+  }
+
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-4">
       <div className="border-b border-gray-100 pb-3">
@@ -143,6 +164,7 @@ export default function NewProductDetailInlineChat({
       </div>
 
       <textarea
+        ref={textareaRef}
         value={message}
         onChange={(e) => setMessage(e.target.value)}
         placeholder="Type a message..."
@@ -168,13 +190,14 @@ export default function NewProductDetailInlineChat({
         </button>
       </div>
 
-      <div className="mt-2 flex gap-2">
+      <div className="mt-2 flex w-full gap-2">
         <CommunicationButton
           whatsappHref={whatsappHref}
+          phoneNumber={sellerPhone}
           productTitle={productTitle || "this item"}
-          hasInternalChat={true}
-          onChatClick={() => void handleSend()}
-          className="flex-1 min-h-[40px]"
+          hasInternalChat={hasInternalChat}
+          onChatClick={focusComposer}
+          className="min-w-0"
           disabled={sending}
         />
       </div>
@@ -200,7 +223,14 @@ export default function NewProductDetailInlineChat({
                   >
                     WhatsApp
                   </a>
-                ) : null}
+                ) : (
+                  <span
+                    className="inline-flex cursor-not-allowed items-center rounded-lg bg-gray-200 px-3 py-2 text-xs font-semibold text-gray-500"
+                    title="Seller has not shared a WhatsApp number"
+                  >
+                    WhatsApp unavailable
+                  </span>
+                )}
               </div>
             </>
           ) : (

@@ -56,7 +56,6 @@ import { buildInternationalDeliveryOptions } from "../data/internationalShipping
 import { EditProductModal } from "../components/EditProductModal";
 import { PriceNegotiation } from "../components/PriceNegotiation";
 import { MarketPricePrediction } from "../components/MarketPricePrediction";
-import { SimilarProductsLinks } from "../components/SimilarProductsLinks";
 // Old import
 // import ProductDetailInlineChat from "../components/ProductDetailInlineChat";
 // New import
@@ -1124,7 +1123,7 @@ export default function ProductDetail() {
   const productIdForReviewLink = normalizeRouteProductId(id) ?? String(foundProduct?.id ?? "");
 
   const scrollToInlineChat = () => {
-    setMobileDetailTab("seller");
+    setMobileDetailTab("details");
     queueMicrotask(() => {
       document.getElementById("product-inline-chat")?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
@@ -1148,7 +1147,7 @@ export default function ProductDetail() {
 
       <div className="mx-auto max-w-6xl px-3 pt-6 sm:px-4 md:px-4 md:pt-6 lg:pt-8">
         {/* Image column first = left on desktop (matches marketplace listing layout) */}
-        <div className="grid grid-cols-1 md:grid-cols-12 md:items-start md:gap-5 lg:gap-8 xl:gap-12 2xl:gap-14">
+        <div className="grid grid-cols-1 md:grid-cols-12 md:items-start md:gap-4 lg:gap-6 xl:gap-10 2xl:gap-12">
           <div className="flex shrink-0 justify-center md:col-span-5 md:justify-start md:sticky md:top-14 lg:col-span-5">
             <div className="relative w-full max-w-[520px] md:max-w-none mx-auto">
               <div className="relative rounded-2xl overflow-hidden bg-white shadow-sm ring-1 ring-gray-200/90">
@@ -1381,7 +1380,7 @@ export default function ProductDetail() {
             </div>
           </div>
 
-          <div className="space-y-4 pt-6 md:col-span-7 md:pt-0 lg:col-span-7">
+          <div className="space-y-3 pt-4 md:col-span-7 md:pt-0 lg:col-span-7">
             <div className="md:hidden -mx-1 mb-2 flex items-center gap-1.5 px-1">
               <div
                 className="flex min-w-0 flex-1 gap-1 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch]"
@@ -1460,7 +1459,7 @@ export default function ProductDetail() {
 
             <div
               className={cn(
-                "rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200/80 sm:p-5",
+                "rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200/80",
                 mobileDetailTab === "details" ? "block" : "hidden md:block",
               )}
             >
@@ -1494,7 +1493,6 @@ export default function ProductDetail() {
                 currentPrice={priceNum}
                 relatedListingCount={relatedProducts.length}
               />
-              <SimilarProductsLinks productTitle={String(product.title)} />
               {!productReviewsReady ? (
                 <p className="mt-3 text-sm text-gray-400">Loading reviews…</p>
               ) : productRatingTotal > 0 ? (
@@ -1541,9 +1539,24 @@ export default function ProductDetail() {
               </div>
             </div>
 
+            {canMessageSeller ? (
+              <div id="product-inline-chat" className="mt-4 scroll-mt-24">
+                <ProductDetailInlineChat
+                  productId={String(foundProduct.id ?? id ?? "")}
+                  sellerId={sellerPeerId}
+                  sellerName={product.seller.name}
+                  sellerPhone={sellerPhoneRaw}
+                  sellerVerified={sellerIdVerified}
+                  productTitle={String(product.title)}
+                  isOwner={isOwner}
+                  authUserId={authUser?.id}
+                />
+              </div>
+            ) : null}
+
             <section
               className={cn(
-                "rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200/80 sm:p-5",
+                "rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200/80",
                 mobileDetailTab === "seller" ? "block" : "hidden md:block",
               )}
             >
@@ -1654,27 +1667,11 @@ export default function ProductDetail() {
                   </div>
                 </div>
               )}
-              {canMessageSeller ? (
-                <div id="product-inline-chat" className="mt-4 scroll-mt-24">
-                  <ProductDetailInlineChat
-                    sellerId={sellerPeerId}
-                    sellerName={product.seller.name}
-                    sellerCreatedAt={sellerProfile?.created_at ?? null}
-                    sellerVerified={sellerIdVerified}
-                    sellerOnline={sellerOnline}
-                    sellerLastActive={sellerProfile?.last_active ?? null}
-                    productId={foundProduct.id != null ? foundProduct.id : id}
-                    authUserId={authUser?.id}
-                    isOwner={isOwner}
-                    sellerTelHref={sellerTelHref}
-                    whatsappHref={whatsappHref}
-                  />
-                </div>
-              ) : (
+              {!canMessageSeller ? (
                 <p className="mt-4 rounded-xl bg-gray-50 px-3 py-3 text-center text-xs text-gray-500 ring-1 ring-gray-100">
                   Seller account unavailable for chat.
                 </p>
-              )}
+              ) : null}
               <div className="mt-4 flex flex-col gap-2">
                 {canMessageSeller ? (
                   <Link
@@ -1693,7 +1690,7 @@ export default function ProductDetail() {
 
             <section
               className={cn(
-                "rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200/80 sm:p-5",
+                "rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200/80",
                 mobileDetailTab === "reviews" ? "block" : "hidden md:block",
               )}
             >
@@ -1760,7 +1757,7 @@ export default function ProductDetail() {
 
             <section
               className={cn(
-                "rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200/80 sm:p-5",
+                "rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200/80",
                 mobileDetailTab === "reviews" ? "block" : "hidden md:block",
               )}
             >
@@ -1809,7 +1806,7 @@ export default function ProductDetail() {
 
             <section
               className={cn(
-                "rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200/80 sm:p-5",
+                "rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200/80",
                 mobileDetailTab === "about" ? "block" : "hidden md:block",
               )}
             >
@@ -1829,7 +1826,7 @@ export default function ProductDetail() {
 
             <section
               className={cn(
-                "rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200/80 sm:p-5",
+                "rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200/80",
                 mobileDetailTab === "about" ? "block" : "hidden md:block",
               )}
             >

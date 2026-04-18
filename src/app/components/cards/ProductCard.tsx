@@ -2,7 +2,6 @@ import { Link } from "react-router";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { MapPin } from "lucide-react";
 import { useCurrency } from "../../hooks/useCurrency";
-import { optimizeListingImageUrl } from "../../utils/productImages";
 
 const PLACEHOLDER_IMG = "https://placehold.co/400x400/e5e7eb/9ca3af?text=No+Image";
 
@@ -37,7 +36,6 @@ export interface ProductCardProps {
   onLikeClick?: (e: ReactMouseEvent) => void;
   sellerId?: string;
   sellerFollowerCount?: number;
-  /** Seller display name from `profiles.full_name` (no username column). */
   sellerName?: string;
   verifiedSellerBadge?: string;
 }
@@ -75,7 +73,8 @@ export function ProductCard({
   const firstFromImages =
     Array.isArray(images) && typeof images[0] === "string" ? images[0].trim() : "";
   const rawImage = image?.trim() || firstFromImages || PLACEHOLDER_IMG;
-  const imageUrl = optimizeListingImageUrl(rawImage, { width: 400, quality: 70 });
+  // Use original URL without any resizing/cropping
+  const imageUrl = rawImage;
 
   const displayPrice =
     typeof priceDisplay === "string" && priceDisplay.trim() !== ""
@@ -92,7 +91,7 @@ export function ProductCard({
         <div
           style={{
             width: "100%",
-            height: "192px",
+            height: "240px", // increased from 192px for larger images
             overflow: "hidden",
             backgroundColor: "#f3f4f6",
             position: "relative",

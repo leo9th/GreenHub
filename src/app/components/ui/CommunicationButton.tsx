@@ -1,4 +1,4 @@
-import { MessageCircle } from "lucide-react";
+import { MessageCircle, Send } from "lucide-react";
 
 export interface CommunicationButtonProps {
   /** Full WhatsApp URL when already built (takes precedence). */
@@ -51,7 +51,7 @@ export function CommunicationButton({
         aria-label={`Chat on WhatsApp about ${productTitle}`}
         aria-disabled={disabled || undefined}
       >
-        <span aria-hidden>💬</span>
+        <Send className="h-4 w-4 shrink-0" aria-hidden />
         <span>WhatsApp</span>
       </a>
     );

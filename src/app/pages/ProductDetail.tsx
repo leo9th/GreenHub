@@ -269,10 +269,10 @@ function RelatedProductsCarousel({
                 className="group block rounded-xl overflow-hidden bg-gray-50/80 ring-1 ring-gray-100 hover:ring-[#22c55e]/35 transition-shadow hover:shadow-md"
               >
                 <div
-                  className="relative w-full overflow-hidden"
                   style={{
+                    position: "relative",
                     width: "100%",
-                    height: "240px",
+                    height: "180px",
                     overflow: "hidden",
                     backgroundColor: "#f3f4f6",
                   }}
@@ -282,6 +282,7 @@ function RelatedProductsCarousel({
                     alt={item.title}
                     loading="lazy"
                     style={{
+                      display: "block",
                       width: "100%",
                       height: "100%",
                       objectFit: "contain",
@@ -314,7 +315,7 @@ function RelatedProductsCarousel({
             type="button"
             aria-label="Previous related products"
             onClick={scrollPrev}
-            className="absolute left-0 top-[120px] z-10 -translate-x-1 -translate-y-1/2 sm:-translate-x-2 w-9 h-9 rounded-full bg-white shadow-md ring-1 ring-gray-200/80 flex items-center justify-center text-gray-800 hover:bg-gray-50 hover:text-[#15803d]"
+            className="absolute left-0 top-[90px] z-10 -translate-x-1 -translate-y-1/2 sm:-translate-x-2 w-9 h-9 rounded-full bg-white shadow-md ring-1 ring-gray-200/80 flex items-center justify-center text-gray-800 hover:bg-gray-50 hover:text-[#15803d]"
           >
             <ChevronLeft className="w-5 h-5" />
           </button>
@@ -322,7 +323,7 @@ function RelatedProductsCarousel({
             type="button"
             aria-label="Next related products"
             onClick={scrollNext}
-            className="absolute right-0 top-[120px] z-10 translate-x-1 -translate-y-1/2 sm:translate-x-2 w-9 h-9 rounded-full bg-white shadow-md ring-1 ring-gray-200/80 flex items-center justify-center text-gray-800 hover:bg-gray-50 hover:text-[#15803d]"
+            className="absolute right-0 top-[90px] z-10 translate-x-1 -translate-y-1/2 sm:translate-x-2 w-9 h-9 rounded-full bg-white shadow-md ring-1 ring-gray-200/80 flex items-center justify-center text-gray-800 hover:bg-gray-50 hover:text-[#15803d]"
           >
             <ChevronRight className="w-5 h-5" />
           </button>

@@ -268,26 +268,13 @@ function RelatedProductsCarousel({
                 to={`/products/${item.id}`}
                 className="group block rounded-xl overflow-hidden bg-gray-50/80 ring-1 ring-gray-100 hover:ring-[#22c55e]/35 transition-shadow hover:shadow-md"
               >
-                <div
-                  style={{
-                    position: "relative",
-                    width: "100%",
-                    height: "180px",
-                    overflow: "hidden",
-                    backgroundColor: "#f3f4f6",
-                  }}
-                >
+                <div className="gh-product-img-frame w-full" style={{ height: "180px" }}>
                   <img
+                    className="gh-product-img-contain"
                     src={item.image?.trim() ? item.image : RELATED_CAROUSEL_PLACEHOLDER_IMG}
                     alt={item.title}
                     loading="lazy"
-                    style={{
-                      display: "block",
-                      width: "100%",
-                      height: "100%",
-                      objectFit: "contain",
-                      objectPosition: "center",
-                    }}
+                    decoding="async"
                     onError={(e) => {
                       e.currentTarget.onerror = null;
                       e.currentTarget.src = RELATED_CAROUSEL_PLACEHOLDER_IMG;
@@ -1160,26 +1147,14 @@ export default function ProductDetail() {
                     role="presentation"
                   >
                     {product.images.length > 0 && mainDisplayImage ? (
-                      <div
-                        style={{
-                          width: "100%",
-                          height: "400px",
-                          overflow: "hidden",
-                          backgroundColor: "#f3f4f6",
-                        }}
-                      >
+                      <div className="gh-product-img-frame w-full" style={{ height: "400px" }}>
                         <img
+                          className="gh-product-img-contain cursor-zoom-in select-none"
                           src={mainDisplayImage}
                           alt={product.title}
                           draggable={false}
+                          decoding="async"
                           onDoubleClick={onMainImageDoubleClick}
-                          className="cursor-zoom-in select-none"
-                          style={{
-                            width: "100%",
-                            height: "100%",
-                            objectFit: "contain",
-                            objectPosition: "center",
-                          }}
                         />
                       </div>
                     ) : (
@@ -1304,26 +1279,13 @@ export default function ProductDetail() {
                       aria-current={index === galleryActiveIndex ? "true" : undefined}
                     >
                       {src ? (
-                        <div
-                          className="w-20"
-                          style={{
-                            width: "100%",
-                            height: "80px",
-                            overflow: "hidden",
-                            backgroundColor: "#f3f4f6",
-                          }}
-                        >
+                        <div className="gh-product-img-frame w-20 shrink-0" style={{ height: "80px" }}>
                           <img
+                            className="gh-product-img-contain cursor-pointer"
                             src={src}
                             alt={`Thumbnail ${index + 1}`}
                             loading="lazy"
-                            style={{
-                              width: "100%",
-                              height: "100%",
-                              objectFit: "contain",
-                              objectPosition: "center",
-                              cursor: "pointer",
-                            }}
+                            decoding="async"
                           />
                         </div>
                       ) : (
@@ -1357,25 +1319,14 @@ export default function ProductDetail() {
                     ✕
                   </button>
                   <div
-                    className="pointer-events-auto max-h-[90vh] max-w-[90vw]"
+                    className="gh-product-img-frame pointer-events-auto max-h-[90vh] max-w-[90vw]"
                     style={{
                       width: "min(90vw, 100%)",
                       height: "90vh",
-                      overflow: "hidden",
-                      backgroundColor: "#f3f4f6",
                     }}
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <img
-                      src={mainDisplayImage}
-                      alt=""
-                      style={{
-                        width: "100%",
-                        height: "100%",
-                        objectFit: "contain",
-                        objectPosition: "center",
-                      }}
-                    />
+                    <img className="gh-product-img-contain" src={mainDisplayImage} alt="" decoding="async" />
                   </div>
                 </div>
               ) : null}

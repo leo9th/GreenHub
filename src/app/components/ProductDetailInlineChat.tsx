@@ -3,6 +3,7 @@ import { useNavigate } from "react-router";
 import { Loader2, MessageCircle, Phone, ChevronDown, ChevronUp } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "../../lib/supabase";
+import { CommunicationButton } from "./ui/CommunicationButton";
 import {
   findConversationByPair,
   insertConversationPair,
@@ -50,6 +51,8 @@ export type ProductDetailInlineChatProps = {
   sellerLastActive: string | null;
   /** Raw `products.id` (number, string digits, UUID, bigint-serialized, etc.) */
   productId: string | number | null | undefined;
+  /** Product title for communication context */
+  productTitle: string;
   authUserId: string | undefined;
   isOwner: boolean;
   sellerTelHref: string;
@@ -64,6 +67,7 @@ export function ProductDetailInlineChat({
   sellerOnline,
   sellerLastActive,
   productId,
+  productTitle,
   authUserId,
   isOwner,
   sellerTelHref,
@@ -235,21 +239,16 @@ export function ProductDetailInlineChat({
         </button>
       </div>
 
-      {whatsappHref ? (
-        <a
-          href={whatsappHref}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="whatsapp-btn mt-2 inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl bg-[#25D366] px-4 text-sm font-semibold text-white shadow-sm transition hover:opacity-95"
-        >
-          <span aria-hidden>💬</span>
-          Chat on WhatsApp
-        </a>
-      ) : (
-        <div className="mt-2 inline-flex min-h-[44px] w-full items-center justify-center rounded-xl border border-gray-200 bg-gray-100 px-4 text-sm font-semibold text-gray-500">
-          WhatsApp not available
-        </div>
-      )}
+      <div className="mt-2 w-full">
+        <CommunicationButton
+          whatsappHref={whatsappHref}
+          productTitle={productTitle}
+          hasInternalChat={!isOwner && !!authUserId}
+          onChatClick={() => void sendMessage()}
+          className="w-full min-h-[44px] text-sm font-semibold px-4"
+          disabled={sendBusy}
+        />
+      </div>
 
       {showContact ? (
         <div className="mt-3 rounded-xl border border-gray-100 bg-gray-50/90 px-3 py-3 text-sm">

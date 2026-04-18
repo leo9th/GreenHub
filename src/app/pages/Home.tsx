@@ -5,7 +5,23 @@ import { ProductCard } from "../components/cards/ProductCard";
 import CategoryFilter, { type CategoryFilterSelection } from "../components/CategoryFilter";
 import { categories, categoryFilterLabelToDbValue } from "../data/catalogConstants";
 import type { ProductWithSeller } from "../types/productWithSeller";
-
+/**
+ * GreenHub Home Page - Two-Dimensional Infinite Scroll Architecture
+ *
+ * VERTICAL DIMENSION: Category rows stack vertically, allowing full-page scroll
+ * HORIZONTAL DIMENSION: Each category row scrolls left-to-right with snap alignment
+ *
+ * State Management:
+ * - `rowBySlug`: Dictionary keyed by category slug, each holding a CategoryRowState
+ * - `categoryHasMore`: Implicit in CategoryRowState.hasMore for each category
+ *
+ * Features:
+ * - Independent pagination: Each category loads/scrolles independently
+ * - Smooth snap alignment: snap-x snap-mandatory ensures cards always land perfectly
+ * - Hidden scrollbar: CSS scrollbar-hide class maintains app-like aesthetic
+ * - Real-time filtering: CategoryFilter updates visible rows instantly
+ * - Product linking: Cards reference products with seller data and images
+ */
 /** Products per horizontal “page” for each category row. */
 const ROW_PAGE_SIZE = 10;
 
@@ -119,7 +135,7 @@ function CategoryRow({ slug, title, row, onLoadMore }: CategoryRowProps) {
 
       <div
         ref={scrollRef}
-        className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-2 [scrollbar-width:thin] snap-x snap-mandatory [-webkit-overflow-scrolling:touch]"
+        className="-mx-1 flex gap-3 overflow-x-auto overflow-y-hidden px-1 pb-2 snap-x snap-mandatory scrollbar-hide [-webkit-overflow-scrolling:touch]"
       >
         {row.loading && row.products.length === 0 ? (
           <div className="flex gap-3 py-1">
@@ -139,7 +155,7 @@ function CategoryRow({ slug, title, row, onLoadMore }: CategoryRowProps) {
         {row.products.map((product) => {
           const p = mapProductToCardProps(product);
           return (
-            <div key={p.key} className="w-[160px] shrink-0 snap-start">
+            <div key={p.key} className="w-[160px] shrink-0 snap-start sm:w-[180px]">
               <ProductCard
                 id={p.id}
                 title={p.title}
@@ -160,7 +176,7 @@ function CategoryRow({ slug, title, row, onLoadMore }: CategoryRowProps) {
         {row.hasMore ? (
           <div
             ref={sentinelRef}
-            className="flex w-[120px] shrink-0 snap-start items-center justify-center self-stretch"
+            className="flex w-[160px] shrink-0 snap-start items-center justify-center self-stretch sm:w-[180px]"
           >
             {row.loadingMore ? (
               <span className="text-xs text-gray-500">Loading…</span>
@@ -168,7 +184,7 @@ function CategoryRow({ slug, title, row, onLoadMore }: CategoryRowProps) {
               <button
                 type="button"
                 onClick={() => onLoadMore(slug)}
-                className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+                className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 active:scale-95 transition-transform"
               >
                 Load more
               </button>

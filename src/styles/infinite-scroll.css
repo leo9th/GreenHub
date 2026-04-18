@@ -79,3 +79,13 @@
     transform: rotate(360deg);
   }
 }
+
+/* Scrollbar-free horizontal scrolling (maintains swipe functionality) */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}

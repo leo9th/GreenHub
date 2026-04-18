@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "../../lib/supabase";
+import { CommunicationButton } from "./ui/CommunicationButton";
 import {
   findConversationByPair,
   insertConversationPair,
@@ -165,6 +166,17 @@ export default function NewProductDetailInlineChat({
         >
           {showContact ? "Hide contact" : "Show contact"}
         </button>
+      </div>
+
+      <div className="mt-2 flex gap-2">
+        <CommunicationButton
+          whatsappHref={whatsappHref}
+          productTitle={productTitle || "this item"}
+          hasInternalChat={true}
+          onChatClick={() => void handleSend()}
+          className="flex-1 min-h-[40px]"
+          disabled={sending}
+        />
       </div>
 
       {showContact ? (

@@ -33,7 +33,7 @@ import { isOnlineFromLastActive, formatLastSeen } from "../utils/presence";
 import { getAvatarUrl } from "../utils/getAvatar";
 import { getProductPrice } from "../utils/getProductPrice";
 import { activeProductsQuery, mapProductRow } from "../utils/productSearch";
-import { getProductThumbnailUrl, optimizeListingImageUrl, parseProductImagesFromRow } from "../utils/productImages";
+import { getProductThumbnailUrl, parseProductImagesFromRow } from "../utils/productImages";
 import { recordProductView } from "../utils/recentlyViewedProducts";
 import { toast } from "sonner";
 import { BoostDetailBadge } from "../components/BoostBadge";
@@ -519,14 +519,6 @@ export default function ProductDetail() {
     if (galleryActiveIndex < 0) return "";
     return galleryImages[galleryActiveIndex] ?? "";
   }, [galleryActiveIndex, galleryImages]);
-
-  const mainDisplayImageSrc = useMemo(
-    () =>
-      mainDisplayImage
-        ? optimizeListingImageUrl(mainDisplayImage, { width: 800, quality: 80 })
-        : "",
-    [mainDisplayImage],
-  );
 
   const scheduleThumbnailSelect = useCallback((src: string) => {
     if (thumbnailClickDebounceRef.current != null) {
@@ -1176,7 +1168,7 @@ export default function ProductDetail() {
                         }}
                       >
                         <img
-                          src={mainDisplayImageSrc || mainDisplayImage}
+                          src={mainDisplayImage}
                           alt={product.title}
                           draggable={false}
                           onDoubleClick={onMainImageDoubleClick}
@@ -1312,8 +1304,9 @@ export default function ProductDetail() {
                     >
                       {src ? (
                         <div
+                          className="w-20"
                           style={{
-                            width: "80px",
+                            width: "100%",
                             height: "80px",
                             overflow: "hidden",
                             backgroundColor: "#f3f4f6",
@@ -1334,8 +1327,8 @@ export default function ProductDetail() {
                         </div>
                       ) : (
                         <div
-                          className="bg-gray-200"
-                          style={{ width: "80px", height: "80px" }}
+                          className="shrink-0 bg-gray-200"
+                          style={{ width: "80px", height: "80px", overflow: "hidden", backgroundColor: "#f3f4f6" }}
                           aria-hidden
                         />
                       )}
@@ -1362,19 +1355,27 @@ export default function ProductDetail() {
                   >
                     ✕
                   </button>
-                  <img
-                    src={mainDisplayImage}
-                    alt=""
+                  <div
+                    className="pointer-events-auto max-h-[90vh] max-w-[90vw]"
                     style={{
-                      maxHeight: "90vh",
-                      maxWidth: "90vw",
-                      width: "auto",
-                      height: "auto",
-                      objectFit: "contain",
-                      objectPosition: "center",
+                      width: "min(90vw, 100%)",
+                      height: "90vh",
+                      overflow: "hidden",
+                      backgroundColor: "#f3f4f6",
                     }}
                     onClick={(e) => e.stopPropagation()}
-                  />
+                  >
+                    <img
+                      src={mainDisplayImage}
+                      alt=""
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        objectFit: "contain",
+                        objectPosition: "center",
+                      }}
+                    />
+                  </div>
                 </div>
               ) : null}
             </div>
@@ -1566,11 +1567,21 @@ export default function ProductDetail() {
                   to={`/profile/${sellerPeerId}`}
                   className="flex items-start gap-3 rounded-xl p-1 -m-1 transition-colors hover:bg-gray-50/90"
                 >
-                  <img
-                    src={product.seller.avatar}
-                    alt=""
-                    className="w-12 h-12 rounded-full object-cover bg-gray-100 shrink-0 ring-1 ring-gray-100"
-                  />
+                  <div
+                    className="h-12 w-12 shrink-0 overflow-hidden rounded-full ring-1 ring-gray-100"
+                    style={{ backgroundColor: "#f3f4f6" }}
+                  >
+                    <img
+                      src={product.seller.avatar}
+                      alt=""
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        objectFit: "contain",
+                        objectPosition: "center",
+                      }}
+                    />
+                  </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1 flex-wrap">
                       <span className="relative font-semibold text-gray-900 inline-flex items-center gap-1.5">
@@ -1617,11 +1628,21 @@ export default function ProductDetail() {
                 </Link>
               ) : (
                 <div className="flex items-start gap-3">
-                  <img
-                    src={product.seller.avatar}
-                    alt=""
-                    className="w-12 h-12 rounded-full object-cover bg-gray-100 shrink-0 ring-1 ring-gray-100"
-                  />
+                  <div
+                    className="h-12 w-12 shrink-0 overflow-hidden rounded-full ring-1 ring-gray-100"
+                    style={{ backgroundColor: "#f3f4f6" }}
+                  >
+                    <img
+                      src={product.seller.avatar}
+                      alt=""
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        objectFit: "contain",
+                        objectPosition: "center",
+                      }}
+                    />
+                  </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1 flex-wrap">
                       <span className="relative font-semibold text-gray-900 inline-flex items-center gap-1.5">
@@ -1720,11 +1741,21 @@ export default function ProductDetail() {
                           className="shrink-0 rounded-full ring-1 ring-gray-100 hover:opacity-90"
                           aria-label={`View ${r.reviewer_name}'s profile`}
                         >
-                          <img
-                            src={r.reviewer_avatar}
-                            alt=""
-                            className="h-10 w-10 rounded-full bg-gray-100 object-cover"
-                          />
+                          <div
+                            className="h-10 w-10 shrink-0 overflow-hidden rounded-full"
+                            style={{ backgroundColor: "#f3f4f6" }}
+                          >
+                            <img
+                              src={r.reviewer_avatar}
+                              alt=""
+                              style={{
+                                width: "100%",
+                                height: "100%",
+                                objectFit: "contain",
+                                objectPosition: "center",
+                              }}
+                            />
+                          </div>
                         </Link>
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center justify-between gap-2">

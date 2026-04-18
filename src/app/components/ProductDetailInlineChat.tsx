@@ -219,28 +219,16 @@ export function ProductDetailInlineChat({
         />
       </label>
 
-      <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-stretch">
+      <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-stretch">
         <button
           type="button"
           disabled={sendBusy}
           onClick={() => void sendMessage()}
-          className="inline-flex min-h-[46px] flex-1 items-center justify-center gap-2 rounded-xl bg-[#16a34a] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#15803d] disabled:opacity-60"
+          className="inline-flex min-h-[46px] flex-1 items-center justify-center gap-2 rounded-xl bg-[#16a34a] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#15803d] disabled:opacity-60 sm:min-w-[9rem]"
         >
           {sendBusy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <MessageCircle className="h-4 w-4 shrink-0" aria-hidden />}
           Start chat
         </button>
-        <button
-          type="button"
-          onClick={() => setShowContact((v) => !v)}
-          className="inline-flex min-h-[46px] items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 text-sm font-semibold text-gray-800 transition hover:bg-gray-50"
-        >
-          <Phone className="h-4 w-4 shrink-0" aria-hidden />
-          Show contact
-          {showContact ? <ChevronUp className="h-4 w-4" aria-hidden /> : <ChevronDown className="h-4 w-4" aria-hidden />}
-        </button>
-      </div>
-
-      <div className="flex w-full gap-2 pt-2">
         <CommunicationButton
           whatsappHref={whatsappHref}
           phoneNumber={sellerPhoneDigits}
@@ -251,9 +239,18 @@ export function ProductDetailInlineChat({
             textareaRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
             toast.message("Type your message below.");
           }}
-          className="flex-1 min-h-[44px]"
+          className="min-h-[46px] flex-1 sm:min-w-[9rem]"
           disabled={sendBusy}
         />
+        <button
+          type="button"
+          onClick={() => setShowContact((v) => !v)}
+          className="inline-flex min-h-[46px] flex-1 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 text-sm font-semibold text-gray-800 transition hover:bg-gray-50 sm:min-w-[9rem]"
+        >
+          <Phone className="h-4 w-4 shrink-0" aria-hidden />
+          Show contact
+          {showContact ? <ChevronUp className="h-4 w-4" aria-hidden /> : <ChevronDown className="h-4 w-4" aria-hidden />}
+        </button>
       </div>
 
       {showContact ? (
@@ -262,31 +259,13 @@ export function ProductDetailInlineChat({
             <>
               <p className="font-medium text-gray-900">Seller phone</p>
               <p className="mt-1 break-all font-mono text-gray-800">{sellerTelHref.replace(/^tel:/, "")}</p>
-              <div className="mt-3 flex flex-wrap gap-2">
+              <div className="mt-3">
                 <a
                   href={sellerTelHref}
-                  className="inline-flex flex-1 min-w-[7rem] items-center justify-center rounded-lg bg-[#15803d] px-3 py-2 text-center text-xs font-semibold text-white hover:bg-[#166534]"
+                  className="inline-flex w-full min-w-[7rem] items-center justify-center rounded-lg bg-[#15803d] px-3 py-2 text-center text-xs font-semibold text-white hover:bg-[#166534] sm:w-auto"
                 >
                   Call
                 </a>
-                {whatsappHref ? (
-                  <a
-                    href={whatsappHref}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex flex-1 min-w-[7rem] items-center justify-center rounded-lg bg-[#25D366] px-3 py-2 text-center text-xs font-semibold text-white hover:opacity-95"
-                  >
-                    WhatsApp
-                  </a>
-                ) : (
-                  <button
-                    disabled
-                    className="inline-flex flex-1 min-w-[7rem] cursor-not-allowed items-center justify-center rounded-lg bg-slate-100 px-3 py-2 text-center text-xs font-semibold text-slate-400"
-                    title="This seller has not provided a WhatsApp number"
-                  >
-                    WhatsApp (Unavailable)
-                  </button>
-                )}
               </div>
             </>
           ) : (

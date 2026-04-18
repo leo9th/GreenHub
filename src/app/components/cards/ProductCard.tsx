@@ -91,11 +91,11 @@ export function ProductCard({
         <div
           style={{
             width: "100%",
-            height: "240px", // increased from 192px for larger images
+            height: "240px",
             overflow: "hidden",
             backgroundColor: "#f3f4f6",
-            position: "relative",
             borderRadius: "12px 12px 0 0",
+            position: "relative",
           }}
         >
           <img
@@ -113,7 +113,7 @@ export function ProductCard({
               e.currentTarget.src = PLACEHOLDER_IMG;
             }}
           />
-          {condition && (
+          {condition ? (
             <div
               style={{
                 position: "absolute",
@@ -124,12 +124,11 @@ export function ProductCard({
                 padding: "4px 10px",
                 fontSize: "10px",
                 fontWeight: "bold",
-                textTransform: "uppercase",
               }}
             >
               {condition}
             </div>
-          )}
+          ) : null}
         </div>
         <div className="flex flex-grow flex-col justify-between p-4">
           <div>

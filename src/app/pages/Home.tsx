@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { supabase } from "../../lib/supabase";
 import CategoryFilter, { type CategoryFilterSelection } from "../components/CategoryFilter";
+import { categoryFilterLabelToDbValue } from "../data/catalogConstants";
 import SimpleProductGrid from "../components/SimpleProductGrid";
 import type { ProductWithSeller } from "../types/productWithSeller";
 
@@ -36,8 +37,9 @@ export default function Home() {
       .eq("status", "active")
       .order("created_at", { ascending: false });
 
-    if (selectedCategory !== "All") {
-      query = query.eq("category", selectedCategory);
+    const categorySlug = categoryFilterLabelToDbValue(selectedCategory);
+    if (categorySlug) {
+      query = query.eq("category", categorySlug);
     }
 
     const { data, error: queryError } = await query.range(from, to);

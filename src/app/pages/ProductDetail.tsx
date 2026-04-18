@@ -33,7 +33,7 @@ import { isOnlineFromLastActive, formatLastSeen } from "../utils/presence";
 import { getAvatarUrl } from "../utils/getAvatar";
 import { getProductPrice } from "../utils/getProductPrice";
 import { activeProductsQuery, mapProductRow } from "../utils/productSearch";
-import { getProductThumbnailUrl, parseProductImagesFromRow } from "../utils/productImages";
+import { getProductThumbnailUrl, optimizeListingImageUrl, parseProductImagesFromRow } from "../utils/productImages";
 import { recordProductView } from "../utils/recentlyViewedProducts";
 import { toast } from "sonner";
 import { BoostDetailBadge } from "../components/BoostBadge";
@@ -365,6 +365,8 @@ export default function ProductDetail() {
   const [sellerFollowerCountLoading, setSellerFollowerCountLoading] = useState(false);
   const [sellerFollowerCountFailed, setSellerFollowerCountFailed] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
+  /** Debounce rapid thumbnail clicks so `setSelectedImage` does not run every frame. */
+  const thumbnailClickDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -502,6 +504,62 @@ export default function ProductDetail() {
       return imgs[0] ?? "";
     });
   }, [foundProduct?.id, foundProduct?.image, foundProduct?.images]);
+
+  const galleryImages = useMemo(() => {
+    if (!foundProduct) return [];
+    return parseProductImagesFromRow(foundProduct as { image?: unknown; images?: unknown });
+  }, [foundProduct?.id, foundProduct?.image, foundProduct?.images]);
+
+  const galleryActiveIndex = useMemo(() => {
+    if (galleryImages.length === 0) return -1;
+    const i = galleryImages.findIndex((u) => u === selectedImage);
+    return i >= 0 ? i : 0;
+  }, [galleryImages, selectedImage]);
+
+  const mainDisplayImage = useMemo(() => {
+    if (galleryActiveIndex < 0) return "";
+    return galleryImages[galleryActiveIndex] ?? "";
+  }, [galleryActiveIndex, galleryImages]);
+
+  const mainDisplayImageSrc = useMemo(
+    () =>
+      mainDisplayImage
+        ? optimizeListingImageUrl(mainDisplayImage, { width: 800, quality: 80 })
+        : "",
+    [mainDisplayImage],
+  );
+
+  const scheduleThumbnailSelect = useCallback((src: string) => {
+    if (thumbnailClickDebounceRef.current != null) {
+      clearTimeout(thumbnailClickDebounceRef.current);
+    }
+    thumbnailClickDebounceRef.current = window.setTimeout(() => {
+      thumbnailClickDebounceRef.current = null;
+      setSelectedImage(src);
+    }, 100);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (thumbnailClickDebounceRef.current != null) {
+        clearTimeout(thumbnailClickDebounceRef.current);
+      }
+    };
+  }, []);
+
+  const handlePrevImage = useCallback(() => {
+    if (galleryImages.length <= 1) return;
+    const cur = galleryActiveIndex >= 0 ? galleryActiveIndex : 0;
+    const next = cur === 0 ? galleryImages.length - 1 : cur - 1;
+    setSelectedImage(galleryImages[next] ?? "");
+  }, [galleryActiveIndex, galleryImages]);
+
+  const handleNextImage = useCallback(() => {
+    if (galleryImages.length <= 1) return;
+    const cur = galleryActiveIndex >= 0 ? galleryActiveIndex : 0;
+    const next = cur === galleryImages.length - 1 ? 0 : cur + 1;
+    setSelectedImage(galleryImages[next] ?? "");
+  }, [galleryActiveIndex, galleryImages]);
 
   useEffect(() => {
     if (!lightboxOpen) return;
@@ -893,8 +951,6 @@ export default function ProductDetail() {
   const isOwner = Boolean(authUser?.id && sellerPeerId && authUser.id === sellerPeerId);
   const canMessageSeller = Boolean(sellerPeerId);
 
-  const galleryImages = parseProductImagesFromRow(foundProduct as { image?: unknown; images?: unknown });
-
   const handleImageDoubleLike = async () => {
     if (!galleryImages.length) return;
     if (likeBusy) return;
@@ -974,32 +1030,6 @@ export default function ProductDetail() {
     ),
   };
 
-  const galleryActiveIndex =
-    product.images.length === 0
-      ? -1
-      : (() => {
-          const i = product.images.findIndex((u) => u === selectedImage);
-          return i >= 0 ? i : 0;
-        })();
-  const mainDisplayImage =
-    galleryActiveIndex >= 0 && product.images[galleryActiveIndex]
-      ? product.images[galleryActiveIndex]!
-      : "";
-
-  const handlePrevImage = () => {
-    if (product.images.length <= 1) return;
-    const cur = galleryActiveIndex >= 0 ? galleryActiveIndex : 0;
-    const next = cur === 0 ? product.images.length - 1 : cur - 1;
-    setSelectedImage(product.images[next] ?? "");
-  };
-
-  const handleNextImage = () => {
-    if (product.images.length <= 1) return;
-    const cur = galleryActiveIndex >= 0 ? galleryActiveIndex : 0;
-    const next = cur === product.images.length - 1 ? 0 : cur + 1;
-    setSelectedImage(product.images[next] ?? "");
-  };
-
   const onGalleryTouchStart = (e: ReactTouchEvent<HTMLDivElement>) => {
     const t = e.touches[0];
     if (!t) return;
@@ -1015,7 +1045,7 @@ export default function ProductDetail() {
     const dx = touch.clientX - start.x;
     const dy = touch.clientY - start.y;
 
-    if (product.images.length > 1 && Math.abs(dx) >= 48) {
+    if (galleryImages.length > 1 && Math.abs(dx) >= 48) {
       galleryDoubleTapRef.current = null;
       if (dx > 0) handlePrevImage();
       else handleNextImage();
@@ -1132,31 +1162,34 @@ export default function ProductDetail() {
                 >
                   <div
                     className="relative w-full cursor-zoom-in overflow-hidden rounded-xl"
-                    style={{
-                      width: "100%",
-                      height: "400px",
-                      overflow: "hidden",
-                      backgroundColor: "#f3f4f6",
-                    }}
                     onClick={() => {
                       if (product.images.length > 0) setLightboxOpen(true);
                     }}
                     role="presentation"
                   >
                     {product.images.length > 0 && mainDisplayImage ? (
-                      <img
-                        src={mainDisplayImage}
-                        alt={product.title}
-                        draggable={false}
-                        onDoubleClick={onMainImageDoubleClick}
-                        className="cursor-zoom-in select-none"
+                      <div
                         style={{
                           width: "100%",
-                          height: "100%",
-                          objectFit: "contain",
-                          objectPosition: "center",
+                          height: "400px",
+                          overflow: "hidden",
+                          backgroundColor: "#f3f4f6",
                         }}
-                      />
+                      >
+                        <img
+                          src={mainDisplayImageSrc || mainDisplayImage}
+                          alt={product.title}
+                          draggable={false}
+                          onDoubleClick={onMainImageDoubleClick}
+                          className="cursor-zoom-in select-none"
+                          style={{
+                            width: "100%",
+                            height: "100%",
+                            objectFit: "contain",
+                            objectPosition: "center",
+                          }}
+                        />
+                      </div>
                     ) : (
                       <div
                         className="flex min-h-[240px] w-full items-center justify-center px-6 py-16 text-center text-sm text-gray-400"
@@ -1271,7 +1304,7 @@ export default function ProductDetail() {
                     <button
                       key={`${src}-${index}`}
                       type="button"
-                      onClick={() => setSelectedImage(src)}
+                      onClick={() => scheduleThumbnailSelect(src)}
                       className={`relative shrink-0 overflow-hidden rounded-md border-2 transition-colors ${
                         index === galleryActiveIndex ? "border-emerald-500" : "border-transparent"
                       }`}
@@ -1290,6 +1323,7 @@ export default function ProductDetail() {
                           <img
                             src={src}
                             alt={`Thumbnail ${index + 1}`}
+                            loading="lazy"
                             style={{
                               width: "100%",
                               height: "100%",
@@ -1332,8 +1366,14 @@ export default function ProductDetail() {
                   <img
                     src={mainDisplayImage}
                     alt=""
-                    className="max-h-[90vh] max-w-[90vw]"
-                    style={{ objectFit: "contain", objectPosition: "center" }}
+                    style={{
+                      maxHeight: "90vh",
+                      maxWidth: "90vw",
+                      width: "auto",
+                      height: "auto",
+                      objectFit: "contain",
+                      objectPosition: "center",
+                    }}
                     onClick={(e) => e.stopPropagation()}
                   />
                 </div>

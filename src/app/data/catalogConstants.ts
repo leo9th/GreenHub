@@ -9,6 +9,15 @@ export const categories = [
   { id: "other", name: "Other", icon: "📦", emoji: "📦" },
 ];
 
+/**
+ * Maps CategoryFilter chip labels to `products.category` values (slug ids from Add Product).
+ */
+export function categoryFilterLabelToDbValue(filterLabel: string): string | null {
+  if (filterLabel === "All") return null;
+  const row = categories.find((c) => c.name === filterLabel);
+  return row?.id ?? null;
+}
+
 export const deliveryServices = [
   { name: "GlobalExpress", logo: "✈️", description: "Fast international delivery" },
   { name: "Local Sendy", logo: "📦", description: "Same-day local delivery" },

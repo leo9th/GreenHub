@@ -152,6 +152,23 @@ function applyHomePageMeta(origin: string) {
   upsertHeadMeta("name", "twitter:image", defaultImage);
 }
 
+const RELATED_CAROUSEL_PLACEHOLDER_IMG =
+  "https://placehold.co/400x400/e5e7eb/9ca3af?text=No+Image";
+
+/** Same resolution order as ProductCard: parsed gallery first, then raw `image` / `images[0]`. */
+function resolveRelatedCarouselThumb(row: Record<string, unknown>): string {
+  const parsed = getProductThumbnailUrl(row).trim();
+  if (parsed) return parsed;
+  const direct = row.image;
+  if (typeof direct === "string" && direct.trim()) return direct.trim();
+  const arr = row.images;
+  if (Array.isArray(arr)) {
+    const first = arr.find((x) => typeof x === "string" && String(x).trim());
+    if (first) return String(first).trim();
+  }
+  return "";
+}
+
 type RelatedCarouselItem = {
   id: string | number;
   title: string;
@@ -252,16 +269,30 @@ function RelatedProductsCarousel({
                 to={`/products/${item.id}`}
                 className="group block rounded-xl overflow-hidden bg-gray-50/80 ring-1 ring-gray-100 hover:ring-[#22c55e]/35 transition-shadow hover:shadow-md"
               >
-                <div className="relative aspect-[16/9] w-full overflow-hidden bg-gray-100">
-                  {item.image ? (
-                    <img
-                      src={optimizeListingImageUrl(item.image, { width: 400, quality: 70 })}
-                      alt={item.title}
-                      className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
-                    />
-                  ) : (
-                    <div className="h-full w-full bg-gray-200" aria-hidden />
-                  )}
+                <div
+                  className="relative w-full overflow-hidden"
+                  style={{
+                    width: "100%",
+                    height: "240px",
+                    overflow: "hidden",
+                    backgroundColor: "#f3f4f6",
+                  }}
+                >
+                  <img
+                    src={item.image?.trim() ? item.image : RELATED_CAROUSEL_PLACEHOLDER_IMG}
+                    alt={item.title}
+                    loading="lazy"
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      objectFit: "contain",
+                      objectPosition: "center",
+                    }}
+                    onError={(e) => {
+                      e.currentTarget.onerror = null;
+                      e.currentTarget.src = RELATED_CAROUSEL_PLACEHOLDER_IMG;
+                    }}
+                  />
                   <span className="absolute top-2 left-2 bg-[#16a34a] text-white text-[10px] font-semibold px-2 py-0.5 rounded-md">
                     {item.condition || "—"}
                   </span>
@@ -284,7 +315,7 @@ function RelatedProductsCarousel({
             type="button"
             aria-label="Previous related products"
             onClick={scrollPrev}
-            className="absolute left-0 top-[62px] z-10 -translate-x-1 sm:-translate-x-2 w-9 h-9 rounded-full bg-white shadow-md ring-1 ring-gray-200/80 flex items-center justify-center text-gray-800 hover:bg-gray-50 hover:text-[#15803d]"
+            className="absolute left-0 top-[120px] z-10 -translate-x-1 -translate-y-1/2 sm:-translate-x-2 w-9 h-9 rounded-full bg-white shadow-md ring-1 ring-gray-200/80 flex items-center justify-center text-gray-800 hover:bg-gray-50 hover:text-[#15803d]"
           >
             <ChevronLeft className="w-5 h-5" />
           </button>
@@ -292,7 +323,7 @@ function RelatedProductsCarousel({
             type="button"
             aria-label="Next related products"
             onClick={scrollNext}
-            className="absolute right-0 top-[62px] z-10 translate-x-1 sm:translate-x-2 w-9 h-9 rounded-full bg-white shadow-md ring-1 ring-gray-200/80 flex items-center justify-center text-gray-800 hover:bg-gray-50 hover:text-[#15803d]"
+            className="absolute right-0 top-[120px] z-10 translate-x-1 -translate-y-1/2 sm:translate-x-2 w-9 h-9 rounded-full bg-white shadow-md ring-1 ring-gray-200/80 flex items-center justify-center text-gray-800 hover:bg-gray-50 hover:text-[#15803d]"
           >
             <ChevronRight className="w-5 h-5" />
           </button>
@@ -656,14 +687,17 @@ export default function ProductDetail() {
       }
 
       const rows = (data ?? []).map((r) => mapProductRow(r as Record<string, unknown>));
-      const mapped = rows.map((r) => ({
-        id: r.id as string | number,
-        title: String((r as { title?: string }).title ?? ""),
-        image: getProductThumbnailUrl(r as Record<string, unknown>),
-        price: typeof r.price === "number" ? r.price : getProductPrice(r as { price?: unknown; price_local?: unknown }),
-        location: String((r as { location?: string }).location ?? ""),
-        condition: String((r as { condition?: string }).condition ?? "Like New"),
-      }));
+      const mapped = rows.map((r) => {
+        const row = r as Record<string, unknown>;
+        return {
+          id: r.id as string | number,
+          title: String((r as { title?: string }).title ?? ""),
+          image: resolveRelatedCarouselThumb(row),
+          price: typeof r.price === "number" ? r.price : getProductPrice(r as { price?: unknown; price_local?: unknown }),
+          location: String((r as { location?: string }).location ?? ""),
+          condition: String((r as { condition?: string }).condition ?? "Like New"),
+        };
+      });
       setRelatedProducts(shuffleRelatedProducts(mapped));
     };
 
@@ -705,14 +739,17 @@ export default function ProductDetail() {
 
       const rows = (data ?? []).map((r) => mapProductRow(r as Record<string, unknown>));
       setMoreFromSeller(
-        rows.map((r) => ({
-          id: r.id as string | number,
-          title: String((r as { title?: string }).title ?? ""),
-          image: getProductThumbnailUrl(r as Record<string, unknown>),
-          price: typeof r.price === "number" ? r.price : getProductPrice(r as { price?: unknown; price_local?: unknown }),
-          location: String((r as { location?: string }).location ?? ""),
-          condition: String((r as { condition?: string }).condition ?? "Like New"),
-        })),
+        rows.map((r) => {
+          const row = r as Record<string, unknown>;
+          return {
+            id: r.id as string | number,
+            title: String((r as { title?: string }).title ?? ""),
+            image: resolveRelatedCarouselThumb(row),
+            price: typeof r.price === "number" ? r.price : getProductPrice(r as { price?: unknown; price_local?: unknown }),
+            location: String((r as { location?: string }).location ?? ""),
+            condition: String((r as { condition?: string }).condition ?? "Like New"),
+          };
+        }),
       );
     };
 

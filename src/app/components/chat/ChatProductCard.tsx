@@ -73,19 +73,18 @@ export function ChatProductCard({
     >
       <Link
         to={detailUrl}
-        className="block rounded-md overflow-hidden transition-transform hover:scale-105 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
+        className="block rounded-md transition-transform hover:scale-105 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
       >
         <div
-          className="relative w-full bg-gray-100"
+          className="relative w-full overflow-hidden rounded-md bg-gray-100"
           style={{
             aspectRatio: "16 / 9",
-            overflow: "hidden",
           }}
         >
           <img
             src={imageToShow}
             alt={title}
-            className="h-full w-full object-cover"
+            className="h-full w-full object-contain"
             onError={(e) => {
               e.currentTarget.onerror = null;
               e.currentTarget.src = PLACEHOLDER;

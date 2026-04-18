@@ -939,7 +939,7 @@ export default function Profile() {
                       <Link
                         key={String(p.id)}
                         to={`/products/${p.id}`}
-                        className="bg-white rounded-xl ring-1 ring-gray-100 overflow-hidden hover:ring-gray-200 hover:shadow-sm transition-shadow"
+                        className="bg-white rounded-xl ring-1 ring-gray-100 hover:ring-gray-200 hover:shadow-sm transition-shadow"
                       >
                         <div className="aspect-[4/3] bg-gray-100">
                           <img

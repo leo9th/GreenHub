@@ -257,7 +257,8 @@ function RelatedProductsCarousel({
       onMouseEnter={() => setIsHovering(true)}
       onMouseLeave={() => setIsHovering(false)}
     >
-      <div className="overflow-hidden sm:rounded-xl" ref={emblaRef}>
+      {/* overflow-x clip only — no border-radius here (would clip slide corners). Card rounding is on each Link / image frame. */}
+      <div className="overflow-hidden" ref={emblaRef}>
         <div className="flex -ml-3 sm:-ml-4 touch-pan-x">
           {items.map((item) => (
             <div
@@ -266,13 +267,13 @@ function RelatedProductsCarousel({
             >
               <Link
                 to={`/products/${item.id}`}
-                className="group block rounded-xl overflow-hidden bg-gray-50/80 ring-1 ring-gray-100 hover:ring-[#22c55e]/35 transition-shadow hover:shadow-md"
+                className="group block rounded-xl ring-1 ring-gray-100 transition-shadow hover:shadow-md hover:ring-[#22c55e]/35"
               >
-                <div className="gh-product-img-frame w-full" style={{ height: "180px" }}>
+                <div className="relative rounded-t-xl overflow-hidden bg-gray-100">
                   <img
-                    className="gh-product-img-contain"
                     src={item.image?.trim() ? item.image : RELATED_CAROUSEL_PLACEHOLDER_IMG}
                     alt={item.title}
+                    className="h-48 w-full object-contain"
                     loading="lazy"
                     decoding="async"
                     onError={(e) => {
@@ -280,15 +281,15 @@ function RelatedProductsCarousel({
                       e.currentTarget.src = RELATED_CAROUSEL_PLACEHOLDER_IMG;
                     }}
                   />
-                  <span className="absolute top-2 left-2 bg-[#16a34a] text-white text-[10px] font-semibold px-2 py-0.5 rounded-md">
+                  <span className="absolute left-2 top-2 bg-[#16a34a] px-2 py-0.5 text-[10px] font-semibold text-white rounded-md">
                     {item.condition || "—"}
                   </span>
                 </div>
-                <div className="p-2.5">
-                  <h3 className="text-xs font-medium text-gray-900 mb-1 line-clamp-2 leading-snug group-hover:text-[#15803d]">
+                <div className="rounded-b-xl bg-white p-3">
+                  <h3 className="mb-1 line-clamp-2 text-xs font-medium leading-snug text-gray-900 group-hover:text-[#15803d]">
                     {item.title}
                   </h3>
-                  <p className="text-sm font-bold text-gray-900 tabular-nums">{formatPrice(item.price)}</p>
+                  <p className="text-sm font-bold tabular-nums text-gray-900">{formatPrice(item.price)}</p>
                 </div>
               </Link>
             </div>
@@ -302,7 +303,7 @@ function RelatedProductsCarousel({
             type="button"
             aria-label="Previous related products"
             onClick={scrollPrev}
-            className="absolute left-0 top-[90px] z-10 -translate-x-1 -translate-y-1/2 sm:-translate-x-2 w-9 h-9 rounded-full bg-white shadow-md ring-1 ring-gray-200/80 flex items-center justify-center text-gray-800 hover:bg-gray-50 hover:text-[#15803d]"
+            className="absolute left-0 top-[96px] z-10 -translate-x-1 -translate-y-1/2 sm:-translate-x-2 w-9 h-9 rounded-full bg-white shadow-md ring-1 ring-gray-200/80 flex items-center justify-center text-gray-800 hover:bg-gray-50 hover:text-[#15803d]"
           >
             <ChevronLeft className="w-5 h-5" />
           </button>
@@ -310,7 +311,7 @@ function RelatedProductsCarousel({
             type="button"
             aria-label="Next related products"
             onClick={scrollNext}
-            className="absolute right-0 top-[90px] z-10 translate-x-1 -translate-y-1/2 sm:translate-x-2 w-9 h-9 rounded-full bg-white shadow-md ring-1 ring-gray-200/80 flex items-center justify-center text-gray-800 hover:bg-gray-50 hover:text-[#15803d]"
+            className="absolute right-0 top-[96px] z-10 translate-x-1 -translate-y-1/2 sm:translate-x-2 w-9 h-9 rounded-full bg-white shadow-md ring-1 ring-gray-200/80 flex items-center justify-center text-gray-800 hover:bg-gray-50 hover:text-[#15803d]"
           >
             <ChevronRight className="w-5 h-5" />
           </button>
@@ -1130,36 +1131,40 @@ export default function ProductDetail() {
         <div className="grid grid-cols-1 md:grid-cols-12 md:items-start md:gap-4 lg:gap-6 xl:gap-10 2xl:gap-12">
           <div className="flex shrink-0 justify-center md:col-span-5 md:justify-start md:sticky md:top-14 lg:col-span-5">
             <div className="relative w-full max-w-[520px] md:max-w-none mx-auto">
-              <div className="relative rounded-2xl overflow-hidden bg-white shadow-sm ring-1 ring-gray-200/90">
-                <div
-                  className="relative touch-manipulation"
-                  role="region"
-                  aria-label="Product gallery"
-                  aria-roledescription="carousel"
-                  onTouchStart={onGalleryTouchStart}
-                  onTouchEnd={onGalleryTouchEnd}
-                >
+              <div className="relative rounded-2xl bg-white shadow-sm ring-1 ring-gray-200/90">
+                <div className="p-4">
                   <div
-                    className="relative w-full cursor-zoom-in overflow-hidden rounded-xl"
-                    onClick={() => {
-                      if (product.images.length > 0) setLightboxOpen(true);
-                    }}
-                    role="presentation"
+                    className="relative touch-manipulation"
+                    role="region"
+                    aria-label="Product gallery"
+                    aria-roledescription="carousel"
+                    onTouchStart={onGalleryTouchStart}
+                    onTouchEnd={onGalleryTouchEnd}
                   >
-                    {product.images.length > 0 && mainDisplayImage ? (
-                      <div className="gh-product-img-frame w-full" style={{ height: "400px" }}>
-                        <img
-                          className="gh-product-img-contain cursor-zoom-in select-none"
-                          src={mainDisplayImage}
-                          alt={product.title}
-                          draggable={false}
-                          decoding="async"
-                          onDoubleClick={onMainImageDoubleClick}
-                        />
+                    <div
+                      className="relative w-full cursor-zoom-in"
+                      onClick={() => {
+                        if (product.images.length > 0) setLightboxOpen(true);
+                      }}
+                      role="presentation"
+                    >
+                      {product.images.length > 0 && mainDisplayImage ? (
+                        <div
+                          className="gh-product-img-frame w-full rounded-2xl bg-gray-100"
+                          style={{ height: "400px" }}
+                        >
+                          <img
+                            className="gh-product-img-contain cursor-zoom-in select-none"
+                            src={mainDisplayImage}
+                            alt={product.title}
+                            draggable={false}
+                            decoding="async"
+                            onDoubleClick={onMainImageDoubleClick}
+                          />
                       </div>
                     ) : (
                       <div
-                        className="flex min-h-[240px] w-full items-center justify-center px-6 py-16 text-center text-sm text-gray-400"
+                        className="flex min-h-[240px] w-full items-center justify-center rounded-2xl px-6 py-16 text-center text-sm text-gray-400"
                         aria-hidden
                       >
                         No image
@@ -1264,6 +1269,7 @@ export default function ProductDetail() {
                     </span>
                   ) : null}
                 </div>
+                </div>
               </div>
               {product.images.length > 1 ? (
                 <div className="mt-4 flex w-full gap-2 overflow-x-auto pb-2 [-webkit-overflow-scrolling:touch]">
@@ -1272,14 +1278,14 @@ export default function ProductDetail() {
                       key={`${src}-${index}`}
                       type="button"
                       onClick={() => scheduleThumbnailSelect(src)}
-                      className={`relative shrink-0 overflow-hidden rounded-md border-2 transition-colors ${
+                      className={`relative shrink-0 rounded-md border-2 transition-colors ${
                         index === galleryActiveIndex ? "border-emerald-500" : "border-transparent"
                       }`}
                       aria-label={`Show image ${index + 1} of ${product.images.length}`}
                       aria-current={index === galleryActiveIndex ? "true" : undefined}
                     >
                       {src ? (
-                        <div className="gh-product-img-frame w-20 shrink-0" style={{ height: "80px" }}>
+                        <div className="gh-product-img-frame w-20 shrink-0 rounded-md bg-gray-100" style={{ height: "80px" }}>
                           <img
                             className="gh-product-img-contain cursor-pointer"
                             src={src}
@@ -1319,7 +1325,7 @@ export default function ProductDetail() {
                     ✕
                   </button>
                   <div
-                    className="gh-product-img-frame pointer-events-auto max-h-[90vh] max-w-[90vw]"
+                    className="gh-product-img-frame pointer-events-auto max-h-[90vh] max-w-[90vw] rounded-xl bg-gray-100"
                     style={{
                       width: "min(90vw, 100%)",
                       height: "90vh",

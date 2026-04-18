@@ -13,9 +13,9 @@ export function ProductCardSkeletonGrid({ count = 8, className = "" }: Props) {
       {Array.from({ length: count }, (_, i) => (
         <div
           key={i}
-          className="product-card w-full min-w-[160px] overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-border dark:bg-card"
+          className="product-card w-full min-w-[160px] rounded-xl border border-gray-200 bg-white dark:border-border dark:bg-card"
         >
-          <div className="product-card-skeleton__image h-[240px] w-full shrink-0 overflow-hidden md:h-[280px]" />
+          <div className="product-card-skeleton__image h-[240px] w-full shrink-0 overflow-hidden rounded-t-xl md:h-[280px]" />
           <div
             className="flex flex-col gap-1 border-t border-gray-100 bg-white dark:border-border dark:bg-card"
             style={{ padding: "10px 12px" }}

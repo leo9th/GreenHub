@@ -34,7 +34,7 @@ export function Profile() {
       <div className="p-4 space-y-6">
         <div>
           <h2 className="text-foreground mb-3">Account</h2>
-          <div className="bg-white rounded-lg border border-border overflow-hidden">
+          <div className="bg-white rounded-lg border border-border">
             <Link
               to="/profile/edit"
               className="flex items-center justify-between p-4 border-b border-border hover:bg-muted transition-colors"
@@ -70,7 +70,7 @@ export function Profile() {
 
         <div>
           <h2 className="text-foreground mb-3">My Activity</h2>
-          <div className="bg-white rounded-lg border border-border overflow-hidden">
+          <div className="bg-white rounded-lg border border-border">
             <Link
               to="/orders"
               className="flex items-center justify-between p-4 border-b border-border hover:bg-muted transition-colors"
@@ -99,7 +99,7 @@ export function Profile() {
 
         <div>
           <h2 className="text-foreground mb-3">Settings</h2>
-          <div className="bg-white rounded-lg border border-border overflow-hidden">
+          <div className="bg-white rounded-lg border border-border">
             <Link
               to="/settings/notifications"
               className="flex items-center justify-between p-4 border-b border-border hover:bg-muted transition-colors"
@@ -148,7 +148,7 @@ export function Profile() {
 
         <div>
           <h2 className="text-foreground mb-3">Support</h2>
-          <div className="bg-white rounded-lg border border-border overflow-hidden">
+          <div className="bg-white rounded-lg border border-border">
             <Link
               to="/help"
               className="flex items-center justify-between p-4 border-b border-border hover:bg-muted transition-colors"

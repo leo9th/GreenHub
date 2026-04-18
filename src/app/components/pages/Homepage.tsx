@@ -108,7 +108,7 @@ export function Homepage() {
               <Link
                 key={product.id}
                 to={`/products/${product.id}`}
-                className="bg-white rounded-lg border border-border overflow-hidden hover:shadow-md transition-shadow"
+                className="bg-white rounded-lg border border-border hover:shadow-md transition-shadow"
               >
                 <div className="aspect-square bg-muted relative">
                   <img

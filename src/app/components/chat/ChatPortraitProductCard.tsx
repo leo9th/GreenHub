@@ -24,7 +24,7 @@ export function ChatPortraitProductCard({
   disableLink,
 }: ChatPortraitProductCardProps) {
   const shellClass =
-    "mt-1.5 flex w-[7.75rem] cursor-pointer flex-col overflow-hidden rounded-xl border border-orange-100/90 bg-white shadow-[0_1px_4px_rgba(0,0,0,0.08)] ring-1 ring-black/[0.04] transition hover:border-orange-200 hover:shadow-md sm:w-[8.5rem]";
+    "mt-1.5 flex w-[7.75rem] cursor-pointer flex-col rounded-xl border border-orange-100/90 bg-white shadow-[0_1px_4px_rgba(0,0,0,0.08)] ring-1 ring-black/[0.04] transition hover:border-orange-200 hover:shadow-md sm:w-[8.5rem]";
 
   const inner = (
     <>
@@ -32,7 +32,7 @@ export function ChatPortraitProductCard({
         <img
           src={imageUrl || "https://placehold.co/300x400/png?text=No+image"}
           alt=""
-          className="h-full w-full object-cover"
+          className="h-full w-full object-contain"
           loading="lazy"
           draggable={false}
         />

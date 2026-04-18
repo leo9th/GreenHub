@@ -138,7 +138,7 @@ export function Orders() {
             const StatusIcon = status.icon;
 
             return (
-              <div key={order.id} className="bg-white rounded-lg border border-border overflow-hidden">
+              <div key={order.id} className="bg-white rounded-lg border border-border">
                 <div className="p-4 border-b border-border">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-sm text-muted-foreground">Order {order.id}</span>

@@ -26,6 +26,7 @@ video {
  * Global `img { height: auto }` plus `height:100%` fill can still crop with `object-fit:contain` in some layouts.
  * Pattern: flex-centered frame + intrinsic-sized img with object-fit: contain.
  */
+/* Border-radius + overflow on this same element clip the image. */
 .gh-product-img-frame {
   display: flex;
   align-items: center;

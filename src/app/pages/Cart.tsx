@@ -66,8 +66,13 @@ export default function Cart() {
         {cartItems.map((item) => (
           <div key={item.id} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
             <div className="flex gap-4 mb-4">
-              <Link to={`/products/${item.id}`} className="w-24 h-24 bg-gray-50 rounded-lg overflow-hidden flex-shrink-0 border border-gray-100">
-                <img src={item.image} alt={item.title} className="w-full h-full object-cover" />
+              <Link
+                to={`/products/${item.id}`}
+                className="flex h-24 w-24 shrink-0 rounded-lg border border-gray-100 bg-gray-50"
+              >
+                <div className="h-full w-full overflow-hidden rounded-lg bg-gray-100">
+                  <img src={item.image} alt={item.title} className="h-full w-full object-contain" />
+                </div>
               </Link>
               <div className="flex-1 min-w-0 py-1">
                 <Link to={`/products/${item.id}`}>

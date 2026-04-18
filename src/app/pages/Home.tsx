@@ -1,80 +1,261 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { supabase } from "../../lib/supabase";
+import { ProductCard } from "../components/cards/ProductCard";
 import CategoryFilter, { type CategoryFilterSelection } from "../components/CategoryFilter";
-import { categoryFilterLabelToDbValue } from "../data/catalogConstants";
-import SimpleProductGrid from "../components/SimpleProductGrid";
+import { categories, categoryFilterLabelToDbValue } from "../data/catalogConstants";
 import type { ProductWithSeller } from "../types/productWithSeller";
 
-const LIMIT = 12;
+/** Products per horizontal “page” for each category row. */
+const ROW_PAGE_SIZE = 10;
+
+type CategoryRowState = {
+  products: ProductWithSeller[];
+  nextPage: number;
+  hasMore: boolean;
+  loading: boolean;
+  loadingMore: boolean;
+  error: string | null;
+};
+
+const emptyRow = (): CategoryRowState => ({
+  products: [],
+  nextPage: 0,
+  hasMore: true,
+  loading: true,
+  loadingMore: false,
+  error: null,
+});
+
+function mapProductToCardProps(product: ProductWithSeller) {
+  const seller = product.seller;
+  const legacyProfile = product.profiles as { full_name?: string } | null | undefined;
+  const sellerName =
+    seller && typeof seller.full_name === "string" && seller.full_name.trim() !== ""
+      ? seller.full_name.trim()
+      : legacyProfile && typeof legacyProfile.full_name === "string" && legacyProfile.full_name.trim() !== ""
+        ? legacyProfile.full_name.trim()
+        : undefined;
+
+  return {
+    key: String(product.id),
+    id: String(product.id ?? ""),
+    title: String(product.title ?? ""),
+    price: Number(product.price_local ?? product.price ?? 0) || 0,
+    priceLocal: Number(product.price_local ?? 0) || undefined,
+    image: typeof product.image === "string" ? product.image : "",
+    images: Array.isArray(product.images) ? (product.images as string[]) : undefined,
+    location: typeof product.location === "string" ? product.location : "",
+    city: typeof product.city === "string" ? product.city : "",
+    state: typeof product.state === "string" ? product.state : "",
+    condition: typeof product.condition === "string" ? product.condition : "",
+    sellerName,
+  };
+}
+
+async function fetchCategoryPage(
+  categorySlug: string,
+  pageIndex: number,
+): Promise<{ rows: ProductWithSeller[]; error: string | null }> {
+  const from = pageIndex * ROW_PAGE_SIZE;
+  const to = from + ROW_PAGE_SIZE - 1;
+
+  const { data, error } = await supabase
+    .from("products")
+    .select("*, seller:profiles!products_seller_id_fkey(full_name, avatar_url, rating)")
+    .eq("status", "active")
+    .eq("category", categorySlug)
+    .order("created_at", { ascending: false })
+    .range(from, to);
+
+  if (error) {
+    return { rows: [], error: error.message };
+  }
+  return { rows: ((data as ProductWithSeller[]) ?? []).filter(Boolean), error: null };
+}
+
+type CategoryRowProps = {
+  slug: string;
+  title: string;
+  row: CategoryRowState;
+  onLoadMore: (slug: string) => void;
+};
+
+function CategoryRow({ slug, title, row, onLoadMore }: CategoryRowProps) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const root = scrollRef.current;
+    const target = sentinelRef.current;
+    if (!root || !target || !row.hasMore || row.loading || row.loadingMore) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const hit = entries.some((e) => e.isIntersecting);
+        if (hit) onLoadMore(slug);
+      },
+      { root, rootMargin: "120px", threshold: 0 },
+    );
+
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [slug, row.hasMore, row.loading, row.loadingMore, row.products.length, onLoadMore]);
+
+  return (
+    <section className="mb-8" aria-labelledby={`home-row-${slug}`}>
+      <div className="mb-3 flex items-baseline justify-between gap-2 px-0.5">
+        <h2 id={`home-row-${slug}`} className="text-base font-semibold text-gray-900 sm:text-lg">
+          {title}
+        </h2>
+        <Link to="/products" className="shrink-0 text-xs font-medium text-[#16a34a] hover:underline sm:text-sm">
+          See all
+        </Link>
+      </div>
+
+      {row.error ? (
+        <p className="mb-2 text-sm text-amber-700">{row.error}</p>
+      ) : null}
+
+      <div
+        ref={scrollRef}
+        className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-2 [scrollbar-width:thin] snap-x snap-mandatory [-webkit-overflow-scrolling:touch]"
+      >
+        {row.loading && row.products.length === 0 ? (
+          <div className="flex gap-3 py-1">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div
+                key={`sk-${slug}-${i}`}
+                className="h-[280px] w-[160px] shrink-0 snap-start animate-pulse rounded-2xl bg-gray-200"
+              />
+            ))}
+          </div>
+        ) : null}
+
+        {!row.loading && row.products.length === 0 ? (
+          <p className="py-4 text-sm text-gray-500">No products in this category yet.</p>
+        ) : null}
+
+        {row.products.map((product) => {
+          const p = mapProductToCardProps(product);
+          return (
+            <div key={p.key} className="w-[160px] shrink-0 snap-start">
+              <ProductCard
+                id={p.id}
+                title={p.title}
+                price={p.price}
+                priceLocal={p.priceLocal}
+                image={p.image}
+                images={p.images}
+                location={p.location}
+                city={p.city}
+                state={p.state}
+                condition={p.condition}
+                sellerName={p.sellerName}
+              />
+            </div>
+          );
+        })}
+
+        {row.hasMore ? (
+          <div
+            ref={sentinelRef}
+            className="flex w-[120px] shrink-0 snap-start items-center justify-center self-stretch"
+          >
+            {row.loadingMore ? (
+              <span className="text-xs text-gray-500">Loading…</span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => onLoadMore(slug)}
+                className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+              >
+                Load more
+              </button>
+            )}
+          </div>
+        ) : null}
+      </div>
+    </section>
+  );
+}
 
 export default function Home() {
   const [selectedCategory, setSelectedCategory] = useState<CategoryFilterSelection>("All");
-  const [products, setProducts] = useState<ProductWithSeller[]>([]);
-  const [page, setPage] = useState(0);
-  const [isLoading, setIsLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [rowBySlug, setRowBySlug] = useState<Record<string, CategoryRowState>>({});
 
-  const fetchProducts = async (isNewCategory = false) => {
-    const currentPage = isNewCategory ? 0 : page;
-    const from = currentPage * LIMIT;
-    const to = from + LIMIT - 1;
-
-    if (isNewCategory) {
-      setIsLoading(true);
-      setProducts([]);
-    } else {
-      setLoadingMore(true);
+  const slugsToShow = useMemo(() => {
+    if (selectedCategory === "All") {
+      return categories.map((c) => c.id);
     }
-
-    setError(null);
-
-    let query = supabase
-      .from("products")
-      .select("*, seller:profiles!products_seller_id_fkey(full_name, avatar_url, rating)")
-      .eq("status", "active")
-      .order("created_at", { ascending: false });
-
-    const categorySlug = categoryFilterLabelToDbValue(selectedCategory);
-    if (categorySlug) {
-      query = query.eq("category", categorySlug);
-    }
-
-    const { data, error: queryError } = await query.range(from, to);
-
-    if (queryError) {
-      if (isNewCategory) {
-        setProducts([]);
-      }
-      setHasMore(false);
-      setError(queryError.message);
-    } else {
-      const incoming = (data as ProductWithSeller[]) ?? [];
-      setProducts((prev) => (isNewCategory ? incoming : [...prev, ...incoming]));
-      setHasMore(incoming.length === LIMIT);
-    }
-
-    setIsLoading(false);
-    setLoadingMore(false);
-  };
-
-  const handleLoadMore = () => {
-    if (isLoading || loadingMore || !hasMore) return;
-    setPage((prev) => prev + 1);
-  };
-
-  useEffect(() => {
-    if (page > 0) {
-      void fetchProducts();
-    }
-  }, [page]);
-
-  useEffect(() => {
-    setPage(0);
-    void fetchProducts(true);
+    const one = categoryFilterLabelToDbValue(selectedCategory);
+    return one ? [one] : [];
   }, [selectedCategory]);
+
+  const loadPageForSlug = useCallback(async (categorySlug: string, pageIndex: number, append: boolean) => {
+    const { rows, error } = await fetchCategoryPage(categorySlug, pageIndex);
+    setRowBySlug((prev) => {
+      const base = prev[categorySlug] ?? emptyRow();
+      if (error) {
+        return {
+          ...prev,
+          [categorySlug]: {
+            ...base,
+            loading: false,
+            loadingMore: false,
+            error,
+            hasMore: false,
+          },
+        };
+      }
+      const merged = append ? [...base.products, ...rows] : rows;
+      return {
+        ...prev,
+        [categorySlug]: {
+          products: merged,
+          nextPage: pageIndex + 1,
+          hasMore: rows.length === ROW_PAGE_SIZE,
+          loading: false,
+          loadingMore: false,
+          error: null,
+        },
+      };
+    });
+  }, []);
+
+  const handleLoadMoreRow = useCallback(
+    (slug: string) => {
+      let next: { page: number } | null = null;
+      setRowBySlug((prev) => {
+        const r = prev[slug];
+        if (!r || !r.hasMore || r.loading || r.loadingMore) return prev;
+        next = { page: r.nextPage };
+        return { ...prev, [slug]: { ...r, loadingMore: true } };
+      });
+      if (next) void loadPageForSlug(slug, next.page, true);
+    },
+    [loadPageForSlug],
+  );
+
+  useEffect(() => {
+    const slugs = slugsToShow;
+    if (slugs.length === 0) {
+      setRowBySlug({});
+      return;
+    }
+
+    setRowBySlug(() => {
+      const initial: Record<string, CategoryRowState> = {};
+      for (const s of slugs) {
+        initial[s] = emptyRow();
+      }
+      return initial;
+    });
+
+    void (async () => {
+      await Promise.all(slugs.map((slug) => loadPageForSlug(slug, 0, false)));
+    })();
+  }, [slugsToShow, loadPageForSlug]);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -88,14 +269,22 @@ export default function Home() {
 
         <CategoryFilter selectedCategory={selectedCategory} onCategoryChange={setSelectedCategory} />
 
-        {error ? <p className="mb-4 text-sm text-amber-700">{error}</p> : null}
-        <SimpleProductGrid
-          products={products}
-          isLoading={isLoading}
-          hasMore={hasMore}
-          loadingMore={loadingMore}
-          onLoadMore={handleLoadMore}
-        />
+        <div className="space-y-2">
+          {slugsToShow.map((slug) => {
+            const meta = categories.find((c) => c.id === slug);
+            const rowTitle = meta?.name ?? slug;
+            const row = rowBySlug[slug] ?? emptyRow();
+            return (
+              <CategoryRow
+                key={slug}
+                slug={slug}
+                title={rowTitle}
+                row={row}
+                onLoadMore={handleLoadMoreRow}
+              />
+            );
+          })}
+        </div>
       </div>
     </div>
   );

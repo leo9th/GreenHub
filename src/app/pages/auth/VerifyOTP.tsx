@@ -2,8 +2,8 @@ import { Link, useLocation, useNavigate } from "react-router";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { supabase } from "../../../lib/supabase";
-import { toast } from "sonner";
 import { maskPhoneE164 } from "../../utils/phoneE164";
+import { useNotification } from "../../context/NotificationProvider";
 
 const OTP_LEN = 6;
 
@@ -15,6 +15,7 @@ type LocationState = {
 export default function VerifyOTP() {
   const navigate = useNavigate();
   const location = useLocation();
+  const notif = useNotification();
   const state = (location.state ?? {}) as LocationState;
   const phone = state.phone?.trim() ?? "";
   const flow: "signup" | "login" = state.flow === "login" ? "login" : "signup";
@@ -27,10 +28,10 @@ export default function VerifyOTP() {
 
   useEffect(() => {
     if (!phone) {
-      toast.error("Start again from sign in or sign up.");
+      notif.error("Session Error", "Start again from sign in or sign up.");
       navigate("/login", { replace: true });
     }
-  }, [phone, navigate]);
+  }, [phone, navigate, notif]);
 
   useEffect(() => {
     if (countdown <= 0) return;
@@ -57,14 +58,14 @@ export default function VerifyOTP() {
         type: "sms",
       });
       if (error) {
-        toast.error(error.message);
+        notif.authError("Verification Failed", error.message);
         return;
       }
       if (!data.session) {
-        toast.error("Verification incomplete. Try again.");
+        notif.error("Verification Incomplete", "Try again.");
         return;
       }
-      toast.success(flow === "signup" ? "Phone verified." : "Signed in.");
+      notif.success(flow === "signup" ? "Phone Verified" : "Signed In Successfully");
       if (flow === "signup") {
         navigate("/complete-profile", { replace: true });
       } else {
@@ -116,10 +117,10 @@ export default function VerifyOTP() {
         },
       });
       if (error) {
-        toast.error(error.message);
+        notif.error("Resend Failed", error.message);
         return;
       }
-      toast.success("New code sent.");
+      notif.success("Code Sent", "New verification code sent to your phone.");
       startCooldown();
       setOtp(Array(OTP_LEN).fill(""));
       inputRefs.current[0]?.focus();
@@ -185,19 +186,28 @@ export default function VerifyOTP() {
           {verifying ? "Verifying…" : "Verify"}
         </button>
 
-        <p className="mt-6 text-center text-sm text-gray-600">
-          Didn&apos;t receive a code?{" "}
-          {countdown > 0 ? (
-            <span className="text-gray-400">Resend in {countdown}s</span>
-          ) : (
-            <button
-              type="button"
-              onClick={() => void handleResend()}
-              disabled={resending}
-              className="font-semibold text-[#15803d] hover:underline disabled:opacity-50"
-            >
-              {resending ? "Sending…" : "Resend code"}
-            </button>
+        <div className="mt-8 space-y-4">
+          {countdown > 0 && (
+            <div className="flex items-center justify-center gap-2 rounded-lg bg-blue-50 px-4 py-3">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-blue-600">
+                {countdown}
+              </div>
+              <span className="text-sm font-medium text-blue-900">Resend code available in {countdown}s</span>
+            </div>
+          )}
+          <p className="text-center text-sm text-gray-600">
+            Didn&apos;t receive a code?{" "}
+            {countdown > 0 ? (
+              <span className="text-gray-400">Wait for the timer above</span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => void handleResend()}
+                disabled={resending}
+                className="font-semibold text-[#15803d] hover:underline disabled:opacity-50"
+              >
+                {resending ? "Sending…" : "Resend code"}
+              </button>
           )}
         </p>
 

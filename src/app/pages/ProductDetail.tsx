@@ -33,7 +33,7 @@ import { isOnlineFromLastActive, formatLastSeen } from "../utils/presence";
 import { getAvatarUrl } from "../utils/getAvatar";
 import { getProductPrice } from "../utils/getProductPrice";
 import { activeProductsQuery, mapProductRow } from "../utils/productSearch";
-import { getProductThumbnailUrl, optimizeListingImageUrl, parseProductImagesFromRow } from "../utils/productImages";
+import { getProductThumbnailUrl, parseProductImagesFromRow } from "../utils/productImages";
 import { recordProductView } from "../utils/recentlyViewedProducts";
 import { toast } from "sonner";
 import { BoostDetailBadge } from "../components/BoostBadge";
@@ -1131,7 +1131,13 @@ export default function ProductDetail() {
                   onTouchEnd={onGalleryTouchEnd}
                 >
                   <div
-                    className="relative w-full aspect-[4/3] cursor-zoom-in overflow-hidden rounded-xl bg-gray-100"
+                    className="relative w-full cursor-zoom-in overflow-hidden rounded-xl"
+                    style={{
+                      width: "100%",
+                      height: "400px",
+                      overflow: "hidden",
+                      backgroundColor: "#f3f4f6",
+                    }}
                     onClick={() => {
                       if (product.images.length > 0) setLightboxOpen(true);
                     }}
@@ -1139,11 +1145,17 @@ export default function ProductDetail() {
                   >
                     {product.images.length > 0 && mainDisplayImage ? (
                       <img
-                        src={optimizeListingImageUrl(mainDisplayImage, { width: 960, quality: 75 })}
+                        src={mainDisplayImage}
                         alt={product.title}
-                        className="h-full w-full cursor-zoom-in select-none object-cover"
                         draggable={false}
                         onDoubleClick={onMainImageDoubleClick}
+                        className="cursor-zoom-in select-none"
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          objectFit: "contain",
+                          objectPosition: "center",
+                        }}
                       />
                     ) : (
                       <div
@@ -1260,20 +1272,39 @@ export default function ProductDetail() {
                       key={`${src}-${index}`}
                       type="button"
                       onClick={() => setSelectedImage(src)}
-                      className={`relative h-20 w-20 shrink-0 overflow-hidden rounded-md border-2 transition-colors ${
+                      className={`relative shrink-0 overflow-hidden rounded-md border-2 transition-colors ${
                         index === galleryActiveIndex ? "border-emerald-500" : "border-transparent"
                       }`}
                       aria-label={`Show image ${index + 1} of ${product.images.length}`}
                       aria-current={index === galleryActiveIndex ? "true" : undefined}
                     >
                       {src ? (
-                        <img
-                          src={optimizeListingImageUrl(src, { width: 160, quality: 70 })}
-                          alt={`Thumbnail ${index + 1}`}
-                          className="h-full w-full object-cover"
-                        />
+                        <div
+                          style={{
+                            width: "80px",
+                            height: "80px",
+                            overflow: "hidden",
+                            backgroundColor: "#f3f4f6",
+                          }}
+                        >
+                          <img
+                            src={src}
+                            alt={`Thumbnail ${index + 1}`}
+                            style={{
+                              width: "100%",
+                              height: "100%",
+                              objectFit: "contain",
+                              objectPosition: "center",
+                              cursor: "pointer",
+                            }}
+                          />
+                        </div>
                       ) : (
-                        <div className="h-full w-full bg-gray-200" aria-hidden />
+                        <div
+                          className="bg-gray-200"
+                          style={{ width: "80px", height: "80px" }}
+                          aria-hidden
+                        />
                       )}
                     </button>
                   ))}
@@ -1299,9 +1330,10 @@ export default function ProductDetail() {
                     ✕
                   </button>
                   <img
-                    src={optimizeListingImageUrl(mainDisplayImage, { width: 1600, quality: 82 })}
+                    src={mainDisplayImage}
                     alt=""
-                    className="max-h-[90vh] max-w-[90vw] object-cover"
+                    className="max-h-[90vh] max-w-[90vw]"
+                    style={{ objectFit: "contain", objectPosition: "center" }}
                     onClick={(e) => e.stopPropagation()}
                   />
                 </div>

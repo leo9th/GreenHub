@@ -3,7 +3,6 @@ import { useNavigate } from "react-router";
 import { Loader2, MessageCircle, Phone, ChevronDown, ChevronUp } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "../../lib/supabase";
-import { CommunicationButton } from "./ui/CommunicationButton";
 import {
   findConversationByPair,
   insertConversationPair,
@@ -239,15 +238,31 @@ export function ProductDetailInlineChat({
         </button>
       </div>
 
-      <div className="mt-2 w-full">
-        <CommunicationButton
-          whatsappHref={whatsappHref}
-          productTitle={productTitle}
-          hasInternalChat={!isOwner && !!authUserId}
-          onChatClick={() => void sendMessage()}
-          className="w-full min-h-[44px] text-sm font-semibold px-4"
-          disabled={sendBusy}
-        />
+      {/* SURGERY: Replacing the conditional guard. 
+          This button will now ALWAYS show up. 
+      */}
+      <div className="flex w-full gap-2 pt-2">
+        {whatsappHref ? (
+          <a
+            href={whatsappHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-[#25D366] py-3 text-sm font-bold text-white transition-transform active:scale-95 hover:opacity-90"
+          >
+            <span className="flex items-center gap-2">
+              <span aria-hidden>💬</span>
+              WhatsApp
+            </span>
+          </a>
+        ) : (
+          <button
+            disabled
+            className="flex flex-1 cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-slate-100 py-3 text-sm font-bold text-slate-400"
+            title="This seller has not provided a WhatsApp number"
+          >
+            WhatsApp (Unavailable)
+          </button>
+        )}
       </div>
 
       {showContact ? (
@@ -272,7 +287,15 @@ export function ProductDetailInlineChat({
                   >
                     WhatsApp
                   </a>
-                ) : null}
+                ) : (
+                  <button
+                    disabled
+                    className="inline-flex flex-1 min-w-[7rem] cursor-not-allowed items-center justify-center rounded-lg bg-slate-100 px-3 py-2 text-center text-xs font-semibold text-slate-400"
+                    title="This seller has not provided a WhatsApp number"
+                  >
+                    WhatsApp (Unavailable)
+                  </button>
+                )}
               </div>
             </>
           ) : (

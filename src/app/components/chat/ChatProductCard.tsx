@@ -1,5 +1,5 @@
 import { Link } from "react-router";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, Send } from "lucide-react";
 import type { ReactNode } from "react";
 
 export interface ChatProductCardProps {
@@ -15,6 +15,10 @@ export interface ChatProductCardProps {
   imageUrl?: string;
   /** Product condition (e.g., "Used", "New") */
   condition?: string;
+  /** Seller phone for WhatsApp link (optional) */
+  sellerPhone?: string;
+  /** Seller name for WhatsApp message */
+  sellerName?: string;
   /** Compact view (smaller height) */
   compact?: boolean;
   /** Additional CSS classes */
@@ -44,12 +48,22 @@ export function ChatProductCard({
   priceDisplay,
   imageUrl,
   condition,
+  sellerPhone,
+  sellerName = "Seller",
   compact = false,
   className = "",
   children,
 }: ChatProductCardProps) {
   const detailUrl = `/products/${productId}`;
   const imageToShow = imageUrl || PLACEHOLDER;
+
+  // Build WhatsApp link if seller phone is provided
+  const cleanedPhone = (sellerPhone || "").replace(/[^\d+]/g, "");
+  const whatsappPhone = cleanedPhone.replace(/^\+/, "");
+  const whatsappMessage = `Hi ${sellerName}, I'm interested in your "${title.trim() || "this item"}" on GreenHub. Is it available?`;
+  const whatsappHref = whatsappPhone
+    ? `https://wa.me/${whatsappPhone}?text=${encodeURIComponent(whatsappMessage)}`
+    : "";
 
   return (
     <div
@@ -101,14 +115,29 @@ export function ChatProductCard({
 
         {children}
 
-        <Link
-          to={detailUrl}
-          className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 hover:text-emerald-700 transition"
-          aria-label={`View ${title} product details`}
-        >
-          View Product
-          <ExternalLink className="h-3 w-3 shrink-0" aria-hidden />
-        </Link>
+        <div className="mt-2 flex gap-2">
+          <Link
+            to={detailUrl}
+            className="flex-1 inline-flex items-center justify-center gap-1 text-xs font-semibold text-emerald-600 hover:text-emerald-700 transition rounded-md bg-emerald-100 py-1.5 hover:bg-emerald-200"
+            aria-label={`View ${title} product details`}
+          >
+            View Product
+            <ExternalLink className="h-3 w-3 shrink-0" aria-hidden />
+          </Link>
+          {whatsappHref && (
+            <a
+              href={whatsappHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex-1 inline-flex items-center justify-center gap-1 text-xs font-semibold text-white bg-[#25D366] hover:opacity-90 transition rounded-md py-1.5"
+              title="Chat on WhatsApp"
+              aria-label={`Chat on WhatsApp about ${title}`}
+            >
+              <Send className="h-3 w-3 shrink-0" aria-hidden />
+              WhatsApp
+            </a>
+          )}
+        </div>
       </div>
     </div>
   );

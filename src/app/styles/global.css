@@ -21,6 +21,32 @@ video {
   height: auto;
 }
 
+/*
+ * Product detail / carousels: show the full photo without cropping.
+ * Global `img { height: auto }` plus `height:100%` fill can still crop with `object-fit:contain` in some layouts.
+ * Pattern: flex-centered frame + intrinsic-sized img with object-fit: contain.
+ */
+.gh-product-img-frame {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  box-sizing: border-box;
+  background-color: #f3f4f6;
+  position: relative;
+}
+
+.gh-product-img-frame > .gh-product-img-contain {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  object-position: center;
+  flex-shrink: 0;
+}
+
 *,
 *::before,
 *::after {

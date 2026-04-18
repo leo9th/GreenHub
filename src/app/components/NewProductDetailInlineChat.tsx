@@ -172,34 +172,31 @@ export default function NewProductDetailInlineChat({
         className="mt-3 w-full resize-y rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-emerald-500 focus:outline-none"
       />
 
-      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+      <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
         <button
           type="button"
           onClick={() => void handleSend()}
           disabled={sending}
-          className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+          className="min-h-[44px] flex-1 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60 sm:min-w-[9rem]"
         >
           {sending ? "Sending..." : "Send message"}
         </button>
-        <button
-          type="button"
-          onClick={() => setShowContact((v) => !v)}
-          className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-50"
-        >
-          {showContact ? "Hide contact" : "Show contact"}
-        </button>
-      </div>
-
-      <div className="mt-2 flex w-full gap-2">
         <CommunicationButton
           whatsappHref={whatsappHref}
           phoneNumber={sellerPhone}
           productTitle={productTitle || "this item"}
           hasInternalChat={hasInternalChat}
           onChatClick={focusComposer}
-          className="min-w-0"
+          className="min-h-[44px] min-w-0 flex-1 sm:min-w-[9rem]"
           disabled={sending}
         />
+        <button
+          type="button"
+          onClick={() => setShowContact((v) => !v)}
+          className="min-h-[44px] flex-1 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-50 sm:min-w-[9rem]"
+        >
+          {showContact ? "Hide contact" : "Show contact"}
+        </button>
       </div>
 
       {showContact ? (
@@ -214,23 +211,6 @@ export default function NewProductDetailInlineChat({
                 >
                   Call
                 </a>
-                {whatsappHref ? (
-                  <a
-                    href={whatsappHref}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="rounded-lg bg-[#25D366] px-3 py-2 text-xs font-semibold text-white hover:opacity-95"
-                  >
-                    WhatsApp
-                  </a>
-                ) : (
-                  <span
-                    className="inline-flex cursor-not-allowed items-center rounded-lg bg-gray-200 px-3 py-2 text-xs font-semibold text-gray-500"
-                    title="Seller has not shared a WhatsApp number"
-                  >
-                    WhatsApp unavailable
-                  </span>
-                )}
               </div>
             </>
           ) : (

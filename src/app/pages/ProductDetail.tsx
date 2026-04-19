@@ -1179,7 +1179,16 @@ export default function ProductDetail() {
                     >
                       {product.images.length > 0 && mainDisplayImage ? (
                         <div className="relative group mx-auto w-full max-w-2xl overflow-hidden rounded-3xl shadow-lg">
-                          <div className="relative w-full aspect-square md:aspect-video overflow-hidden bg-[#f3f4f6]">
+                          <div
+                            className="relative w-full"
+                            style={{
+                              width: "100%",
+                              height: "clamp(500px, 80vh, 900px)",
+                              overflow: "hidden",
+                              backgroundColor: "#f3f4f6",
+                              borderRadius: "12px",
+                            }}
+                          >
                             <AnimatePresence initial={false} mode="sync">
                               <motion.div
                                 key={mainDisplayImage}

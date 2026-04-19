@@ -28,6 +28,7 @@ import { isOnlineFromLastActive, formatLastSeen } from "../utils/presence";
 import { FollowButton } from "../components/FollowButton";
 import { cn } from "../components/ui/utils";
 import { validateProfileImageFile, uploadProfileImage } from "../utils/profileMediaUpload";
+import { PhoneVerification } from "../components/PhoneVerification";
 
 type TabId = "products" | "reviews" | "about" | "contact";
 
@@ -274,6 +275,7 @@ export default function Profile() {
             id: targetUserId,
             full_name: (authUser.user_metadata?.full_name as string) ?? null,
             phone: (authUser.user_metadata?.phone as string) ?? null,
+            phone_verified: false,
             avatar_url: (authUser.user_metadata?.avatar_url as string) ?? null,
             gender: (authUser.user_metadata?.gender as string) ?? null,
             state: (authUser.user_metadata?.state as string) ?? null,
@@ -638,6 +640,10 @@ export default function Profile() {
           <div className="rounded-2xl border border-amber-100 bg-amber-50 p-4 text-sm text-amber-900">
             No public profile was found for this account. The user may not have completed their profile yet.
           </div>
+        ) : null}
+
+        {isOwnProfile && viewProfile && !viewProfile.phone_verified ? (
+          <PhoneVerification userId={authUser.id} onVerified={() => void loadData()} />
         ) : null}
 
         <div className="lg:flex lg:items-start lg:gap-8">

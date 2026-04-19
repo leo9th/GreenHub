@@ -65,7 +65,7 @@ export default function TopNav() {
     navigate("/login");
   };
 
-  const hideNavOnPaths = ["/login", "/register", "/verify-otp"];
+  const hideNavOnPaths = ["/login", "/register", "/verify-otp", "/welcome"];
   const isHidden = hideNavOnPaths.some((path) => location.pathname.startsWith(path));
   const isHome = location.pathname === "/";
 
@@ -229,10 +229,15 @@ export default function TopNav() {
                 className="relative flex p-1 outline-none"
                 aria-label="Notifications"
               >
-                <Bell className={navIconClass} />
-                {notificationUnreadCount > 0 ? (
-                  <span className="absolute top-0 right-0 min-w-[10px] h-2.5 px-0.5 bg-[#ef4444] rounded-full border border-white dark:border-zinc-900" />
-                ) : null}
+                <span className="relative inline-flex">
+                  <Bell className={navIconClass} />
+                  {notificationUnreadCount > 0 ? (
+                    <span
+                      className="absolute -right-0.5 -top-0.5 h-2.5 min-w-[10px] rounded-full border-2 border-white bg-red-500 dark:border-zinc-900 animate-pulse"
+                      aria-hidden
+                    />
+                  ) : null}
+                </span>
               </button>
 
               {showNotifications && (

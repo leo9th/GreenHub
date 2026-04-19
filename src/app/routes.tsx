@@ -16,6 +16,7 @@ import ResetPassword from "./pages/auth/ResetPassword";
 import VerifyOTP from "./pages/auth/VerifyOTP";
 import CheckEmail from "./pages/auth/CheckEmail";
 import CompleteProfile from "./pages/auth/CompleteProfile";
+import Welcome from "./pages/Welcome";
 import Products from "./pages/Products";
 import ProductDetail from "./pages/ProductDetail";
 import Cart from "./pages/Cart";
@@ -116,6 +117,7 @@ export const router = createBrowserRouter([
       { path: "verify-otp", Component: VerifyOTP },
       { path: "check-email", Component: CheckEmail },
       { path: "complete-profile", Component: CompleteProfile },
+      { path: "welcome", Component: Welcome },
       { path: "products", Component: Products },
       { path: "products/:productId/write-review", Component: WriteProductReview },
       { path: "products/:id", Component: ProductDetail },

@@ -8,6 +8,12 @@ import { ConditionFilter } from "../components/ConditionFilter";
 import { categories, categoryFilterLabelToDbValue } from "../data/catalogConstants";
 import { getConditionFilterDropdownOptions } from "../data/productConditions";
 import type { ProductWithSeller } from "../types/productWithSeller";
+import {
+  fetchSellerIdsForGlobalSearch,
+  normalizedGlobalSearchTerm,
+  productGlobalSearchOrString,
+  productsSelectWithSellerEmbed,
+} from "../utils/productSearch";
 /**
  * GreenHub Home Page - Two-Dimensional Infinite Scroll Architecture
  *
@@ -44,28 +50,17 @@ function shuffleArray<T>(items: T[]): T[] {
 
 async function fetchFeaturedProducts(
   conditionFilter: string,
-  sellerSearchTerm: string = "",
+  globalSearchTerm: string = "",
 ): Promise<{ rows: ProductWithSeller[]; error: string | null }> {
-  // If seller search is provided, first fetch matching seller IDs
-  let sellerIds: string[] | null = null;
-  if (sellerSearchTerm.trim()) {
-    const searchTerm = sellerSearchTerm.trim().toLowerCase();
-    const { data: profiles } = await supabase
-      .from("profiles")
-      .select("id")
-      .or(`full_name.ilike.%${searchTerm}%,username.ilike.%${searchTerm}%`);
-    
-    sellerIds = profiles?.map((p) => p.id) || [];
-    
-    // If no matching sellers, return empty results
-    if (sellerIds.length === 0) {
-      return { rows: [], error: null };
-    }
+  const searchT = normalizedGlobalSearchTerm(globalSearchTerm);
+  let sellerIds: string[] = [];
+  if (searchT) {
+    sellerIds = await fetchSellerIdsForGlobalSearch(supabase, searchT);
   }
 
   let query = supabase
     .from("products")
-    .select("*, seller:profiles!products_seller_id_fkey(full_name, avatar_url, rating)")
+    .select(productsSelectWithSellerEmbed())
     .eq("status", "active")
     .order("created_at", { ascending: false })
     .limit(FEATURED_FETCH_LIMIT);
@@ -74,9 +69,9 @@ async function fetchFeaturedProducts(
     query = query.eq("condition", conditionFilter);
   }
 
-  // Filter by seller IDs if seller search is active
-  if (sellerIds !== null && sellerIds.length > 0) {
-    query = query.in("seller_id", sellerIds);
+  const orFilter = searchT ? productGlobalSearchOrString(searchT, sellerIds) : null;
+  if (orFilter) {
+    query = query.or(orFilter);
   }
 
   const { data, error } = await query;
@@ -130,6 +125,7 @@ function mapProductToCardProps(product: ProductWithSeller) {
     state: typeof product.state === "string" ? product.state : "",
     condition: typeof product.condition === "string" ? product.condition : "",
     sellerName,
+    sellerVerified: seller?.phone_verified === true,
   };
 }
 
@@ -137,31 +133,20 @@ async function fetchCategoryPage(
   categorySlug: string,
   pageIndex: number,
   conditionFilter: string,
-  sellerSearchTerm: string = "",
+  globalSearchTerm: string = "",
 ): Promise<{ rows: ProductWithSeller[]; error: string | null }> {
   const from = pageIndex * ROW_PAGE_SIZE;
   const to = from + ROW_PAGE_SIZE - 1;
 
-  // If seller search is provided, first fetch matching seller IDs
-  let sellerIds: string[] | null = null;
-  if (sellerSearchTerm.trim()) {
-    const searchTerm = sellerSearchTerm.trim().toLowerCase();
-    const { data: profiles } = await supabase
-      .from("profiles")
-      .select("id")
-      .or(`full_name.ilike.%${searchTerm}%,username.ilike.%${searchTerm}%`);
-    
-    sellerIds = profiles?.map((p) => p.id) || [];
-    
-    // If no matching sellers, return empty results
-    if (sellerIds.length === 0) {
-      return { rows: [], error: null };
-    }
+  const searchT = normalizedGlobalSearchTerm(globalSearchTerm);
+  let sellerIds: string[] = [];
+  if (searchT) {
+    sellerIds = await fetchSellerIdsForGlobalSearch(supabase, searchT);
   }
 
   let query = supabase
     .from("products")
-    .select("*, seller:profiles!products_seller_id_fkey(full_name, avatar_url, rating)")
+    .select(productsSelectWithSellerEmbed())
     .eq("status", "active")
     .eq("category", categorySlug)
     .order("created_at", { ascending: false });
@@ -170,9 +155,9 @@ async function fetchCategoryPage(
     query = query.eq("condition", conditionFilter);
   }
 
-  // Filter by seller IDs if seller search is active
-  if (sellerIds !== null && sellerIds.length > 0) {
-    query = query.in("seller_id", sellerIds);
+  const orFilter = searchT ? productGlobalSearchOrString(searchT, sellerIds) : null;
+  if (orFilter) {
+    query = query.or(orFilter);
   }
 
   const { data, error } = await query.range(from, to);
@@ -245,7 +230,7 @@ function CategoryRow({ slug, title, row, onLoadMore }: CategoryRowProps) {
           <p className="py-4 text-sm text-gray-500">No products in this category yet.</p>
         ) : null}
 
-        {row.products.map((product) => {
+        {row.products.map((product, idx) => {
           const p = mapProductToCardProps(product);
           return (
             <div key={p.key} className="w-[160px] shrink-0 snap-start sm:w-[180px]">
@@ -261,6 +246,8 @@ function CategoryRow({ slug, title, row, onLoadMore }: CategoryRowProps) {
                 state={p.state}
                 condition={p.condition}
                 sellerName={p.sellerName}
+                sellerVerified={p.sellerVerified}
+                imagePriority={idx < 4}
               />
             </div>
           );
@@ -292,7 +279,7 @@ function CategoryRow({ slug, title, row, onLoadMore }: CategoryRowProps) {
 export default function Home() {
   const [selectedCategory, setSelectedCategory] = useState<CategoryFilterSelection>("All");
   const [selectedCondition, setSelectedCondition] = useState("all");
-  const [sellerSearchTerm, setSellerSearchTerm] = useState("");
+  const [globalSearchTerm, setGlobalSearchTerm] = useState("");
   const [featuredProducts, setFeaturedProducts] = useState<ProductWithSeller[]>([]);
   const [featuredLoading, setFeaturedLoading] = useState(true);
   const [featuredError, setFeaturedError] = useState<string | null>(null);
@@ -316,7 +303,7 @@ export default function Home() {
     void (async () => {
       setFeaturedLoading(true);
       setFeaturedError(null);
-      const { rows, error } = await fetchFeaturedProducts(selectedCondition, sellerSearchTerm);
+      const { rows, error } = await fetchFeaturedProducts(selectedCondition, globalSearchTerm);
       if (cancelled) return;
       if (error) {
         setFeaturedError(error);
@@ -329,7 +316,7 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, [selectedCondition, sellerSearchTerm]);
+  }, [selectedCondition, globalSearchTerm]);
 
   const slugsToShow = useMemo(() => {
     if (selectedCategory === "All") {
@@ -344,9 +331,9 @@ export default function Home() {
     pageIndex: number,
     append: boolean,
     conditionFilter: string,
-    sellerSearch: string = "",
+    globalSearch: string = "",
   ) => {
-    const { rows, error } = await fetchCategoryPage(categorySlug, pageIndex, conditionFilter, sellerSearch);
+    const { rows, error } = await fetchCategoryPage(categorySlug, pageIndex, conditionFilter, globalSearch);
     setRowBySlug((prev) => {
       const base = prev[categorySlug] ?? emptyRow();
       if (error) {
@@ -385,9 +372,9 @@ export default function Home() {
         next = { page: r.nextPage };
         return { ...prev, [slug]: { ...r, loadingMore: true } };
       });
-      if (next) void loadPageForSlug(slug, next.page, true, selectedCondition, sellerSearchTerm);
+      if (next) void loadPageForSlug(slug, next.page, true, selectedCondition, globalSearchTerm);
     },
-    [loadPageForSlug, selectedCondition, sellerSearchTerm],
+    [loadPageForSlug, selectedCondition, globalSearchTerm],
   );
 
   useEffect(() => {
@@ -406,9 +393,9 @@ export default function Home() {
     });
 
     void (async () => {
-      await Promise.all(slugs.map((slug) => loadPageForSlug(slug, 0, false, selectedCondition, sellerSearchTerm)));
+      await Promise.all(slugs.map((slug) => loadPageForSlug(slug, 0, false, selectedCondition, globalSearchTerm)));
     })();
-  }, [slugsToShow, loadPageForSlug, selectedCondition, sellerSearchTerm]);
+  }, [slugsToShow, loadPageForSlug, selectedCondition, globalSearchTerm]);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -420,25 +407,29 @@ export default function Home() {
           </Link>
         </div>
 
-        <CategoryFilter selectedCategory={selectedCategory} onCategoryChange={setSelectedCategory} />
-
-        <ConditionFilter
-          id="home-condition-filter"
-          categorySlug={categorySlugForFilter}
-          value={selectedCondition}
-          onChange={setSelectedCondition}
+        <CategoryFilter
+          selectedCategory={selectedCategory}
+          onCategoryChange={setSelectedCategory}
+          endSlot={
+            <ConditionFilter
+              id="home-condition-filter"
+              categorySlug={categorySlugForFilter}
+              value={selectedCondition}
+              onChange={setSelectedCondition}
+              inline
+            />
+          }
         />
 
-        <div className="mb-5 grid gap-3 md:grid-cols-2">
-          <div className="relative">
-            <input
-              type="text"
-              placeholder="Search by seller name or @username"
-              value={sellerSearchTerm}
-              onChange={(e) => setSellerSearchTerm(e.target.value)}
-              className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm placeholder-gray-500 focus:border-[#22c55e] focus:outline-none focus:ring-2 focus:ring-[#22c55e]/20"
-            />
-          </div>
+        <div className="mb-4">
+          <input
+            type="search"
+            placeholder="Search products, sellers, categories, locations…"
+            value={globalSearchTerm}
+            onChange={(e) => setGlobalSearchTerm(e.target.value)}
+            className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm placeholder-gray-500 focus:border-[#22c55e] focus:outline-none focus:ring-2 focus:ring-[#22c55e]/20"
+            autoComplete="off"
+          />
         </div>
 
         {featuredError ? <p className="mb-4 text-sm text-amber-700">{featuredError}</p> : null}

@@ -66,7 +66,7 @@ export default function VerifyOTP() {
       }
       notif.success(flow === "signup" ? "Phone Verified" : "Signed In Successfully");
       if (flow === "signup") {
-        navigate("/complete-profile", { replace: true });
+        navigate("/welcome", { replace: true });
       } else {
         navigate("/", { replace: true });
       }

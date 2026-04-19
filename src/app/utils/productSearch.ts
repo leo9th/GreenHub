@@ -64,11 +64,70 @@ export function sanitizeSearchTerm(raw: string): string {
   return raw.replace(/[%_\\"]/g, "").trim().slice(0, MAX_SEARCH_TERM_LENGTH);
 }
 
+/** Commas break PostgREST `or()` filter lists; strip after sanitize. */
+export function normalizedGlobalSearchTerm(raw: string): string {
+  return sanitizeSearchTerm(raw).replace(/,/g, "").trim();
+}
+
+/**
+ * Profile rows whose full_name or username matches the term (case-insensitive).
+ */
+export async function fetchSellerIdsForGlobalSearch(
+  client: SupabaseClient,
+  sanitizedTerm: string,
+): Promise<string[]> {
+  const t = sanitizedTerm.trim();
+  if (!t) return [];
+  const p = `%${t}%`;
+  const { data, error } = await client
+    .from("profiles")
+    .select("id")
+    .or(`full_name.ilike.${p},username.ilike.${p}`);
+  if (error) return [];
+  return (data ?? []).map((row) => String(row.id));
+}
+
+/**
+ * PostgREST `.or()` string: product text columns (partial match) OR seller_id IN (…).
+ */
+export function productGlobalSearchOrString(
+  sanitizedTerm: string,
+  sellerIds: readonly string[],
+): string | null {
+  const t = sanitizedTerm.trim();
+  if (!t) return null;
+  const p = `%${t}%`;
+  const parts = [
+    `title.ilike.${p}`,
+    `category.ilike.${p}`,
+    `condition.ilike.${p}`,
+    `city.ilike.${p}`,
+    `state.ilike.${p}`,
+    `location.ilike.${p}`,
+    `car_brand.ilike.${p}`,
+  ];
+  if (sellerIds.length > 0) {
+    parts.push(`seller_id.in.(${sellerIds.join(",")})`);
+  }
+  return parts.join(",");
+}
+
+/** Nested seller row for product listing queries (PostgREST FK hint). */
+export const PRODUCTS_SELLER_EMBED_FIELDS =
+  "full_name, username, avatar_url, rating, phone_verified";
+
+/** `*` plus embedded `profiles` seller for cards (trust badge, display name). */
+export function productsSelectWithSellerEmbed(): string {
+  return `*, seller:profiles!products_seller_id_fkey(${PRODUCTS_SELLER_EMBED_FIELDS})`;
+}
+
 /**
  * Active listings only. Uses strict status = 'active' (aligns with seller flow).
+ * Default select includes seller `phone_verified` for trust UI on cards.
  */
-export function activeProductsQuery(client: SupabaseClient, columns = "*") {
-  return client.from("products").select(columns).eq("status", "active").order("created_at", { ascending: false });
+export function activeProductsQuery(client: SupabaseClient, columns?: string) {
+  const sel = columns ?? productsSelectWithSellerEmbed();
+  return client.from("products").select(sel).eq("status", "active").order("created_at", { ascending: false });
 }
 
 /**
@@ -87,7 +146,7 @@ export function withSearchOr(query: any, sanitizedTerm: string) {
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function listingBaseQuery(client: SupabaseClient): any {
-  return client.from("products").select("*", { count: "exact" }).eq("status", "active");
+  return client.from("products").select(productsSelectWithSellerEmbed(), { count: "exact" }).eq("status", "active");
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

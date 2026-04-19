@@ -1,43 +1,49 @@
 import { Link, useNavigate } from "react-router";
-import { ArrowLeft, Eye, EyeOff, Loader2, Mail, Smartphone } from "lucide-react";
-import { useState } from "react";
+import { ArrowLeft, Check, Eye, EyeOff, Loader2, Lock, Smartphone, Users, X } from "lucide-react";
+import { useMemo, useState } from "react";
+import { motion } from "motion/react";
 import { supabase } from "../../../lib/supabase";
 import { toast } from "sonner";
 import { AuthSocialButtons } from "../../components/auth/AuthSocialButtons";
 import { toE164Ng } from "../../utils/phoneE164";
-import { nigerianStates } from "../../data/catalogConstants";
-import { getLGAsForState } from "../../data/mockData";
 import { authRedirectTo } from "../../utils/authSiteUrl";
+import {
+  getPasswordStrength,
+  isValidEmailFormat,
+  mapSignUpErrorToToast,
+  passwordMeetsRequirements,
+} from "../../utils/authSignupValidation";
+import { cn } from "../../components/ui/utils";
 
-type Step = "choose" | "phone" | "email";
+type Step = "email" | "phone";
+
+const FORM_ID = "greenhub-signup-form";
 
 export default function Register() {
   const navigate = useNavigate();
-  const [step, setStep] = useState<Step>("choose");
+  const [step, setStep] = useState<Step>("email");
+
+  const [email, setEmail] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
   const [phone, setPhone] = useState("");
   const [loading, setLoading] = useState(false);
   const [oauthBusy, setOauthBusy] = useState<"google" | "facebook" | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [fullName, setFullName] = useState("");
-  const [email, setEmail] = useState("");
-  const [emailPhone, setEmailPhone] = useState("");
-  const [gender, setGender] = useState("Prefer not to say");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const selectedRole = "buyer";
-  const [selectedState, setSelectedState] = useState("");
-  const [lga, setLga] = useState("");
-  const [address, setAddress] = useState("");
+  const oauthRedirect = authRedirectTo("/login?next=/welcome");
 
-  const lgas = selectedState ? getLGAsForState(selectedState) : [];
-
-  const oauthRedirect = authRedirectTo("/login");
+  const emailOk = useMemo(() => isValidEmailFormat(email), [email]);
+  const emailTouched = email.length > 0;
+  const pwdStrength = useMemo(() => getPasswordStrength(password), [password]);
+  const pwdOk = passwordMeetsRequirements(password);
+  const confirmOk = confirmPassword.length > 0 && password === confirmPassword;
+  const confirmTouched = confirmPassword.length > 0;
 
   const handleSocialLogin = async (provider: "google" | "facebook") => {
-    setError(null);
     setOauthBusy(provider);
     try {
       const { error: signInError } = await supabase.auth.signInWithOAuth({
@@ -55,8 +61,9 @@ export default function Register() {
         },
       });
       if (signInError) {
-        setError(`Could not continue with ${provider}: ${signInError.message}`);
         toast.error(signInError.message);
+      } else {
+        toast.message("Redirecting to Google…", { duration: 2500 });
       }
     } finally {
       setOauthBusy(null);
@@ -64,22 +71,18 @@ export default function Register() {
   };
 
   const sendPhoneSignupCode = async () => {
-    setError(null);
     const parsed = toE164Ng(phone);
     if ("error" in parsed) {
-      setError(parsed.error);
+      toast.error(parsed.error);
       return;
     }
     setLoading(true);
     try {
       const { error: otpErr } = await supabase.auth.signInWithOtp({
         phone: parsed.e164,
-        options: {
-          shouldCreateUser: true,
-        },
+        options: { shouldCreateUser: true },
       });
       if (otpErr) {
-        setError(otpErr.message);
         toast.error(otpErr.message);
         return;
       }
@@ -93,33 +96,28 @@ export default function Register() {
     }
   };
 
+  const validateBeforeSubmit = (): boolean => {
+    if (!isValidEmailFormat(email)) {
+      toast.error("Please enter a valid email.");
+      return false;
+    }
+    if (!passwordMeetsRequirements(password)) {
+      toast.error("Use a stronger password: at least 8 characters with letters and numbers.");
+      return false;
+    }
+    if (password !== confirmPassword) {
+      toast.error("Passwords don’t match.");
+      return false;
+    }
+    return true;
+  };
+
   const handleEmailRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
-
-    if (password !== confirmPassword) {
-      setError("Passwords do not match.");
-      return;
-    }
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters.");
-      return;
-    }
-    if (!selectedState || !lga) {
-      setError("Please select your state and LGA.");
-      return;
-    }
+    if (!validateBeforeSubmit()) return;
 
     const emailNorm = email.trim().toLowerCase();
-    let phoneForMeta: string | undefined;
-    if (emailPhone.trim()) {
-      const p = toE164Ng(emailPhone);
-      if ("error" in p) {
-        setError(p.error);
-        return;
-      }
-      phoneForMeta = p.e164;
-    }
+    const nameTrim = fullName.trim();
 
     setLoading(true);
     try {
@@ -127,125 +125,245 @@ export default function Register() {
         email: emailNorm,
         password,
         options: {
-          emailRedirectTo: authRedirectTo("/login"),
+          emailRedirectTo: authRedirectTo("/login?next=/welcome"),
           data: {
-            full_name: fullName.trim(),
-            phone: phoneForMeta ?? "",
-            role: selectedRole,
-            gender,
-            state: selectedState,
-            lga,
-            address: address.trim() || "",
+            ...(nameTrim ? { full_name: nameTrim } : {}),
+            role: "buyer",
           },
         },
       });
 
       if (signUpError) {
+        const msg = mapSignUpErrorToToast(signUpError.message);
+        toast.error(msg);
         if (signUpError.message.toLowerCase().includes("rate limit")) {
-          setError(
-            "Too many sign-up attempts. Wait a few minutes or adjust email rate limits in the Supabase dashboard.",
-          );
-        } else {
-          setError(signUpError.message);
+          toast.message("Wait a few minutes and try again.", { duration: 5000 });
         }
         return;
       }
 
       if (data?.session) {
-        toast.success("Account ready.");
-        navigate("/", { replace: true });
+        toast.success("Account created! Redirecting…");
+        setTimeout(() => navigate("/welcome", { replace: true }), 400);
         return;
       }
 
+      toast.info("We’ve sent a confirmation email — tap the link to activate your account.");
       navigate(`/check-email?email=${encodeURIComponent(emailNorm)}`, { replace: true });
     } finally {
       setLoading(false);
     }
   };
 
-  const headerTitle =
-    step === "choose" ? null : step === "phone" ? "Phone number" : "Register with email";
-
-  const headerSubtitle =
-    step === "phone" ? "We’ll text you a code to confirm." : step === "email" ? "We’ll email you a confirmation link." : null;
+  const strengthColor =
+    pwdStrength === "strong" ? "bg-emerald-500" : pwdStrength === "medium" ? "bg-amber-500" : "bg-red-400";
+  const strengthWidth = pwdStrength === "strong" ? "100%" : pwdStrength === "medium" ? "66%" : "33%";
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#ecfdf5] via-white to-gray-50 flex items-center justify-center p-4 py-10">
-      <div className="w-full max-w-[460px] rounded-2xl border border-gray-100 bg-white shadow-xl shadow-gray-200/50 overflow-hidden">
-        {step === "choose" ? (
-          <div className="border-b border-gray-100 bg-[#15803d] px-6 py-5 text-center">
-            <Link to="/" className="inline-flex items-center gap-2 text-lg font-bold tracking-tight text-white">
-              <span className="text-2xl" aria-hidden>
-                🌿
-              </span>
-              GreenHub
-            </Link>
-            <p className="mt-1 text-sm text-emerald-100">Create your account</p>
-          </div>
-        ) : (
-          <div className="flex items-center gap-3 border-b border-gray-100 px-4 py-4">
-            <button
-              type="button"
-              onClick={() => {
-                setStep("choose");
-                setError(null);
-              }}
-              className="rounded-full p-2 text-gray-600 hover:bg-gray-100"
-              aria-label="Back"
+    <div className="flex min-h-dvh flex-col bg-gradient-to-b from-emerald-50/90 via-white to-gray-50">
+      {step === "email" ? (
+        <>
+          <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 px-4 pb-4 pt-6 sm:px-6">
+            <motion.div
+              className="mx-auto w-full max-w-[440px]"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.5, ease: [0.42, 0, 1, 1] }}
             >
-              <ArrowLeft className="h-5 w-5" />
-            </button>
-            <div>
-              <h1 className="text-lg font-bold text-gray-900">{headerTitle}</h1>
-              {headerSubtitle ? <p className="text-xs text-gray-500">{headerSubtitle}</p> : null}
-            </div>
-          </div>
-        )}
+              <div className="mb-6 text-center">
+                <Link to="/" className="inline-flex items-center gap-2 text-lg font-bold tracking-tight text-emerald-800">
+                  <span className="text-2xl" aria-hidden>
+                    🌿
+                  </span>
+                  GreenHub
+                </Link>
+                <h1 className="mt-4 text-2xl font-bold tracking-tight text-gray-900 sm:text-[1.65rem]">
+                  Join GreenHub – free forever
+                </h1>
+                <p className="mt-2 text-sm text-gray-600">No credit card required. No spam.</p>
+              </div>
 
-        <div className="p-6 md:p-8">
-          {step === "choose" ? (
-            <div>
-              <AuthSocialButtons
-                onGoogle={() => void handleSocialLogin("google")}
-                onFacebook={() => void handleSocialLogin("facebook")}
-                busy={oauthBusy}
-              />
+              <div className="rounded-2xl border border-emerald-100/80 bg-emerald-50/50 px-4 py-3 text-left shadow-sm">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white shadow-sm ring-1 ring-emerald-100">
+                    <Lock className="h-5 w-5 text-emerald-700" aria-hidden />
+                  </div>
+                  <div className="min-w-0 space-y-1 text-sm">
+                    <p className="font-medium text-gray-900">Your data is safe – no hidden fees.</p>
+                    <p className="flex items-center gap-1.5 text-gray-600">
+                      <Users className="h-4 w-4 shrink-0 text-emerald-600" aria-hidden />
+                      Join 1,000+ sellers in Nigeria.
+                    </p>
+                    <p className="text-[11px] leading-snug text-emerald-900/85">
+                      We&apos;ll verify your phone later – no spam, just security.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-6">
+                <AuthSocialButtons
+                  onGoogle={() => void handleSocialLogin("google")}
+                  onFacebook={() => void handleSocialLogin("facebook")}
+                  busy={oauthBusy}
+                  disabled={loading}
+                />
+              </div>
 
               <div className="relative my-8">
                 <div className="absolute inset-0 flex items-center">
                   <div className="w-full border-t border-gray-200" />
                 </div>
-                <div className="relative flex justify-center text-xs font-semibold uppercase tracking-wider">
-                  <span className="bg-white px-3 text-gray-400">Or</span>
+                <div className="relative flex justify-center text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                  <span className="bg-white px-3">Or with email</span>
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setStep("email")}
-                className="mb-3 flex w-full items-center justify-center gap-2 rounded-xl border-2 border-gray-200 py-3.5 text-sm font-bold text-gray-800 hover:border-[#22c55e]/40 hover:bg-[#f0fdf4]/50"
-              >
-                <Mail className="h-5 w-5 shrink-0 text-[#15803d]" aria-hidden />
-                Register with email
-              </button>
+              <form id={FORM_ID} onSubmit={(e) => void handleEmailRegister(e)} className="space-y-4">
+                <div>
+                  <label htmlFor="reg-email" className="mb-1.5 block text-sm font-medium text-gray-700">
+                    Email
+                  </label>
+                  <div className="relative">
+                    <input
+                      id="reg-email"
+                      type="email"
+                      inputMode="email"
+                      autoComplete="email"
+                      required
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="you@example.com"
+                      className={cn(
+                        "h-12 w-full rounded-xl border bg-white px-4 pr-11 text-[15px] outline-none transition focus:ring-2 focus:ring-emerald-500/25",
+                        emailTouched && !emailOk ? "border-red-200" : emailOk ? "border-emerald-300" : "border-gray-200",
+                      )}
+                    />
+                    {emailTouched ? (
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2" aria-hidden>
+                        {emailOk ? (
+                          <Check className="h-5 w-5 text-emerald-600 animate-in zoom-in-50 duration-200" />
+                        ) : (
+                          <X className="h-5 w-5 text-red-500 animate-in zoom-in-50 duration-200" />
+                        )}
+                      </span>
+                    ) : null}
+                  </div>
+                  {emailTouched && !emailOk ? (
+                    <p className="mt-1 text-xs text-red-600">Enter a valid email address</p>
+                  ) : null}
+                </div>
+
+                <div>
+                  <label htmlFor="reg-name" className="mb-1.5 block text-sm font-medium text-gray-700">
+                    Full name <span className="font-normal text-gray-400">(optional)</span>
+                  </label>
+                  <input
+                    id="reg-name"
+                    type="text"
+                    autoComplete="name"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    placeholder="How should we greet you?"
+                    className="h-12 w-full rounded-xl border border-gray-200 bg-white px-4 text-[15px] outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="reg-password" className="mb-1.5 block text-sm font-medium text-gray-700">
+                    Password
+                  </label>
+                  <div className="relative">
+                    <input
+                      id="reg-password"
+                      type={showPassword ? "text" : "password"}
+                      autoComplete="new-password"
+                      required
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Min. 8 characters"
+                      className="h-12 w-full rounded-xl border border-gray-200 bg-white px-4 pr-12 text-[15px] outline-none focus:ring-2 focus:ring-emerald-500/20"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                      aria-label={showPassword ? "Hide password" : "Show password"}
+                    >
+                      {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                    </button>
+                  </div>
+                  <div className="mt-2 space-y-1.5">
+                    <div className="flex h-1.5 overflow-hidden rounded-full bg-gray-200">
+                      <div
+                        className={cn("h-full rounded-full transition-all duration-300", strengthColor)}
+                        style={{ width: pwdOk ? strengthWidth : "0%" }}
+                      />
+                    </div>
+                    <p className="text-xs font-medium text-gray-600">
+                      {password.length === 0
+                        ? "Strength: —"
+                        : `Strength: ${pwdStrength.charAt(0).toUpperCase() + pwdStrength.slice(1)}`}
+                    </p>
+                    <ul className="text-[11px] text-gray-500">
+                      <li className={password.length >= 8 ? "text-emerald-700" : ""}>• At least 8 characters</li>
+                      <li className={/[0-9]/.test(password) ? "text-emerald-700" : ""}>• One number</li>
+                      <li className={/[a-zA-Z]/.test(password) ? "text-emerald-700" : ""}>• One letter</li>
+                    </ul>
+                  </div>
+                </div>
+
+                <div>
+                  <label htmlFor="reg-confirm" className="mb-1.5 block text-sm font-medium text-gray-700">
+                    Confirm password
+                  </label>
+                  <div className="relative">
+                    <input
+                      id="reg-confirm"
+                      type={showConfirmPassword ? "text" : "password"}
+                      autoComplete="new-password"
+                      required
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="Repeat password"
+                      className={cn(
+                        "h-12 w-full rounded-xl border bg-white px-4 pr-11 text-[15px] outline-none focus:ring-2 focus:ring-emerald-500/20",
+                        confirmTouched && !confirmOk ? "border-red-200" : confirmOk ? "border-emerald-300" : "border-gray-200",
+                      )}
+                    />
+                    {confirmTouched ? (
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2" aria-hidden>
+                        {confirmOk ? (
+                          <Check className="h-5 w-5 text-emerald-600 animate-in zoom-in-50 duration-200" />
+                        ) : (
+                          <X className="h-5 w-5 text-red-500 animate-in zoom-in-50 duration-200" />
+                        )}
+                      </span>
+                    ) : null}
+                  </div>
+                  {confirmTouched && !confirmOk ? (
+                    <p className="mt-1 text-xs text-red-600">Passwords must match</p>
+                  ) : null}
+                </div>
+              </form>
 
               <button
                 type="button"
                 onClick={() => setStep("phone")}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#15803d] py-3.5 text-sm font-bold text-white shadow-md shadow-emerald-900/10 hover:bg-[#166534]"
+                className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-gray-300 py-3 text-sm font-semibold text-gray-700 transition hover:border-emerald-300 hover:bg-emerald-50/50"
               >
-                <Smartphone className="h-5 w-5 shrink-0 opacity-95" aria-hidden />
-                Register with Phone
+                <Smartphone className="h-4 w-4 text-emerald-700" aria-hidden />
+                Prefer to sign up with phone?
               </button>
 
-              <p className="mt-8 text-center text-sm text-gray-600">
+              <p className="mt-6 text-center text-sm text-gray-600">
                 Already have an account?{" "}
-                <Link to="/login" className="font-bold text-[#15803d] hover:underline">
+                <Link to="/login" className="font-bold text-emerald-700 hover:underline">
                   Sign in
                 </Link>
               </p>
 
-              <p className="mt-6 text-center text-xs leading-relaxed text-gray-400">
+              <p className="mt-4 text-center text-[11px] leading-relaxed text-gray-400">
                 By continuing you agree to our{" "}
                 <Link to="/terms" className="underline hover:text-gray-600">
                   Terms
@@ -256,209 +374,64 @@ export default function Register() {
                 </Link>
                 .
               </p>
+            </motion.div>
+          </div>
+
+          <div className="sticky bottom-0 z-10 border-t border-gray-200/80 bg-white/95 px-4 py-3 shadow-[0_-4px_24px_rgba(0,0,0,0.06)] backdrop-blur-md pb-[max(12px,env(safe-area-inset-bottom))] sm:px-6">
+            <div className="mx-auto max-w-[440px]">
+              <button
+                type="submit"
+                form={FORM_ID}
+                disabled={loading}
+                className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 text-sm font-bold text-white shadow-md shadow-emerald-900/10 transition-transform duration-200 ease-out hover:scale-[1.02] hover:brightness-110 hover:bg-emerald-800 active:scale-[0.98] disabled:opacity-60"
+              >
+                {loading ? <Loader2 className="h-5 w-5 shrink-0 animate-spin" aria-hidden /> : "Create account"}
+              </button>
             </div>
-          ) : step === "phone" ? (
-            <div>
-              {error ? (
-                <div className="mb-4 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-center text-sm text-red-700">
-                  {error}
-                </div>
-              ) : null}
-              <label className="mb-2 block text-sm font-medium text-gray-700">Mobile number</label>
-              <input
-                type="tel"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="e.g. 0803 123 4567"
-                autoComplete="tel"
-                className="mb-6 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-[#22c55e] focus:outline-none focus:ring-2 focus:ring-[#22c55e]/20"
-              />
+          </div>
+        </>
+      ) : (
+        <div className="flex flex-1 flex-col overflow-y-auto px-4 py-8 sm:px-6">
+          <div className="mx-auto w-full max-w-[440px]">
+            <div className="mb-6 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setStep("email")}
+                className="rounded-full p-2 text-gray-600 hover:bg-gray-100"
+                aria-label="Back"
+              >
+                <ArrowLeft className="h-5 w-5" />
+              </button>
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">Phone number</h2>
+                <p className="text-xs text-gray-500">We’ll text you a code to confirm.</p>
+              </div>
+            </div>
+            <label className="mb-2 block text-sm font-medium text-gray-700">Mobile number</label>
+            <input
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="e.g. 0803 123 4567"
+              autoComplete="tel"
+              className="mb-6 h-12 w-full rounded-xl border border-gray-200 px-4 text-[15px] outline-none focus:ring-2 focus:ring-emerald-500/20"
+            />
+            <div className="sticky bottom-0 pb-[max(12px,env(safe-area-inset-bottom))]">
               <button
                 type="button"
                 onClick={() => void sendPhoneSignupCode()}
                 disabled={loading}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#15803d] py-3.5 text-sm font-bold text-white hover:bg-[#166534] disabled:opacity-60"
+                className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 text-sm font-bold text-white shadow-md transition-transform duration-200 ease-out hover:scale-[1.02] hover:brightness-110 hover:bg-emerald-800 active:scale-[0.98] disabled:opacity-60"
               >
-                {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : null}
-                Send verification code
+                {loading ? <Loader2 className="h-5 w-5 shrink-0 animate-spin" aria-hidden /> : "Send verification code"}
               </button>
-              <p className="mt-4 text-center text-xs text-gray-500">
-                SMS delivery requires Phone provider enabled in Supabase (Auth → Providers → Phone).
-              </p>
             </div>
-          ) : (
-            <>
-              {error ? (
-                <div className="mb-4 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-center text-sm text-red-700">
-                  {error}
-                </div>
-              ) : null}
-
-              <form onSubmit={(e) => void handleEmailRegister(e)} className="space-y-4">
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium text-gray-700">Full name</label>
-                  <input
-                    type="text"
-                    required
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    placeholder="Full name"
-                    autoComplete="name"
-                    className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-[#22c55e] focus:outline-none focus:ring-2 focus:ring-[#22c55e]/20"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium text-gray-700">Email</label>
-                  <input
-                    type="email"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="you@example.com"
-                    autoComplete="email"
-                    className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-[#22c55e] focus:outline-none focus:ring-2 focus:ring-[#22c55e]/20"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium text-gray-700">Phone (optional)</label>
-                  <input
-                    type="tel"
-                    value={emailPhone}
-                    onChange={(e) => setEmailPhone(e.target.value)}
-                    placeholder="080…"
-                    autoComplete="tel"
-                    className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-[#22c55e] focus:outline-none focus:ring-2 focus:ring-[#22c55e]/20"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium text-gray-700">Password</label>
-                  <div className="relative">
-                    <input
-                      type={showPassword ? "text" : "password"}
-                      required
-                      placeholder="At least 6 characters"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      autoComplete="new-password"
-                      className="w-full rounded-xl border border-gray-200 px-4 py-3 pr-12 text-sm focus:border-[#22c55e] focus:outline-none focus:ring-2 focus:ring-[#22c55e]/20"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                      aria-label={showPassword ? "Hide password" : "Show password"}
-                    >
-                      {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium text-gray-700">Confirm password</label>
-                  <div className="relative">
-                    <input
-                      type={showConfirmPassword ? "text" : "password"}
-                      required
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      placeholder="Repeat password"
-                      autoComplete="new-password"
-                      className="w-full rounded-xl border border-gray-200 px-4 py-3 pr-12 text-sm focus:border-[#22c55e] focus:outline-none focus:ring-2 focus:ring-[#22c55e]/20"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                      aria-label={showConfirmPassword ? "Hide password" : "Show password"}
-                    >
-                      {showConfirmPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium text-gray-700">Gender</label>
-                  <select
-                    value={gender}
-                    onChange={(e) => setGender(e.target.value)}
-                    className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-[#22c55e] focus:outline-none focus:ring-2 focus:ring-[#22c55e]/20"
-                  >
-                    <option value="Prefer not to say">Prefer not to say</option>
-                    <option value="Male">Male</option>
-                    <option value="Female">Female</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium text-gray-700">State</label>
-                  <select
-                    required
-                    value={selectedState}
-                    onChange={(e) => {
-                      setSelectedState(e.target.value);
-                      setLga("");
-                    }}
-                    className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-[#22c55e] focus:outline-none focus:ring-2 focus:ring-[#22c55e]/20"
-                  >
-                    <option value="">Select state</option>
-                    {nigerianStates.map((state) => (
-                      <option key={state.code} value={state.name}>
-                        {state.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {selectedState ? (
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-gray-700">LGA</label>
-                    <select
-                      required
-                      value={lga}
-                      onChange={(e) => setLga(e.target.value)}
-                      className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-[#22c55e] focus:outline-none focus:ring-2 focus:ring-[#22c55e]/20"
-                    >
-                      <option value="">Select LGA</option>
-                      {lgas.map((x) => (
-                        <option key={x} value={x}>
-                          {x}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                ) : null}
-
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium text-gray-700">Address (optional)</label>
-                  <input
-                    value={address}
-                    onChange={(e) => setAddress(e.target.value)}
-                    placeholder="Street, area…"
-                    autoComplete="street-address"
-                    className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-[#22c55e] focus:outline-none focus:ring-2 focus:ring-[#22c55e]/20"
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-[#15803d] py-3.5 text-sm font-bold text-white shadow-sm hover:bg-[#166534] disabled:opacity-70"
-                >
-                  {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : null}
-                  Create account
-                </button>
-              </form>
-
-              <p className="mt-4 text-center text-xs text-gray-500">
-                You must confirm your email before you can sign in with a password. Check your inbox after submitting.
-              </p>
-            </>
-          )}
+            <p className="mt-4 text-center text-[11px] text-gray-500">
+              SMS requires Phone auth in your Supabase project settings.
+            </p>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

@@ -254,6 +254,7 @@ export default function ChatRoomV2() {
   const [isFollowingPeer, setIsFollowingPeer] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
   const [peerFollowerCount, setPeerFollowerCount] = useState<number | null>(null);
+  const [peerPhoneVerified, setPeerPhoneVerified] = useState(false);
 
   const [editOpen, setEditOpen] = useState(false);
   const [editText, setEditText] = useState("");
@@ -538,8 +539,10 @@ export default function ChatRoomV2() {
       setPeerId(peer);
       setPeerLastActive(null);
       setPeerOnline(false);
+      setPeerPhoneVerified(false);
 
-      const profileSel = "full_name, avatar_url, gender, phone, state, lga, created_at, last_active";
+      const profileSel =
+        "full_name, avatar_url, gender, phone, state, lga, created_at, last_active, phone_verified";
       const pubRes = await supabase.from("profiles_public").select(profileSel).eq("id", peer).maybeSingle();
 
       let prof: Record<string, unknown> | null = null;
@@ -558,6 +561,7 @@ export default function ChatRoomV2() {
         setPeerGender(typeof g === "string" ? g : null);
         const la = typeof prof.last_active === "string" ? prof.last_active : null;
         setPeerLastActive(la);
+        setPeerPhoneVerified(prof.phone_verified === true);
       } else {
         setPeerName("Member");
         setPeerAvatarUrl(null);
@@ -1504,6 +1508,7 @@ export default function ChatRoomV2() {
       <ChatPeerHeaderModern
         peerId={peerId}
         peerName={peerName}
+        phoneVerified={peerPhoneVerified}
         avatarSrc={peerAvatarDisplay}
         followerCount={peerFollowerCount}
         lastSeenShort={

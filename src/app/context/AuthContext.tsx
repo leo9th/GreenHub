@@ -8,6 +8,8 @@ export interface UserProfile {
   full_name?: string | null;
   email?: string | null;
   phone?: string | null;
+  /** Set after SMS OTP on profile (see `PhoneVerification`). */
+  phone_verified?: boolean | null;
   avatar_url?: string | null;
   /** Optional banner image on profile (public URL). */
   cover_url?: string | null;

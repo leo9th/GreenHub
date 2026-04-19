@@ -1,8 +1,11 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate, useParams } from "react-router";
 import { ArrowLeft, Upload, X } from "lucide-react";
+import { toast } from "sonner";
 import { useAuth } from "../../context/AuthContext";
 import { supabase } from "../../../lib/supabase";
+import { Progress } from "../../components/ui/progress";
+import { uploadStorageObjectWithProgress } from "../../utils/storageUploadWithProgress";
 import { categories, nigerianStates } from "../../data/catalogConstants";
 import {
   INTERNATIONAL_SHIPPING_PRESETS,
@@ -24,6 +27,8 @@ export default function AddProduct() {
   const { user: authUser, loading: authLoading } = useAuth();
 
   const [isSaving, setIsSaving] = useState(false);
+  /** 0–100 while new images upload; null when idle */
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [imageFiles, setImageFiles] = useState<{ file: File; preview: string }[]>([]);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -182,27 +187,33 @@ export default function AddProduct() {
     });
   };
 
-  const uploadNewImages = async (): Promise<string[]> => {
+  const uploadNewImages = async (onProgress: (pct: number) => void): Promise<string[]> => {
     if (!authUser?.id) return [];
     const urls: string[] = [];
     let firstUploadError: unknown = null;
+    const total = imageFiles.length;
+    const report = (fileIndex: number, filePct: number) => {
+      const slice = ((fileIndex + filePct / 100) / Math.max(total, 1)) * 100;
+      onProgress(Math.min(100, Math.round(slice)));
+    };
 
-    for (const item of imageFiles) {
+    for (let i = 0; i < imageFiles.length; i++) {
+      const item = imageFiles[i];
       const fileExt = item.file.name.split(".").pop() || "jpg";
       const fileName = `${authUser.id}/${crypto.randomUUID?.() ?? Math.random().toString(36).slice(2)}.${fileExt}`;
 
-      const { error: uploadError } = await supabase.storage.from(STORAGE_BUCKET).upload(fileName, item.file, {
-        upsert: false,
-      });
-
-      if (uploadError) {
-        if (firstUploadError == null) firstUploadError = uploadError;
-        console.warn("Image upload failed:", fileName, uploadError);
+      try {
+        await uploadStorageObjectWithProgress(STORAGE_BUCKET, fileName, item.file, (p) => report(i, p));
+      } catch (e) {
+        if (firstUploadError == null) firstUploadError = e;
+        console.warn("Image upload failed:", fileName, e);
+        report(i, 100);
         continue;
       }
 
       const { data } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(fileName);
       if (data?.publicUrl) urls.push(data.publicUrl);
+      report(i, 100);
     }
 
     if (imageFiles.length > 0 && urls.length === 0 && firstUploadError != null) {
@@ -271,13 +282,14 @@ export default function AddProduct() {
     }
 
     setIsSaving(true);
+    setUploadProgress(imageFiles.length > 0 ? 0 : null);
 
     try {
       const intlKeys = Object.keys(intlShippingById);
       const shippingDestPayload = intlKeys.length ? intlKeys : null;
       const intlFeesPayload = intlKeys.length ? intlShippingById : null;
 
-      const uploadedUrls = await uploadNewImages();
+      const uploadedUrls = await uploadNewImages((pct) => setUploadProgress(pct));
       const imageUrls = [...existingImageUrls, ...uploadedUrls].slice(0, MAX_PRODUCT_IMAGES);
       const mainImage = imageUrls[0];
 
@@ -309,7 +321,7 @@ export default function AddProduct() {
 
         if (updateError) throw updateError;
 
-        alert("Product updated successfully.");
+        toast.success("Product Published!", { description: "Your listing was updated." });
         navigate("/seller/products");
         return;
       }
@@ -335,13 +347,15 @@ export default function AddProduct() {
 
       if (insertError) throw insertError;
 
-      alert("Product listed successfully.");
+      toast.success("Product Published!", { description: "Your listing is live." });
       navigate("/seller/products");
     } catch (error: unknown) {
       console.error("Save failed:", error);
       const msg = supabaseErrorMessage(error, "Product could not be saved.");
-      alert(msg);
+      const isUpload = String(msg).toLowerCase().includes("upload");
+      toast.error(isUpload ? "Upload Failed" : "Could not save", { description: msg });
     } finally {
+      setUploadProgress(null);
       setIsSaving(false);
     }
   };
@@ -645,6 +659,16 @@ export default function AddProduct() {
             <p className="text-xs text-gray-500">No international routes selected — buyers only see local / other options you add elsewhere.</p>
           )}
         </div>
+
+        {uploadProgress != null ? (
+          <div className="rounded-xl border border-emerald-100 bg-emerald-50/90 px-3 py-2">
+            <div className="mb-1 flex items-center justify-between text-xs font-medium text-emerald-900">
+              <span>Uploading images</span>
+              <span className="tabular-nums">{uploadProgress}%</span>
+            </div>
+            <Progress value={uploadProgress} className="h-2 bg-emerald-200/80 [&>[data-slot=progress-indicator]]:bg-[#16a34a]" />
+          </div>
+        ) : null}
 
         <div className="pt-2">
           <button

@@ -43,6 +43,8 @@ export type ChatPeerHeaderModernProps = {
   menu: React.ReactNode;
   /** Extra classes on root header (position/sticky) */
   className?: string;
+  /** Seller completed SMS phone verification on profile */
+  phoneVerified?: boolean;
 };
 
 /**
@@ -61,6 +63,7 @@ export function ChatPeerHeaderModern({
   onBack,
   menu,
   className,
+  phoneVerified,
 }: ChatPeerHeaderModernProps) {
   const handle = handleProp ?? derivePeerHandle(peerName);
   const profileTo = peerId ? `/profile/${peerId}` : "/messages";
@@ -103,7 +106,14 @@ export function ChatPeerHeaderModern({
         <img src={avatarSrc} alt="" className="h-full w-full object-cover" draggable={false} />
       </div>
       <div className="min-w-0 flex-1">
-        <p className="truncate text-base font-semibold leading-tight text-zinc-900 dark:text-zinc-50">{peerName}</p>
+        <p className="truncate text-base font-semibold leading-tight text-zinc-900 dark:text-zinc-50">
+          {phoneVerified ? (
+            <span className="mr-1 inline-block align-middle" title="Phone verified" aria-label="Phone verified">
+              ✅
+            </span>
+          ) : null}
+          {peerName}
+        </p>
         <p className="truncate text-[13px] text-zinc-500 dark:text-zinc-400">{handle}</p>
         <p
           className={cn(

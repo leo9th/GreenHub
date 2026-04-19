@@ -1,5 +1,5 @@
 import { Link } from "react-router";
-import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
+import { useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { MapPin } from "lucide-react";
 import { useCurrency } from "../../hooks/useCurrency";
 
@@ -38,6 +38,8 @@ export interface ProductCardProps {
   sellerFollowerCount?: number;
   sellerName?: string;
   verifiedSellerBadge?: string;
+  /** First viewport row: eager load for LCP */
+  imagePriority?: boolean;
 }
 
 export function ProductCard({
@@ -55,8 +57,11 @@ export function ProductCard({
   priceDisplay,
   priceLocal,
   sellerName,
+  sellerVerified,
+  imagePriority,
 }: ProductCardProps) {
   const formatPrice = useCurrency();
+  const [imgLoaded, setImgLoaded] = useState(false);
 
   const resolvedId =
     id != null && String(id).trim() !== ""
@@ -81,7 +86,7 @@ export function ProductCard({
       : formatPrice(priceLocal ?? price);
 
   return (
-    <div className="group flex h-full w-full flex-col overflow-hidden rounded-2xl border border-slate-100/50 bg-white shadow-sm transition-all duration-300 hover:shadow-xl">
+    <div className="group flex h-full w-full flex-col overflow-hidden rounded-2xl border border-slate-100/50 bg-white shadow-sm transition-all duration-300 ease-out hover:-translate-y-2 hover:shadow-xl">
       <Link
         to={linkTo}
         className="flex h-full flex-col text-inherit no-underline outline-none ring-offset-2 focus-visible:ring-2 focus-visible:ring-[#22c55e]"
@@ -89,7 +94,7 @@ export function ProductCard({
       >
         {/* Image area: min height on small screens, flex-shrink-0 so parent flex never squashes the image */}
         <div
-          className="shrink-0"
+          className="shrink-0 overflow-hidden"
           style={{
             width: "100%",
             minHeight: "clamp(200px, 52vw, 280px)",
@@ -97,27 +102,32 @@ export function ProductCard({
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            overflow: "hidden",
             backgroundColor: "#f3f4f6",
             position: "relative",
             borderRadius: "12px 12px 0 0",
           }}
         >
+          {!imgLoaded ? (
+            <div
+              className="product-card-skeleton__image absolute inset-0 z-[1] rounded-t-[12px]"
+              aria-hidden
+            />
+          ) : null}
           <img
             src={imageUrl}
             alt={title}
+            className="relative z-[2] max-h-[clamp(220px,72vw,360px)] w-full origin-center object-contain object-center transition-transform duration-300 ease-out group-hover:scale-105"
             style={{
-              width: "100%",
-              height: "auto",
-              maxHeight: "clamp(220px, 72vw, 360px)",
-              objectFit: "contain",
-              objectPosition: "center",
               display: "block",
+              height: "auto",
             }}
-            loading="lazy"
+            loading={imagePriority ? "eager" : "lazy"}
+            decoding="async"
+            onLoad={() => setImgLoaded(true)}
             onError={(e) => {
               e.currentTarget.onerror = null;
               e.currentTarget.src = PLACEHOLDER_IMG;
+              setImgLoaded(true);
             }}
           />
           {condition && (
@@ -148,7 +158,14 @@ export function ProductCard({
                 <MapPin size={12} className="shrink-0" />
                 {locationDisplay}
               </span>
-              <span className="text-[11px] font-medium italic text-slate-400">{sellerDisplay}</span>
+              <span className="flex items-center gap-1 text-[11px] font-medium italic text-slate-400">
+                {sellerVerified ? (
+                  <span title="Phone verified" aria-label="Phone verified" className="not-italic">
+                    ✅
+                  </span>
+                ) : null}
+                {sellerDisplay}
+              </span>
             </div>
           </div>
 

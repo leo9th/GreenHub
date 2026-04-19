@@ -1,6 +1,7 @@
 import { Outlet, useLocation, Link } from "react-router";
 import { Briefcase, Wallet, ShoppingBag, TrendingUp, Package } from "lucide-react";
 import { useEffect } from "react";
+import { AnimatePresence, motion } from "motion/react";
 import Footer from "../components/Footer";
 import FloatingChatbotWidget from "../components/FloatingChatbotWidget";
 import TopNav from "../components/TopNav";
@@ -35,6 +36,7 @@ export default function Root() {
     "/verify-otp",
     "/check-email",
     "/complete-profile",
+    "/welcome",
     "/forgot-password",
     "/reset-password",
     "/design-system",
@@ -53,9 +55,20 @@ export default function Root() {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-background flex flex-col transition-colors duration-200">
-      <main className={`flex-1 ${showBottomNav ? "pb-28 md:pb-0" : ""}`}>
+      <main className={`flex-1 flex flex-col ${showBottomNav ? "pb-28 md:pb-0" : ""}`}>
         <TopNav />
-        <Outlet />
+        <AnimatePresence mode="popLayout">
+          <motion.div
+            key={location.pathname}
+            className="flex-1 flex flex-col"
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.28, ease: "easeOut" }}
+          >
+            <Outlet />
+          </motion.div>
+        </AnimatePresence>
         {showBottomNav && <Footer />}
       </main>
 

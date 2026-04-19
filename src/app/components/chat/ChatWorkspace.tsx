@@ -1,4 +1,5 @@
 import React, { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { motion } from "motion/react";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import {
   ArrowDown,
@@ -363,6 +364,7 @@ export default function ChatWorkspace() {
   const [peerAvatarUrl, setPeerAvatarUrl] = useState<string | null>(null);
   const [peerGender, setPeerGender] = useState<string | null>(null);
   const [peerVerified, setPeerVerified] = useState(false);
+  const [peerPhoneVerified, setPeerPhoneVerified] = useState(false);
   const [peerMemberSince, setPeerMemberSince] = useState<string | null>(null);
   const [peerLastActive, setPeerLastActive] = useState<string | null>(null);
   const [peerPresenceTick, setPeerPresenceTick] = useState(0);
@@ -861,11 +863,12 @@ export default function ChatWorkspace() {
       setPeerId(peer);
 
       setPeerVerified(false);
+      setPeerPhoneVerified(false);
       setPeerMemberSince(null);
       setPeerLastActive(null);
 
       const profileSel =
-        "full_name, avatar_url, gender, phone, state, lga, created_at, last_active";
+        "full_name, avatar_url, gender, phone, state, lga, created_at, last_active, phone_verified";
 
       const pubPromise = supabase.from("profiles_public").select(profileSel).eq("id", peer).maybeSingle();
       const verPromise = supabase.from("seller_verification").select("id").eq("seller_id", peer).limit(1).maybeSingle();
@@ -890,6 +893,7 @@ export default function ChatWorkspace() {
         setPeerMemberSince(formatMemberSince(created));
         const la = typeof prof.last_active === "string" ? prof.last_active : null;
         setPeerLastActive(la);
+        setPeerPhoneVerified(prof.phone_verified === true);
       } else {
         setPeerName("Member");
         setPeerAvatarUrl(null);
@@ -2251,6 +2255,7 @@ export default function ChatWorkspace() {
           <ChatPeerHeaderModern
             peerId={peerId}
             peerName={peerName}
+            phoneVerified={peerPhoneVerified}
             avatarSrc={peerAvatarDisplay}
             followerCount={peerFollowerCount}
             lastSeenShort={
@@ -2438,6 +2443,10 @@ export default function ChatWorkspace() {
                 const dfe = isDeletedForEveryone(msg);
 
                 const actionsDisabled = String(msg.id).startsWith("pending-") || dfe;
+
+                const createdMs = new Date(msg.created_at).getTime();
+                const brandNewMessage = Number.isFinite(createdMs) && Date.now() - createdMs < 4000;
+                const staggerDelay = brandNewMessage ? 0 : Math.min(i, 8) * 0.05;
 
                 const messageBubbleEl = (
                   <MessageBubble
@@ -2639,12 +2648,19 @@ export default function ChatWorkspace() {
                         </span>
                       </div>
                     ) : null}
-                    <div
+                    <motion.div
                       ref={(node) => {
                         if (node) messageRefs.current.set(msg.id, node);
                         else messageRefs.current.delete(msg.id);
                       }}
                       className={cn("flex w-full items-start", sameCluster ? "mb-0.5" : "mb-2")}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{
+                        duration: 0.3,
+                        delay: staggerDelay,
+                        ease: [0.25, 0.1, 0.25, 1],
+                      }}
                     >
                       {useDesktopContextMenu ? (
                         <ContextMenu>
@@ -2654,18 +2670,30 @@ export default function ChatWorkspace() {
                       ) : (
                         rowBody
                       )}
-                    </div>
+                    </motion.div>
                   </Fragment>
                 );
               })}
               {peerTyping ? (
-                <div className="mb-2 flex items-center gap-2 text-sm italic text-gray-600 dark:text-zinc-400">
-                  <span className="flex gap-1" aria-hidden>
-                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400 [animation-delay:0ms]" />
-                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400 [animation-delay:150ms]" />
-                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400 [animation-delay:300ms]" />
+                <div className="mb-2 flex items-center gap-2 text-sm text-gray-600 dark:text-zinc-400">
+                  <span className="flex items-end gap-1 pb-0.5" aria-hidden>
+                    {[0, 1, 2].map((d) => (
+                      <motion.span
+                        key={d}
+                        className="h-1.5 w-1.5 rounded-full bg-gray-500 dark:bg-zinc-500"
+                        animate={{ y: [0, -6, 0] }}
+                        transition={{
+                          duration: 0.4,
+                          repeat: Infinity,
+                          ease: "easeInOut",
+                          delay: d * 0.12,
+                        }}
+                      />
+                    ))}
                   </span>
-                  <span>{peerFirstName} is typing…</span>
+                  <span className="italic">
+                    {peerFirstName} is typing…
+                  </span>
                 </div>
               ) : null}
               <div ref={bottomRef} className="h-px shrink-0" aria-hidden />

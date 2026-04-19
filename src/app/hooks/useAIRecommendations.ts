@@ -17,7 +17,7 @@ export function useAIRecommendations(userId: string | null) {
     }
     setLoading(true);
     try {
-      const { data, error } = await activeProductsQuery(supabase, "*").limit(12);
+      const { data, error } = await activeProductsQuery(supabase).limit(12);
       if (error) throw error;
       setRows((data ?? []).map((r) => mapProductRow(r as Record<string, unknown>)));
     } catch {

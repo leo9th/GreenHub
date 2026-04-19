@@ -7,6 +7,7 @@ import {
   type TouchEvent as ReactTouchEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
+import { AnimatePresence, motion } from "motion/react";
 import useEmblaCarousel from "embla-carousel-react";
 import { Link, useParams, useNavigate } from "react-router";
 import {
@@ -174,12 +175,14 @@ type RelatedCarouselItem = {
 type SellerProfileRow = {
   id: string;
   full_name: string | null;
+  username?: string | null;
   avatar_url: string | null;
   gender: string | null;
   state: string | null;
   lga: string | null;
   created_at: string | null;
   phone?: string | null;
+  phone_verified?: boolean | null;
   last_active?: string | null;
   is_verified_advertiser?: boolean | null;
   is_verified?: boolean | null;
@@ -357,11 +360,28 @@ export default function ProductDetail() {
   const [sellerFollowerCountLoading, setSellerFollowerCountLoading] = useState(false);
   const [sellerFollowerCountFailed, setSellerFollowerCountFailed] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
+  const [cartJustAdded, setCartJustAdded] = useState(false);
+  const [openUserDialog, setOpenUserDialog] = useState(false);
   const thumbnailClickDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     window.scrollTo(0, 0);
   }, []);
+
+  useEffect(() => {
+    if (!cartJustAdded) return;
+    const t = window.setTimeout(() => setCartJustAdded(false), 2000);
+    return () => clearTimeout(t);
+  }, [cartJustAdded]);
+
+  useEffect(() => {
+    if (!openUserDialog) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpenUserDialog(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [openUserDialog]);
 
   useEffect(() => {
     const raw = serverProduct?.seller_id ?? serverProduct?.sellerId;
@@ -1148,28 +1168,56 @@ export default function ProductDetail() {
                       role="presentation"
                     >
                       {product.images.length > 0 && mainDisplayImage ? (
-                        <div
-                          style={{
-                            width: "100%",
-                            height: "clamp(400px, 60vh, 700px)",
-                            overflow: "hidden",
-                            backgroundColor: "#f3f4f6",
-                            borderRadius: "12px",
-                          }}
-                        >
-                          <img
-                            src={mainDisplayImage}
-                            alt={product.title}
-                            style={{
-                              width: "100%",
-                              height: "100%",
-                              objectFit: "contain",
-                              objectPosition: "center",
-                            }}
-                            draggable={false}
-                            decoding="async"
-                            onDoubleClick={onMainImageDoubleClick}
-                          />
+                        <div className="relative group mx-auto w-full max-w-2xl overflow-hidden rounded-3xl shadow-lg">
+                          <div className="relative w-full aspect-square md:aspect-video overflow-hidden bg-[#f3f4f6]">
+                            <AnimatePresence initial={false} mode="sync">
+                              <motion.div
+                                key={mainDisplayImage}
+                                className="absolute inset-0"
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                transition={{ duration: 0.3, ease: "easeInOut" }}
+                              >
+                                <img
+                                  src={mainDisplayImage}
+                                  alt={product.title}
+                                  className="h-full w-full object-cover object-center"
+                                  draggable={false}
+                                  decoding="async"
+                                  onDoubleClick={onMainImageDoubleClick}
+                                />
+                              </motion.div>
+                            </AnimatePresence>
+                          </div>
+                          <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-24 bg-gradient-to-t from-black/30 to-transparent" />
+                          {!isOwner && sellerPeerId ? (
+                            <motion.button
+                              type="button"
+                              whileTap={{ scale: 0.9 }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setOpenUserDialog(true);
+                              }}
+                              className="absolute bottom-4 left-4 z-20 flex items-center justify-center rounded-full outline-none ring-offset-2 ring-offset-transparent focus-visible:ring-2 focus-visible:ring-emerald-500"
+                              aria-label={`Seller: ${product.seller.name}`}
+                            >
+                              <div className="relative">
+                                <img
+                                  src={product.seller.avatar}
+                                  alt=""
+                                  className="h-14 w-14 rounded-full border-[3px] border-white object-cover shadow-2xl md:h-16 md:w-16"
+                                  loading="lazy"
+                                />
+                                <span
+                                  className={`absolute bottom-1 right-0.5 h-4 w-4 rounded-full border-2 border-white ${
+                                    sellerOnline ? "bg-emerald-500" : "bg-zinc-400"
+                                  }`}
+                                  aria-hidden
+                                />
+                              </div>
+                            </motion.button>
+                          ) : null}
                         </div>
                       ) : (
                         <div
@@ -1188,7 +1236,7 @@ export default function ProductDetail() {
                           <Heart className="h-[4.25rem] w-[4.25rem] fill-red-500 text-red-500 drop-shadow-lg" strokeWidth={1.5} />
                         </div>
                       ) : null}
-                      <span className="absolute left-3 top-3 z-[1] rounded-lg bg-[#15803d] px-2 py-1 text-[11px] font-semibold text-white shadow-sm">
+                      <span className="absolute left-3 top-3 z-[25] rounded-lg bg-[#15803d] px-2 py-1 text-[11px] font-semibold text-white shadow-sm">
                         {product.condition}
                       </span>
                     </div>
@@ -1273,7 +1321,7 @@ export default function ProductDetail() {
                       <BoostDetailBadge row={foundProduct as Record<string, unknown>} />
                     </div>
                     {product.images.length > 1 ? (
-                      <span className="absolute bottom-3 right-3 z-[2] rounded-full bg-black/55 px-2.5 py-1 text-[11px] font-medium tabular-nums text-white shadow-sm">
+                      <span className="absolute bottom-3 right-3 z-[22] rounded-full bg-black/55 px-2.5 py-1 text-[11px] font-medium tabular-nums text-white shadow-sm">
                         {(galleryActiveIndex >= 0 ? galleryActiveIndex : 0) + 1}/{product.images.length}
                       </span>
                     ) : null}
@@ -1958,7 +2006,8 @@ export default function ProductDetail() {
                   Message seller
                 </button>
               ) : null}
-              <button
+              <motion.button
+                layout
                 type="button"
                 onClick={() => {
                   addToCart({
@@ -1970,15 +2019,38 @@ export default function ProductDetail() {
                     sellerId: sellerPeerId || product.seller.id.toString(),
                     deliveryFee: product.deliveryOptions[0]?.fee ?? 0,
                   });
+                  setCartJustAdded(true);
                   toast.success("Added to cart");
                 }}
-                className="flex-1 py-3 rounded-xl bg-orange-500 text-white text-sm font-semibold hover:bg-orange-600"
+                className="flex min-h-[48px] flex-1 items-center justify-center rounded-xl bg-orange-500 py-3 text-sm font-semibold text-white hover:bg-orange-600"
               >
-                <span className="inline-flex items-center justify-center gap-2">
-                  <ShoppingCart className="w-4 h-4 sm:hidden" />
-                  Add to cart
-                </span>
-              </button>
+                <AnimatePresence mode="wait" initial={false}>
+                  {cartJustAdded ? (
+                    <motion.span
+                      key="added"
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -4 }}
+                      transition={{ duration: 0.25, ease: "easeOut" }}
+                      className="inline-flex items-center justify-center gap-1.5 font-semibold"
+                    >
+                      Added! ✓
+                    </motion.span>
+                  ) : (
+                    <motion.span
+                      key="add"
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -4 }}
+                      transition={{ duration: 0.25, ease: "easeOut" }}
+                      className="inline-flex items-center justify-center gap-2"
+                    >
+                      <ShoppingCart className="h-4 w-4 sm:hidden" />
+                      Add to cart
+                    </motion.span>
+                  )}
+                </AnimatePresence>
+              </motion.button>
               <button
                 type="button"
                 onClick={() => {
@@ -2001,6 +2073,73 @@ export default function ProductDetail() {
           )}
         </div>
       </div>
+
+      <AnimatePresence>
+        {openUserDialog && sellerPeerId && !isOwner ? (
+          <motion.div
+            key="pdp-seller-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pdp-seller-dialog-title"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.25 }}
+            className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 p-6 backdrop-blur-sm"
+            onClick={() => setOpenUserDialog(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.96, y: 12, opacity: 0 }}
+              transition={{ duration: 0.28, ease: "easeOut" }}
+              className="w-full max-w-xs rounded-[2rem] bg-white p-8 text-center shadow-2xl dark:bg-zinc-900"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <img
+                src={product.seller.avatar}
+                alt=""
+                className="mx-auto mb-4 h-24 w-24 rounded-full border-2 border-emerald-500 object-cover p-1"
+              />
+              <h3 id="pdp-seller-dialog-title" className="text-xl font-bold text-gray-900 dark:text-zinc-50">
+                {product.seller.name}
+              </h3>
+              <p className="mb-6 text-sm text-gray-500 dark:text-zinc-400">
+                {product.seller.verified ? "Trusted Vendor" : "Seller"}
+                {displaySellerRating > 0 ? (
+                  <>
+                    {" "}
+                    · {displaySellerRating} ★
+                  </>
+                ) : null}
+              </p>
+              <div className="grid gap-3">
+                <button
+                  type="button"
+                  disabled={!canMessageSeller || isOwner}
+                  onClick={() => {
+                    setOpenUserDialog(false);
+                    scrollToInlineChat();
+                  }}
+                  className="w-full rounded-2xl bg-emerald-600 py-3 font-bold text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Chat with Seller
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpenUserDialog(false);
+                    navigate(`/profile/${sellerPeerId}`);
+                  }}
+                  className="w-full rounded-2xl bg-gray-100 py-3 font-bold text-gray-700 transition-colors hover:bg-gray-200 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700"
+                >
+                  View All Products
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
 
       <EditProductModal
         open={editModalOpen}

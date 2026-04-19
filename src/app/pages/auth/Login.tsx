@@ -1,6 +1,7 @@
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { Eye, EyeOff, Loader2, Smartphone } from "lucide-react";
 import { useState, useEffect } from "react";
+import { motion } from "motion/react";
 import type { AuthError } from "@supabase/supabase-js";
 import { supabase } from "../../../lib/supabase";
 import { toast } from "sonner";
@@ -8,6 +9,7 @@ import { useAuth } from "../../context/AuthContext";
 import { AuthSocialButtons } from "../../components/auth/AuthSocialButtons";
 import { toE164Ng } from "../../utils/phoneE164";
 import { authRedirectTo } from "../../utils/authSiteUrl";
+import { safeInternalPath } from "../../utils/authSignupValidation";
 
 function stripOAuthCodeFromUrl() {
   if (window.location.pathname !== "/login") return;
@@ -27,6 +29,7 @@ function isEmailNotConfirmedError(err: AuthError): boolean {
 export default function Login() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const nextParam = searchParams.get("next");
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -42,10 +45,10 @@ export default function Login() {
   const { session } = useAuth();
 
   useEffect(() => {
-    if (session?.user) {
-      navigate("/", { replace: true });
-    }
-  }, [session, navigate]);
+    if (!session?.user) return;
+    const next = safeInternalPath(nextParam);
+    navigate(next ?? "/", { replace: true });
+  }, [session?.user, navigate, nextParam]);
 
   useEffect(() => {
     const code = searchParams.get("code");
@@ -78,7 +81,8 @@ export default function Login() {
     }
   }, [searchParams]);
 
-  const oauthRedirect = authRedirectTo("/login");
+  const safeNext = safeInternalPath(nextParam);
+  const oauthRedirect = authRedirectTo(safeNext ? `/login?next=${encodeURIComponent(safeNext)}` : "/login");
 
   const handleSocialLogin = async (provider: "google" | "facebook") => {
     setError(null);
@@ -126,7 +130,8 @@ export default function Login() {
       }
       setLoading(false);
     } else {
-      navigate("/");
+      const next = safeInternalPath(nextParam);
+      navigate(next ?? "/", { replace: true });
     }
   };
 
@@ -173,7 +178,12 @@ export default function Login() {
           <p className="text-sm text-emerald-100/90">Sign in to continue shopping and selling</p>
         </div>
 
-        <div className="p-6 md:p-8">
+        <motion.div
+          className="p-6 md:p-8"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.5, ease: [0.42, 0, 1, 1] }}
+        >
           {error ? (
             <div className="mb-4 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-center text-sm text-red-700">
               {error}
@@ -242,10 +252,13 @@ export default function Login() {
             <button
               type="submit"
               disabled={loading}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#15803d] py-3.5 text-sm font-bold text-white shadow-sm hover:bg-[#166534] disabled:opacity-60"
+              className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl bg-[#15803d] py-3.5 text-sm font-bold text-white shadow-sm transition-transform duration-200 ease-out hover:scale-[1.02] hover:brightness-110 active:scale-[0.98] disabled:opacity-60"
             >
-              {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : null}
-              Sign in
+              {loading ? (
+                <Loader2 className="h-5 w-5 shrink-0 animate-spin" aria-hidden />
+              ) : (
+                "Sign in"
+              )}
             </button>
           </form>
 
@@ -276,10 +289,9 @@ export default function Login() {
                   type="button"
                   onClick={() => void sendPhoneLoginCode()}
                   disabled={phoneBusy}
-                  className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-[#22c55e] py-3 text-sm font-bold text-[#15803d] hover:bg-[#f0fdf4] disabled:opacity-50"
+                  className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl border-2 border-[#22c55e] py-3 text-sm font-bold text-[#15803d] transition-transform duration-200 ease-out hover:scale-[1.02] hover:bg-[#f0fdf4] active:scale-[0.98] disabled:opacity-50"
                 >
-                  {phoneBusy ? <Loader2 className="h-5 w-5 animate-spin" /> : null}
-                  Send code
+                  {phoneBusy ? <Loader2 className="h-5 w-5 shrink-0 animate-spin" aria-hidden /> : "Send code"}
                 </button>
                 <p className="text-center text-[11px] text-gray-500">We’ll open the code entry screen next.</p>
               </div>
@@ -292,7 +304,7 @@ export default function Login() {
               Create account
             </Link>
           </p>
-        </div>
+        </motion.div>
       </div>
     </div>
   );

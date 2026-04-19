@@ -82,6 +82,8 @@ alter table public.products add column if not exists seller_tier text;
 alter table public.products add column if not exists delivery_options text[];
 alter table public.products add column if not exists car_brand text;
 
+alter table public.profiles add column if not exists phone_verified boolean not null default false;
+
 alter table public.products enable row level security;
 
 create policy "Public products are viewable by everyone." on public.products

@@ -1,0 +1,53 @@
+# GreenHub Development Protocol
+
+## Strict Rules for Code Modification and Persistence
+
+### 1. No Silent Overwrites
+- Do NOT delete, refactor, or replace existing logic without explicit permission
+- Specifically preserve:
+  - WhatsApp branding and integration
+  - #25D366 color scheme (WhatsApp green)
+  - Product Reference Card logic
+  - Communication button implementations
+  - Database handshake logic
+- Always ask for explicit consent before removing or significantly changing established features
+
+### 2. Preserve 'No-Crop' Logic
+- ProductCard.tsx uses: `aspect-ratio: 1/1` and `object-fit: contain` styling
+- This is a production requirement and must NOT be reverted
+- Do NOT change to standard Tailwind classes or fixed heights
+- This ensures proper image display across all product cards
+
+### 3. Code Consistency Protocol
+- Before applying any 'fix' or improvement, check if it conflicts with:
+  - Established communication buttons
+  - Database handshake logic
+  - Existing payment flows
+  - Chat and messaging systems
+- Verify compatibility across the entire codebase before implementing changes
+
+### 4. Confirm Before Deletion
+- If code appears redundant, ask for explicit consent first
+- Never silently remove code believed to be unused
+- Provide context and reasoning before deletion requests
+
+### 5. Stay in Context
+- Use existing hooks (e.g., useCurrency)
+- Reference established Supabase schemas
+- Do NOT create new utility functions if they already exist in the project
+- Check the codebase thoroughly before suggesting new abstractions
+
+## Key Protected Features
+- WhatsApp integration (#25D366 color)
+- Product Reference Card system
+- Communication buttons and hub
+- Payment and boost systems
+- Chat/messaging architecture
+- Seller dashboard and verification
+- Worker profiles system
+
+## Working with This Protocol
+- Read and reference these rules before every modification
+- Ask clarifying questions if ambiguous
+- Provide clear explanations for any proposed changes
+- Always link to relevant code when discussing modifications

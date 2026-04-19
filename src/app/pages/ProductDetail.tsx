@@ -840,7 +840,9 @@ export default function ProductDetail() {
       const [profRes, ratingsRes, previewRes, verRes] = await Promise.all([
         supabase
           .from("profiles")
-          .select("id, full_name, avatar_url, gender, state, lga, created_at, phone, last_active, is_verified_advertiser, is_verified, verified_badge")
+          .select(
+            "id, full_name, username, avatar_url, gender, state, lga, created_at, phone, phone_verified, last_active, is_verified_advertiser, is_verified, verified_badge",
+          )
           .eq("id", idStr)
           .maybeSingle(),
         supabase.from("seller_reviews").select("rating").eq("seller_id", idStr),
@@ -862,7 +864,9 @@ export default function ProductDetail() {
       if (!prof) {
         const pub = await supabase
           .from("profiles_public")
-          .select("id, full_name, avatar_url, gender, state, lga, created_at, last_active, phone, is_verified_advertiser, is_verified, verified_badge")
+          .select(
+            "id, full_name, username, avatar_url, gender, state, lga, created_at, last_active, phone, phone_verified, is_verified_advertiser, is_verified, verified_badge",
+          )
           .eq("id", idStr)
           .maybeSingle();
         if (cancelled) return;
@@ -966,6 +970,12 @@ export default function ProductDetail() {
   const sellerDisplayName =
     sellerProfile?.full_name?.trim() ||
     (sellerInfoReady ? "Seller" : "…");
+
+  const sellerUsername =
+    sellerProfile?.username != null && String(sellerProfile.username).trim() !== ""
+      ? String(sellerProfile.username).trim().replace(/^@/, "")
+      : "";
+  const sellerPhoneVerified = sellerProfile?.phone_verified === true;
   const listingRatingRaw = Number(foundProduct.rating);
   const listingReviewsRaw = Number(foundProduct.reviews);
   const hasAggregateReviews = sellerReviewCount > 0;
@@ -1585,7 +1595,9 @@ export default function ProductDetail() {
                   productId={String(foundProduct.id ?? id ?? "")}
                   sellerId={sellerPeerId}
                   sellerName={product.seller.name}
+                  sellerUsername={sellerUsername}
                   sellerPhone={sellerPhoneRaw}
+                  sellerPhoneVerified={sellerPhoneVerified}
                   sellerVerified={sellerIdVerified}
                   productTitle={String(product.title)}
                   isOwner={isOwner}
@@ -1644,6 +1656,16 @@ export default function ProductDetail() {
                         <BadgeCheck className="w-4 h-4 text-blue-500 fill-blue-400 shrink-0" title="Blue tier" />
                       ) : null}
                     </div>
+                    {sellerUsername || sellerPhoneVerified ? (
+                      <span className="mt-0.5 inline-flex items-center gap-1 text-sm text-gray-600">
+                        {sellerUsername ? `@${sellerUsername}` : null}
+                        {sellerPhoneVerified ? (
+                          <span className="text-green-600 text-xs" title="Phone verified">
+                            ✅
+                          </span>
+                        ) : null}
+                      </span>
+                    ) : null}
                     <p className="text-sm text-gray-600 mt-1">
                       <Star className="w-3.5 h-3.5 inline text-amber-400 fill-amber-400 align-[-2px] mr-0.5" aria-hidden />
                       {product.seller.reviews > 0 ? (
@@ -1705,6 +1727,16 @@ export default function ProductDetail() {
                         <BadgeCheck className="w-4 h-4 text-blue-500 fill-blue-400 shrink-0" title="Blue tier" />
                       ) : null}
                     </div>
+                    {sellerUsername || sellerPhoneVerified ? (
+                      <span className="mt-0.5 inline-flex items-center gap-1 text-sm text-gray-600">
+                        {sellerUsername ? `@${sellerUsername}` : null}
+                        {sellerPhoneVerified ? (
+                          <span className="text-green-600 text-xs" title="Phone verified">
+                            ✅
+                          </span>
+                        ) : null}
+                      </span>
+                    ) : null}
                     <p className="text-sm text-gray-600 mt-1">
                       <Star className="w-3.5 h-3.5 inline text-amber-400 fill-amber-400 align-[-2px] mr-0.5" aria-hidden />
                       {product.seller.reviews > 0 ? (

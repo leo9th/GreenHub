@@ -21,7 +21,9 @@ type NewProductDetailInlineChatProps = {
   productId: string;
   sellerId: string;
   sellerName: string;
+  sellerUsername?: string;
   sellerPhone?: string;
+  sellerPhoneVerified?: boolean;
   sellerVerified: boolean;
   productTitle?: string;
   isOwner?: boolean;
@@ -32,7 +34,9 @@ export default function NewProductDetailInlineChat({
   productId,
   sellerId,
   sellerName,
+  sellerUsername = "",
   sellerPhone,
+  sellerPhoneVerified = false,
   sellerVerified,
   productTitle,
   isOwner = false,
@@ -146,6 +150,16 @@ export default function NewProductDetailInlineChat({
             </span>
           ) : null}
         </div>
+        {sellerUsername || sellerPhoneVerified ? (
+          <span className="mt-1 inline-flex items-center gap-1 text-sm text-gray-600">
+            {sellerUsername ? `@${sellerUsername}` : null}
+            {sellerPhoneVerified ? (
+              <span className="text-green-600 text-xs" title="Phone verified">
+                ✅
+              </span>
+            ) : null}
+          </span>
+        ) : null}
         <p className="mt-1 text-xs text-gray-500">Typically replies within 30 minutes</p>
       </div>
 

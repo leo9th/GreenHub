@@ -132,6 +132,7 @@ export default function Products() {
         </div>
 
         <CategoryFilter
+          key={selectedCategory}
           selectedCategory={selectedCategory}
           onCategoryChange={setSelectedCategory}
           endSlot={

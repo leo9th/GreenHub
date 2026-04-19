@@ -48,9 +48,9 @@ type CategoryFilterProps = {
 export default function CategoryFilter({ selectedCategory, onCategoryChange, endSlot }: CategoryFilterProps) {
   return (
     <div className="mb-3 w-full px-4 md:px-0">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex w-full items-center justify-between gap-2 overflow-x-auto pb-2 no-scrollbar">
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
+        <div className="w-full min-w-0 sm:flex-1">
+          <div className="flex w-full items-center justify-start gap-2 overflow-x-auto overflow-y-hidden pb-2 touch-pan-x scrollbar-hide [-webkit-overflow-scrolling:touch]">
             {CATEGORY_FILTER_LABELS.map((category) => {
               const isActive = selectedCategory === category;
               const Icon = CATEGORY_ICONS[category];
@@ -80,7 +80,9 @@ export default function CategoryFilter({ selectedCategory, onCategoryChange, end
             })}
           </div>
         </div>
-        {endSlot ? <div className="shrink-0 max-w-full">{endSlot}</div> : null}
+        {endSlot ? (
+          <div className="w-full shrink-0 sm:w-auto sm:max-w-full">{endSlot}</div>
+        ) : null}
       </div>
     </div>
   );

@@ -408,6 +408,7 @@ export default function Home() {
         </div>
 
         <CategoryFilter
+          key={selectedCategory}
           selectedCategory={selectedCategory}
           onCategoryChange={setSelectedCategory}
           endSlot={

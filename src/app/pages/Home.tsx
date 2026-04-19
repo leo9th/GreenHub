@@ -44,7 +44,25 @@ function shuffleArray<T>(items: T[]): T[] {
 
 async function fetchFeaturedProducts(
   conditionFilter: string,
+  sellerSearchTerm: string = "",
 ): Promise<{ rows: ProductWithSeller[]; error: string | null }> {
+  // If seller search is provided, first fetch matching seller IDs
+  let sellerIds: string[] | null = null;
+  if (sellerSearchTerm.trim()) {
+    const searchTerm = sellerSearchTerm.trim().toLowerCase();
+    const { data: profiles } = await supabase
+      .from("profiles")
+      .select("id")
+      .or(`full_name.ilike.%${searchTerm}%,username.ilike.%${searchTerm}%`);
+    
+    sellerIds = profiles?.map((p) => p.id) || [];
+    
+    // If no matching sellers, return empty results
+    if (sellerIds.length === 0) {
+      return { rows: [], error: null };
+    }
+  }
+
   let query = supabase
     .from("products")
     .select("*, seller:profiles!products_seller_id_fkey(full_name, avatar_url, rating)")
@@ -54,6 +72,11 @@ async function fetchFeaturedProducts(
 
   if (conditionFilter && conditionFilter !== "all") {
     query = query.eq("condition", conditionFilter);
+  }
+
+  // Filter by seller IDs if seller search is active
+  if (sellerIds !== null && sellerIds.length > 0) {
+    query = query.in("seller_id", sellerIds);
   }
 
   const { data, error } = await query;
@@ -114,9 +137,27 @@ async function fetchCategoryPage(
   categorySlug: string,
   pageIndex: number,
   conditionFilter: string,
+  sellerSearchTerm: string = "",
 ): Promise<{ rows: ProductWithSeller[]; error: string | null }> {
   const from = pageIndex * ROW_PAGE_SIZE;
   const to = from + ROW_PAGE_SIZE - 1;
+
+  // If seller search is provided, first fetch matching seller IDs
+  let sellerIds: string[] | null = null;
+  if (sellerSearchTerm.trim()) {
+    const searchTerm = sellerSearchTerm.trim().toLowerCase();
+    const { data: profiles } = await supabase
+      .from("profiles")
+      .select("id")
+      .or(`full_name.ilike.%${searchTerm}%,username.ilike.%${searchTerm}%`);
+    
+    sellerIds = profiles?.map((p) => p.id) || [];
+    
+    // If no matching sellers, return empty results
+    if (sellerIds.length === 0) {
+      return { rows: [], error: null };
+    }
+  }
 
   let query = supabase
     .from("products")
@@ -127,6 +168,11 @@ async function fetchCategoryPage(
 
   if (conditionFilter && conditionFilter !== "all") {
     query = query.eq("condition", conditionFilter);
+  }
+
+  // Filter by seller IDs if seller search is active
+  if (sellerIds !== null && sellerIds.length > 0) {
+    query = query.in("seller_id", sellerIds);
   }
 
   const { data, error } = await query.range(from, to);
@@ -246,6 +292,7 @@ function CategoryRow({ slug, title, row, onLoadMore }: CategoryRowProps) {
 export default function Home() {
   const [selectedCategory, setSelectedCategory] = useState<CategoryFilterSelection>("All");
   const [selectedCondition, setSelectedCondition] = useState("all");
+  const [sellerSearchTerm, setSellerSearchTerm] = useState("");
   const [featuredProducts, setFeaturedProducts] = useState<ProductWithSeller[]>([]);
   const [featuredLoading, setFeaturedLoading] = useState(true);
   const [featuredError, setFeaturedError] = useState<string | null>(null);
@@ -269,7 +316,7 @@ export default function Home() {
     void (async () => {
       setFeaturedLoading(true);
       setFeaturedError(null);
-      const { rows, error } = await fetchFeaturedProducts(selectedCondition);
+      const { rows, error } = await fetchFeaturedProducts(selectedCondition, sellerSearchTerm);
       if (cancelled) return;
       if (error) {
         setFeaturedError(error);
@@ -282,7 +329,7 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, [selectedCondition]);
+  }, [selectedCondition, sellerSearchTerm]);
 
   const slugsToShow = useMemo(() => {
     if (selectedCategory === "All") {
@@ -297,8 +344,9 @@ export default function Home() {
     pageIndex: number,
     append: boolean,
     conditionFilter: string,
+    sellerSearch: string = "",
   ) => {
-    const { rows, error } = await fetchCategoryPage(categorySlug, pageIndex, conditionFilter);
+    const { rows, error } = await fetchCategoryPage(categorySlug, pageIndex, conditionFilter, sellerSearch);
     setRowBySlug((prev) => {
       const base = prev[categorySlug] ?? emptyRow();
       if (error) {
@@ -337,9 +385,9 @@ export default function Home() {
         next = { page: r.nextPage };
         return { ...prev, [slug]: { ...r, loadingMore: true } };
       });
-      if (next) void loadPageForSlug(slug, next.page, true, selectedCondition);
+      if (next) void loadPageForSlug(slug, next.page, true, selectedCondition, sellerSearchTerm);
     },
-    [loadPageForSlug, selectedCondition],
+    [loadPageForSlug, selectedCondition, sellerSearchTerm],
   );
 
   useEffect(() => {
@@ -358,9 +406,9 @@ export default function Home() {
     });
 
     void (async () => {
-      await Promise.all(slugs.map((slug) => loadPageForSlug(slug, 0, false, selectedCondition)));
+      await Promise.all(slugs.map((slug) => loadPageForSlug(slug, 0, false, selectedCondition, sellerSearchTerm)));
     })();
-  }, [slugsToShow, loadPageForSlug, selectedCondition]);
+  }, [slugsToShow, loadPageForSlug, selectedCondition, sellerSearchTerm]);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -380,6 +428,18 @@ export default function Home() {
           value={selectedCondition}
           onChange={setSelectedCondition}
         />
+
+        <div className="mb-5 grid gap-3 md:grid-cols-2">
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Search by seller name or @username"
+              value={sellerSearchTerm}
+              onChange={(e) => setSellerSearchTerm(e.target.value)}
+              className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm placeholder-gray-500 focus:border-[#22c55e] focus:outline-none focus:ring-2 focus:ring-[#22c55e]/20"
+            />
+          </div>
+        </div>
 
         {featuredError ? <p className="mb-4 text-sm text-amber-700">{featuredError}</p> : null}
 

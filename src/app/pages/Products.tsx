@@ -13,6 +13,7 @@ const LIMIT = 12;
 export default function Products() {
   const [selectedCategory, setSelectedCategory] = useState<CategoryFilterSelection>("All");
   const [selectedCondition, setSelectedCondition] = useState("all");
+  const [sellerSearchTerm, setSellerSearchTerm] = useState("");
   const [products, setProducts] = useState<ProductWithSeller[]>([]);
   const [page, setPage] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
@@ -52,6 +53,27 @@ export default function Products() {
 
     setError(null);
 
+    // If seller search is provided, first fetch matching seller IDs
+    let sellerIds: string[] | null = null;
+    if (sellerSearchTerm.trim()) {
+      const searchTerm = sellerSearchTerm.trim().toLowerCase();
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("id")
+        .or(`full_name.ilike.%${searchTerm}%,username.ilike.%${searchTerm}%`);
+      
+      sellerIds = profiles?.map((p) => p.id) || [];
+      
+      // If no matching sellers, return empty results
+      if (sellerIds.length === 0) {
+        setProducts([]);
+        setHasMore(false);
+        setIsLoading(false);
+        setLoadingMore(false);
+        return;
+      }
+    }
+
     let query = supabase
       .from("products")
       .select("*, seller:profiles!products_seller_id_fkey(full_name, avatar_url, rating)")
@@ -65,6 +87,11 @@ export default function Products() {
 
     if (selectedCondition && selectedCondition !== "all") {
       query = query.eq("condition", selectedCondition);
+    }
+
+    // Filter by seller IDs if seller search is active
+    if (sellerIds !== null && sellerIds.length > 0) {
+      query = query.in("seller_id", sellerIds);
     }
 
     const { data, error: queryError } = await query.range(from, to);
@@ -99,7 +126,7 @@ export default function Products() {
   useEffect(() => {
     setPage(0);
     void fetchProducts(true);
-  }, [selectedCategory, selectedCondition]);
+  }, [selectedCategory, selectedCondition, sellerSearchTerm]);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -121,6 +148,18 @@ export default function Products() {
           value={selectedCondition}
           onChange={setSelectedCondition}
         />
+
+        <div className="mb-5 grid gap-3 md:grid-cols-2">
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Search by seller name or @username"
+              value={sellerSearchTerm}
+              onChange={(e) => setSellerSearchTerm(e.target.value)}
+              className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm placeholder-gray-500 focus:border-[#22c55e] focus:outline-none focus:ring-2 focus:ring-[#22c55e]/20"
+            />
+          </div>
+        </div>
 
         <div className="mb-5 flex items-center justify-between">
           <h1 className="text-xl font-semibold text-gray-900">Shop - {categoryLabel}</h1>

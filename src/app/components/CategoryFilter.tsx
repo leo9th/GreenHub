@@ -44,8 +44,8 @@ type CategoryFilterProps = {
 
 export default function CategoryFilter({ selectedCategory, onCategoryChange }: CategoryFilterProps) {
   return (
-    <div className="-mx-4 mb-5 overflow-x-auto px-4 pb-2 [scrollbar-width:thin]">
-      <div className="flex w-max min-w-full snap-x snap-mandatory gap-3 pb-1">
+    <div className="w-full px-4 md:px-0 mb-5">
+      <div className="flex w-full items-center justify-between gap-2 overflow-x-auto pb-4 no-scrollbar">
         {CATEGORY_FILTER_LABELS.map((category) => {
           const isActive = selectedCategory === category;
           const Icon = CATEGORY_ICONS[category];
@@ -54,7 +54,7 @@ export default function CategoryFilter({ selectedCategory, onCategoryChange }: C
               key={category}
               type="button"
               onClick={() => onCategoryChange(category)}
-              className={`group flex w-[5.75rem] shrink-0 snap-start flex-col items-center justify-center gap-2 rounded-2xl border px-2 py-3 text-center transition-all duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 sm:w-24 ${
+              className={`group flex flex-1 min-w-[80px] shrink-0 flex-col items-center justify-center gap-2 rounded-2xl border px-2 py-3 text-center transition-all duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 ${
                 isActive
                   ? "-translate-y-1 border-emerald-500 bg-emerald-500 text-white shadow-md ring-1 ring-emerald-500/30"
                   : "border-transparent bg-gray-100 text-gray-900 shadow-sm hover:scale-105 hover:shadow-lg hover:shadow-gray-300/80"

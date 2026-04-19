@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { supabase } from "../../lib/supabase";
 import CategoryFilter, { type CategoryFilterSelection } from "../components/CategoryFilter";
+import { ConditionFilter } from "../components/ConditionFilter";
 import { categoryFilterLabelToDbValue } from "../data/catalogConstants";
+import { getConditionFilterDropdownOptions } from "../data/productConditions";
 import SimpleProductGrid from "../components/SimpleProductGrid";
 import type { ProductWithSeller } from "../types/productWithSeller";
 
@@ -10,6 +12,7 @@ const LIMIT = 12;
 
 export default function Products() {
   const [selectedCategory, setSelectedCategory] = useState<CategoryFilterSelection>("All");
+  const [selectedCondition, setSelectedCondition] = useState("all");
   const [products, setProducts] = useState<ProductWithSeller[]>([]);
   const [page, setPage] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
@@ -21,6 +24,19 @@ export default function Products() {
     if (selectedCategory === "All") return "All Categories";
     return selectedCategory;
   }, [selectedCategory]);
+
+  const categorySlugForFilter = useMemo(
+    () => categoryFilterLabelToDbValue(selectedCategory),
+    [selectedCategory],
+  );
+
+  useEffect(() => {
+    const opts = getConditionFilterDropdownOptions(categorySlugForFilter);
+    setSelectedCondition((prev) => {
+      if (prev === "all") return prev;
+      return opts.includes(prev) ? prev : "all";
+    });
+  }, [categorySlugForFilter]);
 
   const fetchProducts = async (isNewCategory = false) => {
     const currentPage = isNewCategory ? 0 : page;
@@ -45,6 +61,10 @@ export default function Products() {
     const categorySlug = categoryFilterLabelToDbValue(selectedCategory);
     if (categorySlug) {
       query = query.eq("category", categorySlug);
+    }
+
+    if (selectedCondition && selectedCondition !== "all") {
+      query = query.eq("condition", selectedCondition);
     }
 
     const { data, error: queryError } = await query.range(from, to);
@@ -79,7 +99,7 @@ export default function Products() {
   useEffect(() => {
     setPage(0);
     void fetchProducts(true);
-  }, [selectedCategory]);
+  }, [selectedCategory, selectedCondition]);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -94,6 +114,13 @@ export default function Products() {
         </div>
 
         <CategoryFilter selectedCategory={selectedCategory} onCategoryChange={setSelectedCategory} />
+
+        <ConditionFilter
+          id="shop-condition-filter"
+          categorySlug={categorySlugForFilter}
+          value={selectedCondition}
+          onChange={setSelectedCondition}
+        />
 
         <div className="mb-5 flex items-center justify-between">
           <h1 className="text-xl font-semibold text-gray-900">Shop - {categoryLabel}</h1>

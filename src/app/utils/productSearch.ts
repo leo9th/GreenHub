@@ -103,6 +103,8 @@ export function priceRangeToMinMax(priceRange: string): { min: number | null; ma
 export function applyListingFilters(query: any, opts: ListingFilterOpts) {
   let q = query;
   if (opts.category && opts.category !== "all") q = q.eq("category", opts.category);
+  // Exact match on `products.condition` (text). Supports "Used", "Foreign Used", etc.
+  // For multi-select chips, use `.in("condition", ["New","Used","Foreign Used", ...])` instead of `.eq`.
   if (opts.condition && opts.condition !== "all") q = q.eq("condition", opts.condition);
   if (opts.state && opts.state !== "all") {
     q = q.ilike("location", `%${opts.state}%`);

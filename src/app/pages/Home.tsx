@@ -4,7 +4,9 @@ import { supabase } from "../../lib/supabase";
 import { ProductCard } from "../components/cards/ProductCard";
 import SimpleProductGrid from "../components/SimpleProductGrid";
 import CategoryFilter, { type CategoryFilterSelection } from "../components/CategoryFilter";
+import { ConditionFilter } from "../components/ConditionFilter";
 import { categories, categoryFilterLabelToDbValue } from "../data/catalogConstants";
+import { getConditionFilterDropdownOptions } from "../data/productConditions";
 import type { ProductWithSeller } from "../types/productWithSeller";
 /**
  * GreenHub Home Page - Two-Dimensional Infinite Scroll Architecture
@@ -40,13 +42,21 @@ function shuffleArray<T>(items: T[]): T[] {
   return a;
 }
 
-async function fetchFeaturedProducts(): Promise<{ rows: ProductWithSeller[]; error: string | null }> {
-  const { data, error } = await supabase
+async function fetchFeaturedProducts(
+  conditionFilter: string,
+): Promise<{ rows: ProductWithSeller[]; error: string | null }> {
+  let query = supabase
     .from("products")
     .select("*, seller:profiles!products_seller_id_fkey(full_name, avatar_url, rating)")
     .eq("status", "active")
     .order("created_at", { ascending: false })
     .limit(FEATURED_FETCH_LIMIT);
+
+  if (conditionFilter && conditionFilter !== "all") {
+    query = query.eq("condition", conditionFilter);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     return { rows: [], error: error.message };
@@ -103,17 +113,23 @@ function mapProductToCardProps(product: ProductWithSeller) {
 async function fetchCategoryPage(
   categorySlug: string,
   pageIndex: number,
+  conditionFilter: string,
 ): Promise<{ rows: ProductWithSeller[]; error: string | null }> {
   const from = pageIndex * ROW_PAGE_SIZE;
   const to = from + ROW_PAGE_SIZE - 1;
 
-  const { data, error } = await supabase
+  let query = supabase
     .from("products")
     .select("*, seller:profiles!products_seller_id_fkey(full_name, avatar_url, rating)")
     .eq("status", "active")
     .eq("category", categorySlug)
-    .order("created_at", { ascending: false })
-    .range(from, to);
+    .order("created_at", { ascending: false });
+
+  if (conditionFilter && conditionFilter !== "all") {
+    query = query.eq("condition", conditionFilter);
+  }
+
+  const { data, error } = await query.range(from, to);
 
   if (error) {
     return { rows: [], error: error.message };
@@ -229,17 +245,31 @@ function CategoryRow({ slug, title, row, onLoadMore }: CategoryRowProps) {
 
 export default function Home() {
   const [selectedCategory, setSelectedCategory] = useState<CategoryFilterSelection>("All");
+  const [selectedCondition, setSelectedCondition] = useState("all");
   const [featuredProducts, setFeaturedProducts] = useState<ProductWithSeller[]>([]);
   const [featuredLoading, setFeaturedLoading] = useState(true);
   const [featuredError, setFeaturedError] = useState<string | null>(null);
   const [rowBySlug, setRowBySlug] = useState<Record<string, CategoryRowState>>({});
+
+  const categorySlugForFilter = useMemo(
+    () => categoryFilterLabelToDbValue(selectedCategory),
+    [selectedCategory],
+  );
+
+  useEffect(() => {
+    const opts = getConditionFilterDropdownOptions(categorySlugForFilter);
+    setSelectedCondition((prev) => {
+      if (prev === "all") return prev;
+      return opts.includes(prev) ? prev : "all";
+    });
+  }, [categorySlugForFilter]);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       setFeaturedLoading(true);
       setFeaturedError(null);
-      const { rows, error } = await fetchFeaturedProducts();
+      const { rows, error } = await fetchFeaturedProducts(selectedCondition);
       if (cancelled) return;
       if (error) {
         setFeaturedError(error);
@@ -252,7 +282,7 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [selectedCondition]);
 
   const slugsToShow = useMemo(() => {
     if (selectedCategory === "All") {
@@ -262,8 +292,13 @@ export default function Home() {
     return one ? [one] : [];
   }, [selectedCategory]);
 
-  const loadPageForSlug = useCallback(async (categorySlug: string, pageIndex: number, append: boolean) => {
-    const { rows, error } = await fetchCategoryPage(categorySlug, pageIndex);
+  const loadPageForSlug = useCallback(async (
+    categorySlug: string,
+    pageIndex: number,
+    append: boolean,
+    conditionFilter: string,
+  ) => {
+    const { rows, error } = await fetchCategoryPage(categorySlug, pageIndex, conditionFilter);
     setRowBySlug((prev) => {
       const base = prev[categorySlug] ?? emptyRow();
       if (error) {
@@ -302,9 +337,9 @@ export default function Home() {
         next = { page: r.nextPage };
         return { ...prev, [slug]: { ...r, loadingMore: true } };
       });
-      if (next) void loadPageForSlug(slug, next.page, true);
+      if (next) void loadPageForSlug(slug, next.page, true, selectedCondition);
     },
-    [loadPageForSlug],
+    [loadPageForSlug, selectedCondition],
   );
 
   useEffect(() => {
@@ -323,9 +358,9 @@ export default function Home() {
     });
 
     void (async () => {
-      await Promise.all(slugs.map((slug) => loadPageForSlug(slug, 0, false)));
+      await Promise.all(slugs.map((slug) => loadPageForSlug(slug, 0, false, selectedCondition)));
     })();
-  }, [slugsToShow, loadPageForSlug]);
+  }, [slugsToShow, loadPageForSlug, selectedCondition]);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -338,6 +373,13 @@ export default function Home() {
         </div>
 
         <CategoryFilter selectedCategory={selectedCategory} onCategoryChange={setSelectedCategory} />
+
+        <ConditionFilter
+          id="home-condition-filter"
+          categorySlug={categorySlugForFilter}
+          value={selectedCondition}
+          onChange={setSelectedCondition}
+        />
 
         {featuredError ? <p className="mb-4 text-sm text-amber-700">{featuredError}</p> : null}
 

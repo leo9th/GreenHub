@@ -12,10 +12,9 @@ import {
 import { CAR_BRAND_SELECT_OTHER, NIGERIA_CAR_BRAND_OPTIONS } from "../../data/carBrands";
 import { supabaseErrorMessage } from "../../utils/supabaseErrorMessage";
 import { MAX_PRODUCT_IMAGES, parseProductImagesFromRow } from "../../utils/productImages";
+import { getConditionOptionsForCategorySlug } from "../../data/productConditions";
 
 const STORAGE_BUCKET = "products";
-
-const PRODUCT_CONDITIONS = ["New", "Like New", "Good", "Fair"] as const;
 
 export default function AddProduct() {
   const navigate = useNavigate();
@@ -33,7 +32,7 @@ export default function AddProduct() {
   const [existingImageUrls, setExistingImageUrls] = useState<string[]>([]);
   const [loadingProduct, setLoadingProduct] = useState(false);
   const [category, setCategory] = useState("");
-  const [condition, setCondition] = useState<string>(PRODUCT_CONDITIONS[0]);
+  const [condition, setCondition] = useState<string>(() => getConditionOptionsForCategorySlug("")[0] ?? "New");
   const [location, setLocation] = useState("");
   const [carBrandSelect, setCarBrandSelect] = useState<string>(NIGERIA_CAR_BRAND_OPTIONS[0]?.value ?? "");
   const [carBrandOther, setCarBrandOther] = useState("");
@@ -69,15 +68,12 @@ export default function AddProduct() {
 
       setTitle(data.title ?? "");
       setDescription(data.description ?? "");
-      setCategory(typeof data.category === "string" ? data.category : "");
+      const cat = typeof data.category === "string" ? data.category : "";
+      setCategory(cat);
       const cond = typeof data.condition === "string" ? data.condition : "";
-      const normalizedCond =
-        cond === "Good Fair"
-          ? "Good"
-          : PRODUCT_CONDITIONS.includes(cond as (typeof PRODUCT_CONDITIONS)[number])
-            ? cond
-            : PRODUCT_CONDITIONS[0];
-      setCondition(normalizedCond);
+      const opts = getConditionOptionsForCategorySlug(cat);
+      const tidy = cond === "Good Fair" ? "Good" : cond;
+      setCondition(opts.includes(tidy) ? tidy : opts[0] ?? "New");
       setLocation(typeof data.location === "string" ? data.location : "");
       const existingBrand = typeof data.car_brand === "string" ? data.car_brand.trim() : "";
       const presetValues = new Set(NIGERIA_CAR_BRAND_OPTIONS.map((o) => o.value));
@@ -458,8 +454,11 @@ export default function AddProduct() {
             <select
               value={category}
               onChange={(e) => {
-                setCategory(e.target.value);
-                if (e.target.value !== "vehicles") {
+                const next = e.target.value;
+                setCategory(next);
+                const opts = getConditionOptionsForCategorySlug(next);
+                setCondition((prev) => (opts.includes(prev) ? prev : opts[0] ?? "New"));
+                if (next !== "vehicles") {
                   setCarBrandSelect(NIGERIA_CAR_BRAND_OPTIONS[0]?.value ?? "");
                   setCarBrandOther("");
                 }
@@ -483,7 +482,7 @@ export default function AddProduct() {
               required
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#22c55e]"
             >
-              {PRODUCT_CONDITIONS.map((c) => (
+              {getConditionOptionsForCategorySlug(category).map((c) => (
                 <option key={c} value={c}>
                   {c}
                 </option>

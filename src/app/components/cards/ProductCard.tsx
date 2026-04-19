@@ -87,11 +87,16 @@ export function ProductCard({
         className="flex h-full flex-col text-inherit no-underline outline-none ring-offset-2 focus-visible:ring-2 focus-visible:ring-[#22c55e]"
         aria-label={`View listing: ${title}`}
       >
-        {/* Image container with inline styles – NO CROPPING */}
+        {/* Image area: min height on small screens, flex-shrink-0 so parent flex never squashes the image */}
         <div
+          className="shrink-0"
           style={{
             width: "100%",
-            height: "240px",
+            minHeight: "clamp(200px, 52vw, 280px)",
+            height: "auto",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
             overflow: "hidden",
             backgroundColor: "#f3f4f6",
             position: "relative",
@@ -103,9 +108,11 @@ export function ProductCard({
             alt={title}
             style={{
               width: "100%",
-              height: "100%",
+              height: "auto",
+              maxHeight: "clamp(220px, 72vw, 360px)",
               objectFit: "contain",
               objectPosition: "center",
+              display: "block",
             }}
             loading="lazy"
             onError={(e) => {

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { supabase } from "../../lib/supabase";
 import { ProductCard } from "../components/cards/ProductCard";
+import SimpleProductGrid from "../components/SimpleProductGrid";
 import CategoryFilter, { type CategoryFilterSelection } from "../components/CategoryFilter";
 import { categories, categoryFilterLabelToDbValue } from "../data/catalogConstants";
 import type { ProductWithSeller } from "../types/productWithSeller";
@@ -22,8 +23,38 @@ import type { ProductWithSeller } from "../types/productWithSeller";
  * - Real-time filtering: CategoryFilter updates visible rows instantly
  * - Product linking: Cards reference products with seller data and images
  */
+/** Number of products shown in the main home grid. */
+const HOME_PAGE_SIZE = 20;
+/** Pull a larger pool so we can shuffle and show a varied mix (PostgREST has no portable `order by random()`). */
+const FEATURED_FETCH_LIMIT = 80;
+
 /** Products per horizontal “page” for each category row. */
 const ROW_PAGE_SIZE = 10;
+
+function shuffleArray<T>(items: T[]): T[] {
+  const a = [...items];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+async function fetchFeaturedProducts(): Promise<{ rows: ProductWithSeller[]; error: string | null }> {
+  const { data, error } = await supabase
+    .from("products")
+    .select("*, seller:profiles!products_seller_id_fkey(full_name, avatar_url, rating)")
+    .eq("status", "active")
+    .order("created_at", { ascending: false })
+    .limit(FEATURED_FETCH_LIMIT);
+
+  if (error) {
+    return { rows: [], error: error.message };
+  }
+  const pool = ((data as ProductWithSeller[]) ?? []).filter(Boolean);
+  const rows = shuffleArray(pool).slice(0, HOME_PAGE_SIZE);
+  return { rows, error: null };
+}
 
 type CategoryRowState = {
   products: ProductWithSeller[];
@@ -198,7 +229,30 @@ function CategoryRow({ slug, title, row, onLoadMore }: CategoryRowProps) {
 
 export default function Home() {
   const [selectedCategory, setSelectedCategory] = useState<CategoryFilterSelection>("All");
+  const [featuredProducts, setFeaturedProducts] = useState<ProductWithSeller[]>([]);
+  const [featuredLoading, setFeaturedLoading] = useState(true);
+  const [featuredError, setFeaturedError] = useState<string | null>(null);
   const [rowBySlug, setRowBySlug] = useState<Record<string, CategoryRowState>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      setFeaturedLoading(true);
+      setFeaturedError(null);
+      const { rows, error } = await fetchFeaturedProducts();
+      if (cancelled) return;
+      if (error) {
+        setFeaturedError(error);
+        setFeaturedProducts([]);
+      } else {
+        setFeaturedProducts(rows);
+      }
+      setFeaturedLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const slugsToShow = useMemo(() => {
     if (selectedCategory === "All") {
@@ -284,6 +338,20 @@ export default function Home() {
         </div>
 
         <CategoryFilter selectedCategory={selectedCategory} onCategoryChange={setSelectedCategory} />
+
+        {featuredError ? <p className="mb-4 text-sm text-amber-700">{featuredError}</p> : null}
+
+        <div className="mb-10">
+          <SimpleProductGrid
+            products={featuredProducts}
+            isLoading={featuredLoading}
+            hasMore={false}
+            loadingMore={false}
+            onLoadMore={() => {}}
+          />
+        </div>
+
+        <h2 className="mb-3 text-base font-semibold text-gray-900 sm:text-lg">Browse by category</h2>
 
         <div className="space-y-2">
           {slugsToShow.map((slug) => {

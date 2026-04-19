@@ -73,7 +73,6 @@ export function ProductCard({
   const firstFromImages =
     Array.isArray(images) && typeof images[0] === "string" ? images[0].trim() : "";
   const rawImage = image?.trim() || firstFromImages || PLACEHOLDER_IMG;
-  // Use original URL without any resizing/cropping
   const imageUrl = rawImage;
 
   const displayPrice =
@@ -82,43 +81,58 @@ export function ProductCard({
       : formatPrice(priceLocal ?? price);
 
   return (
-    <div className="group flex h-full w-full flex-col rounded-2xl border border-slate-100/50 bg-white shadow-sm transition-all duration-300 hover:shadow-xl">
+    <div className="group flex h-full w-full flex-col overflow-hidden rounded-2xl border border-slate-100/50 bg-white shadow-sm transition-all duration-300 hover:shadow-xl">
       <Link
         to={linkTo}
         className="flex h-full flex-col text-inherit no-underline outline-none ring-offset-2 focus-visible:ring-2 focus-visible:ring-[#22c55e]"
         aria-label={`View listing: ${title}`}
       >
-        <div className="bg-white p-4 rounded-t-2xl">
-          <div className="gh-product-img-frame w-full rounded-2xl bg-gray-100" style={{ height: "240px" }}>
-            <img
-              src={imageUrl}
-              alt={title}
-              className="gh-product-img-contain"
-              loading="lazy"
-              onError={(e) => {
-                e.currentTarget.onerror = null;
-                e.currentTarget.src = PLACEHOLDER_IMG;
+        {/* Image container with inline styles – NO CROPPING */}
+        <div
+          style={{
+            width: "100%",
+            height: "240px",
+            overflow: "hidden",
+            backgroundColor: "#f3f4f6",
+            position: "relative",
+            borderRadius: "12px 12px 0 0",
+          }}
+        >
+          <img
+            src={imageUrl}
+            alt={title}
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "contain",
+              objectPosition: "center",
+            }}
+            loading="lazy"
+            onError={(e) => {
+              e.currentTarget.onerror = null;
+              e.currentTarget.src = PLACEHOLDER_IMG;
+            }}
+          />
+          {condition && (
+            <div
+              style={{
+                position: "absolute",
+                left: "8px",
+                top: "8px",
+                backgroundColor: "rgba(255,255,255,0.8)",
+                borderRadius: "999px",
+                padding: "4px 10px",
+                fontSize: "10px",
+                fontWeight: "bold",
+                textTransform: "uppercase",
               }}
-            />
-            {condition ? (
-              <div
-                style={{
-                  position: "absolute",
-                  left: "8px",
-                  top: "8px",
-                  backgroundColor: "rgba(255,255,255,0.8)",
-                  borderRadius: "999px",
-                  padding: "4px 10px",
-                  fontSize: "10px",
-                  fontWeight: "bold",
-                }}
-              >
-                {condition}
-              </div>
-            ) : null}
-          </div>
+            >
+              {condition}
+            </div>
+          )}
         </div>
-        <div className="flex flex-grow flex-col justify-between px-4 pb-4 pt-0">
+
+        <div className="flex flex-grow flex-col justify-between p-4">
           <div>
             <h3 className="mb-1 line-clamp-1 text-base font-semibold text-slate-900">{title}</h3>
 

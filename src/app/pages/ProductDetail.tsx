@@ -51,14 +51,10 @@ import {
   type ProductReviewDisplay,
 } from "../utils/reviews";
 import { formatGreenHubMonthYear, formatGreenHubRelative } from "../utils/formatGreenHubTime";
-import { cn } from "../components/ui/utils";
 import { buildInternationalDeliveryOptions } from "../data/internationalShippingPresets";
 import { EditProductModal } from "../components/EditProductModal";
 import { PriceNegotiation } from "../components/PriceNegotiation";
 import { MarketPricePrediction } from "../components/MarketPricePrediction";
-// Old import
-// import ProductDetailInlineChat from "../components/ProductDetailInlineChat";
-// New import
 import ProductDetailInlineChat from "../components/NewProductDetailInlineChat";
 
 type ParsedDeliveryOption = { name: string; fee: number; duration: string };
@@ -109,7 +105,6 @@ function shuffleRelatedProducts<T>(items: T[]): T[] {
   return next;
 }
 
-/** Compact display for follower counts on product detail (e.g. 1.2K when over 1000). */
 function formatFollowerShort(n: number): string {
   if (!Number.isFinite(n) || n < 0) return "0";
   if (n <= 1000) return n.toLocaleString();
@@ -154,7 +149,6 @@ function applyHomePageMeta(origin: string) {
 const RELATED_CAROUSEL_PLACEHOLDER_IMG =
   "https://placehold.co/400x400/e5e7eb/9ca3af?text=No+Image";
 
-/** Same resolution order as ProductCard: parsed gallery first, then raw `image` / `images[0]`. */
 function resolveRelatedCarouselThumb(row: Record<string, unknown>): string {
   const parsed = getProductThumbnailUrl(row).trim();
   if (parsed) return parsed;
@@ -257,7 +251,6 @@ function RelatedProductsCarousel({
       onMouseEnter={() => setIsHovering(true)}
       onMouseLeave={() => setIsHovering(false)}
     >
-      {/* overflow-x clip only — no border-radius here (would clip slide corners). Card rounding is on each Link / image frame. */}
       <div className="overflow-hidden" ref={emblaRef}>
         <div className="flex -ml-3 sm:-ml-4 touch-pan-x">
           {items.map((item) => (
@@ -270,17 +263,31 @@ function RelatedProductsCarousel({
                 className="group block rounded-xl ring-1 ring-gray-100 transition-shadow hover:shadow-md hover:ring-[#22c55e]/35"
               >
                 <div className="relative rounded-t-xl overflow-hidden bg-gray-100">
-                  <img
-                    src={item.image?.trim() ? item.image : RELATED_CAROUSEL_PLACEHOLDER_IMG}
-                    alt={item.title}
-                    className="h-48 w-full object-contain"
-                    loading="lazy"
-                    decoding="async"
-                    onError={(e) => {
-                      e.currentTarget.onerror = null;
-                      e.currentTarget.src = RELATED_CAROUSEL_PLACEHOLDER_IMG;
+                  <div
+                    style={{
+                      width: "100%",
+                      height: "clamp(160px, 25vw, 260px)",
+                      overflow: "hidden",
+                      backgroundColor: "#f3f4f6",
                     }}
-                  />
+                  >
+                    <img
+                      src={item.image?.trim() ? item.image : RELATED_CAROUSEL_PLACEHOLDER_IMG}
+                      alt={item.title}
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        objectFit: "contain",
+                        objectPosition: "center",
+                      }}
+                      loading="lazy"
+                      decoding="async"
+                      onError={(e) => {
+                        e.currentTarget.onerror = null;
+                        e.currentTarget.src = RELATED_CAROUSEL_PLACEHOLDER_IMG;
+                      }}
+                    />
+                  </div>
                   <span className="absolute left-2 top-2 bg-[#16a34a] px-2 py-0.5 text-[10px] font-semibold text-white rounded-md">
                     {item.condition || "—"}
                   </span>
@@ -327,13 +334,10 @@ export default function ProductDetail() {
   const navigate = useNavigate();
   const { addToCart } = useCart();
   const { user: authUser } = useAuth();
-  /** Main gallery URL: first of `images[]` or legacy `image`; synced when listing loads/changes. */
   const [selectedImage, setSelectedImage] = useState<string>("");
   const [lightboxOpen, setLightboxOpen] = useState(false);
-  /** Mobile-only: reduces scroll by showing one section at a time. Desktop shows full stack. */
   const [mobileDetailTab, setMobileDetailTab] = useState<"details" | "seller" | "reviews" | "about">("details");
   const galleryTouchStartRef = useRef<{ x: number; y: number } | null>(null);
-  /** Second tap within window → double-tap to like (mobile). */
   const galleryDoubleTapRef = useRef<{ t: number; x: number; y: number } | null>(null);
   const [heartPopSeq, setHeartPopSeq] = useState(0);
   const [sellerProfile, setSellerProfile] = useState<SellerProfileRow | null>(null);
@@ -353,7 +357,6 @@ export default function ProductDetail() {
   const [sellerFollowerCountLoading, setSellerFollowerCountLoading] = useState(false);
   const [sellerFollowerCountFailed, setSellerFollowerCountFailed] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
-  /** Debounce rapid thumbnail clicks so `setSelectedImage` does not run every frame. */
   const thumbnailClickDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -391,7 +394,6 @@ export default function ProductDetail() {
     };
   }, [serverProduct?.seller_id, serverProduct?.sellerId]);
 
-  /** URL `products/:id` — pass through trimmed string so PostgREST matches int/bigint/uuid PKs without Number() precision loss */
   const normalizeRouteProductId = (raw: string | undefined): string | null => {
     if (raw == null) return null;
     const t = raw.trim();
@@ -924,7 +926,6 @@ export default function ProductDetail() {
     );
   }
 
-  /** Always use DB `seller_id` (uuid) for chat, profile, and lookups. */
   const sellerPeerIdRaw = foundProduct.seller_id ?? foundProduct.sellerId;
   const sellerPeerId =
     sellerPeerIdRaw != null && String(sellerPeerIdRaw).trim() !== "" ? String(sellerPeerIdRaw).trim() : "";
@@ -1086,7 +1087,6 @@ export default function ProductDetail() {
   const whatsappHref = whatsappDigits
     ? `https://wa.me/${whatsappDigits}?text=${encodeURIComponent(`Hi, I'm interested in ${product.title}`)}`
     : "";
-  /** When the seller has no phone on profile, fall back to GreenHub support (same as footer). */
   const supportTelHref = "tel:+2348125221542";
   const callHref = sellerTelHref || supportTelHref;
 
@@ -1127,7 +1127,6 @@ export default function ProductDetail() {
       </header>
 
       <div className="mx-auto max-w-6xl px-3 pt-6 sm:px-4 md:px-4 md:pt-6 lg:pt-8">
-        {/* Image column first = left on desktop (matches marketplace listing layout) */}
         <div className="grid grid-cols-1 md:grid-cols-12 md:items-start md:gap-4 lg:gap-6 xl:gap-10 2xl:gap-12">
           <div className="flex shrink-0 justify-center md:col-span-5 md:justify-start md:sticky md:top-14 lg:col-span-5">
             <div className="relative w-full max-w-[520px] md:max-w-none mx-auto">
@@ -1150,125 +1149,135 @@ export default function ProductDetail() {
                     >
                       {product.images.length > 0 && mainDisplayImage ? (
                         <div
-                          className="gh-product-img-frame w-full rounded-2xl bg-gray-100"
-                          style={{ height: "400px" }}
+                          style={{
+                            width: "100%",
+                            height: "clamp(400px, 60vh, 700px)",
+                            overflow: "hidden",
+                            backgroundColor: "#f3f4f6",
+                            borderRadius: "12px",
+                          }}
                         >
                           <img
-                            className="gh-product-img-contain cursor-zoom-in select-none"
                             src={mainDisplayImage}
                             alt={product.title}
+                            style={{
+                              width: "100%",
+                              height: "100%",
+                              objectFit: "contain",
+                              objectPosition: "center",
+                            }}
                             draggable={false}
                             decoding="async"
                             onDoubleClick={onMainImageDoubleClick}
                           />
-                      </div>
-                    ) : (
-                      <div
-                        className="flex min-h-[240px] w-full items-center justify-center rounded-2xl px-6 py-16 text-center text-sm text-gray-400"
-                        aria-hidden
-                      >
-                        No image
-                      </div>
-                    )}
-                    {heartPopSeq > 0 ? (
-                      <div
-                        key={heartPopSeq}
-                        className="gh-heart-pop pointer-events-none absolute left-1/2 top-1/2 z-[6] -translate-x-1/2 -translate-y-1/2"
-                        aria-hidden
-                      >
-                        <Heart className="h-[4.25rem] w-[4.25rem] fill-red-500 text-red-500 drop-shadow-lg" strokeWidth={1.5} />
-                      </div>
-                    ) : null}
-                    <span className="absolute left-3 top-3 z-[1] rounded-lg bg-[#15803d] px-2 py-1 text-[11px] font-semibold text-white shadow-sm">
-                      {product.condition}
-                    </span>
-                  </div>
-                  {product.images.length > 1 ? (
-                    <>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handlePrevImage();
-                        }}
-                        className="absolute left-2 top-1/2 z-[5] flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-gray-800 shadow-sm ring-1 ring-gray-200/80"
-                        aria-label="Previous image"
-                      >
-                        <ChevronLeft className="h-4 w-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleNextImage();
-                        }}
-                        className="absolute right-2 top-1/2 z-[5] flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-gray-800 shadow-sm ring-1 ring-gray-200/80"
-                        aria-label="Next image"
-                      >
-                        <ChevronRight className="h-4 w-4" />
-                      </button>
-                    </>
-                  ) : null}
-                  <div className="absolute right-3 top-3 z-[4] flex max-w-[calc(100%-0.75rem)] flex-col items-end gap-2">
-                    <div className="flex shrink-0 items-center gap-1" role="group" aria-label="Listing actions">
-                      <button
-                        type="button"
-                        disabled={!sellerPeerId}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (!sellerPeerId) return;
-                          navigate(`/profile/${sellerPeerId}/followers`);
-                        }}
-                        className="inline-flex max-w-[9rem] items-center gap-1 rounded-full bg-black/50 px-2 py-1.5 text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-black/60 disabled:cursor-not-allowed disabled:opacity-50"
-                        aria-label="View seller followers"
-                      >
-                        <Users className="h-3.5 w-3.5 shrink-0" strokeWidth={2} aria-hidden />
-                        <span className="text-[10px] font-semibold leading-none tabular-nums">
-                          {!sellerPeerId || sellerFollowerCountFailed
-                            ? "--"
-                            : sellerFollowerCountLoading || sellerFollowerCount === null
-                              ? "..."
-                              : formatFollowerShort(sellerFollowerCount)}
-                        </span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void handleShare();
-                        }}
-                        className="rounded-full bg-black/50 p-1.5 text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-black/60"
-                        aria-label="Share listing"
-                      >
-                        <Share2 className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
-                      </button>
-                      <button
-                        type="button"
-                        disabled={likeBusy}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void handleToggleLike();
-                        }}
-                        className="inline-flex items-center gap-0.5 rounded-full bg-black/50 px-2 py-1.5 text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-black/60 disabled:opacity-50"
-                        aria-label={liked ? "Unlike" : "Like"}
-                      >
-                        <Heart
-                          className={`h-3.5 w-3.5 shrink-0 ${liked ? "fill-white text-white" : "text-white"}`}
-                          fill={liked ? "currentColor" : "none"}
-                          strokeWidth={2}
+                        </div>
+                      ) : (
+                        <div
+                          className="flex min-h-[240px] w-full items-center justify-center rounded-2xl px-6 py-16 text-center text-sm text-gray-400"
                           aria-hidden
-                        />
-                        <span className="text-[10px] font-semibold leading-none tabular-nums">{likeCount}</span>
-                      </button>
+                        >
+                          No image
+                        </div>
+                      )}
+                      {heartPopSeq > 0 ? (
+                        <div
+                          key={heartPopSeq}
+                          className="gh-heart-pop pointer-events-none absolute left-1/2 top-1/2 z-[6] -translate-x-1/2 -translate-y-1/2"
+                          aria-hidden
+                        >
+                          <Heart className="h-[4.25rem] w-[4.25rem] fill-red-500 text-red-500 drop-shadow-lg" strokeWidth={1.5} />
+                        </div>
+                      ) : null}
+                      <span className="absolute left-3 top-3 z-[1] rounded-lg bg-[#15803d] px-2 py-1 text-[11px] font-semibold text-white shadow-sm">
+                        {product.condition}
+                      </span>
                     </div>
-                    <BoostDetailBadge row={foundProduct as Record<string, unknown>} />
+                    {product.images.length > 1 ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handlePrevImage();
+                          }}
+                          className="absolute left-2 top-1/2 z-[5] flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-gray-800 shadow-sm ring-1 ring-gray-200/80"
+                          aria-label="Previous image"
+                        >
+                          <ChevronLeft className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleNextImage();
+                          }}
+                          className="absolute right-2 top-1/2 z-[5] flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-gray-800 shadow-sm ring-1 ring-gray-200/80"
+                          aria-label="Next image"
+                        >
+                          <ChevronRight className="h-4 w-4" />
+                        </button>
+                      </>
+                    ) : null}
+                    <div className="absolute right-3 top-3 z-[4] flex max-w-[calc(100%-0.75rem)] flex-col items-end gap-2">
+                      <div className="flex shrink-0 items-center gap-1" role="group" aria-label="Listing actions">
+                        <button
+                          type="button"
+                          disabled={!sellerPeerId}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!sellerPeerId) return;
+                            navigate(`/profile/${sellerPeerId}/followers`);
+                          }}
+                          className="inline-flex max-w-[9rem] items-center gap-1 rounded-full bg-black/50 px-2 py-1.5 text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-black/60 disabled:cursor-not-allowed disabled:opacity-50"
+                          aria-label="View seller followers"
+                        >
+                          <Users className="h-3.5 w-3.5 shrink-0" strokeWidth={2} aria-hidden />
+                          <span className="text-[10px] font-semibold leading-none tabular-nums">
+                            {!sellerPeerId || sellerFollowerCountFailed
+                              ? "--"
+                              : sellerFollowerCountLoading || sellerFollowerCount === null
+                                ? "..."
+                                : formatFollowerShort(sellerFollowerCount)}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void handleShare();
+                          }}
+                          className="rounded-full bg-black/50 p-1.5 text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-black/60"
+                          aria-label="Share listing"
+                        >
+                          <Share2 className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={likeBusy}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void handleToggleLike();
+                          }}
+                          className="inline-flex items-center gap-0.5 rounded-full bg-black/50 px-2 py-1.5 text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-black/60 disabled:opacity-50"
+                          aria-label={liked ? "Unlike" : "Like"}
+                        >
+                          <Heart
+                            className={`h-3.5 w-3.5 shrink-0 ${liked ? "fill-white text-white" : "text-white"}`}
+                            fill={liked ? "currentColor" : "none"}
+                            strokeWidth={2}
+                            aria-hidden
+                          />
+                          <span className="text-[10px] font-semibold leading-none tabular-nums">{likeCount}</span>
+                        </button>
+                      </div>
+                      <BoostDetailBadge row={foundProduct as Record<string, unknown>} />
+                    </div>
+                    {product.images.length > 1 ? (
+                      <span className="absolute bottom-3 right-3 z-[2] rounded-full bg-black/55 px-2.5 py-1 text-[11px] font-medium tabular-nums text-white shadow-sm">
+                        {(galleryActiveIndex >= 0 ? galleryActiveIndex : 0) + 1}/{product.images.length}
+                      </span>
+                    ) : null}
                   </div>
-                  {product.images.length > 1 ? (
-                    <span className="absolute bottom-3 right-3 z-[2] rounded-full bg-black/55 px-2.5 py-1 text-[11px] font-medium tabular-nums text-white shadow-sm">
-                      {(galleryActiveIndex >= 0 ? galleryActiveIndex : 0) + 1}/{product.images.length}
-                    </span>
-                  ) : null}
-                </div>
                 </div>
               </div>
               {product.images.length > 1 ? (
@@ -1285,11 +1294,25 @@ export default function ProductDetail() {
                       aria-current={index === galleryActiveIndex ? "true" : undefined}
                     >
                       {src ? (
-                        <div className="gh-product-img-frame w-20 shrink-0 rounded-md bg-gray-100" style={{ height: "80px" }}>
+                        <div
+                          style={{
+                            width: "80px",
+                            height: "80px",
+                            overflow: "hidden",
+                            backgroundColor: "#f3f4f6",
+                            borderRadius: "8px",
+                          }}
+                        >
                           <img
-                            className="gh-product-img-contain cursor-pointer"
                             src={src}
                             alt={`Thumbnail ${index + 1}`}
+                            style={{
+                              width: "100%",
+                              height: "100%",
+                              objectFit: "contain",
+                              objectPosition: "center",
+                              cursor: "pointer",
+                            }}
                             loading="lazy"
                             decoding="async"
                           />
@@ -1325,14 +1348,26 @@ export default function ProductDetail() {
                     ✕
                   </button>
                   <div
-                    className="gh-product-img-frame pointer-events-auto max-h-[90vh] max-w-[90vw] rounded-xl bg-gray-100"
                     style={{
                       width: "min(90vw, 100%)",
                       height: "90vh",
+                      overflow: "hidden",
+                      backgroundColor: "#f3f4f6",
+                      borderRadius: "12px",
                     }}
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <img className="gh-product-img-contain" src={mainDisplayImage} alt="" decoding="async" />
+                    <img
+                      src={mainDisplayImage}
+                      alt=""
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        objectFit: "contain",
+                        objectPosition: "center",
+                      }}
+                      decoding="async"
+                    />
                   </div>
                 </div>
               ) : null}
@@ -1360,12 +1395,11 @@ export default function ProductDetail() {
                     role="tab"
                     aria-selected={mobileDetailTab === id}
                     onClick={() => setMobileDetailTab(id)}
-                    className={cn(
-                      "shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors",
+                    className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
                       mobileDetailTab === id
                         ? "bg-[#15803d] text-white shadow-sm"
-                        : "bg-gray-100 text-gray-700 hover:bg-gray-200",
-                    )}
+                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    }`}
                   >
                     {label}
                   </button>
@@ -1417,10 +1451,9 @@ export default function ProductDetail() {
             </div>
 
             <div
-              className={cn(
-                "rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200/80",
-                mobileDetailTab === "details" ? "block" : "hidden md:block",
-              )}
+              className={`rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200/80 ${
+                mobileDetailTab === "details" ? "block" : "hidden md:block"
+              }`}
             >
               <div className="flex flex-wrap items-start justify-between gap-2 mb-2 md:mb-1">
                 <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Listing</h2>
@@ -1514,10 +1547,9 @@ export default function ProductDetail() {
             ) : null}
 
             <section
-              className={cn(
-                "rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200/80",
-                mobileDetailTab === "seller" ? "block" : "hidden md:block",
-              )}
+              className={`rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200/80 ${
+                mobileDetailTab === "seller" ? "block" : "hidden md:block"
+              }`}
             >
               <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3">Seller</h2>
               {sellerPeerId ? (
@@ -1668,10 +1700,9 @@ export default function ProductDetail() {
             </section>
 
             <section
-              className={cn(
-                "rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200/80",
-                mobileDetailTab === "reviews" ? "block" : "hidden md:block",
-              )}
+              className={`rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200/80 ${
+                mobileDetailTab === "reviews" ? "block" : "hidden md:block"
+              }`}
             >
               <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Product reviews</h2>
@@ -1745,10 +1776,9 @@ export default function ProductDetail() {
             </section>
 
             <section
-              className={cn(
-                "rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200/80",
-                mobileDetailTab === "reviews" ? "block" : "hidden md:block",
-              )}
+              className={`rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200/80 ${
+                mobileDetailTab === "reviews" ? "block" : "hidden md:block"
+              }`}
             >
               <div className="flex items-center justify-between gap-2 mb-3">
                 <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Buyer reviews</h2>
@@ -1794,10 +1824,9 @@ export default function ProductDetail() {
             </section>
 
             <section
-              className={cn(
-                "rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200/80",
-                mobileDetailTab === "about" ? "block" : "hidden md:block",
-              )}
+              className={`rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200/80 ${
+                mobileDetailTab === "about" ? "block" : "hidden md:block"
+              }`}
             >
               <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">Description</h2>
               {product.description ? (
@@ -1814,10 +1843,9 @@ export default function ProductDetail() {
             </section>
 
             <section
-              className={cn(
-                "rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200/80",
-                mobileDetailTab === "about" ? "block" : "hidden md:block",
-              )}
+              className={`rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200/80 ${
+                mobileDetailTab === "about" ? "block" : "hidden md:block"
+              }`}
             >
               <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3">Delivery options</h2>
               {product.deliveryOptions.length === 0 && product.intlDeliveryOptions.length === 0 ? (
@@ -1873,10 +1901,9 @@ export default function ProductDetail() {
             </section>
 
             <section
-              className={cn(
-                "rounded-2xl bg-amber-50/90 px-4 py-4 text-sm text-gray-800 ring-1 ring-amber-100/80",
-                mobileDetailTab === "about" ? "block" : "hidden md:block",
-              )}
+              className={`rounded-2xl bg-amber-50/90 px-4 py-4 text-sm text-gray-800 ring-1 ring-amber-100/80 ${
+                mobileDetailTab === "about" ? "block" : "hidden md:block"
+              }`}
             >
               <p className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
                 <Shield className="w-4 h-4 text-amber-700 shrink-0" aria-hidden />

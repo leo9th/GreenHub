@@ -39,7 +39,6 @@ export default function VerifyOTP() {
     return () => clearInterval(t);
   }, [countdown]);
 
-  /** Start cooldown after sending OTP (also call on mount if we arrived fresh from send). */
   const startCooldown = useCallback(() => setCountdown(60), []);
 
   useEffect(() => {
@@ -208,8 +207,9 @@ export default function VerifyOTP() {
               >
                 {resending ? "Sending…" : "Resend code"}
               </button>
-          )}
-        </p>
+            )}
+          </p>
+        </div>
 
         <p className="mt-4 text-center text-sm">
           <Link to={flow === "signup" ? "/register" : "/login"} className="font-medium text-[#15803d] hover:underline">

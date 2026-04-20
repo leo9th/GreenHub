@@ -9,6 +9,10 @@ import { useAuth } from "../context/AuthContext";
 import { PaystackButton } from "react-paystack";
 import { toast } from "sonner";
 import { supabase } from "../../lib/supabase";
+import {
+  computeHybridDeliveryTotals,
+  isWarehouseShippingFulfillment,
+} from "../utils/fulfillment";
 
 export default function Checkout() {
   const formatPrice = useCurrency();
@@ -30,7 +34,7 @@ export default function Checkout() {
   const [paymentMethod, setPaymentMethod] = useState<"card" | "bank" | "ussd" | "pod">("card");
 
   const subtotal = cartTotal;
-  const delivery = items.reduce((sum, item) => sum + item.deliveryFee, 0);
+  const { guaranteedFlat, marketplaceSellerFees, total: delivery } = computeHybridDeliveryTotals(items);
   const platformFee = Math.round(subtotal * 0.1);
   const total = subtotal + delivery + platformFee;
 
@@ -59,8 +63,12 @@ export default function Checkout() {
         {
           display_name: "Items",
           variable_name: "items",
-          value: items.map(item => item.title).join(", ")
-        }
+          value: items
+            .map((item) =>
+              `${item.title}${isWarehouseShippingFulfillment(item.fulfillment_type) ? " [Guaranteed]" : " [Marketplace]"}`,
+            )
+            .join(", "),
+        },
       ]
     },
     publicKey: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY,
@@ -311,6 +319,20 @@ export default function Checkout() {
                 <span className="text-gray-600">Subtotal</span>
                 <span className="font-medium text-gray-800">{formatPrice(subtotal)}</span>
               </div>
+              {guaranteedFlat > 0 ? (
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-gray-600">GreenHub Guaranteed shipping (flat)</span>
+                  <span className="font-medium text-gray-800">{formatPrice(guaranteedFlat)}</span>
+                </div>
+              ) : null}
+              {items.some((i) => !isWarehouseShippingFulfillment(i.fulfillment_type)) ? (
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-gray-600">Marketplace (seller)</span>
+                  <span className="font-medium text-gray-800">
+                    {marketplaceSellerFees > 0 ? formatPrice(marketplaceSellerFees) : "Pickup only"}
+                  </span>
+                </div>
+              ) : null}
               <div className="flex items-center justify-between text-sm">
                 <span className="text-gray-600">Total Delivery</span>
                 <span className="font-medium text-gray-800">{formatPrice(delivery)}</span>

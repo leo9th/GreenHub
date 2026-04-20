@@ -1,10 +1,9 @@
 import React, { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { motion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import {
   ArrowDown,
   Ban,
-  ChevronDown,
   Copy,
   Eraser,
   Flag,
@@ -31,6 +30,7 @@ import { formatListTime, useInboxConversationList } from "../../hooks/useInboxCo
 import { getAvatarUrl } from "../../utils/getAvatar";
 import { getProductPrice } from "../../utils/getProductPrice";
 import { getProductThumbnailUrl } from "../../utils/productImages";
+import { isWarehouseShippingFulfillment } from "../../utils/fulfillment";
 import {
   fetchConversationById,
   findConversationByPair,
@@ -304,6 +304,8 @@ type StripProduct = {
   image: string | null;
   like_count: number;
   condition: string | null;
+  /** B2C warehouse-fulfilled vs C2C — drives context bar styling when `warehouse_shipping`. */
+  fulfillment_type: string | null;
 };
 
 type PendingConfirm =
@@ -385,10 +387,8 @@ export default function ChatWorkspace() {
   const [peerPresenceTick, setPeerPresenceTick] = useState(0);
   const [messages, setMessages] = useState<ChatMessageRow[]>([]);
   const [stripProduct, setStripProduct] = useState<StripProduct | null>(null);
-  /** True while fetching listing row for the header strip (`context_product_id` / `?product=`). */
+  /** True while fetching listing row for the product context bar (`context_product_id` / `?product=`). */
   const [listingStripLoading, setListingStripLoading] = useState(false);
-  /** Mobile only: when true, listing strip is minimized to one row (tap to expand). */
-  const [mobileProductStripCollapsed, setMobileProductStripCollapsed] = useState(false);
   const [messageProductsById, setMessageProductsById] = useState<Map<string, StripProduct>>(() => new Map());
   const [peerTyping, setPeerTyping] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -417,7 +417,7 @@ export default function ChatWorkspace() {
   const [isFollowingPeer, setIsFollowingPeer] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
   const [peerFollowerCount, setPeerFollowerCount] = useState<number | null>(null);
-  /** Hide listing strip locally (X); resets when listing changes */
+  /** Hide composer listing chip locally (X); resets when listing changes */
   const [productStripDismissed, setProductStripDismissed] = useState(false);
   /** User dismissed the listing chip; ignore `conversation.context_product_id` until a fresh `?product=` link. */
   const [listingAttachmentOptOut, setListingAttachmentOptOut] = useState(false);
@@ -525,6 +525,20 @@ export default function ChatWorkspace() {
     conversation?.context_product_id,
   ]);
 
+  /** Slim bar above the thread when this chat is tied to a listing (`stripProductSourceId` mirrors `?product=` + `context_product_id`). */
+  const showProductContextBar = useMemo(
+    () => isValidListingProductPk(stripProductSourceId),
+    [stripProductSourceId],
+  );
+
+  /** B2C (warehouse) vs C2C — only known after `stripProduct` loads; loading uses marketplace (glass) styling. */
+  const productContextBarSurfaceClass = useMemo(() => {
+    if (stripProduct && isWarehouseShippingFulfillment(stripProduct.fulfillment_type)) {
+      return "border-b border-emerald-200/45 bg-emerald-50/80 backdrop-blur-md dark:border-emerald-800/50 dark:bg-emerald-950/45";
+    }
+    return "border-b border-white/30 bg-white/70 dark:border-zinc-600/40 dark:bg-zinc-900/70";
+  }, [stripProduct]);
+
   const clearListingAttachment = useCallback(() => {
     setListingAttachmentOptOut(true);
     setProductStripDismissed(true);
@@ -576,7 +590,15 @@ export default function ChatWorkspace() {
       if (fromMap) return { strip: fromMap, pricePending: false };
       if (stripProduct && productLikeSetKey(stripProduct.id) === mapKey) return { strip: stripProduct, pricePending: false };
       return {
-        strip: { id: pk ?? pid, title: "Listing", price: 0, image: null, like_count: 0 },
+        strip: {
+          id: pk ?? pid,
+          title: "Listing",
+          price: 0,
+          image: null,
+          like_count: 0,
+          condition: null,
+          fulfillment_type: null,
+        },
         pricePending: true,
       };
     },
@@ -738,11 +760,6 @@ export default function ChatWorkspace() {
     peerLastActive,
     peerTyping,
     peerPresenceTick,
-    stripProduct,
-    stripProductSourceId,
-    listingStripLoading,
-    productStripDismissed,
-    mobileProductStripCollapsed,
     isFollowingPeer,
     peerFollowerCount,
   ]);
@@ -994,7 +1011,7 @@ export default function ChatWorkspace() {
       try {
         const { data, error } = await supabase
           .from("products")
-          .select("id, title, price, price_local, image, images, like_count, condition")
+          .select("id, title, price, price_local, image, images, like_count, condition, fulfillment_type")
           .eq("id", pid)
           .maybeSingle();
         if (cancelled) return;
@@ -1008,6 +1025,9 @@ export default function ChatWorkspace() {
         const likeCount =
           typeof lcRaw === "number" && Number.isFinite(lcRaw) ? lcRaw : Number(lcRaw) || 0;
         const thumb = getProductThumbnailUrl(row as { image?: unknown; images?: unknown }).trim();
+        const ftRaw = row.fulfillment_type;
+        const fulfillment_type =
+          typeof ftRaw === "string" && ftRaw.trim() ? ftRaw.trim() : ftRaw != null ? String(ftRaw).trim() || null : null;
         setStripProduct({
           id: (typeof idNorm === "string" || typeof idNorm === "number" ? idNorm : String(row.id ?? "")) as string | number,
           title: String(row.title ?? "Listing"),
@@ -1015,6 +1035,7 @@ export default function ChatWorkspace() {
           image: thumb || null,
           like_count: likeCount,
           condition: typeof row.condition === "string" && row.condition.trim() ? row.condition.trim() : null,
+          fulfillment_type,
         });
       } finally {
         if (!cancelled) setListingStripLoading(false);
@@ -1042,10 +1063,6 @@ export default function ChatWorkspace() {
       cancelled = true;
     };
   }, [conversation?.id, conversation?.context_product_id, productIdFromQuery, validProductId]);
-
-  useEffect(() => {
-    setMobileProductStripCollapsed(false);
-  }, [stripProduct?.id]);
 
   useEffect(() => {
     setProductStripDismissed(false);
@@ -1104,7 +1121,7 @@ export default function ChatWorkspace() {
     void (async () => {
       const { data, error } = await supabase
         .from("products")
-        .select("id, title, price, price_local, image, images, like_count, condition")
+        .select("id, title, price, price_local, image, images, like_count, condition, fulfillment_type")
         .in("id", list);
       if (cancelled) return;
       if (error || !data) return;
@@ -1119,6 +1136,9 @@ export default function ChatWorkspace() {
         const thumb = getProductThumbnailUrl(row as { image?: unknown; images?: unknown }).trim();
         const idOut: string | number =
           typeof idNorm === "string" || typeof idNorm === "number" ? idNorm : String(row.id ?? "");
+        const ftRaw = row.fulfillment_type;
+        const fulfillment_type =
+          typeof ftRaw === "string" && ftRaw.trim() ? ftRaw.trim() : ftRaw != null ? String(ftRaw).trim() || null : null;
         next.set(mapKey, {
           id: idOut,
           title: String(row.title ?? "Listing"),
@@ -1126,6 +1146,7 @@ export default function ChatWorkspace() {
           image: thumb || null,
           like_count: likeCount,
           condition: typeof row.condition === "string" && row.condition.trim() ? row.condition.trim() : null,
+          fulfillment_type,
         });
       }
       setMessageProductsById(next);
@@ -2197,84 +2218,6 @@ export default function ChatWorkspace() {
             "md:sticky md:top-16 md:z-30",
           )}
         >
-          {stripProductSourceId != null && listingStripLoading && !stripProduct ? (
-            <div
-              className="shrink-0 border-b border-[#d1d7db] bg-white px-3 py-2.5 dark:border-zinc-700 dark:bg-zinc-800/80 sm:px-4"
-              aria-busy
-              aria-label="Loading listing"
-            >
-              <div className="flex animate-pulse items-center gap-3">
-                <span className="h-14 w-14 shrink-0 rounded-lg bg-gray-200 dark:bg-zinc-700" />
-                <div className="min-w-0 flex-1 space-y-2">
-                  <div className="h-4 w-[min(100%,14rem)] rounded bg-gray-200 dark:bg-zinc-700" />
-                  <div className="h-3 w-24 rounded bg-gray-100 dark:bg-zinc-600/80" />
-                </div>
-                <span className="h-9 w-24 shrink-0 rounded-md bg-gray-200 dark:bg-zinc-700" />
-              </div>
-            </div>
-          ) : stripProductSourceId != null && !stripProduct && !listingStripLoading && !productStripDismissed ? (
-            <div className="shrink-0 border-b border-[#d1d7db] bg-amber-50/90 px-3 py-2 text-sm text-amber-950 dark:border-zinc-700 dark:bg-amber-950/40 dark:text-amber-100 sm:px-4">
-              <span className="font-medium">Listing #{stripProductSourceId}</span>
-              <span className="text-amber-800/90 dark:text-amber-200/90"> — details couldn&apos;t be loaded. You can still message about this product.</span>
-            </div>
-          ) : stripProduct && !productStripDismissed ? (
-            <div className="shrink-0 border-b border-[#d1d7db] bg-white dark:border-zinc-700 dark:bg-zinc-800/80">
-              {mobileProductStripCollapsed ? (
-                <button
-                  type="button"
-                  className="flex min-h-[44px] w-full items-center gap-2 px-3 py-2 text-left md:hidden sm:px-4"
-                  onClick={() => setMobileProductStripCollapsed(false)}
-                  aria-expanded={false}
-                  aria-controls="chat-product-strip-details"
-                >
-                  <ChevronDown className="h-4 w-4 shrink-0 -rotate-90 text-gray-600" aria-hidden />
-                  <span className="min-w-0 flex-1 truncate text-sm font-semibold text-gray-900 dark:text-zinc-100">
-                    {stripProduct.title}
-                  </span>
-                  <span className="shrink-0 text-xs font-semibold text-[#25D366]">{formatPrice(stripProduct.price)}</span>
-                </button>
-              ) : null}
-
-              <div
-                id="chat-product-strip-details"
-                className={cn(
-                  "relative flex items-center gap-3 px-3 py-2.5 sm:px-4",
-                  mobileProductStripCollapsed ? "hidden md:flex" : "flex",
-                )}
-              >
-                <button
-                  type="button"
-                  className="absolute right-28 top-2 z-10 min-h-[44px] min-w-[44px] rounded-full p-2 text-gray-600 hover:bg-gray-100 md:hidden dark:hover:bg-zinc-700"
-                  aria-label="Hide listing details"
-                  onClick={() => setMobileProductStripCollapsed(true)}
-                >
-                  <ChevronDown className="h-4 w-4 rotate-180" aria-hidden />
-                </button>
-                <span className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-gray-100 ring-1 ring-black/5 dark:bg-zinc-800">
-                  {stripProduct.image ? (
-                    <img src={stripProduct.image} alt="" className="h-full w-full object-cover" />
-                  ) : (
-                    <span className="flex h-full w-full items-center justify-center text-[10px] text-gray-400">No image</span>
-                  )}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="line-clamp-2 text-sm font-semibold text-gray-900 dark:text-zinc-100">{stripProduct.title}</p>
-                  <p className="text-sm font-bold text-[#25D366]">{formatPrice(stripProduct.price)}</p>
-                </div>
-                <Button type="button" variant="secondary" size="sm" className="min-h-[44px] shrink-0 px-3" asChild>
-                  <Link to={`/products/${stripProduct.id}`}>View product</Link>
-                </Button>
-                <button
-                  type="button"
-                  onClick={() => clearListingAttachment()}
-                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-gray-500 hover:bg-gray-100 dark:hover:bg-zinc-700"
-                  aria-label="Dismiss product banner"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-            </div>
-          ) : null}
           <ChatPeerHeaderModern
             peerId={peerId}
             peerName={peerName}
@@ -2288,10 +2231,7 @@ export default function ChatWorkspace() {
             isOnline={false}
             isActiveNow={peerActiveByProfile}
             onBack={() => navigate("/messages")}
-            className={cn(
-              stripProductSourceId != null ? "border-t border-[#d1d7db] dark:border-zinc-700" : "",
-              "bg-[#f0f2f5]/95 dark:bg-zinc-900/95",
-            )}
+            className="bg-[#f0f2f5]/95 dark:bg-zinc-900/95"
             menu={
               <>
                 {peerMemberSince ? (
@@ -2405,6 +2345,107 @@ export default function ChatWorkspace() {
         />
 
         <div className="relative z-10 flex min-h-0 flex-1 flex-col">
+          {showProductContextBar ? (
+            <div
+              role="region"
+              aria-label="Listing in this conversation"
+              className={cn(
+                "relative z-[15] shrink-0 shadow-sm backdrop-blur-md transition-[background-color,border-color] duration-300 ease-out dark:backdrop-blur-md",
+                productContextBarSurfaceClass,
+              )}
+            >
+              <AnimatePresence mode="wait">
+                {listingStripLoading && !stripProduct ? (
+                  <motion.div
+                    key="context-bar-loading"
+                    role="status"
+                    aria-busy
+                    aria-label="Loading listing"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.3, ease: "easeOut" }}
+                    className="flex h-[60px] min-h-[60px] items-center gap-3 px-3 py-2 sm:px-4"
+                  >
+                    <span className="h-11 w-11 shrink-0 animate-pulse rounded-md bg-gray-200/90 dark:bg-zinc-700" />
+                    <div className="min-w-0 flex-1 space-y-2">
+                      <div className="h-3.5 w-[min(100%,12rem)] animate-pulse rounded bg-gray-200/90 dark:bg-zinc-600" />
+                      <div className="h-3 w-20 animate-pulse rounded bg-gray-100/90 dark:bg-zinc-600/80" />
+                    </div>
+                    <span className="h-7 w-20 shrink-0 animate-pulse rounded-md bg-gray-200/90 dark:bg-zinc-700" />
+                  </motion.div>
+                ) : !stripProduct && !listingStripLoading ? (
+                  <motion.div
+                    key="context-bar-error"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.3, ease: "easeOut" }}
+                    className="flex h-[60px] min-h-[60px] items-center gap-3 px-3 py-2 sm:px-4"
+                  >
+                    <div className="h-11 w-11 shrink-0 rounded-md bg-amber-100/80 ring-1 ring-amber-200/60 dark:bg-amber-950/50 dark:ring-amber-900/40" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-xs font-semibold text-amber-950 dark:text-amber-100">
+                        Listing #{String(stripProductSourceId)}
+                      </p>
+                      <p className="truncate text-[11px] text-amber-800/90 dark:text-amber-200/90">
+                        Details couldn&apos;t be loaded.
+                      </p>
+                    </div>
+                    <a
+                      href={`/products/${encodeURIComponent(productLikeSetKey(stripProductSourceId))}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="shrink-0 text-xs font-semibold text-[#15803d] underline-offset-2 hover:underline"
+                    >
+                      View Listing
+                    </a>
+                  </motion.div>
+                ) : stripProduct ? (
+                  <motion.div
+                    key={`context-bar-${productLikeSetKey(stripProduct.id)}`}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.3, ease: "easeOut" }}
+                    className="flex h-[60px] min-h-[60px] items-center gap-3 px-3 py-2 sm:px-4"
+                  >
+                    <span className="relative h-11 w-11 shrink-0 overflow-hidden rounded-md bg-gray-100 ring-1 ring-black/5 dark:bg-zinc-800">
+                      {stripProduct.image ? (
+                        <img src={stripProduct.image} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        <span className="flex h-full w-full items-center justify-center text-[9px] text-gray-400">—</span>
+                      )}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold leading-tight text-gray-900 dark:text-zinc-100">
+                        {stripProduct.title}
+                      </p>
+                      <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                        <p className="text-xs font-bold tabular-nums text-[#25D366]">{formatPrice(stripProduct.price)}</p>
+                        {isWarehouseShippingFulfillment(stripProduct.fulfillment_type) ? (
+                          <span
+                            className="inline-flex max-w-full shrink-0 items-center rounded-full bg-emerald-600/12 px-2 py-0.5 text-[10px] font-semibold uppercase leading-none tracking-wide text-emerald-900 ring-1 ring-emerald-600/20 dark:bg-emerald-500/15 dark:text-emerald-100 dark:ring-emerald-400/25"
+                            title="Fulfilled via GreenHub warehouse shipping"
+                          >
+                            GreenHub Guaranteed
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                    <a
+                      href={`/products/${encodeURIComponent(productLikeSetKey(stripProduct.id))}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="shrink-0 text-xs font-semibold text-[#15803d] underline-offset-2 hover:underline"
+                    >
+                      View Listing
+                    </a>
+                  </motion.div>
+                ) : null}
+              </AnimatePresence>
+            </div>
+          ) : null}
           {showJumpBottom ? (
             <div className="pointer-events-none absolute inset-x-0 bottom-4 z-20 flex justify-center px-4">
               <button

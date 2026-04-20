@@ -10,6 +10,7 @@ import {
   type ConversationRow,
 } from "../utils/chatConversations";
 import { CHAT_MESSAGE_BASE_COLUMNS } from "../utils/chatMessages";
+import type { ProductPk } from "../utils/engagement";
 
 const QUICK_REPLIES = [
   { label: "Make an offer", text: "Hi, I would like to make an offer on this item." },
@@ -18,7 +19,7 @@ const QUICK_REPLIES = [
 ] as const;
 
 type NewProductDetailInlineChatProps = {
-  productId: string;
+  productId: ProductPk;
   sellerId: string;
   sellerName: string;
   sellerUsername?: string;

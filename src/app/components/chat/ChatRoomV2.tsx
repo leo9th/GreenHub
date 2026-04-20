@@ -89,6 +89,7 @@ import { MessageBubbleV2 } from "./MessageBubbleV2";
 import { MessageMenuV2, MESSAGE_QUICK_REACTIONS } from "./MessageMenuV2";
 import { ChatPeerHeaderModern } from "./ChatPeerHeaderModern";
 import { fetchProfileFollowerCount } from "../../utils/profileFollowCounts";
+import { normalizeProductPk, productLikeSetKey, type ProductPk } from "../../utils/engagement";
 
 const CHAT_MEDIA_BUCKETS = ["chat-media", "chat-images", "chat-attachments"] as const;
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
@@ -101,20 +102,21 @@ function isMessageFromViewer(senderId: string | undefined, viewerId: string | un
   return String(senderId).toLowerCase() === String(viewerId).toLowerCase();
 }
 
-function parseConversationInt(v: unknown): number | null {
-  if (v == null) return null;
-  const n = typeof v === "number" ? v : Number(v);
-  return Number.isFinite(n) ? n : null;
+function conversationProductId(v: unknown): ProductPk | null {
+  return normalizeProductPk(v);
 }
 
-function parseProductQueryParam(param: string | null): number | null {
+function parseProductQueryParam(param: string | null): ProductPk | null {
   if (param == null || param === "") return null;
   const t = decodeURIComponent(String(param)).trim();
   if (!t) return null;
-  const n = Number(t);
-  if (!Number.isFinite(n) || n < 1) return null;
-  const i = Math.trunc(n);
-  return i >= 1 ? i : null;
+  return normalizeProductPk(t);
+}
+
+function isValidListingProductPk(pk: ProductPk | null | undefined): boolean {
+  if (pk == null) return false;
+  if (typeof pk === "number") return Number.isFinite(pk) && pk > 0;
+  return typeof pk === "string" && pk.length > 0;
 }
 
 function isValidConversationUUID(id: string): boolean {
@@ -172,7 +174,7 @@ function errorMessage(e: unknown, fallback: string): string {
 }
 
 type StripProduct = {
-  id: number;
+  id: ProductPk;
   title: string;
   price: number;
   image: string | null;
@@ -244,7 +246,7 @@ export default function ChatRoomV2() {
   const [messages, setMessages] = useState<ChatMessageRow[]>([]);
   const [stripProduct, setStripProduct] = useState<StripProduct | null>(null);
   const [listingStripLoading, setListingStripLoading] = useState(false);
-  const [messageProductsById, setMessageProductsById] = useState<Map<number, StripProduct>>(() => new Map());
+  const [messageProductsById, setMessageProductsById] = useState<Map<string, StripProduct>>(() => new Map());
   const [loading, setLoading] = useState(true);
   const [sendBusy, setSendBusy] = useState(false);
   const sendLockRef = useRef(false);
@@ -283,7 +285,7 @@ export default function ChatRoomV2() {
   const productParam = searchParams.get("product");
   const validProductId = useMemo(() => parseProductQueryParam(productParam), [productParam]);
 
-  const [productIdFromQuery, setProductIdFromQuery] = useState<number | null>(() => {
+  const [productIdFromQuery, setProductIdFromQuery] = useState<ProductPk | null>(() => {
     if (typeof window === "undefined") return null;
     return parseProductQueryParam(new URLSearchParams(window.location.search).get("product"));
   });
@@ -311,10 +313,10 @@ export default function ChatRoomV2() {
   }, [searchParams, navigate, location.pathname, routeConvKey]);
 
   const stripProductSourceId = useMemo(() => {
-    if (productIdFromQuery != null && productIdFromQuery > 0) return productIdFromQuery;
-    if (validProductId != null && validProductId > 0) return validProductId;
-    const c = conversation ? parseConversationInt(conversation.context_product_id) : null;
-    return c != null && c > 0 ? Math.trunc(c) : null;
+    if (isValidListingProductPk(productIdFromQuery)) return productIdFromQuery;
+    if (isValidListingProductPk(validProductId)) return validProductId;
+    const c = conversation ? conversationProductId(conversation.context_product_id) : null;
+    return isValidListingProductPk(c) ? c : null;
   }, [productIdFromQuery, validProductId, conversation?.context_product_id]);
 
   const peerFirstName = useMemo(() => peerName.split(/\s+/)[0] || "Member", [peerName]);
@@ -333,11 +335,13 @@ export default function ChatRoomV2() {
     (msg: ChatMessageRow): { strip: StripProduct; pricePending: boolean } | null => {
       const pid = msg.product_id;
       if (pid == null) return null;
-      const fromMap = messageProductsById.get(pid);
+      const pk = normalizeProductPk(pid);
+      const mapKey = pk != null ? productLikeSetKey(pk) : String(pid);
+      const fromMap = messageProductsById.get(mapKey);
       if (fromMap) return { strip: fromMap, pricePending: false };
-      if (stripProduct && stripProduct.id === pid) return { strip: stripProduct, pricePending: false };
+      if (stripProduct && productLikeSetKey(stripProduct.id) === mapKey) return { strip: stripProduct, pricePending: false };
       return {
-        strip: { id: pid, title: "Listing", price: 0, image: null, like_count: 0, condition: null },
+        strip: { id: pk ?? pid, title: "Listing", price: 0, image: null, like_count: 0, condition: null },
         pricePending: true,
       };
     },
@@ -527,9 +531,9 @@ export default function ChatRoomV2() {
       const peer = otherPartyUserId(conv, authUser.id);
       if (!peer) throw new Error("Not a participant");
 
-      if (listingIntent != null && listingIntent > 0) {
-        const current = parseConversationInt(conv.context_product_id);
-        if (current !== listingIntent) {
+      if (isValidListingProductPk(listingIntent)) {
+        const current = conversationProductId(conv.context_product_id);
+        if ((current == null ? "" : productLikeSetKey(current)) !== productLikeSetKey(listingIntent)) {
           const { error: uErr } = await setConversationContextProduct(supabase, conv.id, listingIntent);
           if (!uErr) conv = { ...conv, context_product_id: listingIntent };
         }
@@ -575,9 +579,8 @@ export default function ChatRoomV2() {
       setEmojiPickerOpen(false);
       setMessages(msgs);
 
-      const attachPid = listingIntent ?? parseConversationInt(conv.context_product_id);
-      attachListingToFirstSendRef.current =
-        attachPid != null && Number.isFinite(attachPid) && attachPid > 0;
+      const attachPid = listingIntent ?? conversationProductId(conv.context_product_id);
+      attachListingToFirstSendRef.current = isValidListingProductPk(attachPid);
     } catch (e: unknown) {
       console.error(e);
       const msg = e instanceof Error ? e.message : "Could not open chat";
@@ -653,9 +656,9 @@ export default function ChatRoomV2() {
 
   useEffect(() => {
     const intent = productIdFromQuery ?? validProductId;
-    if (!conversation?.id || intent == null) return;
-    const cur = parseConversationInt(conversation.context_product_id);
-    if (cur === intent) return;
+    if (!conversation?.id || !isValidListingProductPk(intent)) return;
+    const cur = conversationProductId(conversation.context_product_id);
+    if (cur != null && productLikeSetKey(cur) === productLikeSetKey(intent)) return;
     let cancelled = false;
     void (async () => {
       const { error } = await setConversationContextProduct(supabase, conversation.id, intent);
@@ -702,16 +705,20 @@ export default function ChatRoomV2() {
   }, [peerId]);
 
   useEffect(() => {
-    const ids = new Set<number>();
+    const ids = new Set<string>();
+    const list: ProductPk[] = [];
     for (const m of messages) {
-      const p = m.product_id;
-      if (p != null) ids.add(p);
+      const pk = normalizeProductPk(m.product_id);
+      if (pk == null) continue;
+      const key = productLikeSetKey(pk);
+      if (ids.has(key)) continue;
+      ids.add(key);
+      list.push(pk);
     }
-    if (ids.size === 0) {
+    if (list.length === 0) {
       setMessageProductsById(new Map());
       return;
     }
-    const list = [...ids];
     let cancelled = false;
     void (async () => {
       const { data, error } = await supabase
@@ -720,15 +727,15 @@ export default function ChatRoomV2() {
         .in("id", list);
       if (cancelled) return;
       if (error || !data) return;
-      const next = new Map<number, StripProduct>();
+      const next = new Map<string, StripProduct>();
       for (const row of data as Record<string, unknown>[]) {
-        const id = Number(row.id);
-        if (!Number.isFinite(id)) continue;
+        const id = normalizeProductPk(row.id);
+        if (id == null) continue;
         const lcRaw = row.like_count;
         const likeCount =
           typeof lcRaw === "number" && Number.isFinite(lcRaw) ? lcRaw : Number(lcRaw) || 0;
         const thumb = getProductThumbnailUrl(row as { image?: unknown; images?: unknown }).trim();
-        next.set(id, {
+        next.set(productLikeSetKey(id), {
           id,
           title: String(row.title ?? "Listing"),
           price: getProductPrice(row as { price?: unknown; price_local?: unknown }),
@@ -874,7 +881,7 @@ export default function ChatRoomV2() {
             return {
               ...c,
               context_product_id:
-                pid !== undefined && pid !== null ? parseConversationInt(pid) : c.context_product_id,
+                pid !== undefined && pid !== null ? conversationProductId(pid) : c.context_product_id,
               buyer_last_read_at: (next.buyer_last_read_at as string | null | undefined) ?? c.buyer_last_read_at,
               seller_last_read_at: (next.seller_last_read_at as string | null | undefined) ?? c.seller_last_read_at,
             };
@@ -993,7 +1000,7 @@ export default function ChatRoomV2() {
   }, [messages, scrollToBottom]);
 
   const sendMessage = useCallback(
-    async (opts?: { text?: string; imageFile?: File | null; productId?: number | null }) => {
+    async (opts?: { text?: string; imageFile?: File | null; productId?: ProductPk | null }) => {
       const text = (opts?.text ?? draft).trim();
       const imageFile = opts?.imageFile;
 
@@ -1004,11 +1011,11 @@ export default function ChatRoomV2() {
 
       let productId = opts?.productId ?? null;
       if (productId == null && attachListingToFirstSendRef.current) {
-        let n = parseConversationInt(conversation.context_product_id);
-        if (n == null || n <= 0) {
+        let n = conversationProductId(conversation.context_product_id);
+        if (!isValidListingProductPk(n)) {
           n = stripProductSourceId;
         }
-        if (n != null && n > 0) {
+        if (isValidListingProductPk(n)) {
           productId = n;
           attachListingToFirstSendRef.current = false;
         }

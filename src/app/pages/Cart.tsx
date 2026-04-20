@@ -1,17 +1,120 @@
 import { Link, useNavigate } from "react-router";
-import { ArrowLeft, Trash2, Plus, Minus, ShoppingBag } from "lucide-react";
+import { ArrowLeft, Trash2, Plus, Minus, ShoppingBag, BadgeCheck } from "lucide-react";
 import { useCurrency } from "../hooks/useCurrency";
-import { useCart } from "../context/CartContext";
+import { useCart, type CartItem } from "../context/CartContext";
+import {
+  computeHybridDeliveryTotals,
+  GUARANTEED_FLAT_SHIPPING_NGN,
+  isWarehouseShippingFulfillment,
+} from "../utils/fulfillment";
+
+function CartLineCard({
+  item,
+  variant,
+  formatPrice,
+  updateQuantity,
+  removeFromCart,
+}: {
+  item: CartItem;
+  variant: "guaranteed" | "marketplace";
+  formatPrice: (n: number) => string;
+  updateQuantity: (id: string, q: number) => void;
+  removeFromCart: (id: string) => void;
+}) {
+  const isGuaranteed = variant === "guaranteed";
+
+  return (
+    <div
+      className={`rounded-xl p-4 shadow-sm border ${
+        isGuaranteed ? "bg-white/80 border-emerald-100" : "bg-white border-gray-100"
+      }`}
+    >
+      <div className="flex gap-4 mb-4">
+        <Link
+          to={`/products/${item.id}`}
+          className="flex h-24 w-24 shrink-0 rounded-lg border border-gray-100 bg-gray-50"
+        >
+          <div className="h-full w-full overflow-hidden rounded-lg bg-gray-100">
+            <img src={item.image} alt={item.title} className="h-full w-full object-contain" />
+          </div>
+        </Link>
+        <div className="flex-1 min-w-0 py-1">
+          <Link to={`/products/${item.id}`}>
+            <h3 className="font-semibold text-gray-800 mb-1 line-clamp-2 hover:text-[#22c55e] transition-colors">
+              {item.title}
+            </h3>
+          </Link>
+          <p className="text-lg font-bold text-gray-900 mb-2">{formatPrice(item.price)}</p>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between pt-3 border-t border-gray-50">
+        <button
+          type="button"
+          onClick={() => removeFromCart(item.id)}
+          className="text-red-500 flex items-center gap-1.5 text-sm font-medium hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors"
+        >
+          <Trash2 className="w-4 h-4" />
+          Remove
+        </button>
+
+        <div className="flex items-center gap-3 bg-gray-50 rounded-lg border border-gray-200 p-0.5">
+          <button
+            type="button"
+            onClick={() => updateQuantity(item.id, item.quantity - 1)}
+            disabled={item.quantity <= 1}
+            className="w-8 h-8 flex items-center justify-center bg-white border border-gray-200 shadow-sm text-gray-600 disabled:opacity-50 hover:bg-gray-100 rounded-md transition-colors"
+          >
+            <Minus className="w-4 h-4" />
+          </button>
+          <span className="font-semibold text-gray-800 w-6 text-center">{item.quantity}</span>
+          <button
+            type="button"
+            onClick={() => updateQuantity(item.id, item.quantity + 1)}
+            className="w-8 h-8 flex items-center justify-center bg-white border border-gray-200 shadow-sm text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-3 pt-3 border-t border-gray-50">
+        {isGuaranteed ? (
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-emerald-800/90">Shipping</span>
+            <span className="font-medium text-emerald-900">Covered by GreenHub flat rate (once per order)</span>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-gray-500">Fulfillment</span>
+            <span className="font-medium text-gray-700 text-right">
+              {item.deliveryFee > 0 ? (
+                <>
+                  Self-arranged delivery · {formatPrice(item.deliveryFee)}
+                </>
+              ) : (
+                "Self-Arranged Delivery · Pickup only"
+              )}
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export default function Cart() {
   const formatPrice = useCurrency();
   const navigate = useNavigate();
-  
+
   const { items: cartItems, updateQuantity, removeFromCart } = useCart();
 
-  const subtotal = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-  const totalDelivery = cartItems.reduce((sum, item) => sum + item.deliveryFee, 0);
-  const platformFee = Math.round(subtotal * 0.10); // 10% platform fee
+  const guaranteedItems = cartItems.filter((i) => isWarehouseShippingFulfillment(i.fulfillment_type));
+  const marketplaceItems = cartItems.filter((i) => !isWarehouseShippingFulfillment(i.fulfillment_type));
+
+  const subtotal = cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const { guaranteedFlat, marketplaceSellerFees, total: totalDelivery } = computeHybridDeliveryTotals(cartItems);
+  const platformFee = Math.round(subtotal * 0.1);
   const total = subtotal + totalDelivery + platformFee;
 
   if (cartItems.length === 0) {
@@ -19,7 +122,7 @@ export default function Cart() {
       <div className="min-h-screen bg-gray-50">
         <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
           <div className="px-4 py-3 max-w-7xl mx-auto flex items-center gap-3">
-            <button onClick={() => navigate(-1)} className="p-2 -ml-2 hover:bg-gray-100 rounded-full">
+            <button type="button" onClick={() => navigate(-1)} className="p-2 -ml-2 hover:bg-gray-100 rounded-full">
               <ArrowLeft className="w-5 h-5 text-gray-700" />
             </button>
             <h1 className="text-lg font-semibold text-gray-800">Shopping Cart</h1>
@@ -47,116 +150,120 @@ export default function Cart() {
 
   return (
     <div className="min-h-screen bg-gray-50 pb-32">
-      {/* Header */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
         <div className="px-4 py-3 max-w-7xl mx-auto flex items-center gap-3">
-          <button onClick={() => navigate(-1)} className="p-2 -ml-2 hover:bg-gray-100 rounded-full transition-colors">
+          <button type="button" onClick={() => navigate(-1)} className="p-2 -ml-2 hover:bg-gray-100 rounded-full transition-colors">
             <ArrowLeft className="w-5 h-5 text-gray-700" />
           </button>
           <h1 className="text-lg font-semibold text-gray-800">Shopping Cart</h1>
           <span className="ml-auto text-sm text-[#22c55e] bg-[#22c55e]/10 px-3 py-1 rounded-full font-semibold">
-            {cartItems.length} {cartItems.length === 1 ? 'item' : 'items'}
+            {cartItems.length} {cartItems.length === 1 ? "item" : "items"}
           </span>
         </div>
       </header>
 
-      {/* Cart Items */}
       <div className="px-4 py-6 max-w-7xl mx-auto md:grid md:grid-cols-3 md:gap-8 md:items-start">
-        <div className="md:col-span-2 space-y-4">
-        {cartItems.map((item) => (
-          <div key={item.id} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-            <div className="flex gap-4 mb-4">
-              <Link
-                to={`/products/${item.id}`}
-                className="flex h-24 w-24 shrink-0 rounded-lg border border-gray-100 bg-gray-50"
-              >
-                <div className="h-full w-full overflow-hidden rounded-lg bg-gray-100">
-                  <img src={item.image} alt={item.title} className="h-full w-full object-contain" />
+        <div className="md:col-span-2 space-y-6">
+          {guaranteedItems.length > 0 ? (
+            <section className="rounded-2xl border border-emerald-100/90 bg-emerald-50/50 p-4 md:p-5">
+              <div className="flex items-start gap-2 mb-4">
+                <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
+                  <BadgeCheck className="h-5 w-5" aria-hidden />
                 </div>
-              </Link>
-              <div className="flex-1 min-w-0 py-1">
-                <Link to={`/products/${item.id}`}>
-                  <h3 className="font-semibold text-gray-800 mb-1 line-clamp-2 hover:text-[#22c55e] transition-colors">{item.title}</h3>
-                </Link>
-                <p className="text-lg font-bold text-gray-900 mb-2">{formatPrice(item.price)}</p>
+                <div>
+                  <h2 className="text-base font-bold text-emerald-950">GreenHub Guaranteed</h2>
+                  <p className="text-xs text-emerald-800/80 mt-0.5">Warehouse shipping · Verified fulfillment</p>
+                </div>
               </div>
-            </div>
-
-            <div className="flex items-center justify-between pt-3 border-t border-gray-50">
-              <button
-                onClick={() => removeFromCart(item.id)}
-                className="text-red-500 flex items-center gap-1.5 text-sm font-medium hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors"
-              >
-                <Trash2 className="w-4 h-4" />
-                Remove
-              </button>
-              
-              <div className="flex items-center gap-3 bg-gray-50 rounded-lg border border-gray-200 p-0.5">
-                <button
-                  onClick={() => updateQuantity(item.id, item.quantity - 1)}
-                  disabled={item.quantity <= 1}
-                  className="w-8 h-8 flex items-center justify-center bg-white border border-gray-200 shadow-sm text-gray-600 disabled:opacity-50 hover:bg-gray-100 rounded-md transition-colors"
-                >
-                  <Minus className="w-4 h-4" />
-                </button>
-                <span className="font-semibold text-gray-800 w-6 text-center">{item.quantity}</span>
-                <button
-                  onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                  className="w-8 h-8 flex items-center justify-center bg-white border border-gray-200 shadow-sm text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
-                >
-                  <Plus className="w-4 h-4" />
-                </button>
+              <div className="space-y-4">
+                {guaranteedItems.map((item) => (
+                  <CartLineCard
+                    key={item.id}
+                    item={item}
+                    variant="guaranteed"
+                    formatPrice={formatPrice}
+                    updateQuantity={updateQuantity}
+                    removeFromCart={removeFromCart}
+                  />
+                ))}
               </div>
-            </div>
-
-            <div className="mt-3 pt-3 border-t border-gray-50">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-500">Delivery fee:</span>
-                <span className="font-medium text-gray-700">{formatPrice(item.deliveryFee)}</span>
+              <div className="mt-4 flex items-center justify-between rounded-xl border border-emerald-200/60 bg-white/60 px-4 py-3 text-sm">
+                <span className="font-medium text-emerald-900">Flat rate shipping (warehouse)</span>
+                <span className="font-bold text-emerald-950">{formatPrice(GUARANTEED_FLAT_SHIPPING_NGN)}</span>
               </div>
-            </div>
-          </div>
-        ))}
+            </section>
+          ) : null}
 
-        {/* Continue Shopping */}
-        <Link
-          to="/products"
-          className="flex items-center justify-center w-full py-4 text-center text-[#22c55e] font-semibold hover:bg-[#22c55e]/5 rounded-xl transition-colors border-2 border-dashed border-[#22c55e]/30 mt-4"
-        >
-          + Continue Shopping
-        </Link>
-        </div>
+          {marketplaceItems.length > 0 ? (
+            <section className="space-y-4">
+              <div className="flex items-center justify-between px-0.5">
+                <h2 className="text-base font-bold text-gray-900">Marketplace</h2>
+                <span className="text-xs font-medium text-gray-500">Seller pickup / self-arranged</span>
+              </div>
+              {marketplaceItems.map((item) => (
+                <CartLineCard
+                  key={item.id}
+                  item={item}
+                  variant="marketplace"
+                  formatPrice={formatPrice}
+                  updateQuantity={updateQuantity}
+                  removeFromCart={removeFromCart}
+                />
+              ))}
+            </section>
+          ) : null}
 
-      {/* Bottom Summary */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-[0_-10px_15px_-3px_rgba(0,0,0,0.05)] z-30 md:static md:block md:border md:border-gray-200 md:rounded-xl md:top-24 md:sticky md:p-6 md:shadow-sm mt-6">
-        <div className="px-5 py-5 max-w-7xl mx-auto md:p-0">
-          <h2 className="hidden md:block text-lg font-bold text-gray-900 mb-5 pb-4 border-b border-gray-100">Order Summary</h2>
-          <div className="space-y-3 mb-5">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-gray-600">Subtotal</span>
-              <span className="font-medium text-gray-800">{formatPrice(subtotal)}</span>
-            </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-gray-600">Delivery fees</span>
-              <span className="font-medium text-gray-800">{formatPrice(totalDelivery)}</span>
-            </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-gray-600">Platform fee (10%)</span>
-              <span className="font-medium text-gray-800">{formatPrice(platformFee)}</span>
-            </div>
-            <div className="flex items-center justify-between pt-4 mt-2 border-t border-gray-200">
-              <span className="font-bold text-gray-900 text-lg">Total</span>
-              <span className="text-2xl font-bold text-[#22c55e]">{formatPrice(total)}</span>
-            </div>
-          </div>
           <Link
-            to="/checkout"
-            className="block w-full py-4 bg-[#22c55e] hover:bg-[#16a34a] hover:-translate-y-0.5 transition-all text-white rounded-xl font-bold text-center shadow-md shadow-[#22c55e]/25"
+            to="/products"
+            className="flex items-center justify-center w-full py-4 text-center text-[#22c55e] font-semibold hover:bg-[#22c55e]/5 rounded-xl transition-colors border-2 border-dashed border-[#22c55e]/30 mt-2"
           >
-            Proceed to Checkout
+            + Continue Shopping
           </Link>
         </div>
-      </div>
+
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-[0_-10px_15px_-3px_rgba(0,0,0,0.05)] z-30 md:static md:block md:border md:border-gray-200 md:rounded-xl md:top-24 md:sticky md:p-6 md:shadow-sm mt-6">
+          <div className="px-5 py-5 max-w-7xl mx-auto md:p-0">
+            <h2 className="hidden md:block text-lg font-bold text-gray-900 mb-5 pb-4 border-b border-gray-100">Order Summary</h2>
+            <div className="space-y-3 mb-5">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-gray-600">Subtotal</span>
+                <span className="font-medium text-gray-800">{formatPrice(subtotal)}</span>
+              </div>
+              {guaranteedFlat > 0 ? (
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-gray-600">GreenHub Guaranteed shipping (flat)</span>
+                  <span className="font-medium text-gray-800">{formatPrice(guaranteedFlat)}</span>
+                </div>
+              ) : null}
+              {marketplaceItems.length > 0 ? (
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-gray-600">Marketplace delivery (seller)</span>
+                  <span className="font-medium text-gray-800">
+                    {marketplaceSellerFees > 0 ? formatPrice(marketplaceSellerFees) : "Pickup only"}
+                  </span>
+                </div>
+              ) : null}
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-gray-600">Delivery total</span>
+                <span className="font-medium text-gray-800">{formatPrice(totalDelivery)}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-gray-600">Platform fee (10%)</span>
+                <span className="font-medium text-gray-800">{formatPrice(platformFee)}</span>
+              </div>
+              <div className="flex items-center justify-between pt-4 mt-2 border-t border-gray-200">
+                <span className="font-bold text-gray-900 text-lg">Total</span>
+                <span className="text-2xl font-bold text-[#22c55e]">{formatPrice(total)}</span>
+              </div>
+            </div>
+            <Link
+              to="/checkout"
+              className="block w-full py-4 bg-[#22c55e] hover:bg-[#16a34a] hover:-translate-y-0.5 transition-all text-white rounded-xl font-bold text-center shadow-md shadow-[#22c55e]/25"
+            >
+              Proceed to Checkout
+            </Link>
+          </div>
+        </div>
       </div>
     </div>
   );

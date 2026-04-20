@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "build": "vite build",
-    "dev": "vite"
+    "dev": "vite",
+    "gen:supabase-types": "npx supabase gen types typescript --local > src/types/supabase.ts"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",

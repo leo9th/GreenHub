@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { normalizeProductPk, type ProductPk } from "./engagement";
 
 /** Persisted in DB: sent → delivered → read. `sending` is optimistic UI only (see client_sending). */
 export type ChatMessageDeliveryStatus = "sent" | "delivered" | "read";
@@ -32,7 +33,7 @@ export type ChatMessageRow = {
   /** User ids who chose “delete for me” */
   deleted_for?: string[] | null;
   /** Optional listing attached to this message (portrait card in thread) */
-  product_id?: number | null;
+  product_id?: ProductPk | null;
   /** Local only: message is being sent to the server */
   client_sending?: boolean;
   /** Local only: queued in IndexedDB until the network allows send */
@@ -185,10 +186,8 @@ export function isDeletedForEveryone(msg: ChatMessageRow): boolean {
   return !!msg.deleted_for_everyone;
 }
 
-function parseMessageProductId(raw: unknown): number | null {
-  if (raw == null || raw === "") return null;
-  const n = typeof raw === "number" ? raw : Number(raw);
-  return Number.isFinite(n) && n > 0 ? n : null;
+export function parseMessageProductId(raw: unknown): string | number | null {
+  return normalizeProductPk(raw);
 }
 
 /** Outgoing message receipt UI phase (includes optimistic sending). */

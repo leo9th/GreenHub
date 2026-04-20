@@ -26,7 +26,7 @@ import {
   Phone,
 } from "lucide-react";
 import { useCurrency } from "../hooks/useCurrency";
-import { useCart } from "../context/CartContext";
+import { useCart, type CartItem } from "../context/CartContext";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../../lib/supabase";
 import { getOrCreateAnonViewSession } from "../utils/viewSession";
@@ -56,7 +56,6 @@ import { buildInternationalDeliveryOptions } from "../data/internationalShipping
 import { EditProductModal } from "../components/EditProductModal";
 import { PriceNegotiation } from "../components/PriceNegotiation";
 import { MarketPricePrediction } from "../components/MarketPricePrediction";
-import NewProductDetailInlineChat from "../components/NewProductDetailInlineChat";
 
 type ParsedDeliveryOption = { name: string; fee: number; duration: string };
 
@@ -1041,6 +1040,23 @@ export default function ProductDetail() {
     ),
   };
 
+  const buildCartLineItem = (): CartItem => {
+    const ft = String(
+      (foundProduct as { fulfillment_type?: string }).fulfillment_type ?? "seller_pickup",
+    ).trim();
+    const isWarehouse = ft === "warehouse_shipping";
+    return {
+      id: product.id.toString(),
+      title: product.title,
+      price: product.price,
+      image: product.images[0] ?? "",
+      quantity: 1,
+      sellerId: sellerPeerId || product.seller.id.toString(),
+      fulfillment_type: ft,
+      deliveryFee: isWarehouse ? 0 : product.deliveryOptions[0]?.fee ?? 0,
+    };
+  };
+
   const onGalleryTouchStart = (e: ReactTouchEvent<HTMLDivElement>) => {
     const t = e.touches[0];
     if (!t) return;
@@ -1132,13 +1148,6 @@ export default function ProductDetail() {
   const productRatingTotal = hasLoadedProductReviews ? productReviews.length : dbProductTotal;
   const userHasProductReview = Boolean(authUser && productReviews.some((r) => r.user_id === authUser.id));
   const productIdForReviewLink = normalizeRouteProductId(id) ?? String(foundProduct?.id ?? "");
-
-  const scrollToInlineChat = () => {
-    setMobileDetailTab("details");
-    queueMicrotask(() => {
-      document.getElementById("product-inline-chat")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
-  };
 
   return (
     <div className="min-h-screen bg-gray-100 text-gray-900 pb-28 md:pb-8">
@@ -1472,16 +1481,25 @@ export default function ProductDetail() {
                 role="group"
                 aria-label="Contact"
               >
-                <button
-                  type="button"
-                  disabled={!canMessageSeller || isOwner}
-                  onClick={() => scrollToInlineChat()}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#15803d]/30 bg-white text-[#15803d] shadow-sm transition hover:bg-[#15803d] hover:text-white disabled:pointer-events-none disabled:opacity-40"
-                  title="Message seller on this page"
-                  aria-label="Message seller on this page"
-                >
-                  <MessageCircle className="h-[18px] w-[18px]" strokeWidth={2} aria-hidden />
-                </button>
+                {!canMessageSeller || isOwner ? (
+                  <span
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#15803d]/30 bg-white text-[#15803d] shadow-sm transition hover:bg-[#15803d] hover:text-white pointer-events-none opacity-40"
+                    title="Message seller on this page"
+                    aria-label="Message seller on this page"
+                    aria-disabled
+                  >
+                    <MessageCircle className="h-[18px] w-[18px]" strokeWidth={2} aria-hidden />
+                  </span>
+                ) : (
+                  <Link
+                    to={`/messages/u/${sellerPeerId}?product=${encodeURIComponent(String(foundProduct.id))}`}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#15803d]/30 bg-white text-[#15803d] shadow-sm transition hover:bg-[#15803d] hover:text-white"
+                    title="Message seller on this page"
+                    aria-label="Message seller on this page"
+                  >
+                    <MessageCircle className="h-[18px] w-[18px]" strokeWidth={2} aria-hidden />
+                  </Link>
+                )}
                 <a
                   href={callHref}
                   className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#15803d]/30 bg-white text-[#15803d] shadow-sm transition hover:bg-[#15803d] hover:text-white"
@@ -1494,15 +1512,20 @@ export default function ProductDetail() {
             </div>
 
             <div className="mb-3 hidden items-center justify-end gap-2 md:flex" role="group" aria-label="Contact">
-              <button
-                type="button"
-                disabled={!canMessageSeller || isOwner}
-                onClick={() => scrollToInlineChat()}
-                className="inline-flex items-center gap-2 rounded-full border border-[#15803d]/30 bg-white px-3 py-1.5 text-sm font-semibold text-[#15803d] shadow-sm transition hover:bg-[#15803d] hover:text-white disabled:pointer-events-none disabled:opacity-40"
-              >
-                <MessageCircle className="h-4 w-4 shrink-0" aria-hidden />
-                Message seller
-              </button>
+              {!canMessageSeller || isOwner ? (
+                <span className="inline-flex items-center gap-2 rounded-full border border-[#15803d]/30 bg-white px-3 py-1.5 text-sm font-semibold text-[#15803d] shadow-sm transition hover:bg-[#15803d] hover:text-white pointer-events-none opacity-40">
+                  <MessageCircle className="h-4 w-4 shrink-0" aria-hidden />
+                  Message seller
+                </span>
+              ) : (
+                <Link
+                  to={`/messages/u/${sellerPeerId}?product=${encodeURIComponent(String(foundProduct.id))}`}
+                  className="inline-flex items-center gap-2 rounded-full border border-[#15803d]/30 bg-white px-3 py-1.5 text-sm font-semibold text-[#15803d] shadow-sm transition hover:bg-[#15803d] hover:text-white"
+                >
+                  <MessageCircle className="h-4 w-4 shrink-0" aria-hidden />
+                  Message seller
+                </Link>
+              )}
               <a
                 href={callHref}
                 className="inline-flex items-center gap-2 rounded-full border border-[#15803d]/30 bg-white px-3 py-1.5 text-sm font-semibold text-[#15803d] shadow-sm transition hover:bg-[#15803d] hover:text-white"
@@ -1592,23 +1615,6 @@ export default function ProductDetail() {
                 </span>
               </div>
             </div>
-
-            {canMessageSeller ? (
-              <div id="product-inline-chat" className="mt-4 scroll-mt-24">
-                <NewProductDetailInlineChat
-                  productId={String(foundProduct.id ?? id ?? "")}
-                  sellerId={sellerPeerId}
-                  sellerName={product.seller.name}
-                  sellerUsername={sellerUsername}
-                  sellerPhone={sellerPhoneRaw}
-                  sellerPhoneVerified={sellerPhoneVerified}
-                  sellerVerified={sellerIdVerified}
-                  productTitle={String(product.title)}
-                  isOwner={isOwner}
-                  authUserId={authUser?.id}
-                />
-              </div>
-            ) : null}
 
             <section
               className={`rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200/80 ${
@@ -2034,27 +2040,18 @@ export default function ProductDetail() {
           ) : (
             <>
               {canMessageSeller ? (
-                <button
-                  type="button"
-                  onClick={() => scrollToInlineChat()}
+                <Link
+                  to={`/messages/u/${sellerPeerId}?product=${encodeURIComponent(String(foundProduct.id))}`}
                   className="hidden sm:inline-flex px-4 py-3 rounded-xl ring-1 ring-gray-200 text-sm font-semibold text-gray-800 items-center justify-center hover:bg-gray-50"
                 >
                   Message seller
-                </button>
+                </Link>
               ) : null}
               <motion.button
                 layout
                 type="button"
                 onClick={() => {
-                  addToCart({
-                    id: product.id.toString(),
-                    title: product.title,
-                    price: product.price,
-                    image: product.images[0] ?? "",
-                    quantity: 1,
-                    sellerId: sellerPeerId || product.seller.id.toString(),
-                    deliveryFee: product.deliveryOptions[0]?.fee ?? 0,
-                  });
+                  addToCart(buildCartLineItem());
                   setCartJustAdded(true);
                   toast.success("Added to cart");
                 }}
@@ -2090,15 +2087,7 @@ export default function ProductDetail() {
               <button
                 type="button"
                 onClick={() => {
-                  addToCart({
-                    id: product.id.toString(),
-                    title: product.title,
-                    price: product.price,
-                    image: product.images[0] ?? "",
-                    quantity: 1,
-                    sellerId: sellerPeerId || product.seller.id.toString(),
-                    deliveryFee: product.deliveryOptions[0]?.fee ?? 0,
-                  });
+                  addToCart(buildCartLineItem());
                   navigate("/checkout");
                 }}
                 className="flex-1 py-3 rounded-xl bg-[#16a34a] text-white text-sm font-bold hover:bg-[#15803d]"
@@ -2150,17 +2139,13 @@ export default function ProductDetail() {
                 ) : null}
               </p>
               <div className="grid gap-3">
-                <button
-                  type="button"
-                  disabled={!canMessageSeller || isOwner}
-                  onClick={() => {
-                    setOpenUserDialog(false);
-                    scrollToInlineChat();
-                  }}
-                  className="w-full rounded-2xl bg-emerald-600 py-3 font-bold text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                <Link
+                  to={`/messages/u/${sellerPeerId}?product=${encodeURIComponent(String(foundProduct.id))}`}
+                  onClick={() => setOpenUserDialog(false)}
+                  className="block w-full rounded-2xl bg-emerald-600 py-3 text-center font-bold text-white transition-colors hover:bg-emerald-700"
                 >
                   Chat with Seller
-                </button>
+                </Link>
                 <button
                   type="button"
                   onClick={() => {

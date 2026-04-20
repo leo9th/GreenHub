@@ -8,6 +8,24 @@ export interface CartItem {
   quantity: number;
   sellerId: string;
   deliveryFee: number;
+  /** `warehouse_shipping` = GreenHub Guaranteed; `seller_pickup` = Marketplace. */
+  fulfillment_type?: string | null;
+}
+
+function normalizeCartItem(raw: Record<string, unknown>): CartItem {
+  return {
+    id: String(raw.id ?? ""),
+    title: String(raw.title ?? ""),
+    price: typeof raw.price === "number" ? raw.price : Number(raw.price) || 0,
+    image: String(raw.image ?? ""),
+    quantity: typeof raw.quantity === "number" ? raw.quantity : Number(raw.quantity) || 1,
+    sellerId: String(raw.sellerId ?? ""),
+    deliveryFee: typeof raw.deliveryFee === "number" ? raw.deliveryFee : Number(raw.deliveryFee) || 0,
+    fulfillment_type:
+      typeof raw.fulfillment_type === "string" && raw.fulfillment_type.trim() !== ""
+        ? raw.fulfillment_type
+        : "seller_pickup",
+  };
 }
 
 interface CartContextType {
@@ -24,8 +42,15 @@ const CartContext = createContext<CartContextType | undefined>(undefined);
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<CartItem[]>(() => {
-    const saved = localStorage.getItem('greenhub-cart');
-    return saved ? JSON.parse(saved) : [];
+    const saved = localStorage.getItem("greenhub-cart");
+    if (!saved) return [];
+    try {
+      const parsed: unknown = JSON.parse(saved);
+      if (!Array.isArray(parsed)) return [];
+      return parsed.map((row) => normalizeCartItem(row as Record<string, unknown>));
+    } catch {
+      return [];
+    }
   });
 
   useEffect(() => {
@@ -33,16 +58,21 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   }, [items]);
 
   const addToCart = (newItem: CartItem) => {
-    setItems(current => {
-      const existing = current.find(item => item.id === newItem.id);
+    setItems((current) => {
+      const existing = current.find((item) => item.id === newItem.id);
       if (existing) {
-        return current.map(item => 
-          item.id === newItem.id 
-            ? { ...item, quantity: item.quantity + newItem.quantity }
-            : item
+        return current.map((item) =>
+          item.id === newItem.id
+            ? {
+                ...item,
+                quantity: item.quantity + newItem.quantity,
+                fulfillment_type: newItem.fulfillment_type ?? item.fulfillment_type,
+                deliveryFee: newItem.deliveryFee,
+              }
+            : item,
         );
       }
-      return [...current, newItem];
+      return [...current, normalizeCartItem({ ...newItem } as Record<string, unknown>)];
     });
   };
 

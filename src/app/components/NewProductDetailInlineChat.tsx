@@ -219,7 +219,7 @@ export default function NewProductDetailInlineChat({
           {sellerTelHref ? (
             <>
               <p className="font-medium text-gray-900">Seller phone</p>
-              <p className="mt-1 break-all font-mono text-gray-800">{sellerTelHref.replace(/^tel:/, "")}</p>
+              <p className="mt-1 break-all font-mono text-gray-800">{sellerPhoneRaw}</p>
               <div className="mt-3 flex flex-wrap gap-2">
                 <a
                   href={sellerTelHref}

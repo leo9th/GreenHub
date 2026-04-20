@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { ArrowLeft, Check, CreditCard, Building2, Smartphone, Home } from "lucide-react";
 import { nigerianStates } from "../data/catalogConstants";
@@ -32,6 +32,7 @@ export default function Checkout() {
 
   // Payment
   const [paymentMethod, setPaymentMethod] = useState<"card" | "bank" | "ussd" | "pod">("card");
+  const [podSubmitting, setPodSubmitting] = useState(false);
 
   const subtotal = cartTotal;
   const { guaranteedFlat, marketplaceSellerFees, total: delivery } = computeHybridDeliveryTotals(items);
@@ -47,10 +48,95 @@ export default function Checkout() {
     setStep("payment");
   };
 
-  const handlePODSubmit = () => {
-    toast.success("Order placed successfully! Pay on delivery.");
-    clearCart();
-    navigate("/");
+  const createOrderWithLineItemsAndPlacedEvent = useCallback(
+    async (params: {
+      orderStatus: "paid" | "pending_payment";
+      paymentReference: string | null;
+      /** Stored on `orders.payment_method`: Paystack checkout vs pay on delivery */
+      paymentChannel: "paystack" | "pod";
+    }) => {
+      if (!user) throw new Error("You must be logged in to complete this order.");
+
+      const { data: orderData, error: orderError } = await supabase.from("orders").insert({
+        buyer_id: user.id,
+        total_amount: total,
+        delivery_fee: delivery,
+        platform_fee: platformFee,
+        status: params.orderStatus,
+        payment_reference: params.paymentReference,
+        payment_method: params.paymentChannel,
+        shipping_address: {
+          fullName,
+          phone,
+          state,
+          lga,
+          address,
+          landmark,
+        },
+      }).select().single();
+
+      if (orderError) throw orderError;
+
+      const orderItems = items.map((item) => {
+        const unit = item.price;
+        const qty = item.quantity;
+        const fulfillment = item.fulfillment_type?.trim() || "seller_pickup";
+        return {
+          order_id: orderData.id,
+          product_id: item.id,
+          seller_id: item.sellerId || user.id,
+          product_title: item.title,
+          product_image: item.image,
+          quantity: qty,
+          unit_price: unit,
+          total_price: unit * qty,
+          price_at_time: unit,
+          fulfillment_type: fulfillment,
+          delivery_fee_at_time: item.deliveryFee,
+          status: "pending" as const,
+        };
+      });
+
+      const { error: itemsError } = await supabase.from("order_items").insert(orderItems);
+      if (itemsError) throw itemsError;
+
+      const { error: eventError } = await supabase.from("order_events").insert({
+        order_id: orderData.id,
+        event_label: "Order Placed",
+        metadata: { source: params.paymentChannel },
+      });
+      if (eventError) throw eventError;
+
+      return orderData;
+    },
+    [user, items, total, delivery, platformFee, fullName, phone, state, lga, address, landmark],
+  );
+
+  const handlePODSubmit = async () => {
+    if (!user) {
+      toast.error("You must be logged in to complete this order.");
+      return;
+    }
+    if (items.length === 0) {
+      toast.error("Your cart is empty!");
+      return;
+    }
+    setPodSubmitting(true);
+    try {
+      const orderData = await createOrderWithLineItemsAndPlacedEvent({
+        orderStatus: "pending_payment",
+        paymentReference: null,
+        paymentChannel: "pod",
+      });
+      toast.success("Order placed! Pay on delivery when your order arrives.");
+      clearCart();
+      navigate(`/orders/${orderData.id}`);
+    } catch (err: unknown) {
+      console.error("POD order creation:", err);
+      toast.error(err instanceof Error ? err.message : "Could not place your order.");
+    } finally {
+      setPodSubmitting(false);
+    }
   };
 
   const paystackProps = {
@@ -73,57 +159,24 @@ export default function Checkout() {
     },
     publicKey: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY,
     text: `Pay ${formatPrice(total)} Securely`,
-    onSuccess: async (reference: any) => {
+    onSuccess: async (reference: { reference?: string }) => {
       try {
         if (!user) {
-           toast.error("You must be logged in to complete this order.");
-           return;
+          toast.error("You must be logged in to complete this order.");
+          return;
         }
 
-        // 1. Create the parent Order record
-        const { data: orderData, error: orderError } = await supabase.from('orders').insert({
-          buyer_id: user.id,
-          total_amount: total,
-          delivery_fee: delivery,
-          platform_fee: platformFee,
-          status: 'paid',
-          payment_reference: reference.reference,
-          payment_method: paymentMethod,
-          shipping_address: {
-            fullName,
-            phone,
-            state,
-            lga,
-            address,
-            landmark
-          }
-        }).select().single();
-
-        if (orderError) throw orderError;
-
-        // 2. Insert line items linked to the Order
-        const orderItems = items.map(item => ({
-          order_id: orderData.id,
-          product_id: item.id,
-          seller_id: item.sellerId || user.id, // Fallback if missing
-          product_title: item.title,
-          product_image: item.image,
-          quantity: item.quantity,
-          price_at_time: item.price,
-          delivery_fee_at_time: item.deliveryFee,
-          status: 'pending'
-        }));
-
-        const { error: itemsError } = await supabase.from('order_items').insert(orderItems);
-        
-        if (itemsError) throw itemsError;
+        const orderData = await createOrderWithLineItemsAndPlacedEvent({
+          orderStatus: "paid",
+          paymentReference: reference?.reference ?? null,
+          paymentChannel: "paystack",
+        });
 
         toast.success("Payment successful! Your order has been placed.");
         clearCart();
         navigate(`/orders/${orderData.id}`);
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error("Order Creation Error:", err);
-        // Failsafe: If the schema doesn't perfectly match what we expect but they already paid Paystack
         toast.success("Payment successful! Your order will be tracked shortly.");
         clearCart();
         navigate("/orders");
@@ -357,10 +410,12 @@ export default function Checkout() {
             <div className="w-full md:w-auto md:min-w-[300px]">
               {paymentMethod === "pod" ? (
                 <button
-                  onClick={handlePODSubmit}
-                  className="w-full py-4 bg-[#22c55e] hover:bg-[#16a34a] text-white rounded-xl font-bold text-lg shadow-lg shadow-[#22c55e]/25 transition-all outline-none"
+                  type="button"
+                  disabled={podSubmitting}
+                  onClick={() => void handlePODSubmit()}
+                  className="w-full py-4 bg-[#22c55e] hover:bg-[#16a34a] disabled:opacity-60 disabled:pointer-events-none text-white rounded-xl font-bold text-lg shadow-lg shadow-[#22c55e]/25 transition-all outline-none"
                 >
-                  Confirm Order ({formatPrice(total)})
+                  {podSubmitting ? "Placing order…" : `Confirm Order (${formatPrice(total)})`}
                 </button>
               ) : (
                 <PaystackButton

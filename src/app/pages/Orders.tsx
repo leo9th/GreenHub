@@ -4,6 +4,7 @@ import { ArrowLeft, Package, Clock, Truck, CheckCircle } from "lucide-react";
 import { useCurrency } from "../hooks/useCurrency";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../../lib/supabase";
+import { formatGreenHubRelative } from "../utils/formatGreenHubTime";
 
 type OrderStatusTab = "all" | "pending" | "processing" | "shipped" | "delivered";
 
@@ -23,12 +24,25 @@ type OrderItemRow = {
   price_at_time: number | null;
 };
 
+type OrderEventRow = {
+  id: string;
+  order_id: string;
+  event_label: string;
+  created_at: string;
+};
+
 function normalizeTabStatus(dbStatus: string | null, tab: OrderStatusTab): boolean {
   if (tab === "all") return true;
   const s = (dbStatus || "").toLowerCase();
   switch (tab) {
     case "pending":
-      return s === "pending" || s === "awaiting_payment" || s === "created";
+      return (
+        s === "pending" ||
+        s === "awaiting_payment" ||
+        s === "created" ||
+        s === "pending_payment" ||
+        s === "pod_confirmed"
+      );
     case "processing":
       return s === "processing" || s === "paid" || s === "confirmed";
     case "shipped":
@@ -47,6 +61,7 @@ export default function Orders() {
   const [activeTab, setActiveTab] = useState<OrderStatusTab>("all");
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [itemsByOrder, setItemsByOrder] = useState<Map<string, OrderItemRow[]>>(new Map());
+  const [eventsByOrder, setEventsByOrder] = useState<Map<string, OrderEventRow[]>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -54,6 +69,7 @@ export default function Orders() {
     if (!authUser?.id) {
       setOrders([]);
       setItemsByOrder(new Map());
+      setEventsByOrder(new Map());
       setLoading(false);
       return;
     }
@@ -74,6 +90,7 @@ export default function Orders() {
       const ids = list.map((o) => o.id).filter(Boolean);
       if (ids.length === 0) {
         setItemsByOrder(new Map());
+        setEventsByOrder(new Map());
         return;
       }
 
@@ -91,11 +108,28 @@ export default function Orders() {
         map.get(oid)!.push(it);
       }
       setItemsByOrder(map);
+
+      const { data: evRows, error: evErr } = await supabase
+        .from("order_events")
+        .select("id, order_id, event_label, created_at")
+        .in("order_id", ids)
+        .order("created_at", { ascending: true });
+
+      if (evErr) throw evErr;
+
+      const evMap = new Map<string, OrderEventRow[]>();
+      for (const ev of (evRows ?? []) as OrderEventRow[]) {
+        const oid = String(ev.order_id);
+        if (!evMap.has(oid)) evMap.set(oid, []);
+        evMap.get(oid)!.push(ev);
+      }
+      setEventsByOrder(evMap);
     } catch (e: unknown) {
       console.error(e);
       setError(e instanceof Error ? e.message : "Could not load orders");
       setOrders([]);
       setItemsByOrder(new Map());
+      setEventsByOrder(new Map());
     } finally {
       setLoading(false);
     }
@@ -143,9 +177,17 @@ export default function Orders() {
 
   const formatOrderLabel = (iso: string | null) => {
     if (!iso) return "—";
-    const { formatGreenHubRelative } = require("../utils/formatGreenHubTime") as typeof import("../utils/formatGreenHubTime");
     const s = formatGreenHubRelative(iso);
     return s || "—";
+  };
+
+  const formatEventWhen = (iso: string | null) => {
+    if (!iso) return "";
+    try {
+      return new Date(iso).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
+    } catch {
+      return "";
+    }
   };
 
   if (authLoading) {
@@ -204,6 +246,7 @@ export default function Orders() {
         ) : (
           filteredOrders.map((order) => {
             const items = itemsByOrder.get(String(order.id)) ?? [];
+            const events = eventsByOrder.get(String(order.id)) ?? [];
             const displayStatus = (order.status || "—").replace(/_/g, " ");
             const total =
               order.total_amount != null && Number.isFinite(Number(order.total_amount))
@@ -255,6 +298,23 @@ export default function Orders() {
                     </div>
                   </div>
                 ))}
+
+                {events.length > 0 ? (
+                  <div className="mt-4 pt-3 border-t border-gray-100">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Status timeline</p>
+                    <ol className="m-0 p-0 list-none space-y-2">
+                      {events.map((ev) => (
+                        <li key={ev.id} className="flex gap-2">
+                          <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-[#22c55e]" aria-hidden />
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-gray-800">{ev.event_label}</p>
+                            <p className="text-xs text-gray-500 tabular-nums">{formatEventWhen(ev.created_at)}</p>
+                          </div>
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                ) : null}
 
                 <div className="pt-3 border-t border-gray-100 flex items-center justify-between">
                   <span className="text-sm text-gray-600">Total</span>

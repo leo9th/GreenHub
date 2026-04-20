@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
-import { Package, Loader2, ShoppingBag, Eye, BarChart3 } from "lucide-react";
+import { Package, Loader2, ShoppingBag, Eye, BarChart3, Truck } from "lucide-react";
+import { toast } from "sonner";
 import { useCurrency } from "../../hooks/useCurrency";
 import { useAuth } from "../../context/AuthContext";
 import { supabase } from "../../../lib/supabase";
@@ -42,6 +43,7 @@ export default function SellerDashboard() {
   const [totalOrders, setTotalOrders] = useState(0);
   const [totalRevenue, setTotalRevenue] = useState(0);
   const [recent, setRecent] = useState<RecentRow[]>([]);
+  const [markingOrderId, setMarkingOrderId] = useState<string | null>(null);
 
   const loadMetrics = useCallback(async () => {
     if (!authUser?.id) {
@@ -164,6 +166,54 @@ export default function SellerDashboard() {
       setLoading(false);
     }
   }, [authUser?.id]);
+
+  const markSellerItemsShipped = useCallback(
+    async (orderId: string) => {
+      if (!authUser?.id) return;
+      setMarkingOrderId(orderId);
+      try {
+        const { data: rows, error } = await supabase
+          .from("order_items")
+          .select("id, status")
+          .eq("order_id", orderId)
+          .eq("seller_id", authUser.id);
+
+        if (error) throw error;
+
+        const toShip = (rows ?? []).filter((r) => {
+          const s = String(r.status || "").toLowerCase();
+          return s === "pending" || s === "processing";
+        });
+
+        if (toShip.length === 0) {
+          toast.message("Nothing to ship", {
+            description: "Your items in this order are already shipped or completed.",
+          });
+          return;
+        }
+
+        for (const row of toShip) {
+          const { error: uErr } = await supabase.from("order_items").update({ status: "shipped" }).eq("id", row.id);
+          if (uErr) throw uErr;
+        }
+
+        const { error: evErr } = await supabase.from("order_events").insert({
+          order_id: orderId,
+          event_label: "Marked as shipped",
+          metadata: { seller_id: authUser.id, order_item_ids: toShip.map((r) => r.id) },
+        });
+        if (evErr) throw evErr;
+
+        toast.success("Marked as shipped");
+        void loadMetrics();
+      } catch (e: unknown) {
+        toast.error(e instanceof Error ? e.message : "Could not update shipment status");
+      } finally {
+        setMarkingOrderId(null);
+      }
+    },
+    [authUser?.id, loadMetrics],
+  );
 
   useEffect(() => {
     if (authLoading) return;
@@ -311,25 +361,41 @@ export default function SellerDashboard() {
                     ) : (
                       <div className="space-y-2">
                         {recent.map((row) => (
-                          <Link
+                          <div
                             key={row.orderId}
-                            to={`/orders/${row.orderId}`}
-                            className="flex gap-4 p-4 rounded-xl border border-gray-100 hover:bg-gray-50 transition-colors"
+                            className="flex flex-col gap-3 sm:flex-row sm:items-stretch p-4 rounded-xl border border-gray-100 bg-white hover:bg-gray-50/80 transition-colors"
                           >
-                            <div className="w-14 h-14 bg-gray-100 rounded-lg flex items-center justify-center shrink-0">
-                              <Package className="w-7 h-7 text-gray-300" />
+                            <Link to={`/orders/${row.orderId}`} className="flex gap-4 flex-1 min-w-0">
+                              <div className="w-14 h-14 bg-gray-100 rounded-lg flex items-center justify-center shrink-0">
+                                <Package className="w-7 h-7 text-gray-300" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs text-gray-500 mb-0.5">
+                                  {row.buyerLabel} · {formatOrderWhen(row.createdAt)}
+                                </p>
+                                <h3 className="font-semibold text-[15px] text-gray-900 line-clamp-2">{row.productTitle}</h3>
+                                <p className="text-[#22c55e] font-bold text-base mt-1">{formatPrice(row.lineTotal)}</p>
+                                <span className="inline-block mt-2 text-[10px] text-gray-600 bg-gray-100 px-2 py-0.5 rounded uppercase tracking-wider font-semibold">
+                                  {row.orderStatus}
+                                </span>
+                              </div>
+                            </Link>
+                            <div className="flex sm:flex-col sm:justify-center shrink-0">
+                              <button
+                                type="button"
+                                disabled={markingOrderId === row.orderId}
+                                onClick={() => void markSellerItemsShipped(row.orderId)}
+                                className="inline-flex items-center justify-center gap-2 w-full sm:w-auto px-4 py-2.5 rounded-lg border border-[#22c55e] text-[#15803d] text-sm font-semibold hover:bg-[#22c55e]/10 disabled:opacity-60 disabled:pointer-events-none transition-colors"
+                              >
+                                {markingOrderId === row.orderId ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                                ) : (
+                                  <Truck className="h-4 w-4" aria-hidden />
+                                )}
+                                Mark as shipped
+                              </button>
                             </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-xs text-gray-500 mb-0.5">
-                                {row.buyerLabel} · {formatOrderWhen(row.createdAt)}
-                              </p>
-                              <h3 className="font-semibold text-[15px] text-gray-900 line-clamp-2">{row.productTitle}</h3>
-                              <p className="text-[#22c55e] font-bold text-base mt-1">{formatPrice(row.lineTotal)}</p>
-                              <span className="inline-block mt-2 text-[10px] text-gray-600 bg-gray-100 px-2 py-0.5 rounded uppercase tracking-wider font-semibold">
-                                {row.orderStatus}
-                              </span>
-                            </div>
-                          </Link>
+                          </div>
                         ))}
                       </div>
                     )}

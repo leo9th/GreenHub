@@ -12,12 +12,12 @@ import type { ProductWithSeller } from "../types/productWithSeller";
 import { SortBar } from "../components/SortBar";
 import CollapsibleFilters from "../components/CollapsibleFilters";
 import FloatingFiltersButton from "../components/FloatingFiltersButton";
+import { useFallbackProducts } from "../hooks/useFallbackProducts";
 import { useMoreFiltersScrollSync } from "../hooks/useMoreFiltersScrollSync";
 import {
   applyBrowseProductQueryFilters,
   BROWSE_PRICE_RANGE_OPTIONS,
   defaultBrowseMoreFilters,
-  fetchRecommendedFallbackProducts,
   type BrowseMoreFiltersState,
 } from "../utils/browseListingQuery";
 import type { ListingSort } from "../utils/productSearch";
@@ -308,8 +308,15 @@ export default function Home() {
   const openMoreFilters = useCallback(() => {
     setMoreFiltersOpen(true);
   }, []);
-  const [recommendedFallback, setRecommendedFallback] = useState<ProductWithSeller[]>([]);
-  const [recommendedFallbackLoading, setRecommendedFallbackLoading] = useState(false);
+  const {
+    fallbackProducts: recommendedFallback,
+    fallbackLoading: recommendedFallbackLoading,
+    showFallbackExhaustedHint,
+  } = useFallbackProducts(supabase, {
+    mainLoading: featuredLoading,
+    mainCount: featuredProducts.length,
+    categorySlug: null,
+  });
 
   const categorySlugForFilter = useMemo(
     () => categoryFilterLabelToDbValue(selectedCategory),
@@ -349,34 +356,6 @@ export default function Home() {
       cancelled = true;
     };
   }, [selectedCondition, globalSearchTerm, listingSort, priceRange, moreFilters]);
-
-  useEffect(() => {
-    if (featuredLoading) {
-      setRecommendedFallback([]);
-      setRecommendedFallbackLoading(false);
-      return;
-    }
-    if (featuredProducts.length > 0) {
-      setRecommendedFallback([]);
-      return;
-    }
-
-    let cancelled = false;
-    setRecommendedFallbackLoading(true);
-    void fetchRecommendedFallbackProducts(supabase).then(({ rows, error }) => {
-      if (cancelled) return;
-      if (!error) {
-        setRecommendedFallback(rows);
-      } else {
-        setRecommendedFallback([]);
-      }
-      setRecommendedFallbackLoading(false);
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [featuredLoading, featuredProducts.length]);
 
   const slugsToShow = useMemo(() => {
     if (selectedCategory === "All") {
@@ -597,9 +576,10 @@ export default function Home() {
             hasMore={false}
             loadingMore={false}
             onLoadMore={() => {}}
-            emptyFallbackTitle="Trending now"
+            emptyFallbackTitle="You might also like"
             emptyFallbackProducts={recommendedFallback}
             emptyFallbackLoading={recommendedFallbackLoading}
+            emptyFallbackExhaustedHint={showFallbackExhaustedHint}
           />
         </div>
 

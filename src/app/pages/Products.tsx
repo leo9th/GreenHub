@@ -5,6 +5,7 @@ import CategoryFilter, { type CategoryFilterSelection } from "../components/Cate
 import { ConditionFilter } from "../components/ConditionFilter";
 import CollapsibleFilters from "../components/CollapsibleFilters";
 import FloatingFiltersButton from "../components/FloatingFiltersButton";
+import { useFallbackProducts } from "../hooks/useFallbackProducts";
 import { useMoreFiltersScrollSync } from "../hooks/useMoreFiltersScrollSync";
 import { SortBar } from "../components/SortBar";
 import { categoryFilterLabelToDbValue } from "../data/catalogConstants";
@@ -16,7 +17,6 @@ import {
   applyBrowseProductQueryFilters,
   BROWSE_PRICE_RANGE_OPTIONS,
   defaultBrowseMoreFilters,
-  fetchRecommendedFallbackProducts,
   type BrowseMoreFiltersState,
 } from "../utils/browseListingQuery";
 import type { ListingSort } from "../utils/productSearch";
@@ -47,8 +47,6 @@ export default function Products() {
   const openMoreFilters = useCallback(() => {
     setMoreFiltersOpen(true);
   }, []);
-  const [recommendedFallback, setRecommendedFallback] = useState<ProductWithSeller[]>([]);
-  const [recommendedFallbackLoading, setRecommendedFallbackLoading] = useState(false);
 
   const categoryLabel = useMemo(() => {
     if (selectedCategory === "All") return "All Categories";
@@ -59,6 +57,16 @@ export default function Products() {
     () => categoryFilterLabelToDbValue(selectedCategory),
     [selectedCategory],
   );
+
+  const {
+    fallbackProducts: recommendedFallback,
+    fallbackLoading: recommendedFallbackLoading,
+    showFallbackExhaustedHint,
+  } = useFallbackProducts(supabase, {
+    mainLoading: isLoading || loadingMore,
+    mainCount: products.length,
+    categorySlug: categorySlugForFilter,
+  });
 
   useEffect(() => {
     const opts = getConditionFilterDropdownOptions(categorySlugForFilter);
@@ -137,37 +145,6 @@ export default function Products() {
     setPage(0);
     void fetchProducts(true);
   }, [selectedCategory, selectedCondition, globalSearchTerm, listingSort, priceRange, moreFilters]);
-
-  useEffect(() => {
-    if (isLoading || loadingMore) {
-      setRecommendedFallback([]);
-      setRecommendedFallbackLoading(false);
-      return;
-    }
-    if (products.length > 0) {
-      setRecommendedFallback([]);
-      return;
-    }
-
-    let cancelled = false;
-    setRecommendedFallbackLoading(true);
-    const slug = categoryFilterLabelToDbValue(selectedCategory);
-    void fetchRecommendedFallbackProducts(supabase, {
-      categorySlug: slug || undefined,
-    }).then(({ rows, error }) => {
-      if (cancelled) return;
-      if (!error) {
-        setRecommendedFallback(rows);
-      } else {
-        setRecommendedFallback([]);
-      }
-      setRecommendedFallbackLoading(false);
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [isLoading, loadingMore, products.length, selectedCategory]);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -309,6 +286,7 @@ export default function Products() {
           emptyFallbackTitle="Recommended for you"
           emptyFallbackProducts={recommendedFallback}
           emptyFallbackLoading={recommendedFallbackLoading}
+          emptyFallbackExhaustedHint={showFallbackExhaustedHint}
         />
       </div>
 

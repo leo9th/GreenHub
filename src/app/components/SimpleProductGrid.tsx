@@ -15,6 +15,8 @@ type SimpleProductGridProps = {
   emptyFallbackTitle?: string;
   emptyFallbackProducts?: ProductWithSeller[];
   emptyFallbackLoading?: boolean;
+  /** After fallback fetch completes with zero rows (optional short message). */
+  emptyFallbackExhaustedHint?: boolean;
 };
 
 function SkeletonTile() {
@@ -74,6 +76,7 @@ export default function SimpleProductGrid({
   emptyFallbackTitle = "Recommended for you",
   emptyFallbackProducts,
   emptyFallbackLoading,
+  emptyFallbackExhaustedHint,
 }: SimpleProductGridProps) {
   if (!isLoading && products.length === 0) {
     const showFallbackBlock =
@@ -91,7 +94,7 @@ export default function SimpleProductGrid({
             <h2 className="text-base font-semibold text-gray-900 sm:text-lg">{emptyFallbackTitle}</h2>
             {emptyFallbackLoading ? (
               <div className={GRID_CLASS}>
-                {Array.from({ length: 8 }).map((_, idx) => (
+                {Array.from({ length: 10 }).map((_, idx) => (
                   <SkeletonTile key={`empty-fallback-sk-${idx}`} />
                 ))}
               </div>
@@ -103,6 +106,10 @@ export default function SimpleProductGrid({
               </div>
             )}
           </section>
+        ) : null}
+
+        {emptyFallbackExhaustedHint ? (
+          <p className="text-center text-sm text-gray-500">Check back later for new listings.</p>
         ) : null}
       </div>
     );

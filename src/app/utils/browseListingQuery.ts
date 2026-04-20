@@ -19,12 +19,12 @@ export const BROWSE_PRICE_RANGE_OPTIONS: { value: string; label: string }[] = [
 ];
 
 /** Fallback grid when browse filters return no rows (home + shop). */
-export const RECOMMENDED_FALLBACK_LIMIT = 8;
+export const RECOMMENDED_FALLBACK_LIMIT = 10;
 
 /**
  * Active listings only, ignoring search/condition/price/drawer filters.
  * Optional `categorySlug` narrows to one category; omit for marketplace-wide picks.
- * Sorted by highest `average_rating` then recency.
+ * Ordered by engagement: `views`, then `like_count`, then recency (same select as main grid).
  */
 export async function fetchRecommendedFallbackProducts(
   client: SupabaseClient,
@@ -40,8 +40,11 @@ export async function fetchRecommendedFallbackProducts(
     query = query.eq("category", slug);
   }
 
-  query = applyListingSort(query, "rating");
-  query = query.limit(limit);
+  query = query
+    .order("views", { ascending: false, nullsFirst: false })
+    .order("like_count", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false })
+    .limit(limit);
 
   const { data, error } = await query;
 

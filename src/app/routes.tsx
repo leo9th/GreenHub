@@ -1,3 +1,4 @@
+import type { ComponentType } from "react";
 import { createBrowserRouter, Navigate, useParams } from "react-router";
 import Root from "./pages/Root";
 import Home from "./pages/Home";
@@ -18,41 +19,26 @@ import CheckEmail from "./pages/auth/CheckEmail";
 import CompleteProfile from "./pages/auth/CompleteProfile";
 import Welcome from "./pages/Welcome";
 import Products from "./pages/Products";
-import ProductDetail from "./pages/ProductDetail";
 import Cart from "./pages/Cart";
 import Checkout from "./pages/Checkout";
 import Orders from "./pages/Orders";
 import OrderDetail from "./pages/OrderDetail";
-import Messages from "./pages/Messages";
-import Chat from "./pages/Chat";
-import ChatV2 from "./pages/ChatV2";
-import SellerDashboard from "./pages/seller/Dashboard";
-import SellerProducts from "./pages/seller/Products";
-import AddProduct from "./pages/seller/AddProduct";
-import EditProduct from "./pages/seller/EditProduct";
-import BankDetails from "./pages/seller/BankDetails";
-import Advertise from "./pages/seller/Advertise";
-import MyBoosts from "./pages/seller/MyBoosts";
-import AdminBoosts from "./pages/admin/AdminBoosts";
-import AdminChatbotLearning from "./pages/admin/AdminChatbotLearning";
-import SellerVerification from "./pages/seller/Verification";
 import WriteReview from "./pages/WriteReview";
-import WriteProductReview from "./pages/WriteProductReview";
 import SellerReviews from "./pages/SellerReviews";
 import Profile from "./pages/Profile";
 import ProfileFollowList from "./pages/ProfileFollowList";
 import ProfileEdit from "./pages/ProfileEdit";
 import Settings from "./pages/Settings";
-import AdminDashboard from "./pages/admin/Dashboard";
-import AdminUsers from "./pages/admin/Users";
-import AdminProducts from "./pages/admin/Products";
-import AdPricingControl from "./pages/admin/AdPricingControl";
-import AdminJobApplications from "./pages/admin/JobApplications";
 import NotFound from "./pages/NotFound";
 import WorkersBrowse from "./pages/workers/WorkersBrowse";
 import WorkerProfileDetail from "./pages/workers/WorkerProfileDetail";
 import WorkerProfileRegister from "./pages/workers/WorkerProfileRegister";
 import Contact from "./pages/Contact";
+
+/** Code-split heavy routes (chat, seller, admin, large listing detail). */
+function lazyPage(importer: () => Promise<{ default: ComponentType<unknown> }>) {
+  return () => importer().then((m) => ({ Component: m.default }));
+}
 
 function LegacySellRouteRedirect() {
   return <Navigate to="/seller/products/new" replace />;
@@ -119,30 +105,33 @@ export const router = createBrowserRouter([
       { path: "complete-profile", Component: CompleteProfile },
       { path: "welcome", Component: Welcome },
       { path: "products", Component: Products },
-      { path: "products/:productId/write-review", Component: WriteProductReview },
-      { path: "products/:id", Component: ProductDetail },
+      {
+        path: "products/:productId/write-review",
+        lazy: lazyPage(() => import("./pages/WriteProductReview")),
+      },
+      { path: "products/:id", lazy: lazyPage(() => import("./pages/ProductDetail")) },
       { path: "cart", Component: Cart },
       { path: "checkout", Component: Checkout },
       { path: "orders", Component: Orders },
       { path: "orders/:id", Component: OrderDetail },
-      { path: "messages", Component: Messages },
+      { path: "messages", lazy: lazyPage(() => import("./pages/Messages")) },
       /* c = thread by conversation id; u = DM by other user’s auth id. Do not use one path for both UUID types. */
-      { path: "messages/c/:conversationId", Component: Chat },
-      { path: "messages/u/:peerUserId", Component: Chat },
+      { path: "messages/c/:conversationId", lazy: lazyPage(() => import("./pages/Chat")) },
+      { path: "messages/u/:peerUserId", lazy: lazyPage(() => import("./pages/Chat")) },
       /* Back-compat: old inbox links /messages/:conversationId (thread id only — not a peer user id). */
-      { path: "messages/:legacyThreadId", Component: Chat },
-      { path: "chat-v2/:id", Component: ChatV2 },
-      { path: "seller/dashboard", Component: SellerDashboard },
-      { path: "seller/products", Component: SellerProducts },
-      { path: "seller/products/new", Component: AddProduct },
+      { path: "messages/:legacyThreadId", lazy: lazyPage(() => import("./pages/Chat")) },
+      { path: "chat-v2/:id", lazy: lazyPage(() => import("./pages/ChatV2")) },
+      { path: "seller/dashboard", lazy: lazyPage(() => import("./pages/seller/Dashboard")) },
+      { path: "seller/products", lazy: lazyPage(() => import("./pages/seller/Products")) },
+      { path: "seller/products/new", lazy: lazyPage(() => import("./pages/seller/AddProduct")) },
       { path: "seller/products/add", Component: LegacySellRouteRedirect },
-      { path: "seller/products/edit/:id", Component: EditProduct },
+      { path: "seller/products/edit/:id", lazy: lazyPage(() => import("./pages/seller/EditProduct")) },
       { path: "seller/products/:id/edit", Component: LegacySellerProductEditRedirect },
-      { path: "seller/bank-details", Component: BankDetails },
-      { path: "seller/verification", Component: SellerVerification },
-      { path: "seller/advertise", Component: Advertise },
+      { path: "seller/bank-details", lazy: lazyPage(() => import("./pages/seller/BankDetails")) },
+      { path: "seller/verification", lazy: lazyPage(() => import("./pages/seller/Verification")) },
+      { path: "seller/advertise", lazy: lazyPage(() => import("./pages/seller/Advertise")) },
       { path: "seller/advertise/setup", element: <LegacyAdvertiseSetupRedirect /> },
-      { path: "seller/boosts", Component: MyBoosts },
+      { path: "seller/boosts", lazy: lazyPage(() => import("./pages/seller/MyBoosts")) },
       { path: "reviews/:orderId", Component: WriteReview },
       { path: "seller/:id/reviews", Component: SellerReviews },
       { path: "profile/:id/followers", Component: ProfileFollowList },
@@ -158,13 +147,13 @@ export const router = createBrowserRouter([
       { path: "settings/privacy", Component: LegacySettingsRedirect },
       { path: "settings/blocked-users", Component: LegacySettingsRedirect },
       { path: "settings/language", Component: LegacySettingsRedirect },
-      { path: "admin/dashboard", Component: AdminDashboard },
-      { path: "admin/users", Component: AdminUsers },
-      { path: "admin/products", Component: AdminProducts },
-      { path: "admin/pricing", Component: AdPricingControl },
-      { path: "admin/job-applications", Component: AdminJobApplications },
-      { path: "admin/boosts", Component: AdminBoosts },
-      { path: "admin/chatbot-learning", Component: AdminChatbotLearning },
+      { path: "admin/dashboard", lazy: lazyPage(() => import("./pages/admin/Dashboard")) },
+      { path: "admin/users", lazy: lazyPage(() => import("./pages/admin/Users")) },
+      { path: "admin/products", lazy: lazyPage(() => import("./pages/admin/Products")) },
+      { path: "admin/pricing", lazy: lazyPage(() => import("./pages/admin/AdPricingControl")) },
+      { path: "admin/job-applications", lazy: lazyPage(() => import("./pages/admin/JobApplications")) },
+      { path: "admin/boosts", lazy: lazyPage(() => import("./pages/admin/AdminBoosts")) },
+      { path: "admin/chatbot-learning", lazy: lazyPage(() => import("./pages/admin/AdminChatbotLearning")) },
       { path: "admin/orders", Component: LegacyAdminRedirect },
       { path: "admin/reports", Component: LegacyAdminRedirect },
       { path: "help", Component: LegacyHelpRedirect },

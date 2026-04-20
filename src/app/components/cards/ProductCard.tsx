@@ -1,5 +1,5 @@
 import { Link } from "react-router";
-import { useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import { memo, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { MapPin } from "lucide-react";
 import { useCurrency } from "../../hooks/useCurrency";
 
@@ -41,7 +41,7 @@ export interface ProductCardProps {
   imagePriority?: boolean;
 }
 
-export function ProductCard({
+function ProductCardComponent({
   id,
   productId,
   title,
@@ -114,13 +114,15 @@ export function ProductCard({
           <img
             src={imageUrl}
             alt={title}
-            className="relative z-[2] max-h-[clamp(220px,72vw,360px)] w-full origin-center object-contain object-center transition-transform duration-300 ease-out group-hover:scale-105"
+            sizes="(max-width: 640px) 50vw, (max-width: 1280px) 33vw, 20vw"
+            className="relative z-[2] max-h-[clamp(220px,72vw,360px)] w-full max-w-[800px] origin-center object-contain object-center transition-transform duration-300 ease-out group-hover:scale-105"
             style={{
               display: "block",
               height: "auto",
             }}
             loading={imagePriority ? "eager" : "lazy"}
             decoding="async"
+            fetchPriority={imagePriority ? "high" : "low"}
             onLoad={() => setImgLoaded(true)}
             onError={(e) => {
               e.currentTarget.onerror = null;
@@ -175,4 +177,6 @@ export function ProductCard({
     </div>
   );
 }
+
+export const ProductCard = memo(ProductCardComponent);
 export default ProductCard;

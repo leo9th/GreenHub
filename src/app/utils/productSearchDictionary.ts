@@ -95,7 +95,7 @@ export async function fetchProductSearchDictionary(
     .select("title, category")
     .eq("status", "active")
     .order("created_at", { ascending: false })
-    .limit(400);
+    .limit(200);
 
   if (error || !data?.length) {
     return [];

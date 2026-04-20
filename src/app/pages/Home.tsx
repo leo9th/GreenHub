@@ -43,8 +43,8 @@ import {
  */
 /** Number of products shown in the main home grid. */
 const HOME_PAGE_SIZE = 20;
-/** Pull a larger pool so we can shuffle and show a varied mix (PostgREST has no portable `order by random()`). */
-const FEATURED_FETCH_LIMIT = 80;
+/** Pool size for shuffle before slicing to `HOME_PAGE_SIZE` (keep query ≤ ~30 rows for mobile). */
+const FEATURED_FETCH_LIMIT = 30;
 
 /** Products per horizontal “page” for each category row. */
 const ROW_PAGE_SIZE = 10;

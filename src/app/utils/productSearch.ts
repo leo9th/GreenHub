@@ -116,9 +116,33 @@ export function productGlobalSearchOrString(
 export const PRODUCTS_SELLER_EMBED_FIELDS =
   "full_name, username, avatar_url, rating, phone_verified";
 
-/** `*` plus embedded `profiles` seller for cards (trust badge, display name). */
+/**
+ * Columns needed for browse grids, filters, sort, and global search — avoids `select('*')` payload.
+ * Keep aligned with `applyBrowseProductQueryFilters` / `productGlobalSearchOrString` / `ProductCard`.
+ */
+export const PRODUCTS_LISTING_COLUMNS = [
+  "id",
+  "title",
+  "price",
+  "price_local",
+  "image",
+  "images",
+  "location",
+  "city",
+  "condition",
+  "category",
+  "car_brand",
+  "delivery_options",
+  "seller_id",
+  "status",
+  "created_at",
+  "average_rating",
+  "rating",
+].join(", ");
+
+/** Listing rows with embedded seller for cards (trust badge, display name). */
 export function productsSelectWithSellerEmbed(): string {
-  return `*, seller:profiles!products_seller_id_fkey(${PRODUCTS_SELLER_EMBED_FIELDS})`;
+  return `${PRODUCTS_LISTING_COLUMNS}, seller:profiles!products_seller_id_fkey(${PRODUCTS_SELLER_EMBED_FIELDS})`;
 }
 
 /**

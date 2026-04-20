@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { ProductCard } from "./cards/ProductCard";
 import type { ProductWithSeller } from "../types/productWithSeller";
 
@@ -29,7 +30,13 @@ function SkeletonTile() {
   );
 }
 
-function ProductCardFromProduct({ product, index }: { product: ProductWithSeller; index: number }) {
+const ProductCardFromProduct = memo(function ProductCardFromProduct({
+  product,
+  index,
+}: {
+  product: ProductWithSeller;
+  index: number;
+}) {
   const seller = product.seller;
   const legacyProfile = product.profiles as { full_name?: string } | null | undefined;
   const sellerName =
@@ -56,7 +63,7 @@ function ProductCardFromProduct({ product, index }: { product: ProductWithSeller
       imagePriority={index < 6}
     />
   );
-}
+});
 
 export default function SimpleProductGrid({
   products,

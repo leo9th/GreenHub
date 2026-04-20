@@ -11,6 +11,15 @@ type LocationState = {
   phone?: string;
   flow?: "signup" | "login";
 };
+type PendingSignup = {
+  email: string;
+  password: string;
+  fullName: string;
+  phone: string;
+  createdAt: number;
+};
+const SIGNUP_PENDING_STORAGE_KEY = "greenhub.pendingSignup";
+const SIGNUP_PENDING_MAX_AGE_MS = 30 * 60 * 1000;
 
 export default function VerifyOTP() {
   const navigate = useNavigate();
@@ -47,6 +56,69 @@ export default function VerifyOTP() {
 
   const codeString = otp.join("");
 
+  const readPendingSignup = (): PendingSignup | null => {
+    try {
+      const raw = sessionStorage.getItem(SIGNUP_PENDING_STORAGE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as PendingSignup;
+      const age = Date.now() - Number(parsed.createdAt || 0);
+      if (
+        !parsed.email ||
+        !parsed.password ||
+        !parsed.phone ||
+        !Number.isFinite(age) ||
+        age > SIGNUP_PENDING_MAX_AGE_MS
+      ) {
+        sessionStorage.removeItem(SIGNUP_PENDING_STORAGE_KEY);
+        return null;
+      }
+      return parsed;
+    } catch {
+      sessionStorage.removeItem(SIGNUP_PENDING_STORAGE_KEY);
+      return null;
+    }
+  };
+
+  const clearPendingSignup = () => {
+    sessionStorage.removeItem(SIGNUP_PENDING_STORAGE_KEY);
+  };
+
+  const completeSignupFromPending = async (verifiedPhone: string) => {
+    const pending = readPendingSignup();
+    if (!pending || pending.phone !== verifiedPhone) {
+      throw new Error("Signup session expired. Please start signup again.");
+    }
+
+    const { error: updateAuthError } = await supabase.auth.updateUser({
+      email: pending.email,
+      password: pending.password,
+      data: {
+        ...(pending.fullName ? { full_name: pending.fullName } : {}),
+        phone: verifiedPhone,
+        role: "buyer",
+      },
+    });
+    if (updateAuthError) throw new Error(updateAuthError.message);
+
+    const { data: authData } = await supabase.auth.getUser();
+    const userId = authData.user?.id;
+    if (!userId) throw new Error("Could not finalize signup. Please sign in again.");
+
+    const { error: profileErr } = await supabase.from("profiles").upsert(
+      {
+        id: userId,
+        full_name: pending.fullName || null,
+        email: pending.email,
+        phone: verifiedPhone,
+        phone_verified: true,
+      },
+      { onConflict: "id" },
+    );
+    if (profileErr) throw new Error(profileErr.message);
+
+    clearPendingSignup();
+  };
+
   const verifyAndFinish = async (code: string) => {
     if (!phone || code.length !== OTP_LEN) return;
     setVerifying(true);
@@ -64,10 +136,12 @@ export default function VerifyOTP() {
         notif.error("Verification Incomplete", "Try again.");
         return;
       }
-      notif.success(flow === "signup" ? "Phone Verified" : "Signed In Successfully");
       if (flow === "signup") {
+        await completeSignupFromPending(phone);
+        notif.success("Phone Verified", "Signup completed successfully.");
         navigate("/welcome", { replace: true });
       } else {
+        notif.success("Signed In Successfully");
         navigate("/", { replace: true });
       }
     } finally {
@@ -112,7 +186,7 @@ export default function VerifyOTP() {
       const { error } = await supabase.auth.signInWithOtp({
         phone,
         options: {
-          shouldCreateUser: flow === "signup",
+          shouldCreateUser: true,
         },
       });
       if (error) {

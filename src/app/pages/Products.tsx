@@ -3,14 +3,24 @@ import { Link } from "react-router";
 import { supabase } from "../../lib/supabase";
 import CategoryFilter, { type CategoryFilterSelection } from "../components/CategoryFilter";
 import { ConditionFilter } from "../components/ConditionFilter";
+import MoreFiltersDrawer from "../components/MoreFiltersDrawer";
+import { SortBar } from "../components/SortBar";
 import { categoryFilterLabelToDbValue } from "../data/catalogConstants";
 import { getConditionFilterDropdownOptions } from "../data/productConditions";
 import SimpleProductGrid from "../components/SimpleProductGrid";
+import SmartSearchBar from "../components/SmartSearchBar";
 import type { ProductWithSeller } from "../types/productWithSeller";
+import {
+  applyBrowseProductQueryFilters,
+  BROWSE_PRICE_RANGE_OPTIONS,
+  defaultBrowseMoreFilters,
+  fetchRecommendedFallbackProducts,
+  type BrowseMoreFiltersState,
+} from "../utils/browseListingQuery";
+import type { ListingSort } from "../utils/productSearch";
 import {
   fetchSellerIdsForGlobalSearch,
   normalizedGlobalSearchTerm,
-  productGlobalSearchOrString,
   productsSelectWithSellerEmbed,
 } from "../utils/productSearch";
 
@@ -26,6 +36,13 @@ export default function Products() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [priceRange, setPriceRange] = useState("all");
+  const [listingSort, setListingSort] = useState<ListingSort>("recent");
+  const [moreFilters, setMoreFilters] = useState<BrowseMoreFiltersState>(defaultBrowseMoreFilters);
+  const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
+  const [moreFiltersDraft, setMoreFiltersDraft] = useState<BrowseMoreFiltersState>(defaultBrowseMoreFilters);
+  const [recommendedFallback, setRecommendedFallback] = useState<ProductWithSeller[]>([]);
+  const [recommendedFallbackLoading, setRecommendedFallbackLoading] = useState(false);
 
   const categoryLabel = useMemo(() => {
     if (selectedCategory === "All") return "All Categories";
@@ -65,25 +82,21 @@ export default function Products() {
       sellerIds = await fetchSellerIdsForGlobalSearch(supabase, searchT);
     }
 
-    let query = supabase
-      .from("products")
-      .select(productsSelectWithSellerEmbed())
-      .eq("status", "active")
-      .order("created_at", { ascending: false });
+    let query = supabase.from("products").select(productsSelectWithSellerEmbed()).eq("status", "active");
 
     const categorySlug = categoryFilterLabelToDbValue(selectedCategory);
     if (categorySlug) {
       query = query.eq("category", categorySlug);
     }
 
-    if (selectedCondition && selectedCondition !== "all") {
-      query = query.eq("condition", selectedCondition);
-    }
-
-    const orFilter = searchT ? productGlobalSearchOrString(searchT, sellerIds) : null;
-    if (orFilter) {
-      query = query.or(orFilter);
-    }
+    query = applyBrowseProductQueryFilters(query, {
+      condition: selectedCondition,
+      priceRange,
+      sortBy: listingSort,
+      more: moreFilters,
+      searchTermRaw: globalSearchTerm,
+      sellerIds,
+    });
 
     const { data, error: queryError } = await query.range(from, to);
 
@@ -117,7 +130,38 @@ export default function Products() {
   useEffect(() => {
     setPage(0);
     void fetchProducts(true);
-  }, [selectedCategory, selectedCondition, globalSearchTerm]);
+  }, [selectedCategory, selectedCondition, globalSearchTerm, listingSort, priceRange, moreFilters]);
+
+  useEffect(() => {
+    if (isLoading || loadingMore) {
+      setRecommendedFallback([]);
+      setRecommendedFallbackLoading(false);
+      return;
+    }
+    if (products.length > 0) {
+      setRecommendedFallback([]);
+      return;
+    }
+
+    let cancelled = false;
+    setRecommendedFallbackLoading(true);
+    const slug = categoryFilterLabelToDbValue(selectedCategory);
+    void fetchRecommendedFallbackProducts(supabase, {
+      categorySlug: slug || undefined,
+    }).then(({ rows, error }) => {
+      if (cancelled) return;
+      if (!error) {
+        setRecommendedFallback(rows);
+      } else {
+        setRecommendedFallback([]);
+      }
+      setRecommendedFallbackLoading(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoading, loadingMore, products.length, selectedCategory]);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -147,15 +191,58 @@ export default function Products() {
         />
 
         <div className="mb-4">
-          <input
-            type="search"
-            placeholder="Search products, sellers, categories, locations…"
+          <SmartSearchBar
+            inputId="shop-global-search"
             value={globalSearchTerm}
-            onChange={(e) => setGlobalSearchTerm(e.target.value)}
-            className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm placeholder-gray-500 focus:border-[#22c55e] focus:outline-none focus:ring-2 focus:ring-[#22c55e]/20"
-            autoComplete="off"
+            onChange={setGlobalSearchTerm}
           />
         </div>
+
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <label htmlFor="shop-price-range" className="text-sm font-medium text-gray-700">
+              Price
+            </label>
+            <select
+              id="shop-price-range"
+              value={priceRange}
+              onChange={(e) => setPriceRange(e.target.value)}
+              className="min-w-[10rem] rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-[#22c55e] focus:outline-none focus:ring-2 focus:ring-[#22c55e]/20"
+            >
+              {BROWSE_PRICE_RANGE_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+            <SortBar id="shop-listing-sort" value={listingSort} onChange={setListingSort} />
+            <button
+              type="button"
+              onClick={() => {
+                setMoreFiltersDraft({ ...moreFilters });
+                setMoreFiltersOpen(true);
+              }}
+              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+            >
+              More filters
+            </button>
+          </div>
+        </div>
+
+        <MoreFiltersDrawer
+          open={moreFiltersOpen}
+          onClose={() => setMoreFiltersOpen(false)}
+          idPrefix="shop-more-filters"
+          value={moreFiltersDraft}
+          onChange={setMoreFiltersDraft}
+          onApply={() => {
+            setMoreFilters({ ...moreFiltersDraft });
+            setMoreFiltersOpen(false);
+          }}
+          onReset={() => setMoreFiltersDraft(defaultBrowseMoreFilters())}
+        />
 
         <div className="mb-5 flex items-center justify-between">
           <h1 className="text-xl font-semibold text-gray-900">Shop - {categoryLabel}</h1>
@@ -169,6 +256,9 @@ export default function Products() {
           hasMore={hasMore}
           loadingMore={loadingMore}
           onLoadMore={handleLoadMore}
+          emptyFallbackTitle="Recommended for you"
+          emptyFallbackProducts={recommendedFallback}
+          emptyFallbackLoading={recommendedFallbackLoading}
         />
       </div>
     </div>

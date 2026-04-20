@@ -14,7 +14,6 @@ export interface ProductCardProps {
   images?: string[];
   location?: string;
   city?: string;
-  state?: string;
   condition?: string;
   href?: string;
   commentCount?: number;
@@ -51,7 +50,6 @@ export function ProductCard({
   images,
   location,
   city,
-  state,
   href,
   condition,
   priceDisplay,
@@ -72,7 +70,7 @@ export function ProductCard({
   const linkTo = href || (resolvedId ? `/products/${resolvedId}` : "/products");
 
   const locationDisplay =
-    (city?.trim() || state?.trim() || location?.trim() || "").trim() || "Location not specified";
+    (city?.trim() || location?.trim() || "").trim() || "Location not specified";
   const sellerDisplay = sellerName?.trim() || "Seller";
 
   const firstFromImages =

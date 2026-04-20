@@ -124,6 +124,7 @@ import { MessageBubble } from "./MessageBubble";
 import { MessageMenuV2, MESSAGE_QUICK_REACTIONS } from "./MessageMenuV2";
 import { ChatPeerHeaderModern } from "./ChatPeerHeaderModern";
 import { fetchProfileFollowerCount } from "../../utils/profileFollowCounts";
+import { normalizeProductPk, productLikeSetKey, type ProductPk } from "../../utils/engagement";
 
 const CHAT_MEDIA_BUCKETS = ["chat-media", "chat-images", "chat-attachments"] as const;
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
@@ -168,44 +169,58 @@ const CHAT_EMOJI_GRID: string[] = [
   "✅",
 ];
 
-function parseConversationInt(v: unknown): number | null {
-  if (v == null) return null;
-  const n = typeof v === "number" ? v : Number(v);
-  return Number.isFinite(n) ? n : null;
+/** `conversations.context_product_id` / message `product_id` — same coercion as `products.id`. */
+function conversationProductId(v: unknown): ProductPk | null {
+  return normalizeProductPk(v);
 }
 
-/** Parse `?product=` (same numeric id as `products.id` / `conversations.context_product_id`). */
-function parseProductQueryParam(param: string | null): number | null {
+function productPkEqual(a: ProductPk | null | undefined, b: ProductPk | null | undefined): boolean {
+  if (a == null && b == null) return true;
+  if (a == null || b == null) return false;
+  return productLikeSetKey(a) === productLikeSetKey(b);
+}
+
+/** Non-null `ProductPk` from URL or DB is a valid listing reference (rejects only invalid coercions). */
+function isValidListingProductPk(pk: ProductPk | null | undefined): boolean {
+  if (pk == null) return false;
+  if (typeof pk === "number") return Number.isFinite(pk) && pk > 0;
+  return typeof pk === "string" && pk.length > 0;
+}
+
+/** Parse `?product=` (numeric `products.id` or UUID string, same as `normalizeProductPk`). */
+function parseProductQueryParam(param: string | null): ProductPk | null {
   if (param == null || param === "") return null;
   const t = decodeURIComponent(String(param)).trim();
   if (!t) return null;
-  const n = Number(t);
-  if (!Number.isFinite(n) || n < 1) return null;
-  const i = Math.trunc(n);
-  return i >= 1 ? i : null;
+  return normalizeProductPk(t);
 }
 
 /** Survives `?product=` strip from URL + SPA remounts until send or switching chats. Scoped to route so another chat doesn’t inherit a stale id. */
 const CHAT_LISTING_SESSION_KEY = "greenhub:pendingListingProductId";
 
-type StoredListingPayload = { p: number; k: string };
+type StoredListingPayload = { p: string | number; k: string };
 
-function persistListingProductId(id: number, routeKey: string) {
+function persistListingProductId(id: ProductPk, routeKey: string) {
   try {
-    const payload: StoredListingPayload = { p: Math.trunc(id), k: routeKey };
+    const payload: StoredListingPayload = {
+      p: typeof id === "number" ? (Number.isFinite(id) ? Math.trunc(id) : id) : id,
+      k: routeKey,
+    };
     sessionStorage.setItem(CHAT_LISTING_SESSION_KEY, JSON.stringify(payload));
   } catch {
     /* ignore quota / private mode */
   }
 }
 
-function readStoredListingProductId(routeKey: string): number | null {
+function readStoredListingProductId(routeKey: string): ProductPk | null {
   try {
     const raw = sessionStorage.getItem(CHAT_LISTING_SESSION_KEY);
     if (!raw) return null;
     const o = JSON.parse(raw) as Partial<StoredListingPayload>;
-    if (typeof o.p !== "number" || typeof o.k !== "string" || o.k !== routeKey) return null;
-    return o.p >= 1 ? Math.trunc(o.p) : null;
+    if (o.k !== routeKey || typeof o.k !== "string") return null;
+    if (o.p === undefined || o.p === null) return null;
+    const normalized = normalizeProductPk(o.p);
+    return normalized != null && isValidListingProductPk(normalized) ? normalized : null;
   } catch {
     return null;
   }
@@ -283,7 +298,7 @@ function errorMessage(e: unknown, fallback: string): string {
 }
 
 type StripProduct = {
-  id: number;
+  id: string | number;
   title: string;
   price: number;
   image: string | null;
@@ -374,7 +389,7 @@ export default function ChatWorkspace() {
   const [listingStripLoading, setListingStripLoading] = useState(false);
   /** Mobile only: when true, listing strip is minimized to one row (tap to expand). */
   const [mobileProductStripCollapsed, setMobileProductStripCollapsed] = useState(false);
-  const [messageProductsById, setMessageProductsById] = useState<Map<number, StripProduct>>(() => new Map());
+  const [messageProductsById, setMessageProductsById] = useState<Map<string, StripProduct>>(() => new Map());
   const [peerTyping, setPeerTyping] = useState(false);
   const [loading, setLoading] = useState(true);
   const [sendBusy, setSendBusy] = useState(false);
@@ -432,7 +447,7 @@ export default function ChatWorkspace() {
   const validProductId = useMemo(() => parseProductQueryParam(productParam), [productParam]);
 
   /** Captures `?product=` so listing attachment survives URL cleanup and `/messages/u` → `/messages/c` redirects. */
-  const [productIdFromQuery, setProductIdFromQuery] = useState<number | null>(() => {
+  const [productIdFromQuery, setProductIdFromQuery] = useState<ProductPk | null>(() => {
     if (typeof window === "undefined") return null;
     return parseProductQueryParam(new URLSearchParams(window.location.search).get("product"));
   });
@@ -489,19 +504,19 @@ export default function ChatWorkspace() {
   );
 
   /** Prefer persisted link intent, then current `?product=`, then conversation row. */
-  const stripProductSourceId = useMemo(() => {
+  const stripProductSourceId = useMemo((): ProductPk | null => {
     const freshUrlIntent =
-      (productIdFromQuery != null && productIdFromQuery > 0) ||
-      (validProductId != null && validProductId > 0) ||
-      (productIdFromLocationSearch != null && productIdFromLocationSearch > 0);
+      isValidListingProductPk(productIdFromQuery) ||
+      isValidListingProductPk(validProductId) ||
+      isValidListingProductPk(productIdFromLocationSearch);
     if (listingAttachmentOptOut && !freshUrlIntent) {
       return null;
     }
-    if (productIdFromQuery != null && productIdFromQuery > 0) return productIdFromQuery;
-    if (validProductId != null && validProductId > 0) return validProductId;
-    if (productIdFromLocationSearch != null && productIdFromLocationSearch > 0) return productIdFromLocationSearch;
-    const c = conversation ? parseConversationInt(conversation.context_product_id) : null;
-    return c != null && c > 0 ? Math.trunc(c) : null;
+    if (isValidListingProductPk(productIdFromQuery)) return productIdFromQuery;
+    if (isValidListingProductPk(validProductId)) return validProductId;
+    if (isValidListingProductPk(productIdFromLocationSearch)) return productIdFromLocationSearch;
+    const c = conversation ? conversationProductId(conversation.context_product_id) : null;
+    return isValidListingProductPk(c) ? c : null;
   }, [
     listingAttachmentOptOut,
     productIdFromQuery,
@@ -535,7 +550,7 @@ export default function ChatWorkspace() {
 
   /** After `/messages/u` → `/messages/c`, re-key session storage so `readStoredListingProductId` matches the thread route. */
   useEffect(() => {
-    if (productIdFromQuery == null || productIdFromQuery <= 0) return;
+    if (!isValidListingProductPk(productIdFromQuery)) return;
     persistListingProductId(productIdFromQuery, routePeerOrThreadKey);
   }, [productIdFromQuery, routePeerOrThreadKey]);
 
@@ -555,11 +570,13 @@ export default function ChatWorkspace() {
     (msg: ChatMessageRow): { strip: StripProduct; pricePending: boolean } | null => {
       const pid = msg.product_id;
       if (pid == null) return null;
-      const fromMap = messageProductsById.get(pid);
+      const pk = normalizeProductPk(pid);
+      const mapKey = pk != null ? productLikeSetKey(pk) : String(pid);
+      const fromMap = messageProductsById.get(mapKey);
       if (fromMap) return { strip: fromMap, pricePending: false };
-      if (stripProduct && stripProduct.id === pid) return { strip: stripProduct, pricePending: false };
+      if (stripProduct && productLikeSetKey(stripProduct.id) === mapKey) return { strip: stripProduct, pricePending: false };
       return {
-        strip: { id: pid, title: "Listing", price: 0, image: null, like_count: 0 },
+        strip: { id: pk ?? pid, title: "Listing", price: 0, image: null, like_count: 0 },
         pricePending: true,
       };
     },
@@ -790,9 +807,9 @@ export default function ChatWorkspace() {
         conv = data;
         peer = otherPartyUserId(conv, authUser.id);
         if (!peer) throw new Error("Not a participant");
-        if (listingIntent != null && listingIntent > 0) {
-          const current = parseConversationInt(conv.context_product_id);
-          if (current !== listingIntent) {
+        if (isValidListingProductPk(listingIntent)) {
+          const current = conversationProductId(conv.context_product_id);
+          if (!productPkEqual(current, listingIntent)) {
             const { error: uErr } = await setConversationContextProduct(supabase, conv.id, listingIntent);
             if (!uErr) conv = { ...conv, context_product_id: listingIntent };
           }
@@ -836,17 +853,16 @@ export default function ChatWorkspace() {
           }
         } else {
           conv = found;
-          if (listingIntent != null && listingIntent > 0) {
+          if (isValidListingProductPk(listingIntent)) {
             const { error: uErr } = await setConversationContextProduct(supabase, found.id, listingIntent);
             if (!uErr) conv = { ...conv, context_product_id: listingIntent };
           }
         }
         peer = peerFromUrl;
         if (conv && !threadIdParam && !legacyThreadId) {
-          const productQs =
-            listingIntent != null && Number.isFinite(listingIntent) && listingIntent > 0
-              ? `?product=${listingIntent}`
-              : "";
+          const productQs = isValidListingProductPk(listingIntent)
+            ? `?product=${encodeURIComponent(productLikeSetKey(listingIntent))}`
+            : "";
           navigate(`/messages/c/${conv.id}${productQs}`, { replace: true });
         }
       }
@@ -923,9 +939,8 @@ export default function ChatWorkspace() {
         }
       })();
 
-      const attachPid = listingIntent ?? parseConversationInt(conv.context_product_id);
-      attachListingToFirstSendRef.current =
-        attachPid != null && Number.isFinite(attachPid) && attachPid > 0;
+      const attachPid = listingIntent ?? conversationProductId(conv.context_product_id);
+      attachListingToFirstSendRef.current = isValidListingProductPk(attachPid);
     } catch (e: unknown) {
       console.error(e);
       const msg = e instanceof Error ? e.message : "Could not open chat";
@@ -988,12 +1003,13 @@ export default function ChatWorkspace() {
           return;
         }
         const row = data as Record<string, unknown>;
+        const idNorm = normalizeProductPk(row.id) ?? row.id;
         const lcRaw = row.like_count;
         const likeCount =
           typeof lcRaw === "number" && Number.isFinite(lcRaw) ? lcRaw : Number(lcRaw) || 0;
         const thumb = getProductThumbnailUrl(row as { image?: unknown; images?: unknown }).trim();
         setStripProduct({
-          id: Number(row.id),
+          id: (typeof idNorm === "string" || typeof idNorm === "number" ? idNorm : String(row.id ?? "")) as string | number,
           title: String(row.title ?? "Listing"),
           price: getProductPrice(row as { price?: unknown; price_local?: unknown }),
           image: thumb || null,
@@ -1013,9 +1029,9 @@ export default function ChatWorkspace() {
   /** Keep `conversations.context_product_id` aligned with `?product=` / persisted link intent. */
   useEffect(() => {
     const intent = productIdFromQuery ?? validProductId;
-    if (!conversation?.id || intent == null) return;
-    const cur = parseConversationInt(conversation.context_product_id);
-    if (cur === intent) return;
+    if (!conversation?.id || intent == null || !isValidListingProductPk(intent)) return;
+    const cur = conversationProductId(conversation.context_product_id);
+    if (productPkEqual(cur, intent)) return;
     let cancelled = false;
     void (async () => {
       const { error } = await setConversationContextProduct(supabase, conversation.id, intent);
@@ -1070,16 +1086,20 @@ export default function ChatWorkspace() {
   }, [peerId]);
 
   useEffect(() => {
-    const ids = new Set<number>();
+    const list: ProductPk[] = [];
+    const seen = new Set<string>();
     for (const m of messages) {
-      const p = m.product_id;
-      if (p != null) ids.add(p);
+      const pk = normalizeProductPk(m.product_id);
+      if (pk == null) continue;
+      const key = productLikeSetKey(pk);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      list.push(pk);
     }
-    if (ids.size === 0) {
+    if (list.length === 0) {
       setMessageProductsById(new Map());
       return;
     }
-    const list = [...ids];
     let cancelled = false;
     void (async () => {
       const { data, error } = await supabase
@@ -1088,16 +1108,19 @@ export default function ChatWorkspace() {
         .in("id", list);
       if (cancelled) return;
       if (error || !data) return;
-      const next = new Map<number, StripProduct>();
+      const next = new Map<string, StripProduct>();
       for (const row of data as Record<string, unknown>[]) {
-        const id = Number(row.id);
-        if (!Number.isFinite(id)) continue;
+        const idNorm = normalizeProductPk(row.id) ?? row.id;
+        if (idNorm == null) continue;
+        const mapKey = productLikeSetKey(idNorm);
         const lcRaw = row.like_count;
         const likeCount =
           typeof lcRaw === "number" && Number.isFinite(lcRaw) ? lcRaw : Number(lcRaw) || 0;
         const thumb = getProductThumbnailUrl(row as { image?: unknown; images?: unknown }).trim();
-        next.set(id, {
-          id,
+        const idOut: string | number =
+          typeof idNorm === "string" || typeof idNorm === "number" ? idNorm : String(row.id ?? "");
+        next.set(mapKey, {
+          id: idOut,
           title: String(row.title ?? "Listing"),
           price: getProductPrice(row as { price?: unknown; price_local?: unknown }),
           image: thumb || null,
@@ -1245,7 +1268,7 @@ export default function ChatWorkspace() {
             return {
               ...c,
               context_product_id:
-                pid !== undefined && pid !== null ? parseConversationInt(pid) : c.context_product_id,
+                pid !== undefined && pid !== null ? conversationProductId(pid) : c.context_product_id,
               buyer_last_read_at: (next.buyer_last_read_at as string | null | undefined) ?? c.buyer_last_read_at,
               seller_last_read_at: (next.seller_last_read_at as string | null | undefined) ?? c.seller_last_read_at,
             };
@@ -1390,7 +1413,7 @@ export default function ChatWorkspace() {
       imageFile?: File | null;
       voiceBlob?: Blob | null;
       voiceMime?: string;
-      productId?: number | null;
+      productId?: ProductPk | null;
     }) => {
       const text = (opts?.text ?? draft).trim();
       const imageFile = opts?.imageFile;
@@ -1401,13 +1424,13 @@ export default function ChatWorkspace() {
         return;
       }
 
-      let productId = opts?.productId ?? null;
+      let productId: ProductPk | null = opts?.productId ?? null;
       if (productId == null && attachListingToFirstSendRef.current) {
-        let n = parseConversationInt(conversation.context_product_id);
-        if (n == null || n <= 0) {
+        let n: ProductPk | null = conversationProductId(conversation.context_product_id);
+        if (!isValidListingProductPk(n)) {
           n = stripProductSourceId;
         }
-        if (n != null && n > 0) {
+        if (isValidListingProductPk(n)) {
           productId = n;
           attachListingToFirstSendRef.current = false;
         }
@@ -1468,7 +1491,7 @@ export default function ChatWorkspace() {
           image_url: imageUrl,
           media_url: mediaUrl,
           edited: false,
-          product_id: productId,
+          product_id: productId as ChatMessageRow["product_id"],
           client_sending: true,
         };
         setMessages((prev) => resolveChatMessageReplyPreviews([...prev, optimistic]));
@@ -1485,7 +1508,7 @@ export default function ChatWorkspace() {
             reply_to_id: replyToId,
             image_url: imageUrl,
             media_url: mediaUrl,
-            product_id: productId,
+            product_id: productId ?? null,
           })
           // Plain columns only — embedding `reply_to:...!chat_messages_reply_to_id_fkey` often causes
           // PostgREST 400 (PGRST204) if FK name/cache differs; reply previews are resolved client-side.

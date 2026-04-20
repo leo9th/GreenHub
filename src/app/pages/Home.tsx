@@ -3,15 +3,25 @@ import { Link } from "react-router";
 import { supabase } from "../../lib/supabase";
 import { ProductCard } from "../components/cards/ProductCard";
 import SimpleProductGrid from "../components/SimpleProductGrid";
+import SmartSearchBar from "../components/SmartSearchBar";
 import CategoryFilter, { type CategoryFilterSelection } from "../components/CategoryFilter";
 import { ConditionFilter } from "../components/ConditionFilter";
 import { categories, categoryFilterLabelToDbValue } from "../data/catalogConstants";
 import { getConditionFilterDropdownOptions } from "../data/productConditions";
 import type { ProductWithSeller } from "../types/productWithSeller";
+import { SortBar } from "../components/SortBar";
+import MoreFiltersDrawer from "../components/MoreFiltersDrawer";
+import {
+  applyBrowseProductQueryFilters,
+  BROWSE_PRICE_RANGE_OPTIONS,
+  defaultBrowseMoreFilters,
+  fetchRecommendedFallbackProducts,
+  type BrowseMoreFiltersState,
+} from "../utils/browseListingQuery";
+import type { ListingSort } from "../utils/productSearch";
 import {
   fetchSellerIdsForGlobalSearch,
   normalizedGlobalSearchTerm,
-  productGlobalSearchOrString,
   productsSelectWithSellerEmbed,
 } from "../utils/productSearch";
 /**
@@ -51,6 +61,9 @@ function shuffleArray<T>(items: T[]): T[] {
 async function fetchFeaturedProducts(
   conditionFilter: string,
   globalSearchTerm: string = "",
+  sortBy: ListingSort = "recent",
+  priceRange: string = "all",
+  more: BrowseMoreFiltersState = defaultBrowseMoreFilters(),
 ): Promise<{ rows: ProductWithSeller[]; error: string | null }> {
   const searchT = normalizedGlobalSearchTerm(globalSearchTerm);
   let sellerIds: string[] = [];
@@ -58,21 +71,18 @@ async function fetchFeaturedProducts(
     sellerIds = await fetchSellerIdsForGlobalSearch(supabase, searchT);
   }
 
-  let query = supabase
-    .from("products")
-    .select(productsSelectWithSellerEmbed())
-    .eq("status", "active")
-    .order("created_at", { ascending: false })
-    .limit(FEATURED_FETCH_LIMIT);
+  let query = supabase.from("products").select(productsSelectWithSellerEmbed()).eq("status", "active");
 
-  if (conditionFilter && conditionFilter !== "all") {
-    query = query.eq("condition", conditionFilter);
-  }
+  query = applyBrowseProductQueryFilters(query, {
+    condition: conditionFilter,
+    priceRange,
+    sortBy,
+    more,
+    searchTermRaw: globalSearchTerm,
+    sellerIds,
+  });
 
-  const orFilter = searchT ? productGlobalSearchOrString(searchT, sellerIds) : null;
-  if (orFilter) {
-    query = query.or(orFilter);
-  }
+  query = query.limit(FEATURED_FETCH_LIMIT);
 
   const { data, error } = await query;
 
@@ -80,7 +90,10 @@ async function fetchFeaturedProducts(
     return { rows: [], error: error.message };
   }
   const pool = ((data as ProductWithSeller[]) ?? []).filter(Boolean);
-  const rows = shuffleArray(pool).slice(0, HOME_PAGE_SIZE);
+  const rows =
+    sortBy === "recent"
+      ? shuffleArray(pool).slice(0, HOME_PAGE_SIZE)
+      : pool.slice(0, HOME_PAGE_SIZE);
   return { rows, error: null };
 }
 
@@ -122,7 +135,6 @@ function mapProductToCardProps(product: ProductWithSeller) {
     images: Array.isArray(product.images) ? (product.images as string[]) : undefined,
     location: typeof product.location === "string" ? product.location : "",
     city: typeof product.city === "string" ? product.city : "",
-    state: typeof product.state === "string" ? product.state : "",
     condition: typeof product.condition === "string" ? product.condition : "",
     sellerName,
     sellerVerified: seller?.phone_verified === true,
@@ -134,6 +146,9 @@ async function fetchCategoryPage(
   pageIndex: number,
   conditionFilter: string,
   globalSearchTerm: string = "",
+  sortBy: ListingSort = "recent",
+  priceRange: string = "all",
+  more: BrowseMoreFiltersState = defaultBrowseMoreFilters(),
 ): Promise<{ rows: ProductWithSeller[]; error: string | null }> {
   const from = pageIndex * ROW_PAGE_SIZE;
   const to = from + ROW_PAGE_SIZE - 1;
@@ -148,17 +163,16 @@ async function fetchCategoryPage(
     .from("products")
     .select(productsSelectWithSellerEmbed())
     .eq("status", "active")
-    .eq("category", categorySlug)
-    .order("created_at", { ascending: false });
+    .eq("category", categorySlug);
 
-  if (conditionFilter && conditionFilter !== "all") {
-    query = query.eq("condition", conditionFilter);
-  }
-
-  const orFilter = searchT ? productGlobalSearchOrString(searchT, sellerIds) : null;
-  if (orFilter) {
-    query = query.or(orFilter);
-  }
+  query = applyBrowseProductQueryFilters(query, {
+    condition: conditionFilter,
+    priceRange,
+    sortBy,
+    more,
+    searchTermRaw: globalSearchTerm,
+    sellerIds,
+  });
 
   const { data, error } = await query.range(from, to);
 
@@ -243,7 +257,6 @@ function CategoryRow({ slug, title, row, onLoadMore }: CategoryRowProps) {
                 images={p.images}
                 location={p.location}
                 city={p.city}
-                state={p.state}
                 condition={p.condition}
                 sellerName={p.sellerName}
                 sellerVerified={p.sellerVerified}
@@ -284,6 +297,13 @@ export default function Home() {
   const [featuredLoading, setFeaturedLoading] = useState(true);
   const [featuredError, setFeaturedError] = useState<string | null>(null);
   const [rowBySlug, setRowBySlug] = useState<Record<string, CategoryRowState>>({});
+  const [priceRange, setPriceRange] = useState("all");
+  const [listingSort, setListingSort] = useState<ListingSort>("recent");
+  const [moreFilters, setMoreFilters] = useState<BrowseMoreFiltersState>(defaultBrowseMoreFilters);
+  const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
+  const [moreFiltersDraft, setMoreFiltersDraft] = useState<BrowseMoreFiltersState>(defaultBrowseMoreFilters);
+  const [recommendedFallback, setRecommendedFallback] = useState<ProductWithSeller[]>([]);
+  const [recommendedFallbackLoading, setRecommendedFallbackLoading] = useState(false);
 
   const categorySlugForFilter = useMemo(
     () => categoryFilterLabelToDbValue(selectedCategory),
@@ -303,7 +323,13 @@ export default function Home() {
     void (async () => {
       setFeaturedLoading(true);
       setFeaturedError(null);
-      const { rows, error } = await fetchFeaturedProducts(selectedCondition, globalSearchTerm);
+      const { rows, error } = await fetchFeaturedProducts(
+        selectedCondition,
+        globalSearchTerm,
+        listingSort,
+        priceRange,
+        moreFilters,
+      );
       if (cancelled) return;
       if (error) {
         setFeaturedError(error);
@@ -316,7 +342,35 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, [selectedCondition, globalSearchTerm]);
+  }, [selectedCondition, globalSearchTerm, listingSort, priceRange, moreFilters]);
+
+  useEffect(() => {
+    if (featuredLoading) {
+      setRecommendedFallback([]);
+      setRecommendedFallbackLoading(false);
+      return;
+    }
+    if (featuredProducts.length > 0) {
+      setRecommendedFallback([]);
+      return;
+    }
+
+    let cancelled = false;
+    setRecommendedFallbackLoading(true);
+    void fetchRecommendedFallbackProducts(supabase).then(({ rows, error }) => {
+      if (cancelled) return;
+      if (!error) {
+        setRecommendedFallback(rows);
+      } else {
+        setRecommendedFallback([]);
+      }
+      setRecommendedFallbackLoading(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [featuredLoading, featuredProducts.length]);
 
   const slugsToShow = useMemo(() => {
     if (selectedCategory === "All") {
@@ -333,7 +387,15 @@ export default function Home() {
     conditionFilter: string,
     globalSearch: string = "",
   ) => {
-    const { rows, error } = await fetchCategoryPage(categorySlug, pageIndex, conditionFilter, globalSearch);
+    const { rows, error } = await fetchCategoryPage(
+      categorySlug,
+      pageIndex,
+      conditionFilter,
+      globalSearch,
+      listingSort,
+      priceRange,
+      moreFilters,
+    );
     setRowBySlug((prev) => {
       const base = prev[categorySlug] ?? emptyRow();
       if (error) {
@@ -361,7 +423,7 @@ export default function Home() {
         },
       };
     });
-  }, []);
+  }, [listingSort, priceRange, moreFilters]);
 
   const handleLoadMoreRow = useCallback(
     (slug: string) => {
@@ -395,7 +457,7 @@ export default function Home() {
     void (async () => {
       await Promise.all(slugs.map((slug) => loadPageForSlug(slug, 0, false, selectedCondition, globalSearchTerm)));
     })();
-  }, [slugsToShow, loadPageForSlug, selectedCondition, globalSearchTerm]);
+  }, [slugsToShow, loadPageForSlug, selectedCondition, globalSearchTerm, listingSort, priceRange, moreFilters]);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -423,15 +485,58 @@ export default function Home() {
         />
 
         <div className="mb-4">
-          <input
-            type="search"
-            placeholder="Search products, sellers, categories, locations…"
+          <SmartSearchBar
+            inputId="home-global-search"
             value={globalSearchTerm}
-            onChange={(e) => setGlobalSearchTerm(e.target.value)}
-            className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm placeholder-gray-500 focus:border-[#22c55e] focus:outline-none focus:ring-2 focus:ring-[#22c55e]/20"
-            autoComplete="off"
+            onChange={setGlobalSearchTerm}
           />
         </div>
+
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <label htmlFor="home-price-range" className="text-sm font-medium text-gray-700">
+              Price
+            </label>
+            <select
+              id="home-price-range"
+              value={priceRange}
+              onChange={(e) => setPriceRange(e.target.value)}
+              className="min-w-[10rem] rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-[#22c55e] focus:outline-none focus:ring-2 focus:ring-[#22c55e]/20"
+            >
+              {BROWSE_PRICE_RANGE_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+            <SortBar id="home-listing-sort" value={listingSort} onChange={setListingSort} />
+            <button
+              type="button"
+              onClick={() => {
+                setMoreFiltersDraft({ ...moreFilters });
+                setMoreFiltersOpen(true);
+              }}
+              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+            >
+              More filters
+            </button>
+          </div>
+        </div>
+
+        <MoreFiltersDrawer
+          open={moreFiltersOpen}
+          onClose={() => setMoreFiltersOpen(false)}
+          idPrefix="home-more-filters"
+          value={moreFiltersDraft}
+          onChange={setMoreFiltersDraft}
+          onApply={() => {
+            setMoreFilters({ ...moreFiltersDraft });
+            setMoreFiltersOpen(false);
+          }}
+          onReset={() => setMoreFiltersDraft(defaultBrowseMoreFilters())}
+        />
 
         {featuredError ? <p className="mb-4 text-sm text-amber-700">{featuredError}</p> : null}
 
@@ -442,6 +547,9 @@ export default function Home() {
             hasMore={false}
             loadingMore={false}
             onLoadMore={() => {}}
+            emptyFallbackTitle="Trending now"
+            emptyFallbackProducts={recommendedFallback}
+            emptyFallbackLoading={recommendedFallbackLoading}
           />
         </div>
 

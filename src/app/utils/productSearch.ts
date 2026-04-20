@@ -51,6 +51,7 @@ export function parseListingSort(raw: string | null | undefined): ListingSort {
 export type ListingFilterOpts = {
   category: string;
   condition: string;
+  /** Area / location filter: matched against `city` and `location` (not a `products.state` column). */
   state: string;
   priceRange: string;
   /** Exact `products.car_brand` match when category is vehicles */
@@ -102,7 +103,6 @@ export function productGlobalSearchOrString(
     `category.ilike.${p}`,
     `condition.ilike.${p}`,
     `city.ilike.${p}`,
-    `state.ilike.${p}`,
     `location.ilike.${p}`,
     `car_brand.ilike.${p}`,
   ];
@@ -166,7 +166,8 @@ export function applyListingFilters(query: any, opts: ListingFilterOpts) {
   // For multi-select chips, use `.in("condition", ["New","Used","Foreign Used", ...])` instead of `.eq`.
   if (opts.condition && opts.condition !== "all") q = q.eq("condition", opts.condition);
   if (opts.state && opts.state !== "all") {
-    q = q.ilike("location", `%${opts.state}%`);
+    const area = `%${opts.state}%`;
+    q = q.or(`city.ilike.${area},location.ilike.${area}`);
   }
   if (opts.priceRange && opts.priceRange !== "all") {
     const parts = opts.priceRange.split("-");
@@ -311,7 +312,7 @@ export function hasExtendedListingFilters(filterOpts: ListingFilterOpts): boolea
 
 /**
  * Same paging semantics as the listing RPC: active products, filters, sort, range.
- * Used when sidebar filters need state / car brand / subcategory.
+ * Used when sidebar filters need city–location area / car brand / subcategory.
  */
 export async function fetchProductsListingPostgrest(
   client: SupabaseClient,

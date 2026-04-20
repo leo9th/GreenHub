@@ -56,7 +56,7 @@ import { buildInternationalDeliveryOptions } from "../data/internationalShipping
 import { EditProductModal } from "../components/EditProductModal";
 import { PriceNegotiation } from "../components/PriceNegotiation";
 import { MarketPricePrediction } from "../components/MarketPricePrediction";
-import ProductDetailInlineChat from "../components/NewProductDetailInlineChat";
+import NewProductDetailInlineChat from "../components/NewProductDetailInlineChat";
 
 type ParsedDeliveryOption = { name: string; fee: number; duration: string };
 
@@ -1180,34 +1180,29 @@ export default function ProductDetail() {
                       {product.images.length > 0 && mainDisplayImage ? (
                         <div className="relative group mx-auto w-full max-w-2xl overflow-hidden rounded-3xl shadow-lg">
                           <div
-                            className="relative w-full"
                             style={{
                               width: "100%",
-                              height: "clamp(500px, 80vh, 900px)",
+                              minHeight: "500px",
+                              height: "auto",
+                              maxHeight: "70vh",
                               overflow: "hidden",
                               backgroundColor: "#f3f4f6",
                               borderRadius: "12px",
                             }}
                           >
-                            <AnimatePresence initial={false} mode="sync">
-                              <motion.div
-                                key={mainDisplayImage}
-                                className="absolute inset-0"
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
-                                exit={{ opacity: 0 }}
-                                transition={{ duration: 0.3, ease: "easeInOut" }}
-                              >
-                                <img
-                                  src={mainDisplayImage}
-                                  alt={product.title}
-                                  className="h-full w-full object-cover object-center"
-                                  draggable={false}
-                                  decoding="async"
-                                  onDoubleClick={onMainImageDoubleClick}
-                                />
-                              </motion.div>
-                            </AnimatePresence>
+                            <img
+                              src={mainDisplayImage}
+                              alt={product.title}
+                              style={{
+                                width: "100%",
+                                height: "100%",
+                                objectFit: "contain",
+                                objectPosition: "center",
+                              }}
+                              draggable={false}
+                              decoding="async"
+                              onDoubleClick={onMainImageDoubleClick}
+                            />
                           </div>
                           <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-24 bg-gradient-to-t from-black/30 to-transparent" />
                           {!isOwner && sellerPeerId ? (
@@ -1600,7 +1595,7 @@ export default function ProductDetail() {
 
             {canMessageSeller ? (
               <div id="product-inline-chat" className="mt-4 scroll-mt-24">
-                <ProductDetailInlineChat
+                <NewProductDetailInlineChat
                   productId={String(foundProduct.id ?? id ?? "")}
                   sellerId={sellerPeerId}
                   sellerName={product.seller.name}

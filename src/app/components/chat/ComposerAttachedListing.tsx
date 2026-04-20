@@ -2,7 +2,7 @@ import { Link } from "react-router";
 import { X } from "lucide-react";
 
 export type ComposerAttachedListingProps = {
-  productId: number;
+  productId: string | number;
   title: string;
   priceLabel: string;
   imageUrl: string | null;

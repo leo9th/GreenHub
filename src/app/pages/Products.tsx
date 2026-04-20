@@ -3,7 +3,8 @@ import { Link } from "react-router";
 import { supabase } from "../../lib/supabase";
 import CategoryFilter, { type CategoryFilterSelection } from "../components/CategoryFilter";
 import { ConditionFilter } from "../components/ConditionFilter";
-import MoreFiltersDrawer from "../components/MoreFiltersDrawer";
+import CollapsibleFilters from "../components/CollapsibleFilters";
+import { useMoreFiltersScrollSync } from "../hooks/useMoreFiltersScrollSync";
 import { SortBar } from "../components/SortBar";
 import { categoryFilterLabelToDbValue } from "../data/catalogConstants";
 import { getConditionFilterDropdownOptions } from "../data/productConditions";
@@ -40,7 +41,7 @@ export default function Products() {
   const [listingSort, setListingSort] = useState<ListingSort>("recent");
   const [moreFilters, setMoreFilters] = useState<BrowseMoreFiltersState>(defaultBrowseMoreFilters);
   const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
-  const [moreFiltersDraft, setMoreFiltersDraft] = useState<BrowseMoreFiltersState>(defaultBrowseMoreFilters);
+  useMoreFiltersScrollSync(setMoreFiltersOpen);
   const [recommendedFallback, setRecommendedFallback] = useState<ProductWithSeller[]>([]);
   const [recommendedFallbackLoading, setRecommendedFallbackLoading] = useState(false);
 
@@ -179,15 +180,6 @@ export default function Products() {
           key={selectedCategory}
           selectedCategory={selectedCategory}
           onCategoryChange={setSelectedCategory}
-          endSlot={
-            <ConditionFilter
-              id="shop-condition-filter"
-              categorySlug={categorySlugForFilter}
-              value={selectedCondition}
-              onChange={setSelectedCondition}
-              inline
-            />
-          }
         />
 
         <div className="mb-4">
@@ -198,16 +190,31 @@ export default function Products() {
           />
         </div>
 
-        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <label htmlFor="shop-price-range" className="text-sm font-medium text-gray-700">
-              Price
+        <div className="mb-2 flex flex-wrap items-center justify-end gap-2">
+          <SortBar id="shop-listing-sort" value={listingSort} onChange={setListingSort} />
+        </div>
+
+        <CollapsibleFilters
+          idPrefix="shop-collapsible-filters"
+          isOpen={moreFiltersOpen}
+          onOpenChange={setMoreFiltersOpen}
+          className="mb-4"
+        >
+          <ConditionFilter
+            id="shop-condition-filter"
+            categorySlug={categorySlugForFilter}
+            value={selectedCondition}
+            onChange={setSelectedCondition}
+          />
+          <div>
+            <label htmlFor="shop-price-range" className="mb-1 block text-sm font-medium text-gray-700">
+              Price range
             </label>
             <select
               id="shop-price-range"
               value={priceRange}
               onChange={(e) => setPriceRange(e.target.value)}
-              className="min-w-[10rem] rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-[#22c55e] focus:outline-none focus:ring-2 focus:ring-[#22c55e]/20"
+              className="w-full max-w-md rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-[#22c55e] focus:outline-none focus:ring-2 focus:ring-[#22c55e]/20"
             >
               {BROWSE_PRICE_RANGE_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>
@@ -216,33 +223,69 @@ export default function Products() {
               ))}
             </select>
           </div>
-          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-            <SortBar id="shop-listing-sort" value={listingSort} onChange={setListingSort} />
+          <div>
+            <label htmlFor="shop-more-location" className="block text-sm font-medium text-gray-700">
+              Location (city / area)
+            </label>
+            <p className="mb-1 text-xs text-gray-500">Matches text in the listing location field.</p>
+            <input
+              id="shop-more-location"
+              type="text"
+              value={moreFilters.locationContains}
+              onChange={(e) => setMoreFilters({ ...moreFilters, locationContains: e.target.value })}
+              placeholder="e.g. Lagos, Ikeja"
+              className="w-full max-w-md rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-[#22c55e] focus:outline-none focus:ring-2 focus:ring-[#22c55e]/20"
+              autoComplete="off"
+            />
+          </div>
+          <div>
+            <label htmlFor="shop-more-brand" className="block text-sm font-medium text-gray-700">
+              Brand
+            </label>
+            <p className="mb-1 text-xs text-gray-500">Partial match on vehicle brand when listed.</p>
+            <input
+              id="shop-more-brand"
+              type="text"
+              value={moreFilters.brandContains}
+              onChange={(e) => setMoreFilters({ ...moreFilters, brandContains: e.target.value })}
+              placeholder="e.g. Toyota"
+              className="w-full max-w-md rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-[#22c55e] focus:outline-none focus:ring-2 focus:ring-[#22c55e]/20"
+              autoComplete="off"
+            />
+          </div>
+          <div>
+            <label htmlFor="shop-more-delivery" className="block text-sm font-medium text-gray-700">
+              Delivery
+            </label>
+            <select
+              id="shop-more-delivery"
+              value={moreFilters.deliveryMode}
+              onChange={(e) =>
+                setMoreFilters({
+                  ...moreFilters,
+                  deliveryMode: e.target.value === "has_options" ? "has_options" : "all",
+                })
+              }
+              className="w-full max-w-md rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-[#22c55e] focus:outline-none focus:ring-2 focus:ring-[#22c55e]/20"
+            >
+              <option value="all">Any</option>
+              <option value="has_options">Has delivery options listed</option>
+            </select>
+          </div>
+          <div className="pt-1">
             <button
               type="button"
               onClick={() => {
-                setMoreFiltersDraft({ ...moreFilters });
-                setMoreFiltersOpen(true);
+                setSelectedCondition("all");
+                setPriceRange("all");
+                setMoreFilters(defaultBrowseMoreFilters());
               }}
-              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+              className="text-sm font-medium text-[#16a34a] underline hover:no-underline"
             >
-              More filters
+              Reset secondary filters
             </button>
           </div>
-        </div>
-
-        <MoreFiltersDrawer
-          open={moreFiltersOpen}
-          onClose={() => setMoreFiltersOpen(false)}
-          idPrefix="shop-more-filters"
-          value={moreFiltersDraft}
-          onChange={setMoreFiltersDraft}
-          onApply={() => {
-            setMoreFilters({ ...moreFiltersDraft });
-            setMoreFiltersOpen(false);
-          }}
-          onReset={() => setMoreFiltersDraft(defaultBrowseMoreFilters())}
-        />
+        </CollapsibleFilters>
 
         <div className="mb-5 flex items-center justify-between">
           <h1 className="text-xl font-semibold text-gray-900">Shop - {categoryLabel}</h1>

@@ -303,7 +303,8 @@ export default function Home() {
   const [listingSort, setListingSort] = useState<ListingSort>("recent");
   const [moreFilters, setMoreFilters] = useState<BrowseMoreFiltersState>(defaultBrowseMoreFilters);
   const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
-  useMoreFiltersScrollSync(setMoreFiltersOpen);
+  const moreFiltersSectionRef = useRef<HTMLDivElement>(null);
+  useMoreFiltersScrollSync(setMoreFiltersOpen, moreFiltersSectionRef);
   const openMoreFilters = useCallback(() => {
     setMoreFiltersOpen(true);
   }, []);
@@ -495,6 +496,7 @@ export default function Home() {
         <CollapsibleFilters
           idPrefix="home-collapsible-filters"
           sectionId="more-filters-section"
+          interactionRootRef={moreFiltersSectionRef}
           isOpen={moreFiltersOpen}
           onOpenChange={setMoreFiltersOpen}
           className="mb-4"

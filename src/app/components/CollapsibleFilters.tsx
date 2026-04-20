@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { useId, type RefObject } from "react";
 import { ChevronDown } from "lucide-react";
 import { cn } from "./ui/utils";
 
@@ -11,6 +11,8 @@ export type CollapsibleFiltersProps = {
   className?: string;
   /** DOM id for scroll targets (e.g. floating “Filters” FAB). */
   sectionId?: string;
+  /** Root element for focus-within detection (scroll auto-close guard). */
+  interactionRootRef?: RefObject<HTMLDivElement | null>;
 };
 
 /**
@@ -23,6 +25,7 @@ export default function CollapsibleFilters({
   children,
   className,
   sectionId = "more-filters-section",
+  interactionRootRef,
 }: CollapsibleFiltersProps) {
   const reactId = useId();
   const baseId = `${idPrefix}-${reactId.replace(/:/g, "")}`;
@@ -30,7 +33,11 @@ export default function CollapsibleFilters({
   const panelId = `${baseId}-panel`;
 
   return (
-    <div id={sectionId} className={cn("mt-4 scroll-mt-4 border-t border-gray-200 pt-4", className)}>
+    <div
+      ref={interactionRootRef}
+      id={sectionId}
+      className={cn("mt-4 scroll-mt-4 border-t border-gray-200 pt-4", className)}
+    >
       <button
         type="button"
         id={toggleId}

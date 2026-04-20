@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { supabase } from "../../lib/supabase";
 import CategoryFilter, { type CategoryFilterSelection } from "../components/CategoryFilter";
@@ -42,7 +42,8 @@ export default function Products() {
   const [listingSort, setListingSort] = useState<ListingSort>("recent");
   const [moreFilters, setMoreFilters] = useState<BrowseMoreFiltersState>(defaultBrowseMoreFilters);
   const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
-  useMoreFiltersScrollSync(setMoreFiltersOpen);
+  const moreFiltersSectionRef = useRef<HTMLDivElement>(null);
+  useMoreFiltersScrollSync(setMoreFiltersOpen, moreFiltersSectionRef);
   const openMoreFilters = useCallback(() => {
     setMoreFiltersOpen(true);
   }, []);
@@ -201,6 +202,7 @@ export default function Products() {
         <CollapsibleFilters
           idPrefix="shop-collapsible-filters"
           sectionId="more-filters-section"
+          interactionRootRef={moreFiltersSectionRef}
           isOpen={moreFiltersOpen}
           onOpenChange={setMoreFiltersOpen}
           className="mb-4"

@@ -13,7 +13,6 @@ import { SortBar } from "../components/SortBar";
 import CollapsibleFilters from "../components/CollapsibleFilters";
 import FloatingFiltersButton from "../components/FloatingFiltersButton";
 import { useFallbackProducts } from "../hooks/useFallbackProducts";
-import { useMoreFiltersScrollSync } from "../hooks/useMoreFiltersScrollSync";
 import {
   applyBrowseProductQueryFilters,
   BROWSE_PRICE_RANGE_OPTIONS,
@@ -126,6 +125,10 @@ function mapProductToCardProps(product: ProductWithSeller) {
       : legacyProfile && typeof legacyProfile.full_name === "string" && legacyProfile.full_name.trim() !== ""
         ? legacyProfile.full_name.trim()
         : undefined;
+  const sellerUsername =
+    seller && typeof seller.username === "string" && seller.username.trim() !== ""
+      ? seller.username.trim()
+      : undefined;
 
   return {
     key: String(product.id),
@@ -139,6 +142,7 @@ function mapProductToCardProps(product: ProductWithSeller) {
     city: typeof product.city === "string" ? product.city : "",
     condition: typeof product.condition === "string" ? product.condition : "",
     sellerName,
+    sellerUsername,
     sellerVerified: seller?.phone_verified === true,
   };
 }
@@ -261,6 +265,7 @@ function CategoryRow({ slug, title, row, onLoadMore }: CategoryRowProps) {
                 city={p.city}
                 condition={p.condition}
                 sellerName={p.sellerName}
+                sellerUsername={p.sellerUsername}
                 sellerVerified={p.sellerVerified}
                 imagePriority={idx < 4}
               />
@@ -304,7 +309,6 @@ export default function Home() {
   const [moreFilters, setMoreFilters] = useState<BrowseMoreFiltersState>(defaultBrowseMoreFilters);
   const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
   const moreFiltersSectionRef = useRef<HTMLDivElement>(null);
-  useMoreFiltersScrollSync(setMoreFiltersOpen, moreFiltersSectionRef);
   const openMoreFilters = useCallback(() => {
     setMoreFiltersOpen(true);
   }, []);
@@ -468,7 +472,7 @@ export default function Home() {
           />
         </div>
 
-        <div className="mb-2 flex flex-wrap items-center justify-end gap-2">
+        <div className="mb-1 flex flex-wrap items-center justify-end gap-2">
           <SortBar id="home-listing-sort" value={listingSort} onChange={setListingSort} />
         </div>
 
@@ -478,7 +482,7 @@ export default function Home() {
           interactionRootRef={moreFiltersSectionRef}
           isOpen={moreFiltersOpen}
           onOpenChange={setMoreFiltersOpen}
-          className="mb-4"
+          className="mt-2 mb-4"
         >
           <ConditionFilter
             id="home-condition-filter"

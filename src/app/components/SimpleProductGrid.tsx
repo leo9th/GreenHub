@@ -47,6 +47,10 @@ const ProductCardFromProduct = memo(function ProductCardFromProduct({
       : legacyProfile && typeof legacyProfile.full_name === "string" && legacyProfile.full_name.trim() !== ""
         ? legacyProfile.full_name.trim()
         : undefined;
+  const sellerUsername =
+    seller && typeof seller.username === "string" && seller.username.trim() !== ""
+      ? seller.username.trim()
+      : undefined;
   const sellerVerified = seller?.phone_verified === true;
 
   return (
@@ -61,6 +65,7 @@ const ProductCardFromProduct = memo(function ProductCardFromProduct({
       city={typeof product.city === "string" ? product.city : ""}
       condition={typeof product.condition === "string" ? product.condition : ""}
       sellerName={sellerName}
+      sellerUsername={sellerUsername}
       sellerVerified={sellerVerified}
       imagePriority={index < 6}
     />

@@ -47,8 +47,9 @@ export default function NewProductDetailInlineChat({
   const [sending, setSending] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const cleanedPhone = useMemo(() => (sellerPhone || "").replace(/[^\d+]/g, ""), [sellerPhone]);
-  const telHref = cleanedPhone ? `tel:${cleanedPhone}` : "";
+  const sellerPhoneRaw = useMemo(() => (sellerPhone != null ? String(sellerPhone).trim() : ""), [sellerPhone]);
+  const cleanedPhone = useMemo(() => sellerPhoneRaw.replace(/[^\d+]/g, ""), [sellerPhoneRaw]);
+  const sellerTelHref = cleanedPhone ? `tel:${cleanedPhone}` : "";
   const whatsappPhone = cleanedPhone.replace(/^\+/, "");
   const defaultWhatsAppText = `Hi ${sellerName}, I am interested in ${
     productTitle?.trim() || "this item"
@@ -213,25 +214,36 @@ export default function NewProductDetailInlineChat({
         </button>
       </div>
 
-      {showContact ? (
-        <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
-          {cleanedPhone ? (
+      {showContact && (
+        <div className="mt-3 rounded-xl border border-gray-100 bg-gray-50 px-3 py-3 text-sm">
+          {sellerTelHref ? (
             <>
-              <p className="text-sm font-medium text-gray-900">{cleanedPhone}</p>
-              <div className="mt-2 flex flex-wrap gap-2">
+              <p className="font-medium text-gray-900">Seller phone</p>
+              <p className="mt-1 break-all font-mono text-gray-800">{sellerTelHref.replace(/^tel:/, "")}</p>
+              <div className="mt-3 flex flex-wrap gap-2">
                 <a
-                  href={telHref}
+                  href={sellerTelHref}
                   className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-800"
                 >
                   Call
                 </a>
+                {whatsappHref ? (
+                  <a
+                    href={whatsappHref}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="rounded-lg border border-emerald-700 bg-white px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-50"
+                  >
+                    WhatsApp
+                  </a>
+                ) : null}
               </div>
             </>
           ) : (
-            <p className="text-sm text-gray-600">Seller phone not available.</p>
+            <p className="text-gray-600">Seller has not shared a phone number.</p>
           )}
         </div>
-      ) : null}
+      )}
     </div>
   );
 }

@@ -36,6 +36,7 @@ export interface ProductCardProps {
   sellerId?: string;
   sellerFollowerCount?: number;
   sellerName?: string;
+  sellerUsername?: string;
   verifiedSellerBadge?: string;
   /** First viewport row: eager load for LCP */
   imagePriority?: boolean;
@@ -55,6 +56,7 @@ function ProductCardComponent({
   priceDisplay,
   priceLocal,
   sellerName,
+  sellerUsername,
   sellerVerified,
   imagePriority,
 }: ProductCardProps) {
@@ -71,7 +73,8 @@ function ProductCardComponent({
 
   const locationDisplay =
     (city?.trim() || location?.trim() || "").trim() || "Location not specified";
-  const sellerDisplay = sellerName?.trim() || "Seller";
+  const normalizedUsername = sellerUsername?.trim().replace(/^@+/, "");
+  const sellerDisplay = normalizedUsername ? `@${normalizedUsername}` : sellerName?.trim() || "Seller";
 
   const firstFromImages =
     Array.isArray(images) && typeof images[0] === "string" ? images[0].trim() : "";
@@ -158,13 +161,17 @@ function ProductCardComponent({
                 <MapPin size={12} className="shrink-0" />
                 {locationDisplay}
               </span>
-              <span className="flex items-center gap-1 text-[11px] font-medium italic text-slate-400">
+              <span className="inline-flex items-center gap-1 text-[11px] font-medium italic text-slate-400">
+                {sellerDisplay}
                 {sellerVerified ? (
-                  <span title="Phone verified" aria-label="Phone verified" className="not-italic">
+                  <span
+                    className="text-xs not-italic text-green-600"
+                    title="Phone verified"
+                    aria-label="Phone verified"
+                  >
                     ✅
                   </span>
                 ) : null}
-                {sellerDisplay}
               </span>
             </div>
           </div>

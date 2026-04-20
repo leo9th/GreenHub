@@ -6,7 +6,6 @@ import { ConditionFilter } from "../components/ConditionFilter";
 import CollapsibleFilters from "../components/CollapsibleFilters";
 import FloatingFiltersButton from "../components/FloatingFiltersButton";
 import { useFallbackProducts } from "../hooks/useFallbackProducts";
-import { useMoreFiltersScrollSync } from "../hooks/useMoreFiltersScrollSync";
 import { SortBar } from "../components/SortBar";
 import { categoryFilterLabelToDbValue } from "../data/catalogConstants";
 import { getConditionFilterDropdownOptions } from "../data/productConditions";
@@ -43,7 +42,6 @@ export default function Products() {
   const [moreFilters, setMoreFilters] = useState<BrowseMoreFiltersState>(defaultBrowseMoreFilters);
   const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
   const moreFiltersSectionRef = useRef<HTMLDivElement>(null);
-  useMoreFiltersScrollSync(setMoreFiltersOpen, moreFiltersSectionRef);
   const openMoreFilters = useCallback(() => {
     setMoreFiltersOpen(true);
   }, []);
@@ -172,7 +170,7 @@ export default function Products() {
           />
         </div>
 
-        <div className="mb-2 flex flex-wrap items-center justify-end gap-2">
+        <div className="mb-1 flex flex-wrap items-center justify-end gap-2">
           <SortBar id="shop-listing-sort" value={listingSort} onChange={setListingSort} />
         </div>
 
@@ -182,7 +180,7 @@ export default function Products() {
           interactionRootRef={moreFiltersSectionRef}
           isOpen={moreFiltersOpen}
           onOpenChange={setMoreFiltersOpen}
-          className="mb-4"
+          className="mt-2 mb-4"
         >
           <ConditionFilter
             id="shop-condition-filter"

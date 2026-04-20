@@ -9,6 +9,8 @@ export type CollapsibleFiltersProps = {
   onOpenChange: (open: boolean) => void;
   children: React.ReactNode;
   className?: string;
+  /** DOM id for scroll targets (e.g. floating “Filters” FAB). */
+  sectionId?: string;
 };
 
 /**
@@ -20,6 +22,7 @@ export default function CollapsibleFilters({
   onOpenChange,
   children,
   className,
+  sectionId = "more-filters-section",
 }: CollapsibleFiltersProps) {
   const reactId = useId();
   const baseId = `${idPrefix}-${reactId.replace(/:/g, "")}`;
@@ -27,7 +30,7 @@ export default function CollapsibleFilters({
   const panelId = `${baseId}-panel`;
 
   return (
-    <div className={cn("mt-4 border-t border-gray-200 pt-4", className)}>
+    <div id={sectionId} className={cn("mt-4 scroll-mt-4 border-t border-gray-200 pt-4", className)}>
       <button
         type="button"
         id={toggleId}

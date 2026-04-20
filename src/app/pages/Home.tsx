@@ -11,6 +11,7 @@ import { getConditionFilterDropdownOptions } from "../data/productConditions";
 import type { ProductWithSeller } from "../types/productWithSeller";
 import { SortBar } from "../components/SortBar";
 import CollapsibleFilters from "../components/CollapsibleFilters";
+import FloatingFiltersButton from "../components/FloatingFiltersButton";
 import { useMoreFiltersScrollSync } from "../hooks/useMoreFiltersScrollSync";
 import {
   applyBrowseProductQueryFilters,
@@ -303,6 +304,9 @@ export default function Home() {
   const [moreFilters, setMoreFilters] = useState<BrowseMoreFiltersState>(defaultBrowseMoreFilters);
   const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
   useMoreFiltersScrollSync(setMoreFiltersOpen);
+  const openMoreFilters = useCallback(() => {
+    setMoreFiltersOpen(true);
+  }, []);
   const [recommendedFallback, setRecommendedFallback] = useState<ProductWithSeller[]>([]);
   const [recommendedFallbackLoading, setRecommendedFallbackLoading] = useState(false);
 
@@ -490,6 +494,7 @@ export default function Home() {
 
         <CollapsibleFilters
           idPrefix="home-collapsible-filters"
+          sectionId="more-filters-section"
           isOpen={moreFiltersOpen}
           onOpenChange={setMoreFiltersOpen}
           className="mb-4"
@@ -615,6 +620,8 @@ export default function Home() {
           })}
         </div>
       </div>
+
+      <FloatingFiltersButton visible={!moreFiltersOpen} onOpen={openMoreFilters} />
     </div>
   );
 }

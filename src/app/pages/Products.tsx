@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { supabase } from "../../lib/supabase";
 import CategoryFilter, { type CategoryFilterSelection } from "../components/CategoryFilter";
 import { ConditionFilter } from "../components/ConditionFilter";
 import CollapsibleFilters from "../components/CollapsibleFilters";
+import FloatingFiltersButton from "../components/FloatingFiltersButton";
 import { useMoreFiltersScrollSync } from "../hooks/useMoreFiltersScrollSync";
 import { SortBar } from "../components/SortBar";
 import { categoryFilterLabelToDbValue } from "../data/catalogConstants";
@@ -42,6 +43,9 @@ export default function Products() {
   const [moreFilters, setMoreFilters] = useState<BrowseMoreFiltersState>(defaultBrowseMoreFilters);
   const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
   useMoreFiltersScrollSync(setMoreFiltersOpen);
+  const openMoreFilters = useCallback(() => {
+    setMoreFiltersOpen(true);
+  }, []);
   const [recommendedFallback, setRecommendedFallback] = useState<ProductWithSeller[]>([]);
   const [recommendedFallbackLoading, setRecommendedFallbackLoading] = useState(false);
 
@@ -196,6 +200,7 @@ export default function Products() {
 
         <CollapsibleFilters
           idPrefix="shop-collapsible-filters"
+          sectionId="more-filters-section"
           isOpen={moreFiltersOpen}
           onOpenChange={setMoreFiltersOpen}
           className="mb-4"
@@ -304,6 +309,8 @@ export default function Products() {
           emptyFallbackLoading={recommendedFallbackLoading}
         />
       </div>
+
+      <FloatingFiltersButton visible={!moreFiltersOpen} onOpen={openMoreFilters} />
     </div>
   );
 }

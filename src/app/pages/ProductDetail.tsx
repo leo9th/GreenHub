@@ -1245,6 +1245,13 @@ export default function ProductDetail() {
                               onDoubleClick={onMainImageDoubleClick}
                             />
                           </div>
+                          {isSoldOut ? (
+                            <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/40 backdrop-blur-[2px]">
+                              <span className="rounded-full bg-red-500 px-3 py-1 text-sm font-semibold text-white shadow-sm">
+                                Sold Out
+                              </span>
+                            </div>
+                          ) : null}
                           <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-24 bg-gradient-to-t from-black/30 to-transparent" />
                           {!isOwner && sellerPeerId ? (
                             <motion.button
@@ -1808,11 +1815,6 @@ export default function ProductDetail() {
               {isLowStock ? (
                 <p className="mt-3 inline-flex rounded-full bg-amber-500 px-3 py-1 text-xs font-semibold text-white">
                   Only {stockQuantity} left!
-                </p>
-              ) : null}
-              {isSoldOut ? (
-                <p className="mt-3 inline-flex rounded-full bg-red-500 px-3 py-1 text-xs font-semibold text-white">
-                  Sold Out
                 </p>
               ) : null}
               <div className="mt-4 flex flex-col gap-2">

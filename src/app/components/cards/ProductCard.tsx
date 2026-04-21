@@ -91,8 +91,7 @@ function ProductCardComponent({
       : formatPrice(priceLocal ?? price);
   const reviewCount = Number(reviews ?? 0);
   const ratingValue = Number.isFinite(Number(rating)) ? Number(rating) : 0;
-  const productRatingLabel =
-    reviewCount > 0 ? `${ratingValue.toFixed(1)} ⭐ (${reviewCount})` : "New Seller";
+  const productRatingLabel = reviewCount > 0 ? `${ratingValue.toFixed(1)} (${reviewCount})` : "";
   const stockLeft = Number.isFinite(Number(stockQuantity)) ? Number(stockQuantity) : null;
   const lowStock = stockLeft != null && stockLeft > 0 && stockLeft < 5;
   const soldOut = stockLeft === 0;
@@ -162,13 +161,15 @@ function ProductCardComponent({
             </div>
           )}
           {lowStock ? (
-            <div className="absolute right-2 top-2 rounded-full bg-amber-500 px-2 py-1 text-[10px] font-semibold text-white shadow-sm">
+            <div className="absolute right-2 top-2 z-10 rounded-full bg-amber-500 px-2 py-1 text-[10px] font-semibold text-white shadow-sm">
               Only {stockLeft} left!
             </div>
           ) : null}
           {soldOut ? (
-            <div className="absolute right-2 top-2 rounded-full bg-red-500 px-2 py-1 text-[10px] font-semibold text-white shadow-sm">
-              Sold Out
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/40 backdrop-blur-[2px]">
+              <span className="rounded-full bg-red-500 px-3 py-1 text-xs font-semibold text-white shadow-sm">
+                Sold Out
+              </span>
             </div>
           ) : null}
         </div>
@@ -197,12 +198,14 @@ function ProductCardComponent({
             </div>
           </div>
 
-          <div className="mt-2 flex items-center justify-between">
-            <span className="text-lg font-bold text-green-600">{displayPrice}</span>
-            <span className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[10px] font-medium text-gray-700">
+          {reviewCount > 0 ? (
+            <div className="mb-1 flex items-center gap-1 text-xs font-medium text-gray-600">
               <Star className="h-3 w-3 text-amber-400" />
-              {productRatingLabel}
-            </span>
+              <span className="truncate">{productRatingLabel}</span>
+            </div>
+          ) : null}
+          <div className="mt-1 flex items-center justify-between">
+            <span className="text-lg font-bold text-green-600">{displayPrice}</span>
           </div>
         </div>
       </Link>

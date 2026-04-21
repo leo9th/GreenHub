@@ -371,6 +371,7 @@ export default function ProductDetail() {
   const [openUserDialog, setOpenUserDialog] = useState(false);
   const [updatingAvailability, setUpdatingAvailability] = useState(false);
   const thumbnailClickDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const routeProductId = useMemo(() => normalizeRouteProductId(id), [id]);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -423,9 +424,8 @@ export default function ProductDetail() {
   }, [serverProduct?.seller_id, serverProduct?.sellerId]);
 
   const refetchProduct = useCallback(async () => {
-    const idForQuery = normalizeRouteProductId(id);
-    if (idForQuery == null) return;
-    const { data, error } = await supabase.from("products").select("*").eq("id", idForQuery).maybeSingle();
+    if (routeProductId == null) return;
+    const { data, error } = await supabase.from("products").select("*").eq("id", routeProductId).maybeSingle();
     if (error || !data) return;
     const v = data.views;
     const viewsNum = typeof v === "number" ? v : v != null ? Number(v) : 0;
@@ -439,7 +439,7 @@ export default function ProductDetail() {
       createdAt: data.created_at,
       updatedAt: data.updated_at,
     });
-  }, [id]);
+  }, [routeProductId]);
 
   const foundProduct = serverProduct;
   const likeProductId = useMemo(() => normalizeProductPk(foundProduct?.id), [foundProduct?.id]);
@@ -663,8 +663,7 @@ export default function ProductDetail() {
     let cancelled = false;
 
     const loadServerProduct = async () => {
-      const idForQuery = normalizeRouteProductId(id);
-      if (idForQuery == null) {
+      if (routeProductId == null) {
         setServerProduct(null);
         setIsServerProductLoading(false);
         setSellerInfoReady(true);
@@ -680,7 +679,7 @@ export default function ProductDetail() {
       setSellerIdVerified(false);
       setSellerInfoReady(false);
 
-      const { data, error } = await supabase.from("products").select("*").eq("id", idForQuery).maybeSingle();
+      const { data, error } = await supabase.from("products").select("*").eq("id", routeProductId).maybeSingle();
 
       if (cancelled) return;
 
@@ -717,7 +716,7 @@ export default function ProductDetail() {
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [routeProductId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1218,7 +1217,7 @@ export default function ProductDetail() {
         : 0;
   const productRatingTotal = hasLoadedProductReviews ? productReviews.length : dbProductTotal;
   const userHasProductReview = Boolean(authUser && productReviews.some((r) => r.user_id === authUser.id));
-  const productIdForReviewLink = normalizeRouteProductId(id) ?? String(foundProduct?.id ?? "");
+  const productIdForReviewLink = routeProductId ?? String(foundProduct?.id ?? "");
 
   return (
     <div className="min-h-screen bg-gray-100 text-gray-900 pb-28 md:pb-8">

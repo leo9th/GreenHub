@@ -1,4 +1,5 @@
 import { useLocation, Link } from "react-router";
+import { ScrollRestoration } from "react-router-dom";
 import { Briefcase, Wallet, ShoppingBag, TrendingUp, Package } from "lucide-react";
 import { useEffect } from "react";
 import AnimatedOutlet from "../components/AnimatedOutlet";
@@ -59,6 +60,7 @@ export default function Root() {
         <TopNav />
         <AnimatedOutlet />
         {showBottomNav && <Footer />}
+        <ScrollRestoration />
       </main>
 
       {!hideFloatingChatbot ? <FloatingChatbotWidget /> : null}

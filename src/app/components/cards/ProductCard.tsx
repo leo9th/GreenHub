@@ -166,9 +166,9 @@ function ProductCardComponent({
             </div>
           ) : null}
           {soldOut ? (
-            <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/40 backdrop-blur-[2px]">
-              <span className="rounded-full bg-red-500 px-3 py-1 text-xs font-semibold text-white shadow-sm">
-                Sold Out
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex items-center justify-center bg-white/20 py-2 backdrop-blur-md">
+              <span className="rounded-full bg-[#15803d]/95 px-3 py-1 text-xs font-bold tracking-wide text-white">
+                SOLD OUT
               </span>
             </div>
           ) : null}

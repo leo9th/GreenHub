@@ -32,6 +32,7 @@ type OrderItemRow = {
   price_at_time?: number | null;
   /** Base schema column (see 20260508120000_create_order_items.sql) */
   unit_price?: number | null;
+  status?: string | null;
 };
 
 /** DB may only have `unit_price`; newer migrations add `price_at_time`. */
@@ -217,6 +218,23 @@ export default function Orders() {
     }
   };
 
+  const itemStatusLabel = (status: string | null | undefined) => {
+    const s = String(status || "").toLowerCase().trim();
+    if (!s) return "Processing";
+    if (s === "in_transit") return "Shipped";
+    if (s === "completed") return "Delivered";
+    return s.charAt(0).toUpperCase() + s.slice(1).replace(/_/g, " ");
+  };
+
+  const itemStatusClass = (status: string | null | undefined) => {
+    const s = String(status || "").toLowerCase().trim();
+    if (s === "sold") return "bg-slate-100 text-slate-700";
+    if (s === "shipped" || s === "in_transit") return "bg-purple-100 text-purple-800";
+    if (s === "delivered" || s === "completed") return "bg-green-100 text-green-800";
+    if (s === "processing" || s === "paid" || s === "confirmed") return "bg-blue-100 text-blue-800";
+    return "bg-yellow-100 text-yellow-800";
+  };
+
   if (authLoading) {
     return <div className="min-h-screen bg-gray-50 flex items-center justify-center text-sm text-gray-600">Loading…</div>;
   }
@@ -317,7 +335,12 @@ export default function Orders() {
                       <h3 className="text-sm font-medium text-gray-800 line-clamp-2 mb-1">
                         {item.product_title || "Product"}
                       </h3>
-                      <p className="text-sm text-gray-600">Qty: {item.quantity ?? 1}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm text-gray-600">Qty: {item.quantity ?? 1}</p>
+                        <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${itemStatusClass(item.status)}`}>
+                          {itemStatusLabel(item.status)}
+                        </span>
+                      </div>
                     </div>
                     <div className="text-right">
                       <p className="text-sm font-semibold text-gray-800">

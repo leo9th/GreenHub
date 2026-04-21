@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { ArrowLeft, Plus, Search, MoreVertical, Edit, Trash2, Loader2, Package, TrendingUp } from "lucide-react";
+import { ArrowLeft, Plus, Search, Edit, Trash2, Loader2, Package, TrendingUp } from "lucide-react";
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../context/AuthContext";
 import { useCurrency } from "../../hooks/useCurrency";
@@ -34,7 +34,6 @@ export default function SellerProducts() {
   const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
-  const [openMenuId, setOpenMenuId] = useState<string | number | null>(null);
   const [products, setProducts] = useState<SellerProductRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -97,12 +96,10 @@ export default function SellerProducts() {
 
   const handleDelete = async (product: SellerProductRow) => {
     if (!confirm("Are you sure you want to delete this product?") || !user?.id) {
-      setOpenMenuId(null);
       return;
     }
 
     setActionProductId(product.id);
-    setOpenMenuId(null);
 
     try {
       const paths = collectStoragePathsForProduct(
@@ -133,15 +130,24 @@ export default function SellerProducts() {
     }
   };
 
-  const handleMarkSold = async (product: SellerProductRow) => {
+  const handleSetStatus = async (product: SellerProductRow, nextStatus: "active" | "sold") => {
     if (!user?.id) return;
     setActionProductId(product.id);
-    setOpenMenuId(null);
 
     try {
+      const nextStock =
+        nextStatus === "sold"
+          ? 0
+          : product.status?.toLowerCase() === "sold"
+            ? 1
+            : undefined;
       const { error } = await supabase
         .from("products")
-        .update({ status: "sold", updated_at: new Date().toISOString() })
+        .update({
+          status: nextStatus,
+          ...(nextStock != null ? { stock_quantity: nextStock } : {}),
+          updated_at: new Date().toISOString(),
+        })
         .eq("id", product.id)
         .eq("seller_id", user.id);
 
@@ -275,6 +281,18 @@ export default function SellerProducts() {
                     </div>
 
                     <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        disabled={actionProductId === product.id}
+                        onClick={() =>
+                          void handleSetStatus(product, statusLower === "sold" ? "active" : "sold")
+                        }
+                        className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-50 ${
+                          statusLower === "sold" ? "bg-slate-400 hover:bg-slate-500" : "bg-emerald-600 hover:bg-emerald-700"
+                        }`}
+                      >
+                        {statusLower === "sold" ? "Mark as Active" : "Mark as Sold"}
+                      </button>
                       {statusLower === "active" ? (
                         <Link
                           to={`/seller/advertise?productId=${encodeURIComponent(String(product.id))}`}
@@ -302,50 +320,6 @@ export default function SellerProducts() {
                       </button>
                     </div>
                   </div>
-
-                  {statusLower !== "sold" ? (
-                    <div
-                      className={`absolute top-3 right-3 transition-opacity duration-150 ${
-                        openMenuId === product.id
-                          ? "opacity-100 z-20"
-                          : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 z-10"
-                      }`}
-                    >
-                      <div className="relative">
-                        <button
-                          type="button"
-                          aria-label="More listing actions"
-                          disabled={actionProductId === product.id}
-                          onClick={() => setOpenMenuId(openMenuId === product.id ? null : product.id)}
-                          className="p-2 rounded-lg border border-gray-200 bg-white shadow-sm hover:bg-gray-50 disabled:opacity-50"
-                        >
-                          <MoreVertical className="w-5 h-5 text-gray-700" />
-                        </button>
-
-                        {openMenuId === product.id && (
-                          <>
-                            <button
-                              type="button"
-                              className="fixed inset-0 z-40 cursor-default bg-black/0"
-                              aria-label="Close menu"
-                              onClick={() => setOpenMenuId(null)}
-                            />
-                            <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1 w-44">
-                              <button
-                                type="button"
-                                disabled={actionProductId === product.id}
-                                onClick={() => void handleMarkSold(product)}
-                                className="flex items-center gap-2 px-4 py-2.5 hover:bg-gray-50 text-gray-800 text-sm w-full text-left disabled:opacity-50"
-                              >
-                                <Package className="w-4 h-4 shrink-0" />
-                                Mark as sold
-                              </button>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  ) : null}
                 </div>
               </div>
             );

@@ -1064,6 +1064,45 @@ export default function ProductDetail() {
       : null;
   const isSoldOut = stockQuantity === 0;
   const isLowStock = stockQuantity != null && stockQuantity > 0 && stockQuantity < 5;
+  const [updatingAvailability, setUpdatingAvailability] = useState(false);
+
+  const toggleAvailability = async () => {
+    if (!isOwner) return;
+    setUpdatingAvailability(true);
+    try {
+      if (isSoldOut) {
+        const restoreQty = stockQuantity == null || stockQuantity <= 0 ? 1 : stockQuantity;
+        const { error } = await supabase
+          .from("products")
+          .update({
+            status: "active",
+            stock_quantity: restoreQty,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", foundProduct.id)
+          .eq("seller_id", authUser?.id ?? "");
+        if (error) throw error;
+        toast.success("Listing marked as available.");
+      } else {
+        const { error } = await supabase
+          .from("products")
+          .update({
+            status: "sold",
+            stock_quantity: 0,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", foundProduct.id)
+          .eq("seller_id", authUser?.id ?? "");
+        if (error) throw error;
+        toast.success("Listing marked as sold.");
+      }
+      await refetchProduct();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Could not update listing status.");
+    } finally {
+      setUpdatingAvailability(false);
+    }
+  };
 
   const notifyMeForRestock = async () => {
     const itemName = String(product.title || "").trim();
@@ -1246,9 +1285,9 @@ export default function ProductDetail() {
                             />
                           </div>
                           {isSoldOut ? (
-                            <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/40 backdrop-blur-[2px]">
-                              <span className="rounded-full bg-red-500 px-3 py-1 text-sm font-semibold text-white shadow-sm">
-                                Sold Out
+                            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex items-center justify-center bg-white/20 py-2 backdrop-blur-md">
+                              <span className="rounded-full bg-[#15803d]/95 px-3 py-1 text-sm font-bold tracking-wide text-white shadow-sm">
+                                SOLD OUT
                               </span>
                             </div>
                           ) : null}
@@ -1582,26 +1621,44 @@ export default function ProductDetail() {
               <div className="flex flex-wrap items-start justify-between gap-2 mb-2 md:mb-1">
                 <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Listing</h2>
                 {isOwner ? (
-                  <button
-                    type="button"
-                    onClick={() => setEditModalOpen(true)}
-                    className="shrink-0 rounded-lg border border-[#15803d]/40 bg-[#f0fdf4] px-3 py-1.5 text-xs font-semibold text-[#15803d] hover:bg-[#dcfce7]"
-                  >
-                    Edit product
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={updatingAvailability}
+                      onClick={() => void toggleAvailability()}
+                      className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60 ${
+                        isSoldOut ? "bg-slate-400 hover:bg-slate-500" : "bg-emerald-600 hover:bg-emerald-700"
+                      }`}
+                    >
+                      {updatingAvailability ? "Updating..." : isSoldOut ? "Mark as Available" : "Mark as Sold"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditModalOpen(true)}
+                      className="shrink-0 rounded-lg border border-[#15803d]/40 bg-[#f0fdf4] px-3 py-1.5 text-xs font-semibold text-[#15803d] hover:bg-[#dcfce7]"
+                    >
+                      Edit product
+                    </button>
+                  </div>
                 ) : null}
               </div>
               <h1 className="text-xl md:text-2xl font-semibold text-gray-900 leading-snug tracking-tight">
                 {product.title}
               </h1>
               <p className="text-2xl md:text-3xl font-bold text-[#15803d] mt-3 tabular-nums">{priceDisplay}</p>
-              <PriceNegotiation
-                productId={foundProduct.id}
-                listingPrice={priceNum}
-                sellerId={sellerPeerId}
-                isOwner={isOwner}
-                formatPrice={formatPrice}
-              />
+              {isSoldOut && !isOwner ? (
+                <div className="mt-3 inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                  Sold
+                </div>
+              ) : (
+                <PriceNegotiation
+                  productId={foundProduct.id}
+                  listingPrice={priceNum}
+                  sellerId={sellerPeerId}
+                  isOwner={isOwner}
+                  formatPrice={formatPrice}
+                />
+              )}
               <MarketPricePrediction
                 title={String(product.title)}
                 category={String(product.category)}
@@ -2091,68 +2148,68 @@ export default function ProductDetail() {
                   Message seller
                 </Link>
               ) : null}
-              <motion.button
-                layout
-                type="button"
-                disabled={isSoldOut}
-                onClick={() => {
-                  if (isSoldOut) return;
-                  addToCart(buildCartLineItem());
-                  setCartJustAdded(true);
-                  toast.success("Added to cart", {
-                    icon: <CheckCircle2 className="h-4 w-4 text-emerald-600" />,
-                    className: "bg-emerald-50 text-emerald-950 border border-emerald-200/80",
-                  });
-                }}
-                className={`flex min-h-[48px] flex-1 items-center justify-center rounded-xl py-3 text-sm font-semibold text-white ${
-                  isSoldOut ? "cursor-not-allowed bg-gray-400" : "bg-orange-500 hover:bg-orange-600"
-                }`}
-              >
-                <AnimatePresence mode="wait" initial={false}>
-                  {cartJustAdded ? (
-                    <motion.span
-                      key="added"
-                      initial={{ opacity: 0, y: 6 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -4 }}
-                      transition={{ duration: 0.25, ease: "easeOut" }}
-                      className="inline-flex items-center justify-center gap-1.5 font-semibold"
-                    >
-                      Added! ✓
-                    </motion.span>
-                  ) : (
-                    <motion.span
-                      key="add"
-                      initial={{ opacity: 0, y: 6 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -4 }}
-                      transition={{ duration: 0.25, ease: "easeOut" }}
-                      className="inline-flex items-center justify-center gap-2"
-                    >
-                      <ShoppingCart className="h-4 w-4 sm:hidden" />
-                      Add to cart
-                    </motion.span>
-                  )}
-                </AnimatePresence>
-              </motion.button>
-              <button
-                type="button"
-                disabled={isSoldOut}
-                onClick={() => {
-                  if (isSoldOut) return;
-                  addToCart(buildCartLineItem());
-                  toast.success("Added to cart", {
-                    icon: <CheckCircle2 className="h-4 w-4 text-emerald-600" />,
-                    className: "bg-emerald-50 text-emerald-950 border border-emerald-200/80",
-                  });
-                  navigate("/checkout");
-                }}
-                className={`flex-1 py-3 rounded-xl text-white text-sm font-bold ${
-                  isSoldOut ? "cursor-not-allowed bg-gray-400" : "bg-[#16a34a] hover:bg-[#15803d]"
-                }`}
-              >
-                {isSoldOut ? "Sold Out" : "Buy now"}
-              </button>
+              {!isSoldOut ? (
+                <>
+                  <motion.button
+                    layout
+                    type="button"
+                    onClick={() => {
+                      addToCart(buildCartLineItem());
+                      setCartJustAdded(true);
+                      toast.success("Added to cart", {
+                        icon: <CheckCircle2 className="h-4 w-4 text-emerald-600" />,
+                        className: "bg-emerald-50 text-emerald-950 border border-emerald-200/80",
+                      });
+                    }}
+                    className="flex min-h-[48px] flex-1 items-center justify-center rounded-xl bg-orange-500 py-3 text-sm font-semibold text-white hover:bg-orange-600"
+                  >
+                    <AnimatePresence mode="wait" initial={false}>
+                      {cartJustAdded ? (
+                        <motion.span
+                          key="added"
+                          initial={{ opacity: 0, y: 6 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -4 }}
+                          transition={{ duration: 0.25, ease: "easeOut" }}
+                          className="inline-flex items-center justify-center gap-1.5 font-semibold"
+                        >
+                          Added! ✓
+                        </motion.span>
+                      ) : (
+                        <motion.span
+                          key="add"
+                          initial={{ opacity: 0, y: 6 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -4 }}
+                          transition={{ duration: 0.25, ease: "easeOut" }}
+                          className="inline-flex items-center justify-center gap-2"
+                        >
+                          <ShoppingCart className="h-4 w-4 sm:hidden" />
+                          Add to cart
+                        </motion.span>
+                      )}
+                    </AnimatePresence>
+                  </motion.button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      addToCart(buildCartLineItem());
+                      toast.success("Added to cart", {
+                        icon: <CheckCircle2 className="h-4 w-4 text-emerald-600" />,
+                        className: "bg-emerald-50 text-emerald-950 border border-emerald-200/80",
+                      });
+                      navigate("/checkout");
+                    }}
+                    className="flex-1 py-3 rounded-xl bg-[#16a34a] text-white text-sm font-bold hover:bg-[#15803d]"
+                  >
+                    Buy now
+                  </button>
+                </>
+              ) : (
+                <div className="flex flex-1 items-center justify-center rounded-xl bg-slate-100 py-3 text-sm font-bold text-slate-700">
+                  Sold
+                </div>
+              )}
               {isSoldOut ? (
                 <button
                   type="button"

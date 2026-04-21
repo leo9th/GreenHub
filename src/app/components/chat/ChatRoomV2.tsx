@@ -1441,6 +1441,18 @@ export default function ChatRoomV2() {
   const shellHeight =
     "max-md:h-[calc(var(--chat-viewport-height,100dvh)-4rem)] max-md:max-h-[calc(var(--chat-viewport-height,100dvh)-4rem)] md:h-[calc(var(--chat-viewport-height,100dvh)-4rem)] md:max-h-[calc(var(--chat-viewport-height,100dvh)-4rem)]";
 
+  const lastOwnMessageToEdit = useMemo(() => {
+    if (!authUser?.id) return null;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (String(m.id).startsWith("pending-")) continue;
+      if (isDeletedForEveryone(m)) continue;
+      if (!isMessageFromViewer(m.sender_id, authUser.id)) continue;
+      if (canEditMessage(m, authUser.id)) return m;
+    }
+    return null;
+  }, [messages, authUser?.id]);
+
   if (authLoading || loading) {
     return (
       <div className="flex min-h-[50vh] items-center justify-center bg-gray-50 dark:bg-background">
@@ -1489,18 +1501,6 @@ export default function ChatRoomV2() {
           return m ? messagePreviewText(m.message, m.image_url) : "Original message unavailable";
         })()
       : "";
-
-  const lastOwnMessageToEdit = useMemo(() => {
-    if (!authUser?.id) return null;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const m = messages[i];
-      if (String(m.id).startsWith("pending-")) continue;
-      if (isDeletedForEveryone(m)) continue;
-      if (!isMessageFromViewer(m.sender_id, authUser.id)) continue;
-      if (canEditMessage(m, authUser.id)) return m;
-    }
-    return null;
-  }, [messages, authUser?.id]);
 
   return (
     <div style={chatShellStyle} className={`flex ${shellHeight} min-h-0 flex-col bg-[#e5ddd5] dark:bg-zinc-950`}>

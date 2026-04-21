@@ -199,6 +199,12 @@ type SellerReviewPreview = {
   reviewer_name: string;
 };
 
+function normalizeRouteProductId(raw: string | undefined): string | null {
+  if (raw == null) return null;
+  const t = raw.trim();
+  return t || null;
+}
+
 function RelatedProductsCarousel({
   items,
   formatPrice,
@@ -363,6 +369,7 @@ export default function ProductDetail() {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [cartJustAdded, setCartJustAdded] = useState(false);
   const [openUserDialog, setOpenUserDialog] = useState(false);
+  const [updatingAvailability, setUpdatingAvailability] = useState(false);
   const thumbnailClickDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -414,12 +421,6 @@ export default function ProductDetail() {
       cancelled = true;
     };
   }, [serverProduct?.seller_id, serverProduct?.sellerId]);
-
-  const normalizeRouteProductId = (raw: string | undefined): string | null => {
-    if (raw == null) return null;
-    const t = raw.trim();
-    return t || null;
-  };
 
   const refetchProduct = useCallback(async () => {
     const idForQuery = normalizeRouteProductId(id);
@@ -1064,7 +1065,6 @@ export default function ProductDetail() {
       : null;
   const isSoldOut = stockQuantity === 0;
   const isLowStock = stockQuantity != null && stockQuantity > 0 && stockQuantity < 5;
-  const [updatingAvailability, setUpdatingAvailability] = useState(false);
 
   const toggleAvailability = async () => {
     if (!isOwner) return;

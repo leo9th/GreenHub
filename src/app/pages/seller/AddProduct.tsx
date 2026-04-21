@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
-import { useNavigate, useParams } from "react-router";
-import { ArrowLeft, Upload, X } from "lucide-react";
+import { useNavigate, useParams, useSearchParams } from "react-router";
+import { ArrowLeft, Upload, X, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "../../context/AuthContext";
 import { supabase } from "../../../lib/supabase";
@@ -22,6 +22,7 @@ const STORAGE_BUCKET = "products";
 export default function AddProduct() {
   const navigate = useNavigate();
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
   const isEdit = Boolean(id);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { user: authUser, loading: authLoading } = useAuth();
@@ -33,6 +34,7 @@ export default function AddProduct() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
+  const [stockQuantity, setStockQuantity] = useState("1");
   /** Existing remote URLs kept for this listing (edit mode); order = main first. */
   const [existingImageUrls, setExistingImageUrls] = useState<string[]>([]);
   const [loadingProduct, setLoadingProduct] = useState(false);
@@ -43,6 +45,13 @@ export default function AddProduct() {
   const [carBrandOther, setCarBrandOther] = useState("");
   /** Keys = preset ids (usa, uk, …); values = fee + ETA for international shipping. */
   const [intlShippingById, setIntlShippingById] = useState<Record<string, InternationalShippingFeeRow>>({});
+  const prefillTitle = (searchParams.get("item") ?? "").trim();
+
+  useEffect(() => {
+    if (isEdit) return;
+    if (!prefillTitle) return;
+    setTitle((prev) => (prev.trim() ? prev : prefillTitle));
+  }, [isEdit, prefillTitle]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -101,6 +110,11 @@ export default function AddProduct() {
             ? Number(legacy)
             : null;
       setPrice(n != null ? String(n) : "");
+      setStockQuantity(
+        data.stock_quantity != null && Number.isFinite(Number(data.stock_quantity))
+          ? String(Math.max(0, Number(data.stock_quantity)))
+          : "1",
+      );
       setExistingImageUrls(parseProductImagesFromRow(data as { image?: unknown; images?: unknown }));
 
       const feeMap = parseInternationalShippingFees(
@@ -251,6 +265,11 @@ export default function AddProduct() {
       alert("Please enter a valid price.");
       return;
     }
+    const stockQtyNum = Math.floor(Number(stockQuantity));
+    if (!Number.isFinite(stockQtyNum) || stockQtyNum < 0) {
+      alert("Please enter a valid stock quantity.");
+      return;
+    }
 
     if (!category.trim()) {
       alert("Please select a category.");
@@ -310,6 +329,7 @@ export default function AddProduct() {
           car_brand: carBrandValue,
           shipping_destinations: shippingDestPayload,
           international_shipping_fees: intlFeesPayload,
+          stock_quantity: stockQtyNum,
           updated_at: new Date().toISOString(),
         };
 
@@ -339,6 +359,7 @@ export default function AddProduct() {
         car_brand: carBrandValue,
         shipping_destinations: shippingDestPayload,
         international_shipping_fees: intlFeesPayload,
+        stock_quantity: stockQtyNum,
         status: "active" as const,
         created_at: new Date().toISOString(),
       };
@@ -347,7 +368,13 @@ export default function AddProduct() {
 
       if (insertError) throw insertError;
 
-      toast.success("Product Published!", { description: "Your listing is live." });
+      toast.success(prefillTitle ? "Opportunity listed successfully!" : "Product Published!", {
+        description: prefillTitle
+          ? `Your "${title.trim() || prefillTitle}" listing is now live from Market Demand.`
+          : "Your listing is live.",
+        icon: <CheckCircle2 className="h-4 w-4 text-emerald-600" />,
+        className: "bg-emerald-50 text-emerald-950 border border-emerald-200/80",
+      });
       navigate("/seller/products");
     } catch (error: unknown) {
       console.error("Save failed:", error);
@@ -590,6 +617,21 @@ export default function AddProduct() {
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#22c55e]"
             placeholder="0"
           />
+        </div>
+
+        <div className="bg-white rounded-lg p-4">
+          <label className="block font-semibold text-gray-800 mb-2">Stock Quantity *</label>
+          <input
+            type="number"
+            value={stockQuantity}
+            onChange={(e) => setStockQuantity(e.target.value)}
+            required
+            min="0"
+            step="1"
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#22c55e]"
+            placeholder="1"
+          />
+          <p className="mt-1 text-xs text-gray-500">Set available units. Buyers see low-stock alerts below 5.</p>
         </div>
 
         <div className="bg-white rounded-lg p-4 space-y-4">

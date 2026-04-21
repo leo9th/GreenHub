@@ -1,6 +1,6 @@
 import { Link } from "react-router";
 import { memo, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
-import { MapPin } from "lucide-react";
+import { MapPin, Star } from "lucide-react";
 import { useCurrency } from "../../hooks/useCurrency";
 
 const PLACEHOLDER_IMG = "https://placehold.co/400x400/e5e7eb/9ca3af?text=No+Image";
@@ -25,6 +25,7 @@ export interface ProductCardProps {
   priceLocal?: number;
   rating?: number;
   reviews?: number;
+  stockQuantity?: number | null;
   sellerVerified?: boolean;
   verifiedAdvertiser?: boolean;
   titleAdornment?: ReactNode;
@@ -58,6 +59,9 @@ function ProductCardComponent({
   sellerName,
   sellerUsername,
   sellerVerified,
+  rating,
+  reviews,
+  stockQuantity,
   imagePriority,
 }: ProductCardProps) {
   const formatPrice = useCurrency();
@@ -85,6 +89,13 @@ function ProductCardComponent({
     typeof priceDisplay === "string" && priceDisplay.trim() !== ""
       ? priceDisplay
       : formatPrice(priceLocal ?? price);
+  const reviewCount = Number(reviews ?? 0);
+  const ratingValue = Number.isFinite(Number(rating)) ? Number(rating) : 0;
+  const productRatingLabel =
+    reviewCount > 0 ? `${ratingValue.toFixed(1)} ⭐ (${reviewCount})` : "New Seller";
+  const stockLeft = Number.isFinite(Number(stockQuantity)) ? Number(stockQuantity) : null;
+  const lowStock = stockLeft != null && stockLeft > 0 && stockLeft < 5;
+  const soldOut = stockLeft === 0;
 
   return (
     <div className="group flex h-full w-full flex-col overflow-hidden rounded-2xl border border-slate-100/50 bg-white shadow-sm transition-all duration-300 ease-out hover:-translate-y-2 hover:shadow-xl">
@@ -150,6 +161,16 @@ function ProductCardComponent({
               {condition}
             </div>
           )}
+          {lowStock ? (
+            <div className="absolute right-2 top-2 rounded-full bg-amber-500 px-2 py-1 text-[10px] font-semibold text-white shadow-sm">
+              Only {stockLeft} left!
+            </div>
+          ) : null}
+          {soldOut ? (
+            <div className="absolute right-2 top-2 rounded-full bg-red-500 px-2 py-1 text-[10px] font-semibold text-white shadow-sm">
+              Sold Out
+            </div>
+          ) : null}
         </div>
 
         <div className="flex flex-grow flex-col justify-between p-4">
@@ -178,6 +199,10 @@ function ProductCardComponent({
 
           <div className="mt-2 flex items-center justify-between">
             <span className="text-lg font-bold text-green-600">{displayPrice}</span>
+            <span className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[10px] font-medium text-gray-700">
+              <Star className="h-3 w-3 text-amber-400" />
+              {productRatingLabel}
+            </span>
           </div>
         </div>
       </Link>

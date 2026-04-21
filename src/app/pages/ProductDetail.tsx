@@ -24,6 +24,8 @@ import {
   Shield,
   MessageCircle,
   Phone,
+  CheckCircle2,
+  Bell,
 } from "lucide-react";
 import { useCurrency } from "../hooks/useCurrency";
 import { useCart, type CartItem } from "../context/CartContext";
@@ -1056,6 +1058,36 @@ export default function ProductDetail() {
       deliveryFee: isWarehouse ? 0 : product.deliveryOptions[0]?.fee ?? 0,
     };
   };
+  const stockQuantity =
+    foundProduct?.stock_quantity != null && Number.isFinite(Number(foundProduct.stock_quantity))
+      ? Math.max(0, Number(foundProduct.stock_quantity))
+      : null;
+  const isSoldOut = stockQuantity === 0;
+  const isLowStock = stockQuantity != null && stockQuantity > 0 && stockQuantity < 5;
+
+  const notifyMeForRestock = async () => {
+    const itemName = String(product.title || "").trim();
+    if (!itemName) return;
+    try {
+      const query = supabase.from("requested_items").select("*").eq("item_name", itemName);
+      const { data: existing, error: existingErr } = authUser?.id
+        ? await query.eq("requested_by", authUser.id).limit(1)
+        : await query.limit(1);
+      if (existingErr) throw existingErr;
+      if ((existing ?? []).length > 0) {
+        toast.message("You already requested this item.");
+        return;
+      }
+      const { error } = await supabase.from("requested_items").insert({
+        item_name: itemName,
+        requested_by: authUser?.id ?? null,
+      });
+      if (error) throw error;
+      toast.success("You'll be notified when this item is restocked.");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Could not save your request.");
+    }
+  };
 
   const onGalleryTouchStart = (e: ReactTouchEvent<HTMLDivElement>) => {
     const t = e.touches[0];
@@ -1773,6 +1805,16 @@ export default function ProductDetail() {
                   Seller account unavailable for chat.
                 </p>
               ) : null}
+              {isLowStock ? (
+                <p className="mt-3 inline-flex rounded-full bg-amber-500 px-3 py-1 text-xs font-semibold text-white">
+                  Only {stockQuantity} left!
+                </p>
+              ) : null}
+              {isSoldOut ? (
+                <p className="mt-3 inline-flex rounded-full bg-red-500 px-3 py-1 text-xs font-semibold text-white">
+                  Sold Out
+                </p>
+              ) : null}
               <div className="mt-4 flex flex-col gap-2">
                 {canMessageSeller ? (
                   <Link
@@ -2050,12 +2092,19 @@ export default function ProductDetail() {
               <motion.button
                 layout
                 type="button"
+                disabled={isSoldOut}
                 onClick={() => {
+                  if (isSoldOut) return;
                   addToCart(buildCartLineItem());
                   setCartJustAdded(true);
-                  toast.success("Added to cart");
+                  toast.success("Added to cart", {
+                    icon: <CheckCircle2 className="h-4 w-4 text-emerald-600" />,
+                    className: "bg-emerald-50 text-emerald-950 border border-emerald-200/80",
+                  });
                 }}
-                className="flex min-h-[48px] flex-1 items-center justify-center rounded-xl bg-orange-500 py-3 text-sm font-semibold text-white hover:bg-orange-600"
+                className={`flex min-h-[48px] flex-1 items-center justify-center rounded-xl py-3 text-sm font-semibold text-white ${
+                  isSoldOut ? "cursor-not-allowed bg-gray-400" : "bg-orange-500 hover:bg-orange-600"
+                }`}
               >
                 <AnimatePresence mode="wait" initial={false}>
                   {cartJustAdded ? (
@@ -2086,14 +2135,32 @@ export default function ProductDetail() {
               </motion.button>
               <button
                 type="button"
+                disabled={isSoldOut}
                 onClick={() => {
+                  if (isSoldOut) return;
                   addToCart(buildCartLineItem());
+                  toast.success("Added to cart", {
+                    icon: <CheckCircle2 className="h-4 w-4 text-emerald-600" />,
+                    className: "bg-emerald-50 text-emerald-950 border border-emerald-200/80",
+                  });
                   navigate("/checkout");
                 }}
-                className="flex-1 py-3 rounded-xl bg-[#16a34a] text-white text-sm font-bold hover:bg-[#15803d]"
+                className={`flex-1 py-3 rounded-xl text-white text-sm font-bold ${
+                  isSoldOut ? "cursor-not-allowed bg-gray-400" : "bg-[#16a34a] hover:bg-[#15803d]"
+                }`}
               >
-                Buy now
+                {isSoldOut ? "Sold Out" : "Buy now"}
               </button>
+              {isSoldOut ? (
+                <button
+                  type="button"
+                  onClick={() => void notifyMeForRestock()}
+                  className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-xl border border-[#22c55e] px-4 py-3 text-sm font-semibold text-[#15803d] hover:bg-[#22c55e]/10"
+                >
+                  <Bell className="h-4 w-4" />
+                  Notify Me
+                </button>
+              ) : null}
             </>
           )}
         </div>

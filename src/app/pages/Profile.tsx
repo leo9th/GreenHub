@@ -63,6 +63,11 @@ type ListingProductReviewRow = {
   product_title: string;
 };
 
+type SellerReviewSummary = {
+  avg: number;
+  count: number;
+};
+
 function isUuid(s: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s.trim());
 }
@@ -155,6 +160,7 @@ export default function Profile() {
   const [profileMissing, setProfileMissing] = useState(false);
   const [followerCount, setFollowerCount] = useState(0);
   const [followingCount, setFollowingCount] = useState(0);
+  const [sellerReviewSummary, setSellerReviewSummary] = useState<SellerReviewSummary>({ avg: 0, count: 0 });
 
   const avatarFileInputRef = useRef<HTMLInputElement>(null);
   const coverFileInputRef = useRef<HTMLInputElement>(null);
@@ -229,8 +235,19 @@ export default function Profile() {
       ? Number(viewProfile.rating)
       : null;
   const starDisplayValue =
-    listingReviewCount > 0 ? listingAvgRating : reviewCount > 0 ? avgRating : (profileRatingNum ?? 0);
-  const headerReviewCount = listingReviewCount > 0 ? listingReviewCount : reviewCount;
+    sellerReviewSummary.count > 0
+      ? sellerReviewSummary.avg
+      : listingReviewCount > 0
+        ? listingAvgRating
+        : reviewCount > 0
+          ? avgRating
+          : (profileRatingNum ?? 0);
+  const headerReviewCount =
+    sellerReviewSummary.count > 0
+      ? sellerReviewSummary.count
+      : listingReviewCount > 0
+        ? listingReviewCount
+        : reviewCount;
 
   const activeListings = listings.filter((p) => isActiveListing(p.status));
 
@@ -403,6 +420,24 @@ export default function Profile() {
         })
         .filter((x): x is number => x != null);
 
+      if (listingIds.length > 0) {
+        const { data: verifiedRows, error: verifiedErr } = await supabase
+          .from("reviews")
+          .select("rating")
+          .in("product_id", listingIds);
+        if (!verifiedErr) {
+          const rows = (verifiedRows ?? []) as { rating?: number | null }[];
+          const count = rows.length;
+          const avg =
+            count > 0 ? rows.reduce((sum, r) => sum + (Number(r.rating) || 0), 0) / count : 0;
+          setSellerReviewSummary({ avg, count });
+        } else {
+          setSellerReviewSummary({ avg: 0, count: 0 });
+        }
+      } else {
+        setSellerReviewSummary({ avg: 0, count: 0 });
+      }
+
       if (listingIds.length === 0) {
         setListingProductReviews([]);
       } else {
@@ -483,6 +518,7 @@ export default function Profile() {
       setListings([]);
       setReviews([]);
       setListingProductReviews([]);
+      setSellerReviewSummary({ avg: 0, count: 0 });
     } finally {
       setDataLoading(false);
     }
@@ -791,13 +827,18 @@ export default function Profile() {
               <div className="flex justify-center lg:justify-start">
                 <StarRow value={starDisplayValue} />
               </div>
-              <p className="text-sm text-gray-600 lg:text-left">
-                {starDisplayValue > 0 ? starDisplayValue.toFixed(1) : "—"} · {headerReviewCount} review
-                {headerReviewCount !== 1 ? "s" : ""}
-                {listingReviewCount > 0 && isOwnProfile ? (
-                  <span className="block text-[11px] font-normal text-gray-400">From your listings</span>
-                ) : null}
-              </p>
+              {headerReviewCount > 0 ? (
+                <p className="text-sm text-gray-600 lg:text-left">
+                  {starDisplayValue.toFixed(1)} ⭐ ({headerReviewCount} Review{headerReviewCount !== 1 ? "s" : ""})
+                  {sellerReviewSummary.count > 0 ? (
+                    <span className="block text-[11px] font-normal text-gray-400">Verified buyer reviews</span>
+                  ) : listingReviewCount > 0 && isOwnProfile ? (
+                    <span className="block text-[11px] font-normal text-gray-400">From your listings</span>
+                  ) : null}
+                </p>
+              ) : (
+                <p className="text-sm text-gray-600 lg:text-left">New Seller</p>
+              )}
             </div>
 
             <p className="mt-2 flex items-center justify-center gap-1 text-sm text-gray-500 lg:justify-start">

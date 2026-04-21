@@ -67,6 +67,13 @@ const ProductCardFromProduct = memo(function ProductCardFromProduct({
       sellerName={sellerName}
       sellerUsername={sellerUsername}
       sellerVerified={sellerVerified}
+      rating={Number(product.average_rating ?? product.rating ?? 0) || 0}
+      reviews={Number(product.total_reviews ?? product.reviews ?? 0) || 0}
+      stockQuantity={
+        product.stock_quantity != null && Number.isFinite(Number(product.stock_quantity))
+          ? Number(product.stock_quantity)
+          : null
+      }
       imagePriority={index < 6}
     />
   );

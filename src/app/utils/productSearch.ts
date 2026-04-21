@@ -137,7 +137,10 @@ export const PRODUCTS_LISTING_COLUMNS = [
   "status",
   "created_at",
   "average_rating",
+  "total_reviews",
   "rating",
+  "reviews",
+  "stock_quantity",
 ].join(", ");
 
 /** Listing rows with embedded seller for cards (trust badge, display name). */

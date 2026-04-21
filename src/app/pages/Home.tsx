@@ -3,7 +3,7 @@ import { Link } from "react-router";
 import { supabase } from "../../lib/supabase";
 import { ProductCard } from "../components/cards/ProductCard";
 import SimpleProductGrid from "../components/SimpleProductGrid";
-import SmartSearchBar from "../components/SmartSearchBar";
+import AdvancedSearch from "../components/AdvancedSearch";
 import CategoryFilter, { type CategoryFilterSelection } from "../components/CategoryFilter";
 import { ConditionFilter } from "../components/ConditionFilter";
 import { categories, categoryFilterLabelToDbValue } from "../data/catalogConstants";
@@ -144,6 +144,15 @@ function mapProductToCardProps(product: ProductWithSeller) {
     sellerName,
     sellerUsername,
     sellerVerified: seller?.phone_verified === true,
+    rating:
+      Number.isFinite(Number(product.average_rating)) && Number(product.average_rating) > 0
+        ? Number(product.average_rating)
+        : Number(product.rating ?? 0) || 0,
+    reviews: Number(product.total_reviews ?? product.reviews ?? 0) || 0,
+    stockQuantity:
+      product.stock_quantity != null && Number.isFinite(Number(product.stock_quantity))
+        ? Number(product.stock_quantity)
+        : null,
   };
 }
 
@@ -267,6 +276,9 @@ function CategoryRow({ slug, title, row, onLoadMore }: CategoryRowProps) {
                 sellerName={p.sellerName}
                 sellerUsername={p.sellerUsername}
                 sellerVerified={p.sellerVerified}
+                rating={p.rating}
+                reviews={p.reviews}
+                stockQuantity={p.stockQuantity}
                 imagePriority={idx < 4}
               />
             </div>
@@ -464,12 +476,16 @@ export default function Home() {
           onCategoryChange={setSelectedCategory}
         />
 
-        <div className="mb-4">
-          <SmartSearchBar
-            inputId="home-global-search"
-            value={globalSearchTerm}
-            onChange={setGlobalSearchTerm}
-          />
+        <div className="mb-6 flex justify-center">
+          <div className="w-full max-w-3xl">
+            <AdvancedSearch
+              className="w-full"
+              placeholder="Find anything on GreenHub..."
+              value={globalSearchTerm}
+              onQueryChange={setGlobalSearchTerm}
+              onSelectCategory={(category) => setGlobalSearchTerm(category)}
+            />
+          </div>
         </div>
 
         <div className="mb-1 flex flex-wrap items-center justify-end gap-2">

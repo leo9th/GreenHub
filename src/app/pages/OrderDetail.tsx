@@ -10,6 +10,7 @@ import {
   Package,
   Store,
   Loader2,
+  Truck,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useCurrency } from "../hooks/useCurrency";
@@ -22,7 +23,9 @@ type OrderRow = {
   id: string;
   created_at: string | null;
   status: string | null;
-  total_amount: number | null;
+  total_amount?: number | null;
+  total_price?: number | null;
+  amount?: number | null;
   delivery_fee: number | null;
   platform_fee: number | null;
   payment_method: string | null;
@@ -41,12 +44,20 @@ type OrderItemRow = {
   product_title: string | null;
   product_image: string | null;
   quantity: number | null;
-  price_at_time: number | null;
+  price_at_time?: number | null;
+  /** Present when DB uses base migration without `price_at_time` column */
+  unit_price?: number | null;
   delivery_fee_at_time: number | null;
   fulfillment_type?: string | null;
   status?: string | null;
   tracking_ref?: string | null;
+  is_reviewed?: boolean | null;
 };
+
+function orderItemUnitPrice(it: OrderItemRow): number {
+  const v = it.price_at_time ?? it.unit_price;
+  return Number(v) || 0;
+}
 
 type OrderEventRow = {
   id: string;
@@ -64,7 +75,6 @@ type SellerLite = {
 };
 
 const LINE_STATUS_OPTIONS: { value: LineItemStatus; label: string }[] = [
-  { value: "pending", label: "Pending" },
   { value: "processing", label: "Processing" },
   { value: "shipped", label: "Shipped" },
   { value: "delivered", label: "Delivered" },
@@ -88,22 +98,9 @@ function isForwardPhase(prev: LineItemStatus, next: LineItemStatus): boolean {
   return iNext > iPrev;
 }
 
-function eventLabelForLineStatus(status: LineItemStatus, productTitle: string): string {
-  const title = productTitle.trim() || "Item";
-  switch (status) {
-    case "pending":
-      return `${title}: set to pending by seller`;
-    case "processing":
-      return `${title}: processing by seller`;
-    case "shipped":
-      return `Item has been shipped by seller — ${title}`;
-    case "delivered":
-      return `${title}: marked delivered by seller`;
-    case "cancelled":
-      return `${title}: cancelled by seller`;
-    default:
-      return `${title}: status updated by seller`;
-  }
+function eventLabelForLineStatus(status: LineItemStatus): string {
+  const pretty = status.charAt(0).toUpperCase() + status.slice(1);
+  return `Seller has marked item as ${pretty}`;
 }
 
 function shippingLines(addr: Record<string, unknown> | null): { fullName: string; phone: string; address: string; state: string; lga: string } {
@@ -124,6 +121,12 @@ function paymentMethodLabel(raw: string | null | undefined): string {
   if (s === "paystack") return "Paystack";
   if (s === "pod") return "Pay on delivery";
   return raw?.trim() || "—";
+}
+
+function orderGrandTotal(o: OrderRow | null): number {
+  if (!o) return 0;
+  const v = o.total_price || o.total_amount || o.amount || 0;
+  return Number.isFinite(Number(v)) ? Number(v) : 0;
 }
 
 function formatOrderEventTime(iso: string | null | undefined): string {
@@ -204,7 +207,7 @@ function SellerActionCenter({ item, orderId, onSync }: SellerActionCenterProps) 
 
       if (uErr) throw uErr;
 
-      const eventLabel = eventLabelForLineStatus(next, item.product_title || "Product");
+      const eventLabel = eventLabelForLineStatus(next);
       const metadata: Record<string, unknown> = {
         order_item_id: item.id,
         seller_id: user.id,
@@ -222,8 +225,9 @@ function SellerActionCenter({ item, orderId, onSync }: SellerActionCenterProps) 
 
       const forward = isForwardPhase(prev, next);
       setSuccessFlash(forward ? "forward" : "other");
-      toast.success(forward ? "Moved to the next phase" : "Status updated", {
-        className: forward ? "bg-emerald-50 text-emerald-950 border border-emerald-200/80" : undefined,
+      toast.success(forward ? "Order marked as shipped!" : "Order status updated!", {
+        icon: <Truck className="h-4 w-4 text-emerald-600" />,
+        className: "bg-emerald-50 text-emerald-950 border border-emerald-200/80",
         description: forward ? "Buyer will see this on the order timeline." : undefined,
       });
       onSync();
@@ -248,7 +252,7 @@ function SellerActionCenter({ item, orderId, onSync }: SellerActionCenterProps) 
           <Store className="h-4 w-4" aria-hidden />
         </div>
         <div>
-          <p className="text-sm font-semibold text-emerald-950">Seller Action Center</p>
+          <p className="text-sm font-semibold text-emerald-950">Status Update</p>
           <p className="text-xs text-emerald-800/80">Update fulfillment for your line item</p>
         </div>
       </div>
@@ -317,9 +321,16 @@ export default function OrderDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isBuyerView, setIsBuyerView] = useState(true);
+  const [reviewItem, setReviewItem] = useState<OrderItemRow | null>(null);
+  const [reviewRating, setReviewRating] = useState(0);
+  const [reviewText, setReviewText] = useState("");
+  const [reviewAnonymous, setReviewAnonymous] = useState(false);
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
 
   const load = useCallback(async () => {
-    if (!authUser?.id || !id?.trim()) {
+    const userId = authUser?.id?.trim();
+    const orderId = id?.trim();
+    if (!userId || !orderId) {
       setOrder(null);
       setItems([]);
       setOrderEvents([]);
@@ -330,9 +341,13 @@ export default function OrderDetail() {
     setLoading(true);
     setError(null);
     try {
-      const { data: ord, error: oErr } = await supabase.from("orders").select("*").eq("id", id.trim()).maybeSingle();
+      const { data: ord, error: oErr } = await supabase.from("orders").select("*").eq("id", orderId).maybeSingle();
+      console.log("DEBUG: Supabase Error", oErr);
 
-      if (oErr) throw oErr;
+      if (oErr) {
+        console.error("[OrderDetail] orders select error", oErr);
+        throw oErr;
+      }
       if (!ord) {
         setOrder(null);
         setItems([]);
@@ -343,9 +358,13 @@ export default function OrderDetail() {
 
       const buyerId = String((ord as { buyer_id?: string }).buyer_id ?? "");
 
-      const { data: its, error: iErr } = await supabase.from("order_items").select("*").eq("order_id", id.trim());
+      const { data: its, error: iErr } = await supabase.from("order_items").select("*").eq("order_id", orderId);
+      console.log("DEBUG: Supabase Error", iErr);
 
-      if (iErr) throw iErr;
+      if (iErr) {
+        console.error("[OrderDetail] order_items select error", iErr);
+        throw iErr;
+      }
 
       const itemList = (its ?? []) as OrderItemRow[];
       const isBuyer = buyerId === authUser.id;
@@ -365,10 +384,17 @@ export default function OrderDetail() {
       const { data: evRows, error: evErr } = await supabase
         .from("order_events")
         .select("id, order_id, event_label, created_at, metadata")
-        .eq("order_id", id.trim())
+        .eq("order_id", orderId)
         .order("created_at", { ascending: true });
+      console.log("DEBUG: Supabase Error", evErr);
 
-      if (evErr) throw evErr;
+      if (evErr) {
+        console.error(
+          "[OrderDetail] order_events select error (expect: id, order_id, event_label, created_at, metadata)",
+          evErr,
+        );
+        throw evErr;
+      }
       setOrderEvents((evRows ?? []) as OrderEventRow[]);
 
       setItems(itemList);
@@ -393,7 +419,7 @@ export default function OrderDetail() {
         setSellers(new Map());
       }
     } catch (e: unknown) {
-      console.error(e);
+      console.error("[OrderDetail] load failed", e);
       setError(e instanceof Error ? e.message : "Could not load order");
       setOrder(null);
       setItems([]);
@@ -439,20 +465,71 @@ export default function OrderDetail() {
   const paymentSubtotal = useMemo(() => {
     return items.reduce((sum, it) => {
       const q = Math.max(0, Number(it.quantity) || 0);
-      const u = Number(it.price_at_time) || 0;
+      const u = orderItemUnitPrice(it);
       return sum + q * u;
     }, 0);
   }, [items]);
 
   const deliverySum = items.reduce((sum, it) => sum + (Number(it.delivery_fee_at_time) || 0), 0);
   const platformFee = order?.platform_fee != null ? Number(order.platform_fee) : 0;
-  const total =
-    order?.total_amount != null && Number.isFinite(Number(order.total_amount))
-      ? Number(order.total_amount)
-      : paymentSubtotal + deliverySum + platformFee;
+  const dbTotal = orderGrandTotal(order);
+  const total = dbTotal > 0 ? dbTotal : paymentSubtotal + deliverySum + platformFee;
 
   const statusLower = (order?.status || "").toLowerCase();
   const isDelivered = statusLower === "delivered" || statusLower === "completed";
+
+  const openReviewModal = (item: OrderItemRow) => {
+    setReviewItem(item);
+    setReviewRating(0);
+    setReviewText("");
+    setReviewAnonymous(false);
+  };
+
+  const closeReviewModal = () => {
+    if (reviewSubmitting) return;
+    setReviewItem(null);
+  };
+
+  const submitReview = async () => {
+    if (!authUser?.id || !reviewItem?.id || !reviewItem.product_id || !order?.id) return;
+    if (reviewRating < 1 || reviewRating > 5) {
+      toast.error("Please select a star rating.");
+      return;
+    }
+    setReviewSubmitting(true);
+    try {
+      const { error: reviewErr } = await supabase.from("reviews").insert({
+        product_id: reviewItem.product_id,
+        buyer_id: authUser.id,
+        order_item_id: reviewItem.id,
+        order_id: order.id,
+        rating: reviewRating,
+        feedback: reviewText.trim() || null,
+        is_anonymous: reviewAnonymous,
+      });
+      if (reviewErr) throw reviewErr;
+
+      const { error: updateErr } = await supabase
+        .from("order_items")
+        .update({ is_reviewed: true })
+        .eq("id", reviewItem.id)
+        .eq("order_id", order.id);
+      if (updateErr) throw updateErr;
+
+      setItems((prev) =>
+        prev.map((it) => (it.id === reviewItem.id ? { ...it, is_reviewed: true } : it)),
+      );
+      toast.success("Review submitted. Thank you!", {
+        icon: <CheckCircle className="h-4 w-4 text-emerald-600" />,
+        className: "bg-emerald-50 text-emerald-950 border border-emerald-200/80",
+      });
+      setReviewItem(null);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Could not submit review");
+    } finally {
+      setReviewSubmitting(false);
+    }
+  };
 
   if (authLoading || loading) {
     return (
@@ -542,7 +619,7 @@ export default function OrderDetail() {
                         <p className="text-sm text-gray-600 mb-1">Qty: {item.quantity ?? 1}</p>
                         <p className="text-xs text-gray-500 capitalize mb-0.5">Line status: {lineStatus}</p>
                         <p className="text-base font-semibold text-gray-900">
-                          {formatPrice(Number(item.price_at_time) || 0)}
+                          {formatPrice(orderItemUnitPrice(item))}
                         </p>
                       </div>
                     </Link>
@@ -562,7 +639,7 @@ export default function OrderDetail() {
                         <p className="text-sm text-gray-600 mb-1">Qty: {item.quantity ?? 1}</p>
                         <p className="text-xs text-gray-500 capitalize mb-0.5">Line status: {lineStatus}</p>
                         <p className="text-base font-semibold text-gray-900">
-                          {formatPrice(Number(item.price_at_time) || 0)}
+                          {formatPrice(orderItemUnitPrice(item))}
                         </p>
                       </div>
                     </div>
@@ -590,15 +667,16 @@ export default function OrderDetail() {
                     <SellerActionCenter item={item} orderId={order.id} onSync={() => void load()} />
                   ) : null}
 
-                  {isBuyerView && isDelivered && pid ? (
+                  {isBuyerView && isDelivered && pid && item.is_reviewed !== true ? (
                     <div className="mt-3 flex flex-col gap-2">
-                      <Link
-                        to={`/products/${encodeURIComponent(pid)}/write-review`}
+                      <button
+                        type="button"
+                        onClick={() => openReviewModal(item)}
                         className="w-full py-2 border border-[#22c55e] bg-[#22c55e] text-white rounded-lg font-medium text-sm text-center flex items-center justify-center gap-2 hover:bg-[#15803d]"
                       >
                         <Star className="w-4 h-4" />
                         Review this product
-                      </Link>
+                      </button>
                       <Link
                         to={`/reviews/${order.id}?productId=${encodeURIComponent(pid)}`}
                         className="w-full py-2 border border-gray-300 text-gray-800 rounded-lg font-medium text-sm text-center flex items-center justify-center gap-2 hover:bg-gray-50"
@@ -717,6 +795,77 @@ export default function OrderDetail() {
           </div>
         ) : null}
       </div>
+      {reviewItem ? (
+        <div className="fixed inset-0 z-[120] flex items-end sm:items-center justify-center bg-black/40 p-3">
+          <div className="w-full max-w-lg rounded-xl bg-white p-4 shadow-xl">
+            <h3 className="text-base font-semibold text-gray-900">Write a verified review</h3>
+            <p className="mt-1 text-sm text-gray-600">
+              {reviewItem.product_title || "Product"} · Delivered order feedback
+            </p>
+
+            <div className="mt-4">
+              <p className="mb-2 text-sm font-medium text-gray-700">Rating</p>
+              <div className="flex items-center gap-1">
+                {Array.from({ length: 5 }).map((_, i) => {
+                  const n = i + 1;
+                  const active = n <= reviewRating;
+                  return (
+                    <button
+                      key={n}
+                      type="button"
+                      onClick={() => setReviewRating(n)}
+                      className="rounded p-1"
+                      aria-label={`Rate ${n} star${n > 1 ? "s" : ""}`}
+                    >
+                      <Star className={`h-6 w-6 ${active ? "fill-amber-400 text-amber-400" : "text-gray-300"}`} />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="mt-3">
+              <label className="mb-2 block text-sm font-medium text-gray-700">Product Feedback</label>
+              <textarea
+                rows={4}
+                value={reviewText}
+                onChange={(e) => setReviewText(e.target.value)}
+                placeholder="Share your experience with this product..."
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-[#22c55e] focus:outline-none focus:ring-2 focus:ring-[#22c55e]/20"
+              />
+            </div>
+
+            <label className="mt-3 flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={reviewAnonymous}
+                onChange={(e) => setReviewAnonymous(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 text-[#22c55e] focus:ring-[#22c55e]"
+              />
+              Post Anonymously
+            </label>
+
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeReviewModal}
+                disabled={reviewSubmitting}
+                className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void submitReview()}
+                disabled={reviewSubmitting}
+                className="inline-flex items-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+              >
+                {reviewSubmitting ? "Submitting..." : "Submit Review"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

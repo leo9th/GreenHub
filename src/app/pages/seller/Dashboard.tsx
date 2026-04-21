@@ -1,32 +1,36 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
-import { Package, Loader2, ShoppingBag, Eye, BarChart3, Truck } from "lucide-react";
+import { Package, Loader2, ShoppingBag, Eye, BarChart3, Vault, CircleDollarSign } from "lucide-react";
 import { toast } from "sonner";
 import { useCurrency } from "../../hooks/useCurrency";
 import { useAuth } from "../../context/AuthContext";
 import { supabase } from "../../../lib/supabase";
 import { getAvatarUrl } from "../../utils/getAvatar";
+import SellerOrderManagement from "./SellerOrderManagement";
 
-/** Order is "realized" for seller revenue once payment succeeded or fulfillment completed. Adjust to match your workflow. */
 const REVENUE_ORDER_STATUSES = new Set(["paid", "delivered", "completed"]);
+const PAYOUT_MINIMUM = 2000;
 
-type OrderRow = { id: string; status: string | null; created_at: string | null; buyer_id: string | null };
+type OrderRow = { id: string; status: string | null };
 
 type OrderItemRow = {
   order_id: string;
   product_title: string | null;
-  price_at_time: number | null;
+  price_at_time?: number | null;
+  unit_price?: number | null;
   quantity: number | null;
+  status?: string | null;
+  net_earnings?: number | null;
 };
 
-type RecentRow = {
-  orderId: string;
-  productTitle: string;
-  lineTotal: number;
-  orderStatus: string;
-  createdAt: string | null;
-  buyerLabel: string;
+type OpportunityRow = {
+  itemName: string;
+  requestCount: number;
 };
+
+function lineUnitPrice(it: OrderItemRow): number {
+  return Number(it.price_at_time ?? it.unit_price) || 0;
+}
 
 export default function SellerDashboard() {
   const formatPrice = useCurrency();
@@ -42,8 +46,9 @@ export default function SellerDashboard() {
   const [totalViews, setTotalViews] = useState(0);
   const [totalOrders, setTotalOrders] = useState(0);
   const [totalRevenue, setTotalRevenue] = useState(0);
-  const [recent, setRecent] = useState<RecentRow[]>([]);
-  const [markingOrderId, setMarkingOrderId] = useState<string | null>(null);
+  const [clearedBalance, setClearedBalance] = useState(0);
+  const [opportunities, setOpportunities] = useState<OpportunityRow[]>([]);
+  const [requestingPayout, setRequestingPayout] = useState(false);
 
   const loadMetrics = useCallback(async () => {
     if (!authUser?.id) {
@@ -66,12 +71,12 @@ export default function SellerDashboard() {
       setTotalProducts(rows.length);
       setTotalViews(rows.reduce((sum, r) => sum + (typeof r.views === "number" ? r.views : Number(r.views) || 0), 0));
 
-      const { data: itemRows, error: itemsError } = await supabase
-        .from("order_items")
-        .select("order_id, product_title, price_at_time, quantity")
-        .eq("seller_id", authUser.id);
+      const { data: itemRows, error: itemsError } = await supabase.from("order_items").select("*").eq("seller_id", authUser.id);
 
-      if (itemsError) throw itemsError;
+      if (itemsError) {
+        console.error("[SellerDashboard] order_items select error", itemsError);
+        throw itemsError;
+      }
 
       const items = (itemRows ?? []) as OrderItemRow[];
       const orderIds = [...new Set(items.map((i) => String(i.order_id)).filter(Boolean))];
@@ -80,7 +85,7 @@ export default function SellerDashboard() {
       if (orderIds.length > 0) {
         const { data: orderData, error: ordersError } = await supabase
           .from("orders")
-          .select("id, status, created_at, buyer_id")
+          .select("id, status")
           .in("id", orderIds);
 
         if (ordersError) throw ordersError;
@@ -95,65 +100,56 @@ export default function SellerDashboard() {
       setTotalOrders(orderIds.length);
 
       let revenue = 0;
+      let cleared = 0;
       for (const it of items) {
         const o = orderMap.get(String(it.order_id));
         if (!o?.status) continue;
         if (!REVENUE_ORDER_STATUSES.has(String(o.status).toLowerCase())) continue;
         const qty = Math.max(0, Number(it.quantity) || 0);
-        const unit = Number(it.price_at_time) || 0;
+        const unit = lineUnitPrice(it);
         revenue += unit * qty;
-      }
-      setTotalRevenue(revenue);
 
-      const buyerIds = [...new Set(orders.map((o) => o.buyer_id).filter(Boolean))] as string[];
-      const buyerNames = new Map<string, string>();
-      if (buyerIds.length > 0) {
-        const { data: profs } = await supabase.from("profiles_public").select("id, full_name").in("id", buyerIds);
-        for (const p of profs ?? []) {
-          if (p.id && p.full_name) buyerNames.set(p.id, p.full_name as string);
+        const lineStatus = String(it.status ?? "").toLowerCase();
+        if (lineStatus === "delivered") {
+          const netFromRow = Number(it.net_earnings);
+          const net = Number.isFinite(netFromRow) ? netFromRow : unit * qty * 0.9;
+          cleared += Math.max(0, net);
         }
       }
+      setTotalRevenue(revenue);
+      setClearedBalance(cleared);
 
-      const byOrder = new Map<string, { order: OrderRow; items: OrderItemRow[] }>();
-      for (const it of items) {
-        const oid = String(it.order_id);
-        const o = orderMap.get(oid);
-        if (!o) continue;
-        if (!byOrder.has(oid)) byOrder.set(oid, { order: o, items: [] });
-        byOrder.get(oid)!.items.push(it);
+      const { data: requestedRows, error: reqErr } = await supabase
+        .from("requested_items")
+        .select("item_name")
+        .order("created_at", { ascending: false })
+        .limit(500);
+
+      if (!reqErr) {
+        const counter = new Map<string, number>();
+        for (const row of requestedRows ?? []) {
+          const key = String((row as { item_name?: string | null }).item_name ?? "")
+            .trim()
+            .toLowerCase();
+          if (!key) continue;
+          counter.set(key, (counter.get(key) ?? 0) + 1);
+        }
+
+        const top = [...counter.entries()]
+          .map(([key, count]) => ({
+            itemName: key
+              .split(" ")
+              .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w))
+              .join(" "),
+            requestCount: count,
+          }))
+          .sort((a, b) => b.requestCount - a.requestCount)
+          .slice(0, 5);
+        setOpportunities(top);
+      } else {
+        setOpportunities([]);
       }
 
-      const recentSorted = [...byOrder.entries()]
-        .map(([orderId, { order, items: its }]) => {
-          const lineTotal = its.reduce((sum, it) => {
-            const qty = Math.max(0, Number(it.quantity) || 0);
-            const unit = Number(it.price_at_time) || 0;
-            return sum + unit * qty;
-          }, 0);
-          const first = its[0];
-          const productTitle =
-            its.length === 1
-              ? first?.product_title?.trim() || "Product"
-              : `${its.length} items from your listings`;
-          const bid = order.buyer_id;
-          const buyerLabel = bid ? buyerNames.get(bid) || "Buyer" : "Buyer";
-          return {
-            orderId,
-            productTitle,
-            lineTotal,
-            orderStatus: String(order.status || "—"),
-            createdAt: order.created_at,
-            buyerLabel,
-          } satisfies RecentRow;
-        })
-        .sort((a, b) => {
-          const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-          const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-          return tb - ta;
-        })
-        .slice(0, 8);
-
-      setRecent(recentSorted);
     } catch (e: unknown) {
       console.error(e);
       setError(e instanceof Error ? e.message : "Could not load dashboard");
@@ -161,71 +157,42 @@ export default function SellerDashboard() {
       setTotalViews(0);
       setTotalOrders(0);
       setTotalRevenue(0);
-      setRecent([]);
+      setClearedBalance(0);
+      setOpportunities([]);
     } finally {
       setLoading(false);
     }
   }, [authUser?.id]);
 
-  const markSellerItemsShipped = useCallback(
-    async (orderId: string) => {
-      if (!authUser?.id) return;
-      setMarkingOrderId(orderId);
-      try {
-        const { data: rows, error } = await supabase
-          .from("order_items")
-          .select("id, status")
-          .eq("order_id", orderId)
-          .eq("seller_id", authUser.id);
-
-        if (error) throw error;
-
-        const toShip = (rows ?? []).filter((r) => {
-          const s = String(r.status || "").toLowerCase();
-          return s === "pending" || s === "processing";
-        });
-
-        if (toShip.length === 0) {
-          toast.message("Nothing to ship", {
-            description: "Your items in this order are already shipped or completed.",
-          });
-          return;
-        }
-
-        for (const row of toShip) {
-          const { error: uErr } = await supabase.from("order_items").update({ status: "shipped" }).eq("id", row.id);
-          if (uErr) throw uErr;
-        }
-
-        const { error: evErr } = await supabase.from("order_events").insert({
-          order_id: orderId,
-          event_label: "Marked as shipped",
-          metadata: { seller_id: authUser.id, order_item_ids: toShip.map((r) => r.id) },
-        });
-        if (evErr) throw evErr;
-
-        toast.success("Marked as shipped");
-        void loadMetrics();
-      } catch (e: unknown) {
-        toast.error(e instanceof Error ? e.message : "Could not update shipment status");
-      } finally {
-        setMarkingOrderId(null);
-      }
-    },
-    [authUser?.id, loadMetrics],
-  );
+  const requestPayout = useCallback(async () => {
+    if (!authUser?.id) return;
+    if (clearedBalance < PAYOUT_MINIMUM) {
+      toast.error(`Minimum payout is ${formatPrice(PAYOUT_MINIMUM)}.`);
+      return;
+    }
+    setRequestingPayout(true);
+    try {
+      const { error } = await supabase.from("payout_requests").insert({
+        seller_id: authUser.id,
+        amount: clearedBalance,
+        status: "pending",
+      });
+      if (error) throw error;
+      toast.success("Payout request submitted.", {
+        icon: <CircleDollarSign className="h-4 w-4 text-emerald-600" />,
+        className: "bg-emerald-50 text-emerald-950 border border-emerald-200",
+      });
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Could not request payout");
+    } finally {
+      setRequestingPayout(false);
+    }
+  }, [authUser?.id, clearedBalance, formatPrice]);
 
   useEffect(() => {
     if (authLoading) return;
     void loadMetrics();
   }, [authLoading, loadMetrics]);
-
-  const formatOrderWhen = (iso: string | null) => {
-    if (!iso) return "";
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return "";
-    return d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
-  };
 
   return (
     <div className="min-h-screen bg-[#f2f4f8] pb-10">
@@ -317,7 +284,7 @@ export default function SellerDashboard() {
                 </div>
               ) : (
                 <>
-                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
+                  <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-8">
                     <div className="rounded-xl border border-gray-100 bg-gray-50/80 p-4">
                       <div className="flex items-center gap-2 text-gray-500 mb-2">
                         <ShoppingBag className="h-4 w-4" />
@@ -348,58 +315,55 @@ export default function SellerDashboard() {
                       <p className="text-2xl font-bold text-[#15803d]">{formatPrice(totalRevenue)}</p>
                       <p className="text-[10px] text-[#166534]/80 mt-1">Paid / delivered / completed line items</p>
                     </div>
-                  </div>
-
-                  <div className="border-t border-gray-100 pt-6">
-                    <div className="flex items-center justify-between mb-4">
-                      <h2 className="text-sm font-semibold text-gray-800">Recent activity</h2>
-                      <span className="text-xs text-gray-400">{recent.length} shown</span>
+                    <div className="col-span-2 lg:col-span-1 rounded-xl border border-emerald-200/70 bg-emerald-50/70 p-4">
+                      <div className="mb-2 flex items-center gap-2 text-emerald-700">
+                        <Vault className="h-4 w-4" />
+                        <span className="text-[11px] font-bold uppercase tracking-wider">Wallet Summary</span>
+                      </div>
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Cleared Balance</p>
+                      <p className="mt-1 text-3xl font-bold text-emerald-700">{formatPrice(clearedBalance)}</p>
+                      <button
+                        type="button"
+                        disabled={requestingPayout}
+                        onClick={() => void requestPayout()}
+                        className="mt-3 inline-flex w-full items-center justify-center rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-800 disabled:opacity-60"
+                      >
+                        {requestingPayout ? "Requesting..." : "Request Payout"}
+                      </button>
+                      <p className="mt-1 text-[10px] text-gray-500">Minimum withdrawal: {formatPrice(PAYOUT_MINIMUM)}</p>
                     </div>
-
-                    {recent.length === 0 ? (
-                      <p className="text-sm text-gray-500 py-8 text-center">No orders with your listings yet.</p>
+                  </div>
+                  <section className="mb-8 rounded-xl border border-amber-200/80 bg-amber-50/70 p-4">
+                    <div className="mb-3 flex items-center justify-between">
+                      <h2 className="text-sm font-semibold text-amber-900">Opportunities</h2>
+                      <span className="text-xs text-amber-700">{opportunities.length} top requests</span>
+                    </div>
+                    {opportunities.length === 0 ? (
+                      <p className="text-sm text-amber-800/80">No request trends yet. New demand will appear here.</p>
                     ) : (
                       <div className="space-y-2">
-                        {recent.map((row) => (
+                        {opportunities.map((o) => (
                           <div
-                            key={row.orderId}
-                            className="flex flex-col gap-3 sm:flex-row sm:items-stretch p-4 rounded-xl border border-gray-100 bg-white hover:bg-gray-50/80 transition-colors"
+                            key={o.itemName}
+                            className="flex flex-col gap-3 rounded-lg border border-amber-200/60 bg-white/80 p-3 sm:flex-row sm:items-center sm:justify-between"
                           >
-                            <Link to={`/orders/${row.orderId}`} className="flex gap-4 flex-1 min-w-0">
-                              <div className="w-14 h-14 bg-gray-100 rounded-lg flex items-center justify-center shrink-0">
-                                <Package className="w-7 h-7 text-gray-300" />
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <p className="text-xs text-gray-500 mb-0.5">
-                                  {row.buyerLabel} · {formatOrderWhen(row.createdAt)}
-                                </p>
-                                <h3 className="font-semibold text-[15px] text-gray-900 line-clamp-2">{row.productTitle}</h3>
-                                <p className="text-[#22c55e] font-bold text-base mt-1">{formatPrice(row.lineTotal)}</p>
-                                <span className="inline-block mt-2 text-[10px] text-gray-600 bg-gray-100 px-2 py-0.5 rounded uppercase tracking-wider font-semibold">
-                                  {row.orderStatus}
-                                </span>
-                              </div>
+                            <p className="text-sm text-gray-800">
+                              <span className="font-semibold text-amber-900">{o.requestCount}</span>{" "}
+                              {o.requestCount === 1 ? "user is" : "users are"} looking for{" "}
+                              <span className="font-semibold">"{o.itemName}"</span>. Be the first to list it!
+                            </p>
+                            <Link
+                              to={`/seller/products/new?item=${encodeURIComponent(o.itemName)}`}
+                              className="inline-flex items-center justify-center rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-600"
+                            >
+                              List Now
                             </Link>
-                            <div className="flex sm:flex-col sm:justify-center shrink-0">
-                              <button
-                                type="button"
-                                disabled={markingOrderId === row.orderId}
-                                onClick={() => void markSellerItemsShipped(row.orderId)}
-                                className="inline-flex items-center justify-center gap-2 w-full sm:w-auto px-4 py-2.5 rounded-lg border border-[#22c55e] text-[#15803d] text-sm font-semibold hover:bg-[#22c55e]/10 disabled:opacity-60 disabled:pointer-events-none transition-colors"
-                              >
-                                {markingOrderId === row.orderId ? (
-                                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                                ) : (
-                                  <Truck className="h-4 w-4" aria-hidden />
-                                )}
-                                Mark as shipped
-                              </button>
-                            </div>
                           </div>
                         ))}
                       </div>
                     )}
-                  </div>
+                  </section>
+                  <SellerOrderManagement />
                 </>
               )}
             </div>

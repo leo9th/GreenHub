@@ -21,6 +21,7 @@ import { toast } from "sonner";
 import { markNotificationReadById } from "../utils/engagement";
 import { formatGreenHubRelative } from "../utils/formatGreenHubTime";
 import { useTheme } from "../context/ThemeContext";
+import AdvancedSearch from "./AdvancedSearch";
 
 export default function TopNav() {
   const location = useLocation();
@@ -148,6 +149,13 @@ export default function TopNav() {
           >
             Shop
           </Link>
+          <div className="hidden md:block w-[320px] xl:w-[380px]">
+            <AdvancedSearch
+              className="w-full"
+              placeholder="Search GreenHub..."
+              onSelectCategory={(category) => navigate(`/products?search=${encodeURIComponent(category)}`)}
+            />
+          </div>
           <div className="relative shrink-0 md:hidden" ref={mobileMenuRef}>
             <button
               type="button"

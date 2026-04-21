@@ -12,8 +12,15 @@ type OrderRow = {
   id: string;
   created_at: string | null;
   status: string | null;
-  total_amount: number | null;
+  total_amount?: number | null;
+  total_price?: number | null;
+  amount?: number | null;
 };
+function orderGrandTotal(o: OrderRow): number {
+  const v = o.total_price || o.total_amount || o.amount || 0;
+  return Number.isFinite(Number(v)) ? Number(v) : 0;
+}
+
 
 type OrderItemRow = {
   order_id: string;
@@ -21,8 +28,17 @@ type OrderItemRow = {
   product_title: string | null;
   product_image: string | null;
   quantity: number | null;
-  price_at_time: number | null;
+  /** Snapshot column when migration applied */
+  price_at_time?: number | null;
+  /** Base schema column (see 20260508120000_create_order_items.sql) */
+  unit_price?: number | null;
 };
+
+/** DB may only have `unit_price`; newer migrations add `price_at_time`. */
+function lineUnitPrice(it: OrderItemRow): number {
+  const v = it.price_at_time ?? it.unit_price;
+  return Number(v) || 0;
+}
 
 type OrderEventRow = {
   id: string;
@@ -66,7 +82,8 @@ export default function Orders() {
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!authUser?.id) {
+    const userId = authUser?.id?.trim();
+    if (!userId) {
       setOrders([]);
       setItemsByOrder(new Map());
       setEventsByOrder(new Map());
@@ -78,28 +95,33 @@ export default function Orders() {
     try {
       const { data: orderRows, error: oErr } = await supabase
         .from("orders")
-        .select("id, created_at, status, total_amount")
-        .eq("buyer_id", authUser.id)
+        .select("*")
+        .eq("buyer_id", userId)
         .order("created_at", { ascending: false });
+      console.log("DEBUG: Supabase Error", oErr);
 
-      if (oErr) throw oErr;
+      if (oErr) {
+        console.error("[Orders] orders select error", oErr);
+        throw oErr;
+      }
 
       const list = (orderRows ?? []) as OrderRow[];
       setOrders(list);
 
-      const ids = list.map((o) => o.id).filter(Boolean);
+      const ids = list.map((o) => String(o.id || "").trim()).filter((v) => v.length > 0);
       if (ids.length === 0) {
         setItemsByOrder(new Map());
         setEventsByOrder(new Map());
         return;
       }
 
-      const { data: itemRows, error: iErr } = await supabase
-        .from("order_items")
-        .select("order_id, product_id, product_title, product_image, quantity, price_at_time")
-        .in("order_id", ids);
+      const { data: itemRows, error: iErr } = await supabase.from("order_items").select("*").in("order_id", ids);
+      console.log("DEBUG: Supabase Error", iErr);
 
-      if (iErr) throw iErr;
+      if (iErr) {
+        console.error("[Orders] order_items select error", iErr);
+        throw iErr;
+      }
 
       const map = new Map<string, OrderItemRow[]>();
       for (const it of (itemRows ?? []) as OrderItemRow[]) {
@@ -114,8 +136,13 @@ export default function Orders() {
         .select("id, order_id, event_label, created_at")
         .in("order_id", ids)
         .order("created_at", { ascending: true });
+      console.log("DEBUG: Supabase Error", evErr);
 
-      if (evErr) throw evErr;
+      if (evErr) {
+        console.error("[Orders] order_events select error (expect columns: id, order_id, event_label, created_at)", evErr);
+        setEventsByOrder(new Map());
+        return;
+      }
 
       const evMap = new Map<string, OrderEventRow[]>();
       for (const ev of (evRows ?? []) as OrderEventRow[]) {
@@ -125,7 +152,7 @@ export default function Orders() {
       }
       setEventsByOrder(evMap);
     } catch (e: unknown) {
-      console.error(e);
+      console.error("[Orders] load failed", e);
       setError(e instanceof Error ? e.message : "Could not load orders");
       setOrders([]);
       setItemsByOrder(new Map());
@@ -248,12 +275,13 @@ export default function Orders() {
             const items = itemsByOrder.get(String(order.id)) ?? [];
             const events = eventsByOrder.get(String(order.id)) ?? [];
             const displayStatus = (order.status || "—").replace(/_/g, " ");
+            const dbTotal = orderGrandTotal(order);
             const total =
-              order.total_amount != null && Number.isFinite(Number(order.total_amount))
-                ? Number(order.total_amount)
+              dbTotal > 0
+                ? dbTotal
                 : items.reduce((sum, it) => {
                     const q = Math.max(0, Number(it.quantity) || 0);
-                    const u = Number(it.price_at_time) || 0;
+                    const u = lineUnitPrice(it);
                     return sum + q * u;
                   }, 0);
 
@@ -293,7 +321,7 @@ export default function Orders() {
                     </div>
                     <div className="text-right">
                       <p className="text-sm font-semibold text-gray-800">
-                        {formatPrice(Number(item.price_at_time) || 0)}
+                        {formatPrice(lineUnitPrice(item))}
                       </p>
                     </div>
                   </div>

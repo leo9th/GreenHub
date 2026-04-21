@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { supabase } from "../../lib/supabase";
 import CategoryFilter, { type CategoryFilterSelection } from "../components/CategoryFilter";
 import { ConditionFilter } from "../components/ConditionFilter";
@@ -10,7 +10,7 @@ import { SortBar } from "../components/SortBar";
 import { categoryFilterLabelToDbValue } from "../data/catalogConstants";
 import { getConditionFilterDropdownOptions } from "../data/productConditions";
 import SimpleProductGrid from "../components/SimpleProductGrid";
-import SmartSearchBar from "../components/SmartSearchBar";
+import AdvancedSearch from "../components/AdvancedSearch";
 import type { ProductWithSeller } from "../types/productWithSeller";
 import {
   applyBrowseProductQueryFilters,
@@ -28,9 +28,11 @@ import {
 const LIMIT = 12;
 
 export default function Products() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [selectedCategory, setSelectedCategory] = useState<CategoryFilterSelection>("All");
   const [selectedCondition, setSelectedCondition] = useState("all");
-  const [globalSearchTerm, setGlobalSearchTerm] = useState("");
+  const [globalSearchTerm, setGlobalSearchTerm] = useState(() => searchParams.get("search") ?? "");
+  const [topRatedOnly, setTopRatedOnly] = useState(() => searchParams.get("topRated") === "1");
   const [products, setProducts] = useState<ProductWithSeller[]>([]);
   const [page, setPage] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
@@ -90,8 +92,28 @@ export default function Products() {
 
     const searchT = normalizedGlobalSearchTerm(globalSearchTerm);
     let sellerIds: string[] = [];
+    let topRatedSellerIds: string[] = [];
     if (searchT) {
       sellerIds = await fetchSellerIdsForGlobalSearch(supabase, searchT);
+    }
+    if (topRatedOnly) {
+      const { data: topRatedSellers, error: trErr } = await supabase.from("profiles").select("id").gte("rating", 4.5);
+      if (trErr) {
+        setIsLoading(false);
+        setLoadingMore(false);
+        setError(trErr.message);
+        return;
+      }
+      const ids = (topRatedSellers ?? []).map((row) => String(row.id)).filter(Boolean);
+      if (ids.length === 0) {
+        setProducts([]);
+        setHasMore(false);
+        setIsLoading(false);
+        setLoadingMore(false);
+        return;
+      }
+      topRatedSellerIds = ids;
+      sellerIds = sellerIds.length > 0 ? sellerIds.filter((id) => ids.includes(id)) : ids;
     }
 
     let query = supabase.from("products").select(productsSelectWithSellerEmbed()).eq("status", "active");
@@ -99,6 +121,9 @@ export default function Products() {
     const categorySlug = categoryFilterLabelToDbValue(selectedCategory);
     if (categorySlug) {
       query = query.eq("category", categorySlug);
+    }
+    if (topRatedOnly && topRatedSellerIds.length > 0) {
+      query = query.in("seller_id", topRatedSellerIds);
     }
 
     query = applyBrowseProductQueryFilters(query, {
@@ -140,9 +165,14 @@ export default function Products() {
   }, [page]);
 
   useEffect(() => {
+    setGlobalSearchTerm(searchParams.get("search") ?? "");
+    setTopRatedOnly(searchParams.get("topRated") === "1");
+  }, [searchParams]);
+
+  useEffect(() => {
     setPage(0);
     void fetchProducts(true);
-  }, [selectedCategory, selectedCondition, globalSearchTerm, listingSort, priceRange, moreFilters]);
+  }, [selectedCategory, selectedCondition, globalSearchTerm, listingSort, priceRange, moreFilters, topRatedOnly]);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -163,10 +193,36 @@ export default function Products() {
         />
 
         <div className="mb-4">
-          <SmartSearchBar
-            inputId="shop-global-search"
+          <AdvancedSearch
+            className="w-full"
+            placeholder="Search products and categories..."
             value={globalSearchTerm}
-            onChange={setGlobalSearchTerm}
+            showTopRatedToggle
+            onQueryChange={(next) => {
+              setGlobalSearchTerm(next);
+              const nextParams = new URLSearchParams(searchParams);
+              if (next.trim()) nextParams.set("search", next.trim());
+              else nextParams.delete("search");
+              if (topRatedOnly) nextParams.set("topRated", "1");
+              else nextParams.delete("topRated");
+              setSearchParams(nextParams, { replace: true });
+            }}
+            onSelectCategory={(category) => {
+              setGlobalSearchTerm(category);
+              const nextParams = new URLSearchParams(searchParams);
+              nextParams.set("search", category);
+              if (topRatedOnly) nextParams.set("topRated", "1");
+              else nextParams.delete("topRated");
+              setSearchParams(nextParams, { replace: true });
+            }}
+            topRatedOnly={topRatedOnly}
+            onTopRatedOnlyChange={(next) => {
+              setTopRatedOnly(next);
+              const nextParams = new URLSearchParams(searchParams);
+              if (next) nextParams.set("topRated", "1");
+              else nextParams.delete("topRated");
+              setSearchParams(nextParams, { replace: true });
+            }}
           />
         </div>
 

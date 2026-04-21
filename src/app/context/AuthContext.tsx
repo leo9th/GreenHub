@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js';
 import { supabase } from '../../lib/supabase';
 import { ensureOAuthProfile, isOAuthUser } from '../utils/ensureOAuthProfile';
@@ -51,24 +51,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const profileFetchInFlight = useRef<string | null>(null);
+  const lastFetchedProfileUserId = useRef<string | null>(null);
 
   // Fetch extra details from the profiles table
   const fetchProfile = async (userId: string) => {
+    const uid = userId.trim();
+    if (!uid) {
+      setProfile(null);
+      setLoading(false);
+      return;
+    }
+    if (profileFetchInFlight.current === uid) return;
+    if (lastFetchedProfileUserId.current === uid) return;
+    profileFetchInFlight.current = uid;
     try {
       const { data, error } = await supabase
         .from('profiles')
         .select(
-          'id, full_name, email, phone, phone_verified, avatar_url, cover_url, gender, state, lga, address, auto_reply, bio, rating, updated_at, created_at, last_active, show_phone_on_profile, show_email_on_profile, unique_id',
+          'id, full_name, email, phone, phone_verified, avatar_url, cover_url, gender, state, lga, address, auto_reply, bio, rating, updated_at, created_at, last_active',
         )
-        .eq('id', userId)
+        .eq('id', uid)
         .single();
+      console.log('DEBUG: Supabase Error', error);
       
       if (!error && data) {
         setProfile(data);
+        lastFetchedProfileUserId.current = uid;
       }
     } catch (error) {
       console.error('Error fetching profile:', error);
     } finally {
+      profileFetchInFlight.current = null;
       setLoading(false);
     }
   };
@@ -80,6 +94,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       void supabase.realtime.setAuth(session?.access_token ?? null);
       if (!session?.user) {
         setProfile(null);
+        lastFetchedProfileUserId.current = null;
+        profileFetchInFlight.current = null;
         setLoading(false);
         return;
       }

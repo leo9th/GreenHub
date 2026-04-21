@@ -100,6 +100,30 @@ export default function Checkout() {
       const { error: itemsError } = await supabase.from("order_items").insert(orderItems);
       if (itemsError) throw itemsError;
 
+      for (const item of items) {
+        const pid = String(item.id);
+        const qty = Math.max(1, Number(item.quantity) || 1);
+        const { data: stockRow, error: stockErr } = await supabase
+          .from("products")
+          .select("id, stock_quantity")
+          .eq("id", pid)
+          .maybeSingle();
+        if (stockErr) throw stockErr;
+        const currentStock =
+          stockRow?.stock_quantity != null && Number.isFinite(Number(stockRow.stock_quantity))
+            ? Number(stockRow.stock_quantity)
+            : null;
+        if (currentStock == null) continue;
+        if (currentStock < qty) {
+          throw new Error(`Insufficient stock for ${item.title}. Only ${currentStock} left.`);
+        }
+        const { error: updateStockErr } = await supabase
+          .from("products")
+          .update({ stock_quantity: Math.max(0, currentStock - qty) })
+          .eq("id", pid);
+        if (updateStockErr) throw updateStockErr;
+      }
+
       const { error: eventError } = await supabase.from("order_events").insert({
         order_id: orderData.id,
         event_label: "Order Placed",

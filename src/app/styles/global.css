@@ -104,3 +104,9 @@ body {
     touch-action: manipulation;
   }
 }
+
+/* Force all lucide-react icons to be emerald and highly visible. */
+.lucide {
+  color: #059669 !important; /* Tailwind emerald-600 */
+  stroke-width: 3 !important;
+}

@@ -10,7 +10,22 @@ export interface UserProfile {
   role?: string | null;
   avatar_url?: string | null;
   gender?: string | null;
-  // other fields can be added later when they exist in the DB
+  phone?: string | null;
+  phone_verified?: boolean | null;
+  address?: string | null;
+  state?: string | null;
+  lga?: string | null;
+  bio?: string | null;
+  cover_url?: string | null;
+  auto_reply?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  last_active?: string | null;
+  rating?: number | string | null;
+  unique_id?: string | null;
+  is_verified_advertiser?: boolean | null;
+  show_phone_on_profile?: boolean | null;
+  show_email_on_profile?: boolean | null;
 }
 
 interface AuthContextType {
@@ -40,7 +55,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const fetchProfile = async (uid: string): Promise<UserProfile | null> => {
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, role, full_name')
+      .select('id, role, full_name, email, avatar_url, gender, phone, phone_verified, address, state, lga, bio, cover_url, auto_reply, created_at, updated_at, last_active, unique_id, is_verified_advertiser, show_phone_on_profile, show_email_on_profile')
       .eq('id', uid)
       .single();
 

@@ -15,6 +15,12 @@ import {
   ShieldAlert,
   Clock,
   Camera,
+  Lock,
+  Mail,
+  Plus,
+  Save,
+  Trash2,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth, type UserProfile } from "../context/AuthContext";
@@ -30,7 +36,7 @@ import { cn } from "../components/ui/utils";
 import { validateProfileImageFile, uploadProfileImage } from "../utils/profileMediaUpload";
 import { PhoneVerification } from "../components/PhoneVerification";
 
-type TabId = "products" | "reviews" | "about" | "contact";
+type TabId = "products" | "reviews" | "about" | "contact" | "settings";
 
 type Listing = {
   id: string | number;
@@ -66,6 +72,32 @@ type ListingProductReviewRow = {
 type SellerReviewSummary = {
   avg: number;
   count: number;
+};
+
+type UserAddress = {
+  address_id: string;
+  user_id: string;
+  label: string;
+  street: string;
+  city: string;
+  state: string;
+  is_default: boolean;
+  created_at?: string;
+  updated_at?: string;
+};
+
+type ProfileDetailsForm = {
+  full_name: string;
+  bio: string;
+  avatar_url: string;
+};
+
+type AddressForm = {
+  label: string;
+  street: string;
+  city: string;
+  state: string;
+  is_default: boolean;
 };
 
 function isUuid(s: string): boolean {
@@ -125,7 +157,7 @@ export default function Profile() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tabFromUrl = (searchParams.get("tab") || "").toLowerCase();
   const formatPrice = useCurrency();
-  const { user: authUser, loading: authLoading, signOut } = useAuth();
+  const { user: authUser, loading: authLoading, signOut, refreshProfile } = useAuth();
 
   const targetUserId = useMemo(() => {
     const raw = routeUserId?.trim();
@@ -135,7 +167,7 @@ export default function Profile() {
 
   const isOwnProfile = Boolean(authUser && targetUserId && authUser.id === targetUserId);
 
-  const validTabs: TabId[] = ["products", "reviews", "about", "contact"];
+  const validTabs: TabId[] = ["products", "reviews", "about", "contact", "settings"];
   const initialTab = validTabs.includes(tabFromUrl as TabId) ? (tabFromUrl as TabId) : "products";
   const [tab, setTab] = useState<TabId>(initialTab);
 
@@ -143,6 +175,13 @@ export default function Profile() {
     const t = (searchParams.get("tab") || "").toLowerCase();
     if (validTabs.includes(t as TabId)) setTab(t as TabId);
   }, [searchParams]);
+
+  useEffect(() => {
+    if (!isOwnProfile && tab === "settings") {
+      setTab("products");
+      setSearchParams({ tab: "products" }, { replace: true });
+    }
+  }, [isOwnProfile, tab, setSearchParams]);
 
   const setTabAndUrl = (next: TabId) => {
     setTab(next);
@@ -168,6 +207,34 @@ export default function Profile() {
   const [pendingCover, setPendingCover] = useState<{ file: File; preview: string } | null>(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [uploadingCover, setUploadingCover] = useState(false);
+  const [profileDetailsForm, setProfileDetailsForm] = useState<ProfileDetailsForm>({
+    full_name: "",
+    bio: "",
+    avatar_url: "",
+  });
+  const [savingProfileDetails, setSavingProfileDetails] = useState(false);
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: "",
+  });
+  const [savingPassword, setSavingPassword] = useState(false);
+  const [emailModalOpen, setEmailModalOpen] = useState(false);
+  const [newEmail, setNewEmail] = useState("");
+  const [savingEmail, setSavingEmail] = useState(false);
+  const [addresses, setAddresses] = useState<UserAddress[]>([]);
+  const [addressesLoading, setAddressesLoading] = useState(false);
+  const [savingAddress, setSavingAddress] = useState(false);
+  const [editingAddressId, setEditingAddressId] = useState<string | null>(null);
+  const [addressForm, setAddressForm] = useState<AddressForm>({
+    label: "",
+    street: "",
+    city: "",
+    state: "",
+    is_default: false,
+  });
+  const [privacySaving, setPrivacySaving] = useState<"phone" | "email" | null>(null);
 
   const displayName =
     viewProfile?.full_name?.trim() ||
@@ -524,6 +591,231 @@ export default function Profile() {
     }
   }, [targetUserId, isOwnProfile, authUser, routeUserId]);
 
+  const resetAddressForm = () => {
+    setEditingAddressId(null);
+    setAddressForm({
+      label: "",
+      street: "",
+      city: "",
+      state: "",
+      is_default: false,
+    });
+  };
+
+  const loadAddresses = useCallback(async () => {
+    if (!isOwnProfile || !authUser?.id) {
+      setAddresses([]);
+      return;
+    }
+    setAddressesLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("user_addresses")
+        .select("address_id, user_id, label, street, city, state, is_default, created_at, updated_at")
+        .eq("user_id", authUser.id)
+        .order("is_default", { ascending: false })
+        .order("created_at", { ascending: true });
+      if (error) throw error;
+      setAddresses((data ?? []) as UserAddress[]);
+    } catch (e: unknown) {
+      console.warn("Profile user_addresses:", e);
+      toast.error(e instanceof Error ? e.message : "Could not load saved addresses");
+      setAddresses([]);
+    } finally {
+      setAddressesLoading(false);
+    }
+  }, [authUser?.id, isOwnProfile]);
+
+  useEffect(() => {
+    if (!isOwnProfile || !authUser) return;
+    setProfileDetailsForm({
+      full_name: viewProfile?.full_name ?? authUser.user_metadata?.full_name ?? "",
+      bio: viewProfile?.bio ?? "",
+      avatar_url: viewProfile?.avatar_url ?? authUser.user_metadata?.avatar_url ?? "",
+    });
+    setNewEmail(authUser.email ?? viewProfile?.email ?? "");
+  }, [authUser, isOwnProfile, viewProfile?.avatar_url, viewProfile?.bio, viewProfile?.email, viewProfile?.full_name]);
+
+  useEffect(() => {
+    void loadAddresses();
+  }, [loadAddresses]);
+
+  const saveProfileDetails = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!authUser) return;
+    const fullName = profileDetailsForm.full_name.trim();
+    const bio = profileDetailsForm.bio.trim();
+    const avatarUrl = profileDetailsForm.avatar_url.trim();
+    if (!fullName) {
+      toast.error("Full name is required.");
+      return;
+    }
+    setSavingProfileDetails(true);
+    try {
+      const { error } = await supabase.from("profiles").upsert(
+        {
+          id: authUser.id,
+          full_name: fullName,
+          bio: bio || null,
+          avatar_url: avatarUrl || null,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "id" },
+      );
+      if (error) throw error;
+      await supabase.auth.updateUser({
+        data: {
+          full_name: fullName,
+          bio: bio || undefined,
+          avatar_url: avatarUrl || null,
+        },
+      });
+      setViewProfile((prev) =>
+        prev
+          ? {
+              ...prev,
+              full_name: fullName,
+              bio: bio || null,
+              avatar_url: avatarUrl || null,
+              updated_at: new Date().toISOString(),
+            }
+          : prev,
+      );
+      await refreshProfile();
+      toast.success("Personal details updated");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Could not update personal details");
+    } finally {
+      setSavingProfileDetails(false);
+    }
+  };
+
+  const savePasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!passwordForm.currentPassword.trim()) {
+      toast.error("Enter your current password.");
+      return;
+    }
+    if (passwordForm.newPassword.length < 6) {
+      toast.error("New password must be at least 6 characters.");
+      return;
+    }
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      toast.error("New passwords do not match.");
+      return;
+    }
+    setSavingPassword(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: passwordForm.newPassword });
+      if (error) throw error;
+      toast.success("Password updated");
+      setPasswordForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
+      setPasswordModalOpen(false);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Could not update password");
+    } finally {
+      setSavingPassword(false);
+    }
+  };
+
+  const saveEmailChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const email = newEmail.trim();
+    if (!email || !email.includes("@")) {
+      toast.error("Enter a valid email address.");
+      return;
+    }
+    setSavingEmail(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ email });
+      if (error) throw error;
+      toast.success("Confirmation email sent to your new address.");
+      setEmailModalOpen(false);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Could not send confirmation email");
+    } finally {
+      setSavingEmail(false);
+    }
+  };
+
+  const saveAddress = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!authUser) return;
+    const payload = {
+      user_id: authUser.id,
+      label: addressForm.label.trim(),
+      street: addressForm.street.trim(),
+      city: addressForm.city.trim(),
+      state: addressForm.state.trim(),
+      is_default: addressForm.is_default,
+      updated_at: new Date().toISOString(),
+    };
+    if (!payload.label || !payload.street || !payload.city || !payload.state) {
+      toast.error("Complete all address fields.");
+      return;
+    }
+    setSavingAddress(true);
+    try {
+      const query = supabase.from("user_addresses");
+      const { error } = editingAddressId
+        ? await query.update(payload).eq("address_id", editingAddressId).eq("user_id", authUser.id)
+        : await query.insert(payload);
+      if (error) throw error;
+      toast.success(editingAddressId ? "Address updated" : "Address added");
+      resetAddressForm();
+      await loadAddresses();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Could not save address");
+    } finally {
+      setSavingAddress(false);
+    }
+  };
+
+  const editAddress = (address: UserAddress) => {
+    setEditingAddressId(address.address_id);
+    setAddressForm({
+      label: address.label,
+      street: address.street,
+      city: address.city,
+      state: address.state,
+      is_default: address.is_default,
+    });
+  };
+
+  const deleteAddress = async (addressId: string) => {
+    if (!authUser) return;
+    setSavingAddress(true);
+    try {
+      const { error } = await supabase.from("user_addresses").delete().eq("address_id", addressId).eq("user_id", authUser.id);
+      if (error) throw error;
+      toast.success("Address deleted");
+      if (editingAddressId === addressId) resetAddressForm();
+      await loadAddresses();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Could not delete address");
+    } finally {
+      setSavingAddress(false);
+    }
+  };
+
+  const updatePrivacySetting = async (key: "show_phone_on_profile" | "show_email_on_profile", value: boolean) => {
+    if (!authUser) return;
+    setPrivacySaving(key === "show_phone_on_profile" ? "phone" : "email");
+    try {
+      const { error } = await supabase
+        .from("profiles")
+        .update({ [key]: value, updated_at: new Date().toISOString() })
+        .eq("id", authUser.id);
+      if (error) throw error;
+      setViewProfile((prev) => (prev ? { ...prev, [key]: value } : prev));
+      toast.success("Privacy setting updated");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Could not update privacy setting");
+    } finally {
+      setPrivacySaving(null);
+    }
+  };
+
   useEffect(() => {
     if (authLoading) return;
     if (!authUser) {
@@ -554,6 +846,7 @@ export default function Profile() {
     { id: "reviews", label: "Reviews" },
     { id: "about", label: "About" },
     { id: "contact", label: "Contact" },
+    ...(isOwnProfile ? [{ id: "settings" as const, label: "Settings" }] : []),
   ];
 
   const phoneDisplay =
@@ -919,13 +1212,14 @@ export default function Profile() {
 
             <div className="mt-4 flex flex-col items-stretch justify-center gap-2 sm:flex-row sm:items-center lg:flex-col lg:items-stretch">
               {isOwnProfile ? (
-                <Link
-                  to="/settings/profile/edit"
+                <button
+                  type="button"
+                  onClick={() => setTabAndUrl("settings")}
                   className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-gray-50 px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-100"
                 >
                   <Edit className="w-3.5 h-3.5" />
                   Edit profile
-                </Link>
+                </button>
               ) : (
                 <div className="flex flex-col gap-2 sm:flex-row sm:w-full">
                   <FollowButton
@@ -1237,18 +1531,377 @@ export default function Profile() {
                 </div>
               </div>
             )}
+
+            {tab === "settings" && isOwnProfile ? (
+              <div className="space-y-5">
+                <section className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-gray-100">
+                  <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-900">Personal details</h3>
+                      <p className="mt-1 text-xs text-gray-500">Update the public details buyers see on your profile.</p>
+                    </div>
+                  </div>
+                  <form className="space-y-3" onSubmit={(e) => void saveProfileDetails(e)}>
+                    <div>
+                      <label htmlFor="profile-full-name" className="mb-1 block text-xs font-semibold text-gray-600">
+                        Full name
+                      </label>
+                      <input
+                        id="profile-full-name"
+                        type="text"
+                        value={profileDetailsForm.full_name}
+                        onChange={(e) => setProfileDetailsForm((prev) => ({ ...prev, full_name: e.target.value }))}
+                        className="h-11 w-full rounded-xl border border-gray-200 px-3 text-sm outline-none focus:border-[#22c55e] focus:ring-2 focus:ring-[#22c55e]/15"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="profile-bio" className="mb-1 block text-xs font-semibold text-gray-600">
+                        Bio
+                      </label>
+                      <textarea
+                        id="profile-bio"
+                        rows={3}
+                        value={profileDetailsForm.bio}
+                        onChange={(e) => setProfileDetailsForm((prev) => ({ ...prev, bio: e.target.value }))}
+                        placeholder="Short intro buyers see on your profile..."
+                        className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#22c55e] focus:ring-2 focus:ring-[#22c55e]/15"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="profile-avatar-url" className="mb-1 block text-xs font-semibold text-gray-600">
+                        Avatar URL
+                      </label>
+                      <input
+                        id="profile-avatar-url"
+                        type="url"
+                        value={profileDetailsForm.avatar_url}
+                        onChange={(e) => setProfileDetailsForm((prev) => ({ ...prev, avatar_url: e.target.value }))}
+                        placeholder="https://..."
+                        className="h-11 w-full rounded-xl border border-gray-200 px-3 text-sm outline-none focus:border-[#22c55e] focus:ring-2 focus:ring-[#22c55e]/15"
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={savingProfileDetails}
+                      className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#22c55e] px-4 text-sm font-semibold text-white hover:bg-[#16a34a] disabled:opacity-60"
+                    >
+                      {savingProfileDetails ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Save className="h-4 w-4" aria-hidden />}
+                      Save personal details
+                    </button>
+                  </form>
+                </section>
+
+                <section className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-gray-100">
+                  <h3 className="text-sm font-semibold text-gray-900">Phone number</h3>
+                  <p className="mt-1 text-xs text-gray-500">
+                    {phoneDisplay ? `Current phone: ${phoneDisplay}` : "Add and verify your phone number."}
+                  </p>
+                  <PhoneVerification userId={authUser.id} onVerified={() => void loadData()} className="mt-4" />
+                </section>
+
+                <section className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-gray-100">
+                  <h3 className="text-sm font-semibold text-gray-900">Account security</h3>
+                  <p className="mt-1 text-xs text-gray-500">Manage sign-in credentials for this account.</p>
+                  <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      onClick={() => setPasswordModalOpen(true)}
+                      className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 text-sm font-semibold text-gray-800 hover:bg-gray-50"
+                    >
+                      <Lock className="h-4 w-4 text-[#15803d]" aria-hidden />
+                      Change password
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNewEmail(authUser.email ?? "");
+                        setEmailModalOpen(true);
+                      }}
+                      className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 text-sm font-semibold text-gray-800 hover:bg-gray-50"
+                    >
+                      <Mail className="h-4 w-4 text-[#15803d]" aria-hidden />
+                      Change email
+                    </button>
+                  </div>
+                </section>
+
+                <section className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-gray-100">
+                  <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-900">Saved addresses</h3>
+                      <p className="mt-1 text-xs text-gray-500">Save delivery addresses for faster checkout.</p>
+                    </div>
+                    {addressesLoading ? <Loader2 className="h-4 w-4 animate-spin text-[#22c55e]" aria-hidden /> : null}
+                  </div>
+
+                  <form className="grid gap-3 md:grid-cols-2" onSubmit={(e) => void saveAddress(e)}>
+                    <input
+                      type="text"
+                      value={addressForm.label}
+                      onChange={(e) => setAddressForm((prev) => ({ ...prev, label: e.target.value }))}
+                      placeholder="Label, e.g. Home"
+                      className="h-11 rounded-xl border border-gray-200 px-3 text-sm outline-none focus:border-[#22c55e] focus:ring-2 focus:ring-[#22c55e]/15"
+                    />
+                    <input
+                      type="text"
+                      value={addressForm.street}
+                      onChange={(e) => setAddressForm((prev) => ({ ...prev, street: e.target.value }))}
+                      placeholder="Street address"
+                      className="h-11 rounded-xl border border-gray-200 px-3 text-sm outline-none focus:border-[#22c55e] focus:ring-2 focus:ring-[#22c55e]/15"
+                    />
+                    <input
+                      type="text"
+                      value={addressForm.city}
+                      onChange={(e) => setAddressForm((prev) => ({ ...prev, city: e.target.value }))}
+                      placeholder="City"
+                      className="h-11 rounded-xl border border-gray-200 px-3 text-sm outline-none focus:border-[#22c55e] focus:ring-2 focus:ring-[#22c55e]/15"
+                    />
+                    <input
+                      type="text"
+                      value={addressForm.state}
+                      onChange={(e) => setAddressForm((prev) => ({ ...prev, state: e.target.value }))}
+                      placeholder="State"
+                      className="h-11 rounded-xl border border-gray-200 px-3 text-sm outline-none focus:border-[#22c55e] focus:ring-2 focus:ring-[#22c55e]/15"
+                    />
+                    <label className="flex items-center gap-2 rounded-xl bg-gray-50 px-3 py-2 text-sm text-gray-700 md:col-span-2">
+                      <input
+                        type="checkbox"
+                        checked={addressForm.is_default}
+                        onChange={(e) => setAddressForm((prev) => ({ ...prev, is_default: e.target.checked }))}
+                        className="rounded border-gray-300 text-[#22c55e] focus:ring-[#22c55e]"
+                      />
+                      Make this my default address
+                    </label>
+                    <div className="flex flex-wrap gap-2 md:col-span-2">
+                      <button
+                        type="submit"
+                        disabled={savingAddress}
+                        className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#22c55e] px-4 text-sm font-semibold text-white hover:bg-[#16a34a] disabled:opacity-60"
+                      >
+                        {savingAddress ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Plus className="h-4 w-4" aria-hidden />}
+                        {editingAddressId ? "Update address" : "Add address"}
+                      </button>
+                      {editingAddressId ? (
+                        <button
+                          type="button"
+                          onClick={resetAddressForm}
+                          className="inline-flex h-11 items-center justify-center rounded-xl border border-gray-200 px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                        >
+                          Cancel edit
+                        </button>
+                      ) : null}
+                    </div>
+                  </form>
+
+                  <div className="mt-4 space-y-2">
+                    {addresses.length === 0 ? (
+                      <p className="rounded-xl bg-gray-50 p-3 text-sm text-gray-500">No saved addresses yet.</p>
+                    ) : (
+                      addresses.map((address) => (
+                        <article key={address.address_id} className="rounded-xl border border-gray-100 bg-gray-50/70 p-3">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="font-semibold text-gray-900">
+                                {address.label}
+                                {address.is_default ? (
+                                  <span className="ml-2 rounded-full bg-[#dcfce7] px-2 py-0.5 text-[10px] font-semibold text-[#15803d]">
+                                    Default
+                                  </span>
+                                ) : null}
+                              </p>
+                              <p className="mt-1 text-sm text-gray-600">
+                                {address.street}, {address.city}, {address.state}
+                              </p>
+                            </div>
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => editAddress(address)}
+                                className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void deleteAddress(address.address_id)}
+                                className="inline-flex items-center gap-1 rounded-lg border border-red-100 bg-white px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                        </article>
+                      ))
+                    )}
+                  </div>
+                </section>
+
+                <section className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-gray-100">
+                  <h3 className="text-sm font-semibold text-gray-900">Privacy settings</h3>
+                  <p className="mt-1 text-xs text-gray-500">Choose which contact details appear on your public profile.</p>
+                  <div className="mt-4 space-y-3">
+                    <label className="flex items-center justify-between gap-4 rounded-xl bg-gray-50 p-3">
+                      <span className="text-sm font-medium text-gray-800">Show phone on profile</span>
+                      <input
+                        type="checkbox"
+                        checked={Boolean(viewProfile?.show_phone_on_profile)}
+                        disabled={privacySaving === "phone"}
+                        onChange={(e) => void updatePrivacySetting("show_phone_on_profile", e.target.checked)}
+                        className="rounded border-gray-300 text-[#22c55e] focus:ring-[#22c55e]"
+                      />
+                    </label>
+                    <label className="flex items-center justify-between gap-4 rounded-xl bg-gray-50 p-3">
+                      <span className="text-sm font-medium text-gray-800">Show email on profile</span>
+                      <input
+                        type="checkbox"
+                        checked={Boolean(viewProfile?.show_email_on_profile)}
+                        disabled={privacySaving === "email"}
+                        onChange={(e) => void updatePrivacySetting("show_email_on_profile", e.target.checked)}
+                        className="rounded border-gray-300 text-[#22c55e] focus:ring-[#22c55e]"
+                      />
+                    </label>
+                  </div>
+                </section>
+              </div>
+            ) : null}
           </div>
         </div>
         </div>
       </div>
 
+      {passwordModalOpen ? (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true">
+          <form
+            onSubmit={(e) => void savePasswordChange(e)}
+            className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Change password</h2>
+                <p className="mt-1 text-sm text-gray-500">Choose a new password for your GreenHub account.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPasswordModalOpen(false)}
+                className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100"
+                aria-label="Close change password"
+              >
+                <X className="h-5 w-5" aria-hidden />
+              </button>
+            </div>
+            <div className="mt-5 space-y-3">
+              <input
+                type="password"
+                autoComplete="current-password"
+                value={passwordForm.currentPassword}
+                onChange={(e) => setPasswordForm((prev) => ({ ...prev, currentPassword: e.target.value }))}
+                placeholder="Current password"
+                className="h-11 w-full rounded-xl border border-gray-200 px-3 text-sm outline-none focus:border-[#22c55e] focus:ring-2 focus:ring-[#22c55e]/15"
+              />
+              <input
+                type="password"
+                autoComplete="new-password"
+                value={passwordForm.newPassword}
+                onChange={(e) => setPasswordForm((prev) => ({ ...prev, newPassword: e.target.value }))}
+                placeholder="New password"
+                className="h-11 w-full rounded-xl border border-gray-200 px-3 text-sm outline-none focus:border-[#22c55e] focus:ring-2 focus:ring-[#22c55e]/15"
+              />
+              <input
+                type="password"
+                autoComplete="new-password"
+                value={passwordForm.confirmPassword}
+                onChange={(e) => setPasswordForm((prev) => ({ ...prev, confirmPassword: e.target.value }))}
+                placeholder="Confirm new password"
+                className="h-11 w-full rounded-xl border border-gray-200 px-3 text-sm outline-none focus:border-[#22c55e] focus:ring-2 focus:ring-[#22c55e]/15"
+              />
+            </div>
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setPasswordModalOpen(false)}
+                className="h-11 rounded-xl border border-gray-200 px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={savingPassword}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#22c55e] px-4 text-sm font-semibold text-white hover:bg-[#16a34a] disabled:opacity-60"
+              >
+                {savingPassword ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
+                Update password
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+
+      {emailModalOpen ? (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true">
+          <form
+            onSubmit={(e) => void saveEmailChange(e)}
+            className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Change email</h2>
+                <p className="mt-1 text-sm text-gray-500">We’ll send a confirmation link to the new email address.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEmailModalOpen(false)}
+                className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100"
+                aria-label="Close change email"
+              >
+                <X className="h-5 w-5" aria-hidden />
+              </button>
+            </div>
+            <div className="mt-5">
+              <label htmlFor="new-email" className="mb-1 block text-xs font-semibold text-gray-600">
+                New email address
+              </label>
+              <input
+                id="new-email"
+                type="email"
+                autoComplete="email"
+                value={newEmail}
+                onChange={(e) => setNewEmail(e.target.value)}
+                className="h-11 w-full rounded-xl border border-gray-200 px-3 text-sm outline-none focus:border-[#22c55e] focus:ring-2 focus:ring-[#22c55e]/15"
+              />
+            </div>
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setEmailModalOpen(false)}
+                className="h-11 rounded-xl border border-gray-200 px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={savingEmail}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#22c55e] px-4 text-sm font-semibold text-white hover:bg-[#16a34a] disabled:opacity-60"
+              >
+                {savingEmail ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
+                Send confirmation
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+
       {isOwnProfile ? (
         <footer className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-30">
           <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-center gap-6">
-            <Link to="/settings" className="flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-gray-900">
+            <button
+              type="button"
+              onClick={() => setTabAndUrl("settings")}
+              className="flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-gray-900"
+            >
               <Settings className="w-4 h-4" />
               Settings
-            </Link>
+            </button>
             <button
               type="button"
               onClick={async () => {

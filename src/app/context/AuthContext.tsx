@@ -8,6 +8,8 @@ export interface UserProfile {
   full_name?: string | null;
   email?: string | null;
   role?: string | null;
+  avatar_url?: string | null;
+  gender?: string | null;
   // other fields can be added later when they exist in the DB
 }
 

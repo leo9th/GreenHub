@@ -1,10 +1,13 @@
 import React from "react";
+import * as Sentry from "@sentry/react";
+import { logError } from "../../utils/errorLogger";
 
 type ErrorBoundaryScope = "global" | "section";
 
 interface AppErrorBoundaryProps {
   children: React.ReactNode;
   scope?: ErrorBoundaryScope;
+  boundaryName?: string;
 }
 
 interface AppErrorBoundaryState {
@@ -19,6 +22,27 @@ class AppErrorBoundaryInner extends React.Component<AppErrorBoundaryProps, AppEr
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo): void {
+    Sentry.withScope((scope) => {
+      scope.setTag("error_boundary_scope", this.props.scope ?? "section");
+      if (this.props.boundaryName) {
+        scope.setTag("error_boundary_name", this.props.boundaryName);
+      }
+      if (this.props.boundaryName === "checkout") {
+        scope.setTag("feature", "checkout");
+        scope.setTag("checkout_step", "Checkout Render Boundary");
+      }
+      scope.setContext("react_error_boundary", {
+        componentStack: info.componentStack,
+      });
+      Sentry.captureException(error);
+    });
+
+    void logError(error, {
+      componentStack: info.componentStack,
+      boundaryName: this.props.boundaryName ?? null,
+      scope: this.props.scope ?? "section",
+    });
+
     // eslint-disable-next-line no-console
     console.error("Error boundary caught:", error, info);
   }
@@ -61,6 +85,6 @@ class AppErrorBoundaryInner extends React.Component<AppErrorBoundaryProps, AppEr
   }
 }
 
-export function AppErrorBoundary({ children, scope = "section" }: AppErrorBoundaryProps) {
-  return <AppErrorBoundaryInner scope={scope}>{children}</AppErrorBoundaryInner>;
+export function AppErrorBoundary({ children, scope = "section", boundaryName }: AppErrorBoundaryProps) {
+  return <AppErrorBoundaryInner scope={scope} boundaryName={boundaryName}>{children}</AppErrorBoundaryInner>;
 }

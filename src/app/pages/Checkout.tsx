@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { ArrowLeft, Check, CreditCard, Building2, Smartphone, Home } from "lucide-react";
 import { nigerianStates } from "../data/catalogConstants";
@@ -14,6 +14,10 @@ import {
   computeHybridDeliveryTotals,
   isWarehouseShippingFulfillment,
 } from "../utils/fulfillment";
+import { createPaystackSuccessHandler } from "../utils/paystackCheckout";
+import { captureCheckoutException } from "../../lib/sentry";
+
+type OrderRecord = { id: string };
 
 export default function Checkout() {
   const formatPrice = useCurrency();
@@ -34,11 +38,40 @@ export default function Checkout() {
   // Payment
   const [paymentMethod, setPaymentMethod] = useState<"card" | "bank" | "ussd" | "pod">("card");
   const [podSubmitting, setPodSubmitting] = useState(false);
+  const paystackInitCapturedRef = useRef(false);
 
   const subtotal = cartTotal;
   const { guaranteedFlat, marketplaceSellerFees, total: delivery } = computeHybridDeliveryTotals(items);
   const platformFee = Math.round(subtotal * 0.1);
   const total = subtotal + delivery + platformFee;
+  const paystackPublicKey = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY;
+
+  useEffect(() => {
+    const isPaystackPath = step === "payment" && paymentMethod !== "pod";
+    if (!isPaystackPath || paystackPublicKey || paystackInitCapturedRef.current) return;
+
+    paystackInitCapturedRef.current = true;
+    captureCheckoutException(new Error("Missing VITE_PAYSTACK_PUBLIC_KEY for checkout."), "Paystack Initialization", {
+      step,
+      paymentMethod,
+      hasPaystackKey: false,
+    });
+    // #region agent log
+    void fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "35665f" },
+      body: JSON.stringify({
+        sessionId: "35665f",
+        runId: "run1",
+        hypothesisId: "H3",
+        location: "Checkout.tsx:paystack-key-missing",
+        message: "Missing Paystack public key when entering payment step",
+        data: { step, paymentMethod },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+  }, [step, paymentMethod, paystackPublicKey]);
 
   const handleAddressSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -55,18 +88,38 @@ export default function Checkout() {
       paymentReference: string | null;
       /** Stored on `orders.payment_method`: Paystack checkout vs pay on delivery */
       paymentChannel: "paystack" | "pod";
-    }) => {
-      if (!user) throw new Error("You must be logged in to complete this order.");
+    }): Promise<OrderRecord> => {
+      if (!user) {
+        // #region agent log
+        void fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "35665f" },
+          body: JSON.stringify({
+            sessionId: "35665f",
+            runId: "run1",
+            hypothesisId: "H1",
+            location: "Checkout.tsx:createOrderWithLineItemsAndPlacedEvent:no-user",
+            message: "Order creation attempted without authenticated user",
+            data: { paymentChannel: params.paymentChannel },
+            timestamp: Date.now(),
+          }),
+        }).catch(() => {});
+        // #endregion
+        throw new Error("You must be logged in to complete this order.");
+      }
 
-      const { data: orderData, error: orderError } = await supabase.from("orders").insert({
-        buyer_id: user.id,
-        total_amount: total,
-        delivery_fee: delivery,
-        platform_fee: platformFee,
-        status: params.orderStatus,
-        payment_reference: params.paymentReference,
-        payment_method: params.paymentChannel,
-        shipping_address: {
+      const checkoutItems = items.map((item) => ({
+        id: String(item.id),
+        title: item.title,
+        image: item.image,
+        quantity: item.quantity,
+        price: item.price,
+        deliveryFee: item.deliveryFee ?? null,
+        fulfillment_type: item.fulfillment_type?.trim() || "seller_pickup",
+      }));
+
+      const { data, error } = await supabase.rpc("create_checkout_order", {
+        p_shipping_address: {
           fullName,
           phone,
           state,
@@ -74,65 +127,91 @@ export default function Checkout() {
           address,
           landmark,
         },
-      }).select().single();
-
-      if (orderError) throw orderError;
-
-      const orderItems = items.map((item) => {
-        const unit = item.price;
-        const qty = item.quantity;
-        const fulfillment = item.fulfillment_type?.trim() || "seller_pickup";
-        return {
-          order_id: orderData.id,
-          product_id: item.id,
-          seller_id: item.sellerId || user.id,
-          product_title: item.title,
-          product_image: item.image,
-          quantity: qty,
-          unit_price: unit,
-          total_price: unit * qty,
-          price_at_time: unit,
-          fulfillment_type: fulfillment,
-          delivery_fee_at_time: item.deliveryFee,
-          status: "pending" as const,
-        };
+        p_items: checkoutItems,
+        p_total_amount: total,
+        p_delivery_fee: delivery,
+        p_platform_fee: platformFee,
+        p_order_status: params.orderStatus,
+        p_payment_reference: params.paymentReference,
+        p_payment_method: params.paymentChannel,
       });
 
-      const { error: itemsError } = await supabase.from("order_items").insert(orderItems);
-      if (itemsError) throw itemsError;
+      // #region agent log
+      void fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "35665f" },
+        body: JSON.stringify({
+          sessionId: "35665f",
+          runId: "run1",
+          hypothesisId: "H1",
+          location: "Checkout.tsx:createOrderWithLineItemsAndPlacedEvent:rpc-call",
+          message: "create_checkout_order RPC completed",
+          data: {
+            paymentChannel: params.paymentChannel,
+            orderStatus: params.orderStatus,
+            hasItems: checkoutItems.length > 0,
+            itemCount: checkoutItems.length,
+            delivery,
+            platformFee,
+            total,
+            hasError: Boolean(error),
+          },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
 
-      for (const item of items) {
-        const pid = String(item.id);
-        const qty = Math.max(1, Number(item.quantity) || 1);
-        const { data: stockRow, error: stockErr } = await supabase
-          .from("products")
-          .select("id, stock_quantity")
-          .eq("id", pid)
-          .maybeSingle();
-        if (stockErr) throw stockErr;
-        const currentStock =
-          stockRow?.stock_quantity != null && Number.isFinite(Number(stockRow.stock_quantity))
-            ? Number(stockRow.stock_quantity)
-            : null;
-        if (currentStock == null) continue;
-        if (currentStock < qty) {
-          throw new Error(`Insufficient stock for ${item.title}. Only ${currentStock} left.`);
-        }
-        const { error: updateStockErr } = await supabase
-          .from("products")
-          .update({ stock_quantity: Math.max(0, currentStock - qty) })
-          .eq("id", pid);
-        if (updateStockErr) throw updateStockErr;
+      if (error) {
+        // #region agent log
+        void fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "35665f" },
+          body: JSON.stringify({
+            sessionId: "35665f",
+            runId: "run1",
+            hypothesisId: "H1",
+            location: "Checkout.tsx:createOrderWithLineItemsAndPlacedEvent:rpc-error",
+            message: "create_checkout_order RPC failed",
+            data: {
+              paymentChannel: params.paymentChannel,
+              orderStatus: params.orderStatus,
+              errorMessage: error.message,
+              code: (error as { code?: string }).code ?? null,
+            },
+            timestamp: Date.now(),
+          }),
+        }).catch(() => {});
+        // #endregion
+        throw error;
       }
 
-      const { error: eventError } = await supabase.from("order_events").insert({
-        order_id: orderData.id,
-        event_label: "Order Placed",
-        metadata: { source: params.paymentChannel },
-      });
-      if (eventError) throw eventError;
+      const orderId = typeof data === "string" ? data : null;
+      if (!orderId) {
+        throw new Error("Checkout completed without a valid order id.");
+      }
 
-      return orderData;
+      // #region agent log
+      void fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "35665f" },
+        body: JSON.stringify({
+          sessionId: "35665f",
+          runId: "run1",
+          hypothesisId: "H1",
+          location: "Checkout.tsx:createOrderWithLineItemsAndPlacedEvent:rpc-success",
+          message: "create_checkout_order RPC succeeded",
+          data: {
+            paymentChannel: params.paymentChannel,
+            orderStatus: params.orderStatus,
+            orderId,
+            itemCount: checkoutItems.length,
+          },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
+
+      return { id: orderId };
     },
     [user, items, total, delivery, platformFee, fullName, phone, state, lga, address, landmark],
   );
@@ -157,12 +236,27 @@ export default function Checkout() {
       clearCart();
       navigate(`/orders/${orderData.id}`);
     } catch (err: unknown) {
+      captureCheckoutException(err, "Pay On Delivery Order Creation", {
+        hasUser: Boolean(user),
+      });
       console.error("POD order creation:", err);
       toast.error(err instanceof Error ? err.message : "Could not place your order.");
     } finally {
       setPodSubmitting(false);
     }
   };
+
+  const handlePaystackSuccess = createPaystackSuccessHandler({
+    user: user ? { id: user.id } : null,
+    createOrderWithLineItemsAndPlacedEvent,
+    clearCart,
+    navigate,
+    notifySuccess: (message: string) => toast.success(message),
+    notifyError: (message: string) => toast.error(message),
+    logError: (error: unknown) => {
+      console.error("Order Creation Error:", error);
+    },
+  });
 
   const paystackProps = {
     email: user?.email || "customer@greenhub.com",
@@ -182,36 +276,9 @@ export default function Checkout() {
         },
       ]
     },
-    publicKey: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY,
+    publicKey: paystackPublicKey,
     text: `Buy Now (${formatPrice(total)})`,
-    onSuccess: async (reference: { reference?: string }) => {
-      try {
-        if (!user) {
-          toast.error("You must be logged in to complete this order.");
-          return;
-        }
-
-        const orderData = await createOrderWithLineItemsAndPlacedEvent({
-          orderStatus: "paid",
-          paymentReference: reference?.reference ?? null,
-          paymentChannel: "paystack",
-        });
-        const { error: deliveryError } = await supabase.from("deliveries").insert({
-          order_id: orderData.id,
-          status: "pending",
-        });
-        if (deliveryError) throw deliveryError;
-
-        toast.success("Payment successful! Your order has been placed.");
-        clearCart();
-        navigate(`/orders/${orderData.id}`);
-      } catch (err: unknown) {
-        console.error("Order Creation Error:", err);
-        toast.success("Payment successful! Your order will be tracked shortly.");
-        clearCart();
-        navigate("/orders");
-      }
-    },
+    onSuccess: handlePaystackSuccess,
     onClose: () => {
       toast.error("Payment window closed. Your transaction was cancelled.");
     },

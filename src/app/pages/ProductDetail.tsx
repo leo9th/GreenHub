@@ -344,6 +344,10 @@ function RelatedProductsCarousel({
   );
 }
 
+// #region agent log
+console.warn("[PDMOD-6af1a9] src/app/pages/ProductDetail.tsx module loaded");
+// #endregion
+
 export default function ProductDetail() {
   const formatPrice = useCurrency();
   const { id } = useParams();
@@ -469,6 +473,19 @@ export default function ProductDetail() {
     },
     onError: (message) => toast.error(message),
   });
+  // #region agent log
+  console.warn("[PDDBG-6af1a9] ProductDetail render core", {
+    path: typeof window !== "undefined" ? window.location.pathname : null,
+    routeProductId: routeProductId ?? null,
+    isServerProductLoading,
+    hasServerProduct: Boolean(serverProduct),
+    serverProductId: serverProduct?.id ?? null,
+    likeProductId: likeProductId ?? null,
+  });
+  if (typeof window !== "undefined") {
+    (window as Window & { __pdDebugMarker?: string }).__pdDebugMarker = "PDDBG-6af1a9";
+  }
+  // #endregion
 
   useEffect(() => {
     const origin = getAuthSiteOrigin() || (typeof window !== "undefined" ? window.location.origin : "");
@@ -670,6 +687,11 @@ export default function ProductDetail() {
     let cancelled = false;
 
     const loadServerProduct = async () => {
+      // #region agent log
+      console.warn("[PDDBG-6af1a9] loadServerProduct start", {
+        routeProductId: routeProductId ?? null,
+      });
+      // #endregion
       if (routeProductId == null) {
         setServerProduct(null);
         setIsServerProductLoading(false);
@@ -689,6 +711,15 @@ export default function ProductDetail() {
       const { data, error } = await supabase.from("products").select("*").eq("id", routeProductId).maybeSingle();
 
       if (cancelled) return;
+      // #region agent log
+      console.warn("[PDDBG-6af1a9] loadServerProduct result", {
+        routeProductId: routeProductId ?? null,
+        hasData: Boolean(data),
+        hasError: Boolean(error),
+        errorMessage: error?.message ?? null,
+        productId: data?.id ?? null,
+      });
+      // #endregion
 
       if (error) {
         console.warn("ProductDetail:", error.message);
@@ -932,7 +963,69 @@ export default function ProductDetail() {
     };
   }, [serverProduct?.seller_id, serverProduct?.sellerId]);
 
+  const sellerPeerIdRaw = foundProduct?.seller_id ?? foundProduct?.sellerId;
+  const sellerPeerId =
+    sellerPeerIdRaw != null && String(sellerPeerIdRaw).trim() !== ""
+      ? String(sellerPeerIdRaw).trim().replace(/^['"]+|['"]+$/g, "")
+      : "";
+
+  const buildCartLineItem = (): CartItem | null => {
+    if (!foundProduct) return null;
+
+    const ft = String(
+      (foundProduct as { fulfillment_type?: string }).fulfillment_type ?? "seller_pickup",
+    ).trim();
+    const isWarehouse = ft === "warehouse_shipping";
+
+    return {
+      id: String(foundProduct.id),
+      title: String(foundProduct.title ?? ""),
+      price: foundProduct.price,
+      image: galleryImages[0] ?? "",
+      quantity: 1,
+      sellerId: sellerPeerId || "unknown",
+      fulfillment_type: ft,
+      deliveryFee:
+        isWarehouse
+          ? 0
+          : parseDeliveryOptionsFromDb(foundProduct.deliveryOptions ?? foundProduct.delivery_options)[0]?.fee ?? 0,
+    };
+  };
+
+  const handleAddToCart = useCallback(() => {
+    const cartLineItem = buildCartLineItem();
+    if (!cartLineItem) return;
+
+    addToCart(cartLineItem);
+    setCartJustAdded(true);
+    toast.success("Added to cart", {
+      icon: <CheckCircle2 className="h-4 w-4 text-emerald-600" />,
+      className: "bg-emerald-50 text-emerald-950 border border-emerald-200/80",
+    });
+  }, [addToCart, buildCartLineItem]);
+
+  const buyNow = useCallback(() => {
+    const cartLineItem = buildCartLineItem();
+    if (!cartLineItem) return;
+
+    addToCart(cartLineItem);
+    toast.success("Added to cart", {
+      icon: <CheckCircle2 className="h-4 w-4 text-emerald-600" />,
+      className: "bg-emerald-50 text-emerald-950 border border-emerald-200/80",
+    });
+    navigate("/checkout");
+  }, [addToCart, buildCartLineItem, navigate]);
+
+  const scrollToInlineChat = useCallback(() => {
+    deliveryOptionsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
   if (isServerProductLoading) {
+    // #region agent log
+    console.warn("[PDDBG-6af1a9] ProductDetail loading return", {
+      routeProductId: routeProductId ?? null,
+      hasServerProduct: Boolean(serverProduct),
+    });
+    // #endregion
     return (
       <div className="min-h-screen bg-white flex items-center justify-center p-4 text-gray-500 text-sm">
         Loading…
@@ -941,6 +1034,13 @@ export default function ProductDetail() {
   }
 
   if (!foundProduct) {
+    // #region agent log
+    console.warn("[PDDBG-6af1a9] ProductDetail not-found return", {
+      routeProductId: routeProductId ?? null,
+      isServerProductLoading,
+      serverProductId: serverProduct?.id ?? null,
+    });
+    // #endregion
     return (
       <div className="min-h-screen bg-white flex items-center justify-center p-4">
         <div className="text-center max-w-sm">
@@ -958,14 +1058,25 @@ export default function ProductDetail() {
     );
   }
 
-  const sellerPeerIdRaw = foundProduct.seller_id ?? foundProduct.sellerId;
-  const sellerPeerId =
-    sellerPeerIdRaw != null && String(sellerPeerIdRaw).trim() !== ""
-      ? String(sellerPeerIdRaw).trim().replace(/^['"]+|['"]+$/g, "")
-      : "";
+  // #region agent log
+  console.warn("[PDDBG-6af1a9] ProductDetail guard-passed", {
+    isServerProductLoading,
+    hasFoundProduct: Boolean(foundProduct),
+    foundProductId: foundProduct?.id ?? null,
+  });
+  // #endregion
+
   const normalizedSellerPeerId = normalizePeerId(sellerPeerId);
   const normalizedCurrentUserId = normalizePeerId(authUser?.id);
   const isOwner = Boolean(normalizedCurrentUserId && normalizedSellerPeerId && normalizedCurrentUserId === normalizedSellerPeerId);
+  // #region agent log
+  console.warn("[PDDBG-6af1a9] ProductDetail post-guard state", {
+    foundProductId: foundProduct.id ?? null,
+    sellerPeerIdPresent: Boolean(sellerPeerId),
+    isOwner,
+    galleryImageCount: galleryImages.length,
+  });
+  // #endregion
   console.log('isOwner:', isOwner, 'sellerId:', sellerPeerId, 'currentUserId:', authUser?.id);
   const canMessageSeller = Boolean(sellerPeerId);
   const showBuyerActions = !isOwner;
@@ -1055,41 +1166,6 @@ export default function ProductDetail() {
     ),
   };
 
-  const buildCartLineItem = (): CartItem => {
-    const ft = String(
-      (foundProduct as { fulfillment_type?: string }).fulfillment_type ?? "seller_pickup",
-    ).trim();
-    const isWarehouse = ft === "warehouse_shipping";
-    return {
-      id: product.id.toString(),
-      title: product.title,
-      price: product.price,
-      image: product.images[0] ?? "",
-      quantity: 1,
-      sellerId: sellerPeerId || product.seller.id.toString(),
-      fulfillment_type: ft,
-      deliveryFee: isWarehouse ? 0 : product.deliveryOptions[0]?.fee ?? 0,
-    };
-  };
-  const handleAddToCart = useCallback(() => {
-    addToCart(buildCartLineItem());
-    setCartJustAdded(true);
-    toast.success("Added to cart", {
-      icon: <CheckCircle2 className="h-4 w-4 text-emerald-600" />,
-      className: "bg-emerald-50 text-emerald-950 border border-emerald-200/80",
-    });
-  }, [addToCart, buildCartLineItem]);
-  const buyNow = useCallback(() => {
-    addToCart(buildCartLineItem());
-    toast.success("Added to cart", {
-      icon: <CheckCircle2 className="h-4 w-4 text-emerald-600" />,
-      className: "bg-emerald-50 text-emerald-950 border border-emerald-200/80",
-    });
-    navigate("/checkout");
-  }, [addToCart, buildCartLineItem, navigate]);
-  const scrollToInlineChat = useCallback(() => {
-    deliveryOptionsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, []);
   const stockQuantity =
     foundProduct?.stock_quantity != null && Number.isFinite(Number(foundProduct.stock_quantity))
       ? Math.max(0, Number(foundProduct.stock_quantity))

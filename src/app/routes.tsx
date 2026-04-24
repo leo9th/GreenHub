@@ -82,7 +82,7 @@ function LegacySellerProductEditRedirect() {
 
 function CheckoutWithErrorBoundary() {
   return (
-    <AppErrorBoundary scope="section">
+    <AppErrorBoundary scope="section" boundaryName="checkout">
       <Checkout />
     </AppErrorBoundary>
   );

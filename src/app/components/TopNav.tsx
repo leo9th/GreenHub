@@ -70,33 +70,6 @@ export default function TopNav() {
   const hideNavOnPaths = ["/login", "/register", "/verify-otp", "/welcome"];
   const isHidden = hideNavOnPaths.some((path) => location.pathname.startsWith(path));
   const isHome = location.pathname === "/";
-
-  const fullName =
-    profile?.full_name?.trim() ||
-    authUser?.user_metadata?.full_name?.trim() ||
-    authUser?.email?.split("@")[0] ||
-    "User";
-  const avatarUrl = getAvatarUrl(
-    profile?.avatar_url || authUser?.user_metadata?.avatar_url,
-    profile?.gender || authUser?.user_metadata?.gender,
-    fullName,
-  );
-
-  const roleFromProfile =
-    typeof profile?.role === "string" ? profile.role.toLowerCase() : "";
-  const roleFromUserMeta =
-    typeof authUser?.user_metadata?.role === "string"
-      ? String(authUser.user_metadata.role).toLowerCase()
-      : "";
-  // Fallback: if role not loaded yet, check email directly (temporary workaround)
-  const isAdmin =
-    roleFromProfile === "admin" ||
-    roleFromUserMeta === "admin" ||
-    authUser?.email === "liondecafe@gmail.com";
-
-  // Debug log (remove after confirming)
-  console.log("🔍 TopNav - isAdmin:", isAdmin, "profile.role:", profile?.role, "email:", authUser?.email);
-
   const notifyMarkAllReadError = useCallback((error: string) => {
     toast.error("Could not mark notifications read. Check Supabase notifications RLS.");
     console.warn("markAllNotificationsRead:", error);
@@ -122,6 +95,21 @@ export default function TopNav() {
   }, [location.pathname]);
 
   if (isHidden) return null;
+
+  const fullName =
+    profile?.full_name?.trim() ||
+    authUser?.user_metadata?.full_name?.trim() ||
+    authUser?.email?.split("@")[0] ||
+    "User";
+  const avatarUrl = getAvatarUrl(
+    profile?.avatar_url || authUser?.user_metadata?.avatar_url,
+    profile?.gender || authUser?.user_metadata?.gender,
+    fullName,
+  );
+
+  const roleFromProfile =
+    typeof profile?.role === "string" ? profile.role.toLowerCase() : "";
+  const isAdmin = roleFromProfile === "admin";
 
   const bgClass = isHome
     ? "bg-[#22c55e] dark:bg-emerald-950 dark:border-b dark:border-emerald-900"

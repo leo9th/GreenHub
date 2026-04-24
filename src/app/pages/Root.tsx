@@ -42,6 +42,7 @@ export default function Root() {
     "/reset-password",
     "/design-system",
   ];
+  const isAdminShell = location.pathname.startsWith("/admin");
   const isMessageThread =
     location.pathname !== "/messages" &&
     (/^\/messages\/c\//.test(location.pathname) ||
@@ -50,16 +51,16 @@ export default function Root() {
       /^\/chat-v2\//.test(location.pathname));
   /** Hide site assistant on DM screens so it does not cover the message composer. */
   const hideFloatingChatbot =
-    hideNavOnPaths.some((path) => location.pathname.startsWith(path)) || isMessageThread;
+    hideNavOnPaths.some((path) => location.pathname.startsWith(path)) || isMessageThread || isAdminShell;
   const showBottomNav =
-    !hideNavOnPaths.some((path) => location.pathname.startsWith(path)) && !isMessageThread;
+    !hideNavOnPaths.some((path) => location.pathname.startsWith(path)) && !isMessageThread && !isAdminShell;
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-background flex flex-col transition-colors duration-200">
       <main className={`flex-1 flex flex-col ${showBottomNav ? "pb-28 md:pb-0" : ""}`}>
-        <TopNav />
+        {!isAdminShell ? <TopNav /> : null}
         <AnimatedOutlet />
-        {showBottomNav && <Footer />}
+        {showBottomNav ? <Footer /> : null}
         <ScrollRestoration />
       </main>
 

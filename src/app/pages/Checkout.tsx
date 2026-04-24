@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { ArrowLeft, Check, CreditCard, Building2, Smartphone, Home } from "lucide-react";
+import { ArrowLeft, Check, CreditCard, Building2, Smartphone, Home, ShoppingCart, Truck, ShoppingBag } from "lucide-react";
 import { nigerianStates } from "../data/catalogConstants";
 import { getLGAsForState } from "../data/mockData";
 import { useCurrency } from "../hooks/useCurrency";
@@ -182,7 +182,7 @@ export default function Checkout() {
       ]
     },
     publicKey: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY,
-    text: `Pay ${formatPrice(total)} Securely`,
+    text: `Buy Now (${formatPrice(total)})`,
     onSuccess: async (reference: { reference?: string }) => {
       try {
         if (!user) {
@@ -195,6 +195,11 @@ export default function Checkout() {
           paymentReference: reference?.reference ?? null,
           paymentChannel: "paystack",
         });
+        const { error: deliveryError } = await supabase.from("deliveries").insert({
+          order_id: orderData.id,
+          status: "pending",
+        });
+        if (deliveryError) throw deliveryError;
 
         toast.success("Payment successful! Your order has been placed.");
         clearCart();
@@ -214,7 +219,9 @@ export default function Checkout() {
   if (items.length === 0) {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
-        <div className="w-24 h-24 bg-gray-200 rounded-full flex items-center justify-center mb-6 text-4xl">🛒</div>
+        <div className="w-24 h-24 bg-gray-200 rounded-full flex items-center justify-center mb-6">
+          <ShoppingCart className="h-10 w-10 text-emerald-500" />
+        </div>
         <h2 className="text-xl font-bold mb-3">Your cart is empty</h2>
         <p className="text-gray-500 mb-8 max-w-sm text-center">Add some products to your cart before proceeding to checkout.</p>
         <button onClick={() => navigate("/products")} className="px-8 py-3 bg-[#22c55e] text-white font-bold rounded-xl hover:bg-[#16a34a] transition-colors shadow-sm">
@@ -437,15 +444,25 @@ export default function Checkout() {
                   type="button"
                   disabled={podSubmitting}
                   onClick={() => void handlePODSubmit()}
-                  className="w-full py-4 bg-[#22c55e] hover:bg-[#16a34a] disabled:opacity-60 disabled:pointer-events-none text-white rounded-xl font-bold text-lg shadow-lg shadow-[#22c55e]/25 transition-all outline-none"
+                  className="relative w-full min-h-[52px] rounded-xl bg-[#22c55e] py-4 text-lg font-bold text-white shadow-lg shadow-[#22c55e]/25 transition-all outline-none hover:bg-[#16a34a] disabled:pointer-events-none disabled:opacity-60"
                 >
-                  {podSubmitting ? "Placing order…" : `Confirm Order (${formatPrice(total)})`}
+                  <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2">
+                    <Truck className="h-5 w-5 text-emerald-200" />
+                  </span>
+                  <span className="inline-flex items-center justify-center">
+                    {podSubmitting ? "Placing order…" : `Book a Ride (${formatPrice(total)})`}
+                  </span>
                 </button>
               ) : (
-                <PaystackButton
-                  {...paystackProps}
-                  className="w-full py-4 bg-[#092b23] hover:bg-[#061d18] text-white rounded-xl font-bold text-lg shadow-lg shadow-[#092b23]/25 transition-all outline-none block text-center"
-                />
+                <div className="relative">
+                  <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2">
+                    <ShoppingBag className="h-5 w-5 text-emerald-200" />
+                  </span>
+                  <PaystackButton
+                    {...paystackProps}
+                    className="block w-full min-h-[52px] rounded-xl bg-[#092b23] py-4 text-center text-lg font-bold text-white shadow-lg shadow-[#092b23]/25 transition-all outline-none hover:bg-[#061d18]"
+                  />
+                </div>
               )}
             </div>
           </div>

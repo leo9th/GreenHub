@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { ChevronLeft, Heart, Share2, Star, MapPin, ShieldCheck, MessageCircle, Phone, Truck, Package, Store } from "lucide-react";
+import { ChevronLeft, Heart, Share2, Star, MapPin, ShieldCheck, MessageCircle, Phone, Truck, Package, Store, ShoppingCart, ShoppingBag } from "lucide-react";
 
 const productImages = [
   "https://images.unsplash.com/photo-1678685888221-cda773a3dcdb?w=600",
@@ -184,13 +184,15 @@ export function ProductDetail() {
       </div>
 
       <div className="sticky bottom-0 bg-white border-t border-border p-4 flex gap-3">
-        <button className="flex-1 py-3 border border-[#22c55e] text-[#22c55e] rounded-lg">
+        <button className="relative flex-1 py-3 border border-[#22c55e] text-[#22c55e] rounded-lg inline-flex items-center justify-center">
+          <ShoppingCart className="absolute left-4 w-4 h-4 text-emerald-500" />
           Add to Cart
         </button>
         <Link
           to="/checkout"
-          className="flex-1 py-3 bg-[#22c55e] text-white rounded-lg text-center"
+          className="relative flex-1 py-3 bg-[#22c55e] text-white rounded-lg text-center inline-flex items-center justify-center"
         >
+          <ShoppingBag className="absolute left-4 w-4 h-4 text-emerald-200" />
           Buy Now
         </Link>
       </div>

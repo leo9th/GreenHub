@@ -34,6 +34,7 @@ import WorkersBrowse from "./pages/workers/WorkersBrowse";
 import WorkerProfileDetail from "./pages/workers/WorkerProfileDetail";
 import WorkerProfileRegister from "./pages/workers/WorkerProfileRegister";
 import Contact from "./pages/Contact";
+import AdminLayout from "./pages/admin/AdminLayout";
 
 /** Code-split heavy routes (chat, seller, admin, large listing detail). */
 function lazyPage(importer: () => Promise<{ default: ComponentType<unknown> }>) {
@@ -147,15 +148,22 @@ export const router = createBrowserRouter([
       { path: "settings/privacy", Component: LegacySettingsRedirect },
       { path: "settings/blocked-users", Component: LegacySettingsRedirect },
       { path: "settings/language", Component: LegacySettingsRedirect },
-      { path: "admin/dashboard", lazy: lazyPage(() => import("./pages/admin/Dashboard")) },
-      { path: "admin/users", lazy: lazyPage(() => import("./pages/admin/Users")) },
-      { path: "admin/products", lazy: lazyPage(() => import("./pages/admin/Products")) },
-      { path: "admin/pricing", lazy: lazyPage(() => import("./pages/admin/AdPricingControl")) },
-      { path: "admin/job-applications", lazy: lazyPage(() => import("./pages/admin/JobApplications")) },
-      { path: "admin/boosts", lazy: lazyPage(() => import("./pages/admin/AdminBoosts")) },
-      { path: "admin/chatbot-learning", lazy: lazyPage(() => import("./pages/admin/AdminChatbotLearning")) },
-      { path: "admin/orders", Component: LegacyAdminRedirect },
-      { path: "admin/reports", Component: LegacyAdminRedirect },
+      {
+        path: "admin",
+        Component: AdminLayout,
+        children: [
+          { index: true, element: <Navigate to="dashboard" replace /> },
+          { path: "dashboard", lazy: lazyPage(() => import("./pages/admin/Dashboard")) },
+          { path: "users", lazy: lazyPage(() => import("./pages/admin/Users")) },
+          { path: "products", lazy: lazyPage(() => import("./pages/admin/Products")) },
+          { path: "pricing", lazy: lazyPage(() => import("./pages/admin/AdPricingControl")) },
+          { path: "job-applications", lazy: lazyPage(() => import("./pages/admin/JobApplications")) },
+          { path: "boosts", lazy: lazyPage(() => import("./pages/admin/AdminBoosts")) },
+          { path: "chatbot-learning", lazy: lazyPage(() => import("./pages/admin/AdminChatbotLearning")) },
+          { path: "orders", Component: LegacyAdminRedirect },
+          { path: "reports", Component: LegacyAdminRedirect },
+        ],
+      },
       { path: "help", Component: LegacyHelpRedirect },
       { path: "support", Component: LegacySupportRedirect },
       { path: "contact", Component: Contact },

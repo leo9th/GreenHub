@@ -1,46 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router";
-import {
-  AlertTriangle,
-  Briefcase,
-  CheckCircle2,
-  DollarSign,
-  Loader2,
-  MessageCircle,
-  Package,
-  TrendingUp,
-  Wallet,
-} from "lucide-react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { Loader2, Package, Store, DollarSign } from "lucide-react";
 import { toast } from "sonner";
 import { useCurrency } from "../../hooks/useCurrency";
-import { useAuth } from "../../context/AuthContext";
 import { supabase } from "../../../lib/supabase";
 
 type OrderRevenueRow = {
   total_amount?: number | null;
   total_price?: number | null;
   amount?: number | null;
-};
-
-type PayoutRow = {
-  id: string;
-  seller_id: string | null;
-  amount: number | null;
-  status: string | null;
-  created_at: string | null;
-};
-
-type SellerProfileLite = {
-  id: string;
-  full_name: string | null;
-};
-
-type LowStockProductRow = {
-  id: string | number;
-  title: string | null;
-  seller_id: string | null;
-  stock_quantity: number | null;
-  status: string | null;
 };
 
 function asMoney(v: unknown): number {
@@ -50,361 +17,117 @@ function asMoney(v: unknown): number {
 
 export default function AdminDashboard() {
   const formatPrice = useCurrency();
-  const navigate = useNavigate();
-  const { user: authUser, loading: authLoading } = useAuth();
-
   const [loading, setLoading] = useState(true);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [totalRevenue, setTotalRevenue] = useState(0);
-  const [completedPayoutTotal, setCompletedPayoutTotal] = useState(0);
-  const [pendingPayouts, setPendingPayouts] = useState<PayoutRow[]>([]);
-  const [lowStockProducts, setLowStockProducts] = useState<LowStockProductRow[]>([]);
-  const [sellerNames, setSellerNames] = useState<Map<string, string>>(new Map());
-  const [confirmingPayoutId, setConfirmingPayoutId] = useState<string | null>(null);
+  const [totalProducts, setTotalProducts] = useState(0);
+  const [activeSellers, setActiveSellers] = useState(0);
+  const [platformRevenue, setPlatformRevenue] = useState(0);
 
-  const loadDashboard = useCallback(async () => {
-    if (!authUser?.id) {
-      setLoading(false);
-      return;
-    }
-
+  const loadStats = useCallback(async () => {
     setLoading(true);
     try {
-      const { data: profileRow } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", authUser.id)
-        .maybeSingle();
-
-      const roleFromProfile =
-        profileRow && typeof (profileRow as { role?: unknown }).role === "string"
-          ? String((profileRow as { role?: unknown }).role).toLowerCase()
-          : "";
-      const roleFromMeta =
-        typeof authUser.user_metadata?.role === "string"
-          ? String(authUser.user_metadata.role).toLowerCase()
-          : "";
-      const allowed = roleFromProfile === "admin" || roleFromMeta === "admin";
-      setIsAdmin(allowed);
-
-      if (!allowed) {
-        setTotalRevenue(0);
-        setCompletedPayoutTotal(0);
-        setPendingPayouts([]);
-        setLowStockProducts([]);
-        setSellerNames(new Map());
-        return;
-      }
-
-      const [{ data: deliveredOrders, error: deliveredErr }, { data: payoutRows, error: payoutErr }, { data: stockRows, error: stockErr }] =
+      const [{ count: productCount, error: productErr }, { data: deliveredOrders, error: deliveredErr }, { data: activeRows, error: activeErr }] =
         await Promise.all([
+          supabase.from("products").select("*", { count: "exact", head: true }),
           supabase
             .from("orders")
             .select("total_amount, total_price, amount")
             .in("status", ["delivered", "completed"]),
-          supabase
-            .from("payout_requests")
-            .select("id, seller_id, amount, status, created_at")
-            .in("status", ["pending", "completed"])
-            .order("created_at", { ascending: false }),
-          supabase
-            .from("products")
-            .select("id, title, seller_id, stock_quantity, status")
-            .lt("stock_quantity", 5)
-            .eq("status", "active")
-            .order("stock_quantity", { ascending: true })
-            .limit(30),
+          supabase.from("products").select("seller_id").eq("status", "active"),
         ]);
 
+      if (productErr) throw productErr;
       if (deliveredErr) throw deliveredErr;
-      if (payoutErr) throw payoutErr;
-      if (stockErr) throw stockErr;
+      if (activeErr) throw activeErr;
+
+      setTotalProducts(typeof productCount === "number" ? productCount : 0);
+
+      const sellerIds = new Set<string>();
+      for (const row of activeRows ?? []) {
+        const sid = (row as { seller_id?: string | null }).seller_id;
+        if (sid) sellerIds.add(String(sid));
+      }
+      setActiveSellers(sellerIds.size);
 
       const delivered = (deliveredOrders ?? []) as OrderRevenueRow[];
       const grossDelivered = delivered.reduce((sum, row) => {
         const raw = row.total_amount ?? row.total_price ?? row.amount ?? 0;
         return sum + asMoney(raw);
       }, 0);
-      setTotalRevenue(grossDelivered * 0.1);
-
-      const payouts = (payoutRows ?? []) as PayoutRow[];
-      const completedTotal = payouts
-        .filter((p) => String(p.status ?? "").toLowerCase() === "completed")
-        .reduce((sum, p) => sum + asMoney(p.amount), 0);
-      setCompletedPayoutTotal(completedTotal);
-
-      const pending = payouts.filter((p) => String(p.status ?? "").toLowerCase() === "pending");
-      setPendingPayouts(pending);
-      setLowStockProducts((stockRows ?? []) as LowStockProductRow[]);
-
-      const sellerIds = [
-        ...new Set(
-          [
-            ...pending.map((p) => (p.seller_id ? String(p.seller_id) : "")),
-            ...(stockRows ?? []).map((p) => {
-              const s = (p as { seller_id?: unknown }).seller_id;
-              return s ? String(s) : "";
-            }),
-          ].filter(Boolean),
-        ),
-      ];
-      if (sellerIds.length > 0) {
-        const { data: nameRows } = await supabase.from("profiles_public").select("id, full_name").in("id", sellerIds);
-        const names = new Map<string, string>();
-        for (const row of (nameRows ?? []) as SellerProfileLite[]) {
-          names.set(row.id, (row.full_name || "").trim() || "Seller");
-        }
-        setSellerNames(names);
-      } else {
-        setSellerNames(new Map());
-      }
+      setPlatformRevenue(grossDelivered * 0.1);
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Could not load admin dashboard");
+      toast.error(e instanceof Error ? e.message : "Could not load dashboard stats");
+      setTotalProducts(0);
+      setActiveSellers(0);
+      setPlatformRevenue(0);
     } finally {
       setLoading(false);
     }
-  }, [authUser?.id, authUser?.user_metadata?.role]);
+  }, []);
 
   useEffect(() => {
-    if (authLoading) return;
-    if (!authUser) {
-      navigate("/login", { replace: true });
-      return;
-    }
-    void loadDashboard();
-  }, [authLoading, authUser, loadDashboard, navigate]);
+    void loadStats();
+  }, [loadStats]);
 
-  const confirmPayment = useCallback(
-    async (row: PayoutRow) => {
-      if (!row.id || confirmingPayoutId) return;
-      setConfirmingPayoutId(row.id);
-      try {
-        const nowIso = new Date().toISOString();
-        const { error } = await supabase
-          .from("payout_requests")
-          .update({
-            status: "completed",
-            completed_at: nowIso,
-            updated_at: nowIso,
-          })
-          .eq("id", row.id)
-          .eq("status", "pending");
-
-        if (error) throw error;
-        toast.success("Payout marked as completed.");
-        await loadDashboard();
-      } catch (e: unknown) {
-        toast.error(e instanceof Error ? e.message : "Could not confirm payment");
-      } finally {
-        setConfirmingPayoutId(null);
-      }
-    },
-    [confirmingPayoutId, loadDashboard],
-  );
-
-  const pendingTotal = useMemo(
-    () => pendingPayouts.reduce((sum, p) => sum + asMoney(p.amount), 0),
-    [pendingPayouts],
-  );
-
-  if (authLoading || loading) {
+  if (loading) {
     return (
-      <div className="min-h-screen bg-[#07110d] flex items-center justify-center">
-        <Loader2 className="h-10 w-10 animate-spin text-emerald-400" />
-      </div>
-    );
-  }
-
-  if (!isAdmin) {
-    return (
-      <div className="min-h-screen bg-[#07110d] text-white flex items-center justify-center px-4">
-        <div className="max-w-md text-center rounded-2xl border border-emerald-900/60 bg-[#0b1b14] p-6">
-          <h1 className="text-xl font-semibold text-emerald-300">Admin access required</h1>
-          <p className="mt-2 text-sm text-emerald-100/80">
-            This dashboard is restricted to accounts with role set to <code>admin</code>.
-          </p>
-          <button
-            type="button"
-            onClick={() => navigate("/", { replace: true })}
-            className="mt-4 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500"
-          >
-            Go home
-          </button>
-        </div>
+      <div className="flex min-h-[60vh] items-center justify-center bg-[#0b1220]">
+        <Loader2 className="h-10 w-10 animate-spin text-emerald-400" aria-hidden />
+        <span className="sr-only">Loading stats…</span>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#07110d] text-white pb-8">
-      <header className="sticky top-0 z-40 border-b border-emerald-900/50 bg-[#07110d]/95 backdrop-blur">
-        <div className="px-4 py-4 max-w-6xl mx-auto">
-          <h1 className="text-xl font-bold text-emerald-300">GreenHub Admin Dashboard</h1>
-          <p className="text-sm text-emerald-100/70">Finance, payouts, and inventory oversight</p>
-        </div>
-      </header>
-
-      <div className="px-4 py-4 max-w-6xl mx-auto space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="rounded-xl border border-emerald-800/60 bg-[#0b1b14] p-4">
-            <div className="flex items-center justify-between">
-              <p className="text-xs uppercase tracking-wide text-emerald-200/80">Platform revenue (10% delivered)</p>
-              <DollarSign className="h-5 w-5 text-emerald-300" />
-            </div>
-            <p className="mt-2 text-3xl font-bold text-emerald-300">{formatPrice(totalRevenue)}</p>
-          </div>
-          <div className="rounded-xl border border-emerald-800/60 bg-[#0b1b14] p-4">
-            <div className="flex items-center justify-between">
-              <p className="text-xs uppercase tracking-wide text-emerald-200/80">Completed seller payouts</p>
-              <Wallet className="h-5 w-5 text-emerald-300" />
-            </div>
-            <p className="mt-2 text-3xl font-bold text-emerald-300">{formatPrice(completedPayoutTotal)}</p>
-          </div>
-          <div className="rounded-xl border border-emerald-800/60 bg-[#0b1b14] p-4">
-            <div className="flex items-center justify-between">
-              <p className="text-xs uppercase tracking-wide text-emerald-200/80">Pending payout queue</p>
-              <TrendingUp className="h-5 w-5 text-emerald-300" />
-            </div>
-            <p className="mt-2 text-3xl font-bold text-emerald-300">{formatPrice(pendingTotal)}</p>
-            <p className="mt-1 text-xs text-emerald-100/70">{pendingPayouts.length} pending request(s)</p>
-          </div>
+    <div className="min-h-[calc(100vh-3.5rem)] bg-gradient-to-b from-[#0b1220] via-[#0d1629] to-[#0b1220] pb-12 pt-8 text-slate-100">
+      <div className="mx-auto max-w-6xl px-4 sm:px-6">
+        <div className="mb-8">
+          <h1 className="text-2xl font-bold tracking-tight text-emerald-300 sm:text-3xl">Dashboard</h1>
+          <p className="mt-1 text-sm text-emerald-100/60">Platform overview at a glance</p>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <Link
-            to="/admin/boosts"
-            className="flex flex-col items-center justify-center p-4 rounded-lg border border-emerald-800/60 bg-[#0b1b14] hover:border-emerald-500 transition-all"
-          >
-            <div className="w-12 h-12 rounded-full bg-emerald-900/40 flex items-center justify-center mb-2">
-              <TrendingUp className="w-6 h-6 text-emerald-300" />
-            </div>
-            <span className="text-sm font-medium text-emerald-100 text-center">Boost payments</span>
-          </Link>
-          <Link
-            to="/admin/chatbot-learning"
-            className="flex flex-col items-center justify-center p-4 rounded-lg border border-emerald-800/60 bg-[#0b1b14] hover:border-emerald-500 transition-all"
-          >
-            <div className="w-12 h-12 rounded-full bg-emerald-900/40 flex items-center justify-center mb-2">
-              <MessageCircle className="w-6 h-6 text-emerald-300" />
-            </div>
-            <span className="text-sm font-medium text-emerald-100 text-center">Chatbot learning</span>
-          </Link>
-          <Link
-            to="/admin/job-applications"
-            className="rounded-lg border border-emerald-800/60 bg-[#0b1b14] p-4 text-center hover:border-emerald-500 transition-colors"
-          >
-            <Briefcase className="w-8 h-8 text-emerald-300 mx-auto mb-2" />
-            <p className="font-medium text-emerald-100">Job applications</p>
-          </Link>
-          <Link
-            to="/admin/users"
-            className="rounded-lg border border-emerald-800/60 bg-[#0b1b14] p-4 text-center hover:border-emerald-500 transition-colors"
-          >
-            <CheckCircle2 className="w-8 h-8 text-emerald-300 mx-auto mb-2" />
-            <p className="font-medium text-emerald-100">Manage Users</p>
-          </Link>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="rounded-xl border border-emerald-800/60 bg-[#0b1b14] p-4">
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="font-semibold text-emerald-200">Pending payouts</h2>
-              <span className="text-xs text-emerald-100/70">{pendingPayouts.length} awaiting confirmation</span>
-            </div>
-            {pendingPayouts.length === 0 ? (
-              <p className="text-sm text-emerald-100/70">No pending payout requests.</p>
-            ) : (
-              <div className="space-y-3">
-                {pendingPayouts.map((row) => (
-                  <div key={row.id} className="rounded-lg border border-emerald-900/70 bg-[#10241b] p-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-emerald-100 truncate">
-                          {row.seller_id ? sellerNames.get(row.seller_id) || "Seller" : "Seller"}
-                        </p>
-                        <p className="text-xs text-emerald-100/60 font-mono truncate">{row.seller_id || "unknown-seller"}</p>
-                      </div>
-                      <p className="text-lg font-bold text-emerald-300">{formatPrice(row.amount ?? 0)}</p>
-                    </div>
-                    <div className="mt-3 flex items-center justify-between">
-                      <p className="text-xs text-emerald-100/60">
-                        Requested {row.created_at ? new Date(row.created_at).toLocaleString() : "—"}
-                      </p>
-                      <button
-                        type="button"
-                        disabled={confirmingPayoutId === row.id}
-                        onClick={() => void confirmPayment(row)}
-                        className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
-                      >
-                        {confirmingPayoutId === row.id ? "Confirming..." : "Confirm Payment"}
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="rounded-xl border border-emerald-800/60 bg-[#0b1b14] p-4">
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="font-semibold text-emerald-200">Low stock inventory</h2>
-              <span className="text-xs text-emerald-100/70">stock_quantity &lt; 5</span>
-            </div>
-            {lowStockProducts.length === 0 ? (
-              <p className="text-sm text-emerald-100/70">No low-stock products found.</p>
-            ) : (
-              <div className="space-y-3">
-                {lowStockProducts.map((product) => (
-                  <div key={String(product.id)} className="rounded-lg border border-amber-600/40 bg-amber-500/10 p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-amber-100 truncate">{product.title || "Untitled product"}</p>
-                        <p className="text-xs text-amber-200/80">
-                          Seller:{" "}
-                          {product.seller_id
-                            ? sellerNames.get(product.seller_id) || product.seller_id
-                            : "Unknown"}
-                        </p>
-                      </div>
-                      <div className="inline-flex items-center gap-1 rounded-full bg-amber-500/20 px-2 py-1 text-xs font-semibold text-amber-100">
-                        <AlertTriangle className="h-3.5 w-3.5" />
-                        {Math.max(0, asMoney(product.stock_quantity))} left
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-emerald-800/60 bg-[#0b1b14] p-4">
-          <h2 className="font-semibold text-emerald-200">Admin navigation</h2>
-          <div className="mt-3 grid grid-cols-2 md:grid-cols-3 gap-3">
-            <Link
-              to="/admin/products"
-              className="rounded-lg border border-emerald-900/70 bg-[#10241b] p-3 text-sm font-medium text-emerald-100 hover:border-emerald-500"
-            >
-              <Package className="mb-2 h-4 w-4 text-emerald-300" />
-              Manage products
-            </Link>
-            <Link
-              to="/admin/users"
-              className="rounded-lg border border-emerald-900/70 bg-[#10241b] p-3 text-sm font-medium text-emerald-100 hover:border-emerald-500"
-            >
-              <CheckCircle2 className="mb-2 h-4 w-4 text-emerald-300" />
-              Manage users
-            </Link>
-            <Link
-              to="/admin/job-applications"
-              className="rounded-lg border border-emerald-900/70 bg-[#10241b] p-3 text-sm font-medium text-emerald-100 hover:border-emerald-500"
-            >
-              <Briefcase className="mb-2 h-4 w-4 text-emerald-300" />
-              Job applications
-            </Link>
-          </div>
-        </div>
+        <section aria-label="Key statistics" className="grid grid-cols-1 gap-4 sm:gap-5 md:grid-cols-3">
+          <StatCard
+            label="Total Products"
+            value={String(totalProducts.toLocaleString())}
+            icon={<Package className="h-5 w-5 text-emerald-400/90" aria-hidden />}
+          />
+          <StatCard
+            label="Active Sellers"
+            value={String(activeSellers.toLocaleString())}
+            icon={<Store className="h-5 w-5 text-emerald-400/90" aria-hidden />}
+            hint="Sellers with at least one active listing"
+          />
+          <StatCard
+            label="Platform Revenue (10%)"
+            value={formatPrice(platformRevenue)}
+            icon={<DollarSign className="h-5 w-5 text-emerald-400/90" aria-hidden />}
+            hint="10% of delivered & completed order totals"
+          />
+        </section>
       </div>
     </div>
+  );
+}
+
+function StatCard({
+  label,
+  value,
+  icon,
+  hint,
+}: {
+  label: string;
+  value: string;
+  icon: ReactNode;
+  hint?: string;
+}) {
+  return (
+    <article className="rounded-2xl border border-emerald-500/20 bg-slate-900/45 p-5 shadow-[inset_0_1px_0_0_rgba(16,185,129,0.06),0_12px_40px_-24px_rgba(0,0,0,0.8)] backdrop-blur-sm">
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-400/85">{label}</p>
+        <div className="shrink-0 rounded-lg border border-emerald-500/15 bg-emerald-950/40 p-2">{icon}</div>
+      </div>
+      <p className="mt-4 text-3xl font-bold tabular-nums tracking-tight text-emerald-300 sm:text-4xl">{value}</p>
+      {hint ? <p className="mt-2 text-xs leading-snug text-emerald-100/50">{hint}</p> : null}
+    </article>
   );
 }

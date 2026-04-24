@@ -18,6 +18,7 @@ import {
   Star,
   MapPin,
   ShoppingCart,
+  ShoppingBag,
   ChevronLeft,
   ChevronRight,
   BadgeCheck,
@@ -2160,7 +2161,7 @@ export default function ProductDetail() {
                         className: "bg-emerald-50 text-emerald-950 border border-emerald-200/80",
                       });
                     }}
-                    className="flex min-h-[48px] flex-1 items-center justify-center rounded-xl bg-orange-500 py-3 text-sm font-semibold text-white hover:bg-orange-600"
+                    className="relative flex min-h-[48px] flex-1 items-center justify-center rounded-xl border border-emerald-300 bg-emerald-50 py-3 text-sm font-semibold text-emerald-700 hover:bg-emerald-100"
                   >
                     <AnimatePresence mode="wait" initial={false}>
                       {cartJustAdded ? (
@@ -2181,9 +2182,9 @@ export default function ProductDetail() {
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, y: -4 }}
                           transition={{ duration: 0.25, ease: "easeOut" }}
-                          className="inline-flex items-center justify-center gap-2"
+                          className="inline-flex items-center justify-center"
                         >
-                          <ShoppingCart className="h-4 w-4 sm:hidden" />
+                          <ShoppingCart className="absolute left-4 h-4 w-4 text-emerald-500" />
                           Add to cart
                         </motion.span>
                       )}
@@ -2199,8 +2200,9 @@ export default function ProductDetail() {
                       });
                       navigate("/checkout");
                     }}
-                    className="flex-1 py-3 rounded-xl bg-[#16a34a] text-white text-sm font-bold hover:bg-[#15803d]"
+                    className="relative inline-flex min-h-[48px] flex-1 items-center justify-center rounded-xl border border-emerald-500 bg-emerald-600 py-3 text-sm font-bold text-white hover:bg-emerald-700"
                   >
+                    <ShoppingBag className="absolute left-4 h-4 w-4 text-emerald-200" />
                     Buy now
                   </button>
                 </>

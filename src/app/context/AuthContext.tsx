@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js';
 import { supabase } from '../../lib/supabase';
 import { ensureOAuthProfile, isOAuthUser } from '../utils/ensureOAuthProfile';
@@ -7,27 +7,8 @@ export interface UserProfile {
   id: string;
   full_name?: string | null;
   email?: string | null;
-  phone?: string | null;
-  /** Set after SMS OTP on profile (see `PhoneVerification`). */
-  phone_verified?: boolean | null;
-  avatar_url?: string | null;
-  /** Optional banner image on profile (public URL). */
-  cover_url?: string | null;
-  gender?: string | null;
-  state?: string | null;
-  lga?: string | null;
-  address?: string | null;
-  auto_reply?: string | null;
-  bio?: string | null;
-  /** Optional denormalized seller rating on profiles; falls back to aggregates from seller_reviews in UI. */
-  rating?: number | null;
-  updated_at?: string | null;
-  created_at?: string | null;
-  last_active?: string | null;
-  show_phone_on_profile?: boolean | null;
-  show_email_on_profile?: boolean | null;
-  /** Permanent GreenHub member id (GH-XXXX-XXXX-XX) when migration applied */
-  unique_id?: string | null;
+  role?: string | null;
+  // other fields can be added later when they exist in the DB
 }
 
 interface AuthContextType {
@@ -36,6 +17,7 @@ interface AuthContextType {
   profile: UserProfile | null;
   loading: boolean;
   signOut: () => Promise<void>;
+  refreshProfile: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -44,6 +26,7 @@ const AuthContext = createContext<AuthContextType>({
   profile: null,
   loading: true,
   signOut: async () => {},
+  refreshProfile: async () => {},
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -51,41 +34,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
-  const profileFetchInFlight = useRef<string | null>(null);
-  const lastFetchedProfileUserId = useRef<string | null>(null);
 
-  // Fetch extra details from the profiles table
-  const fetchProfile = async (userId: string) => {
-    const uid = userId.trim();
-    if (!uid) {
-      setProfile(null);
-      setLoading(false);
-      return;
+  const fetchProfile = async (uid: string): Promise<UserProfile | null> => {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, role, full_name')
+      .eq('id', uid)
+      .single();
+
+    if (error) {
+      console.error('Error fetching profile:', error.message);
+      return null;
     }
-    if (profileFetchInFlight.current === uid) return;
-    if (lastFetchedProfileUserId.current === uid) return;
-    profileFetchInFlight.current = uid;
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select(
-          'id, full_name, email, phone, phone_verified, avatar_url, cover_url, gender, state, lga, address, auto_reply, bio, rating, updated_at, created_at, last_active',
-        )
-        .eq('id', uid)
-        .single();
-      console.log('DEBUG: Supabase Error', error);
-      
-      if (!error && data) {
-        setProfile(data);
-        lastFetchedProfileUserId.current = uid;
-      }
-    } catch (error) {
-      console.error('Error fetching profile:', error);
-    } finally {
-      profileFetchInFlight.current = null;
-      setLoading(false);
-    }
+    return data as UserProfile;
   };
+
+  const refreshProfile = useCallback(async () => {
+    if (user?.id) {
+      setLoading(true);
+      const data = await fetchProfile(user.id);
+      setProfile(data);
+      setLoading(false);
+    }
+  }, [user?.id]);
 
   useEffect(() => {
     const afterAuthSession = async (session: Session | null, event: AuthChangeEvent | 'INITIAL_LOAD') => {
@@ -94,23 +65,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       void supabase.realtime.setAuth(session?.access_token ?? null);
       if (!session?.user) {
         setProfile(null);
-        lastFetchedProfileUserId.current = null;
-        profileFetchInFlight.current = null;
         setLoading(false);
         return;
       }
       setLoading(true);
       try {
-        if (
-          isOAuthUser(session.user) &&
-          (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'INITIAL_LOAD')
-        ) {
+        if (isOAuthUser(session.user) && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'INITIAL_LOAD')) {
           await ensureOAuthProfile(session.user);
         }
-        await fetchProfile(session.user.id);
+        setProfile(await fetchProfile(session.user.id));
       } catch (e) {
         console.warn('Auth session hydrate:', e);
-        await fetchProfile(session.user.id);
+        setProfile(await fetchProfile(session.user.id));
+      } finally {
+        setLoading(false);
       }
     };
 
@@ -125,18 +93,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Update last_active heartbeat
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
     if (user) {
-      supabase.rpc('update_last_active').then().catch(() => {});
+      void Promise.resolve(supabase.rpc('update_last_active')).catch(() => {});
       interval = setInterval(() => {
-        supabase.rpc('update_last_active').then().catch(() => {});
-      }, 5 * 60 * 1000); // every 5 minutes
+        void Promise.resolve(supabase.rpc('update_last_active')).catch(() => {});
+      }, 5 * 60 * 1000);
     }
     return () => {
       if (interval) clearInterval(interval);
-    }
+    };
   }, [user]);
 
   const signOut = async () => {
@@ -144,7 +111,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ session, user, profile, loading, signOut }}>
+    <AuthContext.Provider value={{ session, user, profile, loading, signOut, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );

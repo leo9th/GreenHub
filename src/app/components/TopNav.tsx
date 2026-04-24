@@ -8,6 +8,7 @@ import {
   MessageSquare,
   BarChart2,
   ClipboardList,
+  LayoutDashboard,
   Menu,
   X,
 } from "lucide-react";
@@ -80,6 +81,21 @@ export default function TopNav() {
     profile?.gender || authUser?.user_metadata?.gender,
     fullName,
   );
+
+  const roleFromProfile =
+    typeof profile?.role === "string" ? profile.role.toLowerCase() : "";
+  const roleFromUserMeta =
+    typeof authUser?.user_metadata?.role === "string"
+      ? String(authUser.user_metadata.role).toLowerCase()
+      : "";
+  // Fallback: if role not loaded yet, check email directly (temporary workaround)
+  const isAdmin =
+    roleFromProfile === "admin" ||
+    roleFromUserMeta === "admin" ||
+    authUser?.email === "liondecafe@gmail.com";
+
+  // Debug log (remove after confirming)
+  console.log("🔍 TopNav - isAdmin:", isAdmin, "profile.role:", profile?.role, "email:", authUser?.email);
 
   const notifyMarkAllReadError = useCallback((error: string) => {
     toast.error("Could not mark notifications read. Check Supabase notifications RLS.");
@@ -399,6 +415,17 @@ export default function TopNav() {
                       <ClipboardList className="w-[18px] h-[18px] text-gray-500 dark:text-muted-foreground" />
                       <span className="text-[14px] font-medium">Orders</span>
                     </Link>
+
+                    {isAdmin ? (
+                      <Link
+                        to="/admin/dashboard"
+                        onClick={() => setShowDropdown(false)}
+                        className="mx-2 mb-1 flex items-center gap-3 rounded-lg border border-emerald-500/60 bg-emerald-50/90 px-3 py-2.5 shadow-[0_0_14px_-4px_rgba(16,185,129,0.55)] transition-colors hover:bg-emerald-100/90 dark:border-emerald-500/50 dark:bg-emerald-950/50 dark:hover:bg-emerald-950/70"
+                      >
+                        <LayoutDashboard className="h-[18px] w-[18px] shrink-0 text-emerald-600 dark:text-emerald-400" />
+                        <span className="text-[14px] font-semibold text-emerald-800 dark:text-emerald-200">Admin</span>
+                      </Link>
+                    ) : null}
 
                     <Link
                       to="/seller/dashboard"

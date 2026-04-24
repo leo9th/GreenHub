@@ -2236,95 +2236,86 @@ export default function ProductDetail() {
         </div>
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 z-[70] border-t border-gray-100 bg-white/95 backdrop-blur-sm">
-        <div className="mx-auto flex max-w-6xl gap-2 px-3 py-3 sm:px-4">
+      <div className="fixed bottom-0 left-0 right-0 z-[70] border-t border-gray-100 bg-white/95 pb-[env(safe-area-inset-bottom,0px)] backdrop-blur-sm">
+        <div className="mx-auto w-full max-w-6xl px-3 py-2.5 sm:px-4">
           {!showBuyerActions ? (
             <button
               type="button"
               onClick={() => setEditModalOpen(true)}
-              className="w-full py-3 rounded-xl bg-gray-900 text-white text-sm font-semibold hover:bg-gray-800"
+              className="w-full min-h-[44px] rounded-xl bg-gray-900 py-2.5 px-3 text-sm font-semibold text-white hover:bg-gray-800"
             >
               Edit listing
             </button>
           ) : (
-            <>
+            <div className="grid grid-cols-2 gap-2 md:flex md:flex-row md:items-stretch md:gap-3">
               {canMessageSeller ? (
                 <Link
                   to={`/messages/u/${sellerPeerId}?product=${encodeURIComponent(String(foundProduct.id))}`}
-                  className="inline-flex px-4 py-3 rounded-xl ring-1 ring-gray-200 text-sm font-semibold text-gray-800 items-center justify-center hover:bg-gray-50"
+                  className="flex min-h-[44px] w-full min-w-0 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white py-2.5 px-3 text-sm font-semibold text-gray-800 transition-colors hover:bg-gray-50 md:flex-1"
                 >
-                  Message seller
+                  <MessageCircle className="h-4 w-4 shrink-0 text-gray-600" strokeWidth={2} aria-hidden />
+                  <span className="min-w-0 truncate leading-tight">Message seller</span>
                 </Link>
               ) : null}
               <button
                 type="button"
                 onClick={scrollToInlineChat}
-                className="inline-flex min-h-[48px] shrink-0 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-3 text-sm font-semibold text-emerald-700 hover:bg-emerald-100"
+                className={`flex min-h-[44px] w-full min-w-0 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 py-2.5 px-3 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 md:flex-1 ${
+                  !canMessageSeller ? "col-span-2 md:col-span-auto" : ""
+                }`}
               >
-                <RideActionIcon className="h-4 w-4 text-emerald-700" />
-                <span className="hidden sm:inline">Rider/Deliveries</span>
-                <span className="sm:hidden">Rider</span>
+                <RideActionIcon className="h-4 w-4 shrink-0 text-emerald-700" />
+                <span className="min-w-0 truncate leading-tight">Rider/Deliveries</span>
               </button>
               {!isSoldOut ? (
                 <>
-                  <motion.button
-                    layout
+                  <button
                     type="button"
                     onClick={handleAddToCart}
-                    className="relative flex min-h-[48px] flex-1 items-center justify-center rounded-xl border border-emerald-300 bg-emerald-50 py-3 text-sm font-semibold text-emerald-700 hover:bg-emerald-100"
+                    className="flex min-h-[44px] w-full min-w-0 items-center justify-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 py-2.5 px-3 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 md:flex-1"
                   >
-                    <AnimatePresence mode="wait" initial={false}>
-                      {cartJustAdded ? (
-                        <motion.span
-                          key="added"
-                          initial={{ opacity: 0, y: 6 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: -4 }}
-                          transition={{ duration: 0.25, ease: "easeOut" }}
-                          className="inline-flex items-center justify-center gap-1.5 font-semibold"
-                        >
-                          Added! ✓
-                        </motion.span>
-                      ) : (
-                        <motion.span
-                          key="add"
-                          initial={{ opacity: 0, y: 6 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: -4 }}
-                          transition={{ duration: 0.25, ease: "easeOut" }}
-                          className="inline-flex items-center justify-center"
-                        >
-                          <CartActionIcon className="absolute left-4 h-4 w-4 text-emerald-700" />
-                          Add to cart
-                        </motion.span>
-                      )}
-                    </AnimatePresence>
-                  </motion.button>
+                    {cartJustAdded ? (
+                      <>
+                        <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" aria-hidden />
+                        <span className="min-w-0 truncate leading-tight">Added! ✓</span>
+                      </>
+                    ) : (
+                      <>
+                        <CartActionIcon className="h-4 w-4 shrink-0 text-emerald-700" />
+                        <span className="min-w-0 truncate leading-tight">Add to cart</span>
+                      </>
+                    )}
+                  </button>
                   <button
                     type="button"
                     onClick={buyNow}
-                    className="relative inline-flex min-h-[48px] flex-1 items-center justify-center rounded-xl border border-emerald-500 bg-emerald-600 py-3 text-sm font-bold text-white hover:bg-emerald-700"
+                    className="flex min-h-[44px] w-full min-w-0 items-center justify-center gap-2 rounded-xl border border-emerald-500 bg-emerald-600 py-2.5 px-3 text-sm font-bold text-white transition-colors hover:bg-emerald-700 md:flex-1"
                   >
-                    <BuyNowActionIcon className="absolute left-4 h-4 w-4 text-white/95" />
-                    Buy now
+                    <BuyNowActionIcon className="h-4 w-4 shrink-0 text-white/95" />
+                    <span className="min-w-0 truncate leading-tight">Buy now</span>
                   </button>
                 </>
               ) : (
-                <div className="flex flex-1 items-center justify-center rounded-xl bg-slate-100 py-3 text-sm font-bold text-slate-700">
-                  Sold
-                </div>
+                <>
+                  <button
+                    type="button"
+                    disabled
+                    aria-disabled
+                    className="flex min-h-[44px] w-full min-w-0 cursor-not-allowed items-center justify-center rounded-xl bg-gray-100 py-2.5 px-3 text-sm font-bold text-gray-500 md:flex-1"
+                  >
+                    Sold
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void notifyMeForRestock()}
+                    className="flex min-h-[44px] w-full min-w-0 items-center justify-center gap-2 rounded-xl border border-emerald-600 bg-transparent py-2.5 px-3 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-50 md:flex-1"
+                  >
+                    <Bell className="h-4 w-4 shrink-0" aria-hidden />
+                    <span className="min-w-0 truncate leading-tight">Notify Me</span>
+                  </button>
+                </>
               )}
-              {isSoldOut ? (
-                <button
-                  type="button"
-                  onClick={() => void notifyMeForRestock()}
-                  className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-xl border border-[#22c55e] px-4 py-3 text-sm font-semibold text-[#15803d] hover:bg-[#22c55e]/10"
-                >
-                  <Bell className="h-4 w-4" />
-                  Notify Me
-                </button>
-              ) : null}
-            </>
+            </div>
           )}
         </div>
       </div>

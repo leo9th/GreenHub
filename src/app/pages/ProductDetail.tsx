@@ -17,8 +17,6 @@ import {
   Users,
   Star,
   MapPin,
-  ShoppingCart,
-  ShoppingBag,
   ChevronLeft,
   ChevronRight,
   BadgeCheck,
@@ -59,6 +57,7 @@ import { buildInternationalDeliveryOptions } from "../data/internationalShipping
 import { EditProductModal } from "../components/EditProductModal";
 import { PriceNegotiation } from "../components/PriceNegotiation";
 import { MarketPricePrediction } from "../components/MarketPricePrediction";
+import { BuyNowActionIcon, CartActionIcon } from "../components/icons/ActionIcons";
 
 type ParsedDeliveryOption = { name: string; fee: number; duration: string };
 
@@ -2184,7 +2183,7 @@ export default function ProductDetail() {
                           transition={{ duration: 0.25, ease: "easeOut" }}
                           className="inline-flex items-center justify-center"
                         >
-                          <ShoppingCart className="absolute left-4 h-4 w-4 text-emerald-500" />
+                          <CartActionIcon className="absolute left-4 h-4 w-4 text-emerald-700" />
                           Add to cart
                         </motion.span>
                       )}
@@ -2202,7 +2201,7 @@ export default function ProductDetail() {
                     }}
                     className="relative inline-flex min-h-[48px] flex-1 items-center justify-center rounded-xl border border-emerald-500 bg-emerald-600 py-3 text-sm font-bold text-white hover:bg-emerald-700"
                   >
-                    <ShoppingBag className="absolute left-4 h-4 w-4 text-emerald-200" />
+                    <BuyNowActionIcon className="absolute left-4 h-4 w-4 text-white/95" />
                     Buy now
                   </button>
                 </>

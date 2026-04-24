@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { ArrowLeft, Check, CreditCard, Building2, Smartphone, Home, ShoppingCart, Truck, ShoppingBag } from "lucide-react";
+import { ArrowLeft, Check, CreditCard, Building2, Smartphone, Home } from "lucide-react";
 import { nigerianStates } from "../data/catalogConstants";
 import { getLGAsForState } from "../data/mockData";
 import { useCurrency } from "../hooks/useCurrency";
@@ -9,6 +9,7 @@ import { useAuth } from "../context/AuthContext";
 import { PaystackButton } from "react-paystack";
 import { toast } from "sonner";
 import { supabase } from "../../lib/supabase";
+import { BuyNowActionIcon, CartActionIcon, RideActionIcon } from "../components/icons/ActionIcons";
 import {
   computeHybridDeliveryTotals,
   isWarehouseShippingFulfillment,
@@ -220,7 +221,7 @@ export default function Checkout() {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
         <div className="w-24 h-24 bg-gray-200 rounded-full flex items-center justify-center mb-6">
-          <ShoppingCart className="h-10 w-10 text-emerald-500" />
+          <CartActionIcon className="h-10 w-10 text-emerald-600" />
         </div>
         <h2 className="text-xl font-bold mb-3">Your cart is empty</h2>
         <p className="text-gray-500 mb-8 max-w-sm text-center">Add some products to your cart before proceeding to checkout.</p>
@@ -447,7 +448,7 @@ export default function Checkout() {
                   className="relative w-full min-h-[52px] rounded-xl bg-[#22c55e] py-4 text-lg font-bold text-white shadow-lg shadow-[#22c55e]/25 transition-all outline-none hover:bg-[#16a34a] disabled:pointer-events-none disabled:opacity-60"
                 >
                   <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2">
-                    <Truck className="h-5 w-5 text-emerald-200" />
+                    <RideActionIcon className="h-5 w-5 text-white/95" />
                   </span>
                   <span className="inline-flex items-center justify-center">
                     {podSubmitting ? "Placing order…" : `Book a Ride (${formatPrice(total)})`}
@@ -456,7 +457,7 @@ export default function Checkout() {
               ) : (
                 <div className="relative">
                   <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2">
-                    <ShoppingBag className="h-5 w-5 text-emerald-200" />
+                    <BuyNowActionIcon className="h-5 w-5 text-white/95" />
                   </span>
                   <PaystackButton
                     {...paystackProps}

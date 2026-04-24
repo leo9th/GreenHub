@@ -57,7 +57,7 @@ import { buildInternationalDeliveryOptions } from "../data/internationalShipping
 import { EditProductModal } from "../components/EditProductModal";
 import { PriceNegotiation } from "../components/PriceNegotiation";
 import { MarketPricePrediction } from "../components/MarketPricePrediction";
-import { BuyNowActionIcon, CartActionIcon } from "../components/icons/ActionIcons";
+import { BuyNowActionIcon, CartActionIcon, RideActionIcon } from "../components/icons/ActionIcons";
 
 type ParsedDeliveryOption = { name: string; fee: number; duration: string };
 
@@ -203,6 +203,12 @@ function normalizeRouteProductId(raw: string | undefined): string | null {
   if (raw == null) return null;
   const t = raw.trim();
   return t || null;
+}
+
+function normalizePeerId(raw: unknown): string {
+  if (raw == null) return "";
+  const asString = String(raw).trim().replace(/^['"]+|['"]+$/g, "");
+  return asString.toLowerCase();
 }
 
 function RelatedProductsCarousel({
@@ -371,6 +377,7 @@ export default function ProductDetail() {
   const [openUserDialog, setOpenUserDialog] = useState(false);
   const [updatingAvailability, setUpdatingAvailability] = useState(false);
   const thumbnailClickDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const deliveryOptionsRef = useRef<HTMLElement | null>(null);
   const routeProductId = useMemo(() => normalizeRouteProductId(id), [id]);
 
   useEffect(() => {
@@ -953,9 +960,15 @@ export default function ProductDetail() {
 
   const sellerPeerIdRaw = foundProduct.seller_id ?? foundProduct.sellerId;
   const sellerPeerId =
-    sellerPeerIdRaw != null && String(sellerPeerIdRaw).trim() !== "" ? String(sellerPeerIdRaw).trim() : "";
-  const isOwner = Boolean(authUser?.id && sellerPeerId && authUser.id === sellerPeerId);
+    sellerPeerIdRaw != null && String(sellerPeerIdRaw).trim() !== ""
+      ? String(sellerPeerIdRaw).trim().replace(/^['"]+|['"]+$/g, "")
+      : "";
+  const normalizedSellerPeerId = normalizePeerId(sellerPeerId);
+  const normalizedCurrentUserId = normalizePeerId(authUser?.id);
+  const isOwner = Boolean(normalizedCurrentUserId && normalizedSellerPeerId && normalizedCurrentUserId === normalizedSellerPeerId);
+  console.log('isOwner:', isOwner, 'sellerId:', sellerPeerId, 'currentUserId:', authUser?.id);
   const canMessageSeller = Boolean(sellerPeerId);
+  const showBuyerActions = !isOwner;
 
   const handleImageDoubleLike = async () => {
     if (!galleryImages.length) return;
@@ -1058,6 +1071,25 @@ export default function ProductDetail() {
       deliveryFee: isWarehouse ? 0 : product.deliveryOptions[0]?.fee ?? 0,
     };
   };
+  const handleAddToCart = useCallback(() => {
+    addToCart(buildCartLineItem());
+    setCartJustAdded(true);
+    toast.success("Added to cart", {
+      icon: <CheckCircle2 className="h-4 w-4 text-emerald-600" />,
+      className: "bg-emerald-50 text-emerald-950 border border-emerald-200/80",
+    });
+  }, [addToCart, buildCartLineItem]);
+  const buyNow = useCallback(() => {
+    addToCart(buildCartLineItem());
+    toast.success("Added to cart", {
+      icon: <CheckCircle2 className="h-4 w-4 text-emerald-600" />,
+      className: "bg-emerald-50 text-emerald-950 border border-emerald-200/80",
+    });
+    navigate("/checkout");
+  }, [addToCart, buildCartLineItem, navigate]);
+  const scrollToInlineChat = useCallback(() => {
+    deliveryOptionsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
   const stockQuantity =
     foundProduct?.stock_quantity != null && Number.isFinite(Number(foundProduct.stock_quantity))
       ? Math.max(0, Number(foundProduct.stock_quantity))
@@ -2014,6 +2046,7 @@ export default function ProductDetail() {
             </section>
 
             <section
+              ref={deliveryOptionsRef}
               className={`rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200/80 ${
                 mobileDetailTab === "about" ? "block" : "hidden md:block"
               }`}
@@ -2127,9 +2160,9 @@ export default function ProductDetail() {
         </div>
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 z-30 border-t border-gray-100 bg-white/95 backdrop-blur-sm">
+      <div className="fixed bottom-0 left-0 right-0 z-[70] border-t border-gray-100 bg-white/95 backdrop-blur-sm">
         <div className="mx-auto flex max-w-6xl gap-2 px-3 py-3 sm:px-4">
-          {isOwner ? (
+          {!showBuyerActions ? (
             <button
               type="button"
               onClick={() => setEditModalOpen(true)}
@@ -2142,24 +2175,26 @@ export default function ProductDetail() {
               {canMessageSeller ? (
                 <Link
                   to={`/messages/u/${sellerPeerId}?product=${encodeURIComponent(String(foundProduct.id))}`}
-                  className="hidden sm:inline-flex px-4 py-3 rounded-xl ring-1 ring-gray-200 text-sm font-semibold text-gray-800 items-center justify-center hover:bg-gray-50"
+                  className="inline-flex px-4 py-3 rounded-xl ring-1 ring-gray-200 text-sm font-semibold text-gray-800 items-center justify-center hover:bg-gray-50"
                 >
                   Message seller
                 </Link>
               ) : null}
+              <button
+                type="button"
+                onClick={scrollToInlineChat}
+                className="inline-flex min-h-[48px] shrink-0 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-3 text-sm font-semibold text-emerald-700 hover:bg-emerald-100"
+              >
+                <RideActionIcon className="h-4 w-4 text-emerald-700" />
+                <span className="hidden sm:inline">Rider/Deliveries</span>
+                <span className="sm:hidden">Rider</span>
+              </button>
               {!isSoldOut ? (
                 <>
                   <motion.button
                     layout
                     type="button"
-                    onClick={() => {
-                      addToCart(buildCartLineItem());
-                      setCartJustAdded(true);
-                      toast.success("Added to cart", {
-                        icon: <CheckCircle2 className="h-4 w-4 text-emerald-600" />,
-                        className: "bg-emerald-50 text-emerald-950 border border-emerald-200/80",
-                      });
-                    }}
+                    onClick={handleAddToCart}
                     className="relative flex min-h-[48px] flex-1 items-center justify-center rounded-xl border border-emerald-300 bg-emerald-50 py-3 text-sm font-semibold text-emerald-700 hover:bg-emerald-100"
                   >
                     <AnimatePresence mode="wait" initial={false}>
@@ -2191,14 +2226,7 @@ export default function ProductDetail() {
                   </motion.button>
                   <button
                     type="button"
-                    onClick={() => {
-                      addToCart(buildCartLineItem());
-                      toast.success("Added to cart", {
-                        icon: <CheckCircle2 className="h-4 w-4 text-emerald-600" />,
-                        className: "bg-emerald-50 text-emerald-950 border border-emerald-200/80",
-                      });
-                      navigate("/checkout");
-                    }}
+                    onClick={buyNow}
                     className="relative inline-flex min-h-[48px] flex-1 items-center justify-center rounded-xl border border-emerald-500 bg-emerald-600 py-3 text-sm font-bold text-white hover:bg-emerald-700"
                   >
                     <BuyNowActionIcon className="absolute left-4 h-4 w-4 text-white/95" />

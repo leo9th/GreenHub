@@ -35,6 +35,7 @@ import WorkerProfileDetail from "./pages/workers/WorkerProfileDetail";
 import WorkerProfileRegister from "./pages/workers/WorkerProfileRegister";
 import Contact from "./pages/Contact";
 import AdminLayout from "./pages/admin/AdminLayout";
+import { AppErrorBoundary } from "./components/errors/AppErrorBoundary";
 
 /** Code-split heavy routes (chat, seller, admin, large listing detail). */
 function lazyPage(importer: () => Promise<{ default: ComponentType<unknown> }>) {
@@ -79,6 +80,14 @@ function LegacySellerProductEditRedirect() {
   return <Navigate to={`/seller/products/edit/${encodeURIComponent(id.trim())}`} replace />;
 }
 
+function CheckoutWithErrorBoundary() {
+  return (
+    <AppErrorBoundary scope="section">
+      <Checkout />
+    </AppErrorBoundary>
+  );
+}
+
 export const router = createBrowserRouter([
   {
     path: "/",
@@ -112,7 +121,7 @@ export const router = createBrowserRouter([
       },
       { path: "products/:id", lazy: lazyPage(() => import("./pages/ProductDetail")) },
       { path: "cart", Component: Cart },
-      { path: "checkout", Component: Checkout },
+      { path: "checkout", Component: CheckoutWithErrorBoundary },
       { path: "orders", Component: Orders },
       { path: "orders/:id", Component: OrderDetail },
       { path: "messages", lazy: lazyPage(() => import("./pages/Messages")) },

@@ -8,20 +8,23 @@ import { InboxNotificationsProvider } from "./app/context/InboxNotificationsCont
 import { ThemeProvider } from "./app/context/ThemeContext";
 import { NotificationProvider } from "./app/context/NotificationProvider";
 import { ThemedToaster } from "./app/components/ThemedToaster";
+import { AppErrorBoundary } from "./app/components/errors/AppErrorBoundary";
 
 createRoot(document.getElementById("root")!).render(
-  <ThemeProvider>
-    <AuthProvider>
-      <NotificationProvider>
-        <InboxNotificationsProvider>
-          <RegionProvider>
-            <CartProvider>
-              <App />
-              <ThemedToaster />
-            </CartProvider>
-          </RegionProvider>
-        </InboxNotificationsProvider>
-      </NotificationProvider>
-    </AuthProvider>
-  </ThemeProvider>
+  <AppErrorBoundary scope="global">
+    <ThemeProvider>
+      <AuthProvider>
+        <NotificationProvider>
+          <InboxNotificationsProvider>
+            <RegionProvider>
+              <CartProvider>
+                <App />
+                <ThemedToaster />
+              </CartProvider>
+            </RegionProvider>
+          </InboxNotificationsProvider>
+        </NotificationProvider>
+      </AuthProvider>
+    </ThemeProvider>
+  </AppErrorBoundary>
 );

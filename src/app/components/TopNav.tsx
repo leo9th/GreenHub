@@ -203,13 +203,76 @@ export default function TopNav() {
                   Shop
                 </Link>
                 {session ? (
-                  <Link
-                    to="/seller/products/new"
-                    onClick={() => setMobileMenuOpen(false)}
-                    className="block px-4 py-2.5 text-sm font-bold text-[#ea580c] hover:bg-orange-50 dark:hover:bg-orange-950/30"
-                  >
-                    SELL
-                  </Link>
+                  <>
+                    <Link
+                      to="/seller/dashboard"
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-gray-800 hover:bg-gray-50 dark:text-foreground dark:hover:bg-muted"
+                    >
+                      <Store className="h-[18px] w-[18px] text-gray-500 dark:text-muted-foreground" />
+                      <span>My shop</span>
+                    </Link>
+                    <Link
+                      to="/messages"
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-gray-800 hover:bg-gray-50 dark:text-foreground dark:hover:bg-muted"
+                    >
+                      <MessageSquare className="h-[18px] w-[18px] text-gray-500 dark:text-muted-foreground" />
+                      <span>Messages</span>
+                    </Link>
+                    <Link
+                      to="/orders"
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-gray-800 hover:bg-gray-50 dark:text-foreground dark:hover:bg-muted"
+                    >
+                      <ClipboardList className="h-[18px] w-[18px] text-gray-500 dark:text-muted-foreground" />
+                      <span>Orders</span>
+                    </Link>
+                    <Link
+                      to="/seller/dashboard"
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-gray-800 hover:bg-gray-50 dark:text-foreground dark:hover:bg-muted"
+                    >
+                      <BarChart2 className="h-[18px] w-[18px] text-gray-500 dark:text-muted-foreground" />
+                      <span>Performance</span>
+                    </Link>
+                    <Link
+                      to="/settings"
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-gray-800 hover:bg-gray-50 dark:text-foreground dark:hover:bg-muted"
+                    >
+                      <Settings className="h-[18px] w-[18px] text-gray-500 dark:text-muted-foreground" />
+                      <span>Settings</span>
+                    </Link>
+                    {isAdmin ? (
+                      <Link
+                        to="/admin/dashboard"
+                        onClick={() => setMobileMenuOpen(false)}
+                        className="mx-2 my-1 flex items-center gap-3 rounded-lg border border-emerald-500/60 bg-emerald-50/90 px-3 py-2.5 text-sm font-semibold text-emerald-800 shadow-[0_0_14px_-4px_rgba(16,185,129,0.55)] transition-colors hover:bg-emerald-100/90 dark:border-emerald-500/50 dark:bg-emerald-950/50 dark:text-emerald-200 dark:hover:bg-emerald-950/70"
+                      >
+                        <LayoutDashboard className="h-[18px] w-[18px] shrink-0 text-emerald-600 dark:text-emerald-400" />
+                        <span>Admin</span>
+                      </Link>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMobileMenuOpen(false);
+                        void handleSignOut();
+                      }}
+                      className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-medium text-gray-800 hover:bg-gray-50 dark:text-foreground dark:hover:bg-muted"
+                    >
+                      <LogOut className="h-[18px] w-[18px] text-gray-500 dark:text-muted-foreground" />
+                      <span>Log out</span>
+                    </button>
+                    <Link
+                      to="/seller/products/new"
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="block px-4 py-2.5 text-sm font-bold text-[#ea580c] hover:bg-orange-50 dark:hover:bg-orange-950/30"
+                    >
+                      SELL
+                    </Link>
+                  </>
                 ) : (
                   <>
                     <Link

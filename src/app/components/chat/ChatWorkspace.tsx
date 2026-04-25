@@ -25,6 +25,7 @@ import {
 import { toast } from "sonner";
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../context/AuthContext";
+import { useInboxNotifications } from "../../context/InboxNotificationsContext";
 import { useCurrency } from "../../hooks/useCurrency";
 import { formatListTime, useInboxConversationList } from "../../hooks/useInboxConversationList";
 import { getAvatarUrl } from "../../utils/getAvatar";
@@ -442,6 +443,7 @@ export default function ChatWorkspace() {
     load: loadInboxList,
     otherPartyUserId: inboxOtherPartyUserId,
   } = useInboxConversationList(authUser?.id);
+  const { refresh: refreshInboxCount } = useInboxNotifications();
 
   const productParam = searchParams.get("product");
   const validProductId = useMemo(() => parseProductQueryParam(productParam), [productParam]);
@@ -1156,29 +1158,43 @@ export default function ChatWorkspace() {
     };
   }, [messages]);
 
+  const markMessagesAsRead = useCallback(async () => {
+    if (!conversation?.id || !authUser?.id) return;
+
+    const { error: convoReadErr } = await updateConversationLastRead(supabase, conversation, authUser.id);
+    if (convoReadErr) {
+      console.warn(convoReadErr.message);
+    }
+
+    void supabase.rpc("mark_message_notifications_read", { p_conversation_id: conversation.id });
+
+    const readErr = await markConversationMessagesRead(supabase, conversation.id);
+    if (readErr.error) {
+      console.warn(readErr.error.message);
+      return;
+    }
+
+    const now = new Date().toISOString();
+    setConversation((c) =>
+      c
+        ? {
+            ...c,
+            buyer_last_read_at: c.buyer_id === authUser.id ? now : c.buyer_last_read_at,
+            seller_last_read_at: c.seller_id === authUser.id ? now : c.seller_last_read_at,
+          }
+        : c,
+    );
+
+    await Promise.all([refreshInboxCount(), loadInboxList()]);
+  }, [conversation, authUser?.id, refreshInboxCount, loadInboxList]);
+
   useEffect(() => {
     if (!conversation?.id || !authUser?.id) return;
     const t = window.setTimeout(() => {
-      void (async () => {
-        const { error } = await updateConversationLastRead(supabase, conversation, authUser.id);
-        if (error) return;
-        void supabase.rpc("mark_message_notifications_read", { p_conversation_id: conversation.id });
-        const readErr = await markConversationMessagesRead(supabase, conversation.id);
-        if (readErr.error) console.warn(readErr.error.message);
-        const now = new Date().toISOString();
-        setConversation((c) =>
-          c
-            ? {
-                ...c,
-                buyer_last_read_at: c.buyer_id === authUser.id ? now : c.buyer_last_read_at,
-                seller_last_read_at: c.seller_id === authUser.id ? now : c.seller_last_read_at,
-              }
-            : c,
-        );
-      })();
+      void markMessagesAsRead();
     }, 400);
     return () => clearTimeout(t);
-  }, [conversation?.id, authUser?.id, messages.length]);
+  }, [conversation?.id, authUser?.id, messages.length, markMessagesAsRead]);
 
   useEffect(() => {
     if (!conversation?.id || !authUser?.id) return;

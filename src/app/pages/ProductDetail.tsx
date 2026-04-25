@@ -268,12 +268,12 @@ function RelatedProductsCarousel({
       onMouseEnter={() => setIsHovering(true)}
       onMouseLeave={() => setIsHovering(false)}
     >
-      <div className="overflow-hidden" ref={emblaRef}>
-        <div className="flex -ml-3 sm:-ml-4 touch-pan-x">
+      <div className="overflow-x-auto touch-pan-x snap-x snap-mandatory [-webkit-overflow-scrolling:touch]" ref={emblaRef}>
+        <div className="flex -ml-3 sm:-ml-4">
           {items.map((item) => (
             <div
               key={String(item.id)}
-              className="min-w-0 shrink-0 grow-0 pl-3 sm:pl-4 basis-[220px] w-[220px] max-w-[220px]"
+              className="min-w-0 shrink-0 grow-0 snap-start pl-3 sm:pl-4 basis-[220px] w-[220px] max-w-[220px]"
             >
               <Link
                 to={`/products/${item.id}`}
@@ -1503,9 +1503,9 @@ export default function ProductDetail() {
       <div className="mx-auto max-w-6xl px-3 pt-6 sm:px-4 md:px-4 md:pt-6 lg:pt-8">
         <div className="grid grid-cols-1 md:grid-cols-12 md:items-start md:gap-4 lg:gap-6 xl:gap-10 2xl:gap-12">
           <div className="flex shrink-0 justify-center md:col-span-5 md:justify-start md:sticky md:top-14 lg:col-span-5">
-            <div className="relative w-full max-w-[520px] md:max-w-none mx-auto">
-              <div className="relative rounded-2xl bg-white shadow-sm ring-1 ring-gray-200/90">
-                <div className="p-4">
+            <div className="relative mx-auto w-full max-w-[520px] -mx-3 sm:-mx-4 md:mx-0 md:max-w-none">
+              <div className="relative bg-white shadow-sm ring-1 ring-gray-200/90 md:rounded-2xl">
+                <div className="p-0 md:p-4">
                   <div
                     className="relative touch-manipulation"
                     role="region"
@@ -1522,17 +1522,16 @@ export default function ProductDetail() {
                       role="presentation"
                     >
                       {product.images.length > 0 && mainDisplayImage ? (
-                        <div className="relative group mx-auto w-full max-w-2xl overflow-hidden rounded-3xl shadow-lg">
+                        <div className="relative group mx-auto w-full max-w-2xl overflow-hidden shadow-lg md:rounded-2xl">
                           <div
                             style={{
                               width: "100%",
-                              minHeight: "500px",
+                              minHeight: "clamp(300px, 50vh, 600px)",
                               height: "auto",
-                              maxHeight: "70vh",
                               overflow: "hidden",
                               backgroundColor: "#f3f4f6",
-                              borderRadius: "12px",
                             }}
+                            className="md:rounded-2xl"
                           >
                             <img
                               src={mainDisplayImage}
@@ -1675,7 +1674,7 @@ export default function ProductDetail() {
                           aria-label={liked ? "Unlike" : "Like"}
                         >
                           <Heart
-                            className={`h-3.5 w-3.5 shrink-0 ${liked ? "fill-white text-white" : "text-white"}`}
+                            className={`h-3.5 w-3.5 shrink-0 ${liked ? "fill-red-500 text-red-500" : "text-gray-300"}`}
                             fill={liked ? "currentColor" : "none"}
                             strokeWidth={2}
                             aria-hidden

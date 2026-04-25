@@ -1,0 +1,17 @@
+{
+  "name": "GreenHub",
+  "short_name": "GreenHub",
+  "description": "Buy and sell in Nigeria — including GreenHub rider delivery.",
+  "start_url": "/rider",
+  "display": "standalone",
+  "background_color": "#020617",
+  "theme_color": "#022c22",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

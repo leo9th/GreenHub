@@ -97,7 +97,7 @@ function ProductCardComponent({
   const soldOut = stockLeft === 0;
 
   return (
-    <div className="group flex h-full w-full flex-col overflow-hidden rounded-2xl border border-slate-100/50 bg-white shadow-sm transition-all duration-300 ease-out hover:-translate-y-2 hover:shadow-xl">
+    <div className="group flex h-full w-full flex-col overflow-hidden rounded-none border border-slate-100/50 bg-white shadow-sm transition-all duration-300 ease-out hover:-translate-y-2 hover:shadow-xl">
       <Link
         to={linkTo}
         className="flex h-full flex-col text-inherit no-underline outline-none ring-offset-2 focus-visible:ring-2 focus-visible:ring-[#22c55e]"
@@ -115,12 +115,12 @@ function ProductCardComponent({
             justifyContent: "center",
             backgroundColor: "#f3f4f6",
             position: "relative",
-            borderRadius: "12px 12px 0 0",
+            borderRadius: "0",
           }}
         >
           {!imgLoaded ? (
             <div
-              className="product-card-skeleton__image absolute inset-0 z-[1] rounded-t-[12px]"
+              className="product-card-skeleton__image absolute inset-0 z-[1] rounded-none"
               aria-hidden
             />
           ) : null}

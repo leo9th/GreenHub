@@ -16,6 +16,8 @@ import {
 } from "../utils/fulfillment";
 import { createPaystackSuccessHandler } from "../utils/paystackCheckout";
 import { captureCheckoutException } from "../../lib/sentry";
+import { evaluateCheckoutRisk } from "../utils/checkoutRisk";
+import { getStuckUserAssist, type StuckUserAssist } from "../utils/stuckUserAssist";
 
 type OrderRecord = { id: string };
 
@@ -39,12 +41,34 @@ export default function Checkout() {
   const [paymentMethod, setPaymentMethod] = useState<"card" | "bank" | "ussd" | "pod">("card");
   const [podSubmitting, setPodSubmitting] = useState(false);
   const paystackInitCapturedRef = useRef(false);
+  const [stuckAssist, setStuckAssist] = useState<StuckUserAssist | null>(null);
 
   const subtotal = cartTotal;
   const { guaranteedFlat, marketplaceSellerFees, total: delivery } = computeHybridDeliveryTotals(items);
   const platformFee = Math.round(subtotal * 0.1);
   const total = subtotal + delivery + platformFee;
   const paystackPublicKey = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY;
+  const marketMode = items.every((item) => isWarehouseShippingFulfillment(item.fulfillment_type))
+    ? "b2c"
+    : "c2c";
+
+  useEffect(() => {
+    // #region agent log
+    void fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "35665f" },
+      body: JSON.stringify({
+        sessionId: "35665f",
+        runId: "run5",
+        hypothesisId: "H4",
+        location: "Checkout.tsx:mount",
+        message: "Checkout page mounted",
+        data: { itemCount: items.length },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+  }, [items.length]);
 
   useEffect(() => {
     const isPaystackPath = step === "payment" && paymentMethod !== "pod";
@@ -75,8 +99,29 @@ export default function Checkout() {
 
   const handleAddressSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setStuckAssist(null);
     if (items.length === 0) {
       toast.error("Your cart is empty!");
+      return;
+    }
+    const decision = evaluateCheckoutRisk({
+      marketMode,
+      orderValue: total,
+      hasAuthenticatedUser: Boolean(user),
+      hasItems: items.length > 0,
+      paymentProviderReady: true,
+    });
+    if (decision.decision === "block" && decision.reason) {
+      const assist = getStuckUserAssist(decision.reason);
+      setStuckAssist(assist);
+      toast.error(assist.userMessage);
+      captureCheckoutException(new Error(assist.userMessage), "Paystack Initialization", {
+        market_mode: marketMode,
+        payment_channel: "paystack",
+        checkout_decision: decision.decision,
+        blocked_reason: decision.reason,
+        order_total: total,
+      });
       return;
     }
     setStep("payment");
@@ -84,7 +129,7 @@ export default function Checkout() {
 
   const createOrderWithLineItemsAndPlacedEvent = useCallback(
     async (params: {
-      orderStatus: "paid" | "pending_payment";
+      orderStatus: "paid" | "pending_payment" | "needs_review";
       paymentReference: string | null;
       /** Stored on `orders.payment_method`: Paystack checkout vs pay on delivery */
       paymentChannel: "paystack" | "pod";
@@ -217,14 +262,27 @@ export default function Checkout() {
   );
 
   const handlePODSubmit = async () => {
-    if (!user) {
-      toast.error("You must be logged in to complete this order.");
+    const decision = evaluateCheckoutRisk({
+      marketMode,
+      orderValue: total,
+      hasAuthenticatedUser: Boolean(user),
+      hasItems: items.length > 0,
+      paymentProviderReady: true,
+    });
+    if (decision.decision !== "allow" && decision.reason) {
+      const assist = getStuckUserAssist(decision.reason);
+      setStuckAssist(assist);
+      toast.error(assist.userMessage);
+      captureCheckoutException(new Error(assist.userMessage), "Pay On Delivery Order Creation", {
+        market_mode: marketMode,
+        payment_channel: "pod",
+        checkout_decision: decision.decision,
+        blocked_reason: decision.reason,
+        order_total: total,
+      });
       return;
     }
-    if (items.length === 0) {
-      toast.error("Your cart is empty!");
-      return;
-    }
+    setStuckAssist(null);
     setPodSubmitting(true);
     try {
       const orderData = await createOrderWithLineItemsAndPlacedEvent({
@@ -246,6 +304,27 @@ export default function Checkout() {
     }
   };
 
+  const submitOrderForReview = async (paymentChannel: "paystack" | "pod") => {
+    try {
+      const orderData = await createOrderWithLineItemsAndPlacedEvent({
+        orderStatus: "needs_review",
+        paymentReference: null,
+        paymentChannel,
+      });
+      toast.message("Order submitted for review.", {
+        description: "We will notify you as soon as this order is approved or rejected.",
+      });
+      navigate(`/orders/${orderData.id}`);
+    } catch (err: unknown) {
+      captureCheckoutException(err, "Paystack Order Creation", {
+        market_mode: marketMode,
+        payment_channel: paymentChannel,
+        checkout_decision: "review",
+      });
+      toast.error(err instanceof Error ? err.message : "Could not submit this order for review.");
+    }
+  };
+
   const handlePaystackSuccess = createPaystackSuccessHandler({
     user: user ? { id: user.id } : null,
     createOrderWithLineItemsAndPlacedEvent,
@@ -256,6 +335,7 @@ export default function Checkout() {
     logError: (error: unknown) => {
       console.error("Order Creation Error:", error);
     },
+    marketMode,
   });
 
   const paystackProps = {
@@ -283,6 +363,21 @@ export default function Checkout() {
       toast.error("Payment window closed. Your transaction was cancelled.");
     },
   };
+
+  const paystackRisk = evaluateCheckoutRisk({
+    marketMode,
+    orderValue: total,
+    hasAuthenticatedUser: Boolean(user),
+    hasItems: items.length > 0,
+    paymentProviderReady: Boolean(paystackPublicKey),
+  });
+  const podRisk = evaluateCheckoutRisk({
+    marketMode,
+    orderValue: total,
+    hasAuthenticatedUser: Boolean(user),
+    hasItems: items.length > 0,
+    paymentProviderReady: true,
+  });
 
   if (items.length === 0) {
     return (
@@ -331,6 +426,13 @@ export default function Checkout() {
           </div>
         </div>
       </div>
+      {stuckAssist ? (
+        <div className="mx-4 mb-6 max-w-7xl rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900 md:mx-auto">
+          <p className="text-sm font-semibold">{stuckAssist.userMessage}</p>
+          <p className="mt-1 text-xs">{stuckAssist.nextBestAction}</p>
+          <p className="mt-1 text-xs text-amber-800/90">{stuckAssist.fallbackAction}</p>
+        </div>
+      ) : null}
 
       <div className="px-4 max-w-7xl mx-auto md:grid md:grid-cols-3 md:gap-8 md:items-start">
         <div className="md:col-span-2 space-y-6">
@@ -489,6 +591,11 @@ export default function Checkout() {
                 <span className="text-gray-600">Total Delivery</span>
                 <span className="font-medium text-gray-800">{formatPrice(delivery)}</span>
               </div>
+              <p className="rounded-lg bg-emerald-50/90 px-3 py-2 text-[11px] leading-relaxed text-emerald-950/90 ring-1 ring-emerald-200/60">
+                <strong className="font-semibold">GreenHub riders:</strong> when your order is <strong>paid</strong> (e.g. after
+                Paystack), we may create a rider delivery job for last-mile tracking. Pay-on-delivery orders get a job only after
+                they become paid. Tracking and handoff PIN live on your order detail page.
+              </p>
               <div className="flex items-center justify-between text-sm">
                 <span className="text-gray-600">Platform Fee (10%)</span>
                 <span className="font-medium text-gray-800">{formatPrice(platformFee)}</span>
@@ -508,29 +615,49 @@ export default function Checkout() {
           <div className="max-w-7xl mx-auto flex items-center justify-end">
             <div className="w-full md:w-auto md:min-w-[300px]">
               {paymentMethod === "pod" ? (
-                <button
-                  type="button"
-                  disabled={podSubmitting}
-                  onClick={() => void handlePODSubmit()}
-                  className="relative w-full min-h-[52px] rounded-xl bg-[#22c55e] py-4 text-lg font-bold text-white shadow-lg shadow-[#22c55e]/25 transition-all outline-none hover:bg-[#16a34a] disabled:pointer-events-none disabled:opacity-60"
-                >
-                  <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2">
-                    <RideActionIcon className="h-5 w-5 text-white/95" />
-                  </span>
-                  <span className="inline-flex items-center justify-center">
-                    {podSubmitting ? "Placing order…" : `Book a Ride (${formatPrice(total)})`}
-                  </span>
-                </button>
+                podRisk.decision === "review" ? (
+                  <button
+                    type="button"
+                    onClick={() => void submitOrderForReview("pod")}
+                    className="relative w-full min-h-[52px] rounded-xl bg-amber-600 py-4 text-lg font-bold text-white shadow-lg shadow-amber-600/25 transition-all outline-none hover:bg-amber-500"
+                  >
+                    <span className="inline-flex items-center justify-center">Submit Order For Review</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={podSubmitting}
+                    onClick={() => void handlePODSubmit()}
+                    className="relative w-full min-h-[52px] rounded-xl bg-[#22c55e] py-4 text-lg font-bold text-white shadow-lg shadow-[#22c55e]/25 transition-all outline-none hover:bg-[#16a34a] disabled:pointer-events-none disabled:opacity-60"
+                  >
+                    <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2">
+                      <RideActionIcon className="h-5 w-5 text-white/95" />
+                    </span>
+                    <span className="inline-flex items-center justify-center">
+                      {podSubmitting ? "Placing order…" : `Book a Ride (${formatPrice(total)})`}
+                    </span>
+                  </button>
+                )
               ) : (
-                <div className="relative">
-                  <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2">
-                    <BuyNowActionIcon className="h-5 w-5 text-white/95" />
-                  </span>
-                  <PaystackButton
-                    {...paystackProps}
-                    className="block w-full min-h-[52px] rounded-xl bg-[#092b23] py-4 text-center text-lg font-bold text-white shadow-lg shadow-[#092b23]/25 transition-all outline-none hover:bg-[#061d18]"
-                  />
-                </div>
+                paystackRisk.decision === "review" ? (
+                  <button
+                    type="button"
+                    onClick={() => void submitOrderForReview("paystack")}
+                    className="block w-full min-h-[52px] rounded-xl bg-amber-600 py-4 text-center text-lg font-bold text-white shadow-lg shadow-amber-600/25 transition-all outline-none hover:bg-amber-500"
+                  >
+                    Submit Order For Review
+                  </button>
+                ) : (
+                  <div className="relative">
+                    <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2">
+                      <BuyNowActionIcon className="h-5 w-5 text-white/95" />
+                    </span>
+                    <PaystackButton
+                      {...paystackProps}
+                      className="block w-full min-h-[52px] rounded-xl bg-[#092b23] py-4 text-center text-lg font-bold text-white shadow-lg shadow-[#092b23]/25 transition-all outline-none hover:bg-[#061d18]"
+                    />
+                  </div>
+                )
               )}
             </div>
           </div>

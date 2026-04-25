@@ -25,6 +25,7 @@ import {
   Phone,
   CheckCircle2,
   Bell,
+  Truck,
 } from "lucide-react";
 import { useCurrency } from "../hooks/useCurrency";
 import { useCart, type CartItem } from "../context/CartContext";
@@ -968,6 +969,15 @@ export default function ProductDetail() {
     sellerPeerIdRaw != null && String(sellerPeerIdRaw).trim() !== ""
       ? String(sellerPeerIdRaw).trim().replace(/^['"]+|['"]+$/g, "")
       : "";
+  const normalizedSellerPeerId = normalizePeerId(sellerPeerId);
+  const normalizedCurrentUserId = normalizePeerId(authUser?.id);
+  const isOwner = Boolean(normalizedCurrentUserId && normalizedSellerPeerId && normalizedCurrentUserId === normalizedSellerPeerId);
+  const stockQuantity =
+    foundProduct?.stock_quantity != null && Number.isFinite(Number(foundProduct.stock_quantity))
+      ? Math.max(0, Number(foundProduct.stock_quantity))
+      : null;
+  const isSoldOut = stockQuantity === 0;
+  const isLowStock = stockQuantity != null && stockQuantity > 0 && stockQuantity < 5;
 
   const buildCartLineItem = (): CartItem | null => {
     if (!foundProduct) return null;
@@ -1005,20 +1015,143 @@ export default function ProductDetail() {
   }, [addToCart, buildCartLineItem]);
 
   const buyNow = useCallback(() => {
+    // #region agent log
+    void fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "35665f" },
+      body: JSON.stringify({
+        sessionId: "35665f",
+        runId: "run4",
+        hypothesisId: "H1",
+        location: "ProductDetail.tsx:buyNow:start",
+        message: "Buy now clicked",
+        data: {
+          foundProductId: foundProduct?.id ?? null,
+          isOwner,
+          isSoldOut,
+          sellerPeerIdPresent: Boolean(sellerPeerId),
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+
     const cartLineItem = buildCartLineItem();
-    if (!cartLineItem) return;
+    if (!cartLineItem) {
+      // #region agent log
+      void fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "35665f" },
+        body: JSON.stringify({
+          sessionId: "35665f",
+          runId: "run4",
+          hypothesisId: "H2",
+          location: "ProductDetail.tsx:buyNow:no-cart-item",
+          message: "Buy now aborted because cart line item is null",
+          data: {
+            foundProductId: foundProduct?.id ?? null,
+          },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
+      return;
+    }
 
     addToCart(cartLineItem);
     toast.success("Added to cart", {
       icon: <CheckCircle2 className="h-4 w-4 text-emerald-600" />,
       className: "bg-emerald-50 text-emerald-950 border border-emerald-200/80",
     });
+    // #region agent log
+    void fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "35665f" },
+      body: JSON.stringify({
+        sessionId: "35665f",
+        runId: "run4",
+        hypothesisId: "H3",
+        location: "ProductDetail.tsx:buyNow:navigate",
+        message: "Buy now navigating to checkout",
+        data: {
+          checkoutPath: "/checkout",
+          cartItemId: cartLineItem.id,
+          cartItemQty: cartLineItem.quantity,
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
     navigate("/checkout");
   }, [addToCart, buildCartLineItem, navigate]);
 
-  const scrollToInlineChat = useCallback(() => {
+  const handleBuyNowFromSoldOut = useCallback(() => {
+    // #region agent log
+    void fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "35665f" },
+      body: JSON.stringify({
+        sessionId: "35665f",
+        runId: "run5",
+        hypothesisId: "H1",
+        location: "ProductDetail.tsx:buyNow:sold-out-click",
+        message: "Sold-out buy now button clicked",
+        data: {
+          foundProductId: foundProduct?.id ?? null,
+          isOwner,
+          isSoldOut,
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+    buyNow();
+  }, [buyNow, foundProduct?.id, isOwner, isSoldOut]);
+
+  useEffect(() => {
+    // #region agent log
+    void fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "35665f" },
+      body: JSON.stringify({
+        sessionId: "35665f",
+        runId: "run5",
+        hypothesisId: "H2",
+        location: "ProductDetail.tsx:action-row:render",
+        message: "Action row render state",
+        data: {
+          foundProductId: foundProduct?.id ?? null,
+          isOwner,
+          isSoldOut,
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+  }, [foundProduct?.id, isOwner, isSoldOut]);
+
+  const scrollToDeliveryOptions = useCallback(() => {
     deliveryOptionsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, []);
+  // #region agent log
+  void fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "35665f" },
+    body: JSON.stringify({
+      sessionId: "35665f",
+      runId: "run2",
+      hypothesisId: "H1",
+      location: "ProductDetail.tsx:post-hooks",
+      message: "ProductDetail reached post-hooks checkpoint",
+      data: {
+        isServerProductLoading,
+        hasFoundProduct: Boolean(foundProduct),
+        routeProductId: routeProductId ?? null,
+      },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
   if (isServerProductLoading) {
     // #region agent log
     console.warn("[PDDBG-6af1a9] ProductDetail loading return", {
@@ -1040,6 +1173,24 @@ export default function ProductDetail() {
       isServerProductLoading,
       serverProductId: serverProduct?.id ?? null,
     });
+    // #endregion
+    // #region agent log
+    void fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "35665f" },
+      body: JSON.stringify({
+        sessionId: "35665f",
+        runId: "run2",
+        hypothesisId: "H1",
+        location: "ProductDetail.tsx:not-found-return",
+        message: "ProductDetail rendered not-found after hooks",
+        data: {
+          isServerProductLoading,
+          routeProductId: routeProductId ?? null,
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
     // #endregion
     return (
       <div className="min-h-screen bg-white flex items-center justify-center p-4">
@@ -1065,10 +1216,24 @@ export default function ProductDetail() {
     foundProductId: foundProduct?.id ?? null,
   });
   // #endregion
+  // #region agent log
+  void fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "35665f" },
+    body: JSON.stringify({
+      sessionId: "35665f",
+      runId: "run2",
+      hypothesisId: "H1",
+      location: "ProductDetail.tsx:guard-passed",
+      message: "ProductDetail passed loading/not-found guards",
+      data: {
+        foundProductId: foundProduct?.id ?? null,
+      },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
 
-  const normalizedSellerPeerId = normalizePeerId(sellerPeerId);
-  const normalizedCurrentUserId = normalizePeerId(authUser?.id);
-  const isOwner = Boolean(normalizedCurrentUserId && normalizedSellerPeerId && normalizedCurrentUserId === normalizedSellerPeerId);
   // #region agent log
   console.warn("[PDDBG-6af1a9] ProductDetail post-guard state", {
     foundProductId: foundProduct.id ?? null,
@@ -1079,7 +1244,6 @@ export default function ProductDetail() {
   // #endregion
   console.log('isOwner:', isOwner, 'sellerId:', sellerPeerId, 'currentUserId:', authUser?.id);
   const canMessageSeller = Boolean(sellerPeerId);
-  const showBuyerActions = !isOwner;
 
   const handleImageDoubleLike = async () => {
     if (!galleryImages.length) return;
@@ -1165,13 +1329,6 @@ export default function ProductDetail() {
       (foundProduct as { international_shipping_fees?: unknown }).international_shipping_fees,
     ),
   };
-
-  const stockQuantity =
-    foundProduct?.stock_quantity != null && Number.isFinite(Number(foundProduct.stock_quantity))
-      ? Math.max(0, Number(foundProduct.stock_quantity))
-      : null;
-  const isSoldOut = stockQuantity === 0;
-  const isLowStock = stockQuantity != null && stockQuantity > 0 && stockQuantity < 5;
 
   const toggleAvailability = async () => {
     if (!isOwner) return;
@@ -2200,6 +2357,36 @@ export default function ProductDetail() {
             </section>
 
             <section
+              className={`rounded-2xl border border-emerald-200/80 bg-emerald-50/50 p-4 text-sm text-gray-800 ring-1 ring-emerald-100/60 ${
+                mobileDetailTab === "about" ? "block" : "hidden md:block"
+              }`}
+            >
+              <p className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                <Truck className="w-4 h-4 text-emerald-700 shrink-0" aria-hidden />
+                GreenHub riders (marketplace delivery)
+              </p>
+              <p className="text-xs text-gray-700 leading-relaxed">
+                After checkout, <strong className="font-semibold">paid</strong> orders can get a GreenHub-managed delivery job.
+                Track status and your rider handoff PIN on the order page — seller-listed delivery options above still apply for
+                pickup and third-party couriers.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Link
+                  to="/rider"
+                  className="inline-flex items-center rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800"
+                >
+                  Rider hub / apply
+                </Link>
+                <Link
+                  to="/orders"
+                  className="inline-flex items-center rounded-lg border border-emerald-600/40 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-900 hover:bg-emerald-50"
+                >
+                  Track an order
+                </Link>
+              </div>
+            </section>
+
+            <section
               className={`rounded-2xl bg-amber-50/90 px-4 py-4 text-sm text-gray-800 ring-1 ring-amber-100/80 ${
                 mobileDetailTab === "about" ? "block" : "hidden md:block"
               }`}
@@ -2238,17 +2425,17 @@ export default function ProductDetail() {
 
       <div className="fixed bottom-0 left-0 right-0 z-[70] border-t border-gray-100 bg-white/95 pb-[env(safe-area-inset-bottom,0px)] backdrop-blur-sm">
         <div className="mx-auto w-full max-w-6xl px-3 py-2.5 sm:px-4">
-          {!showBuyerActions ? (
-            <button
-              type="button"
-              onClick={() => setEditModalOpen(true)}
-              className="w-full min-h-[44px] rounded-xl bg-gray-900 py-2.5 px-3 text-sm font-semibold text-white hover:bg-gray-800"
-            >
-              Edit listing
-            </button>
-          ) : (
-            <div className="grid grid-cols-2 gap-2 md:flex md:flex-row md:items-stretch md:gap-3">
-              {canMessageSeller ? (
+          <div className="grid grid-cols-2 gap-2 md:flex md:flex-row md:items-stretch md:gap-3">
+              {isOwner ? (
+                <button
+                  type="button"
+                  onClick={() => setEditModalOpen(true)}
+                  className="flex min-h-[44px] w-full min-w-0 items-center justify-center gap-2 rounded-xl bg-gray-900 py-2.5 px-3 text-sm font-semibold text-white transition-colors hover:bg-gray-800 md:flex-1"
+                >
+                  Edit listing
+                </button>
+              ) : null}
+              {!isOwner && canMessageSeller ? (
                 <Link
                   to={`/messages/u/${sellerPeerId}?product=${encodeURIComponent(String(foundProduct.id))}`}
                   className="flex min-h-[44px] w-full min-w-0 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white py-2.5 px-3 text-sm font-semibold text-gray-800 transition-colors hover:bg-gray-50 md:flex-1"
@@ -2259,13 +2446,13 @@ export default function ProductDetail() {
               ) : null}
               <button
                 type="button"
-                onClick={scrollToInlineChat}
+                onClick={scrollToDeliveryOptions}
                 className={`flex min-h-[44px] w-full min-w-0 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 py-2.5 px-3 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 md:flex-1 ${
                   !canMessageSeller ? "col-span-2 md:col-span-auto" : ""
                 }`}
               >
                 <RideActionIcon className="h-4 w-4 shrink-0 text-emerald-700" />
-                <span className="min-w-0 truncate leading-tight">Rider/Deliveries</span>
+                <span className="min-w-0 truncate leading-tight">Delivery &amp; riders</span>
               </button>
               {!isSoldOut ? (
                 <>
@@ -2288,10 +2475,10 @@ export default function ProductDetail() {
                   </button>
                   <button
                     type="button"
-                    onClick={buyNow}
+                    onClick={() => void handleBuyNowFromSoldOut()}
                     className="flex min-h-[44px] w-full min-w-0 items-center justify-center gap-2 rounded-xl border border-emerald-500 bg-emerald-600 py-2.5 px-3 text-sm font-bold text-white transition-colors hover:bg-emerald-700 md:flex-1"
                   >
-                    <BuyNowActionIcon className="h-4 w-4 shrink-0 text-white/95" />
+                    <BuyNowActionIcon className="h-5 w-5 shrink-0 text-white" />
                     <span className="min-w-0 truncate leading-tight">Buy now</span>
                   </button>
                 </>
@@ -2299,11 +2486,11 @@ export default function ProductDetail() {
                 <>
                   <button
                     type="button"
-                    disabled
-                    aria-disabled
-                    className="flex min-h-[44px] w-full min-w-0 cursor-not-allowed items-center justify-center rounded-xl bg-gray-100 py-2.5 px-3 text-sm font-bold text-gray-500 md:flex-1"
+                    onClick={buyNow}
+                    className="flex min-h-[44px] w-full min-w-0 items-center justify-center gap-2 rounded-xl border border-emerald-500 bg-emerald-600 py-2.5 px-3 text-sm font-bold text-white transition-colors hover:bg-emerald-700 md:flex-1"
                   >
-                    Sold
+                    <BuyNowActionIcon className="h-5 w-5 shrink-0 text-white" />
+                    <span className="min-w-0 truncate leading-tight">Buy now</span>
                   </button>
                   <button
                     type="button"
@@ -2316,7 +2503,6 @@ export default function ProductDetail() {
                 </>
               )}
             </div>
-          )}
         </div>
       </div>
 

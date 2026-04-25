@@ -22,14 +22,40 @@ export default function AdminLayout() {
   return (
     <div className="flex min-h-screen flex-col bg-[#0b1220] text-slate-100">
       <header className="shrink-0 border-b border-emerald-500/20 bg-[#0b1220]/90 px-4 py-3 backdrop-blur-md sm:px-6">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
+        <div className="mx-auto flex max-w-6xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <Link
             to="/admin/dashboard"
             className="text-base font-semibold tracking-tight text-emerald-300 sm:text-lg"
           >
             GreenHub Admin
           </Link>
-          <div className="flex items-center gap-3 sm:gap-4">
+          <nav
+            aria-label="Admin sections"
+            className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-emerald-200/80"
+          >
+            <Link to="/admin/dashboard" className="hover:text-emerald-300">
+              Dashboard
+            </Link>
+            <Link to="/admin/users" className="hover:text-emerald-300">
+              Users
+            </Link>
+            <Link to="/admin/products" className="hover:text-emerald-300">
+              Products
+            </Link>
+            <Link to="/admin/dispatch" className="font-medium text-emerald-300 hover:text-emerald-200">
+              Dispatch
+            </Link>
+            <Link to="/admin/pricing" className="hover:text-emerald-300">
+              Pricing
+            </Link>
+            <Link to="/admin/boosts" className="hover:text-emerald-300">
+              Boosts
+            </Link>
+            <Link to="/admin/order-reviews" className="hover:text-emerald-300">
+              Order reviews
+            </Link>
+          </nav>
+          <div className="flex items-center gap-3 sm:gap-4 sm:ml-auto">
             <Link
               to="/"
               className="text-sm text-emerald-200/75 transition-colors hover:text-emerald-300"

@@ -37,6 +37,15 @@ export function captureCheckoutException(
   Sentry.withScope((scope) => {
     scope.setTag("feature", "checkout");
     scope.setTag("checkout_step", step);
+    if (typeof extras.market_mode === "string") {
+      scope.setTag("market_mode", extras.market_mode);
+    }
+    if (typeof extras.payment_channel === "string") {
+      scope.setTag("payment_channel", extras.payment_channel);
+    }
+    if (typeof extras.checkout_decision === "string") {
+      scope.setTag("checkout_decision", extras.checkout_decision);
+    }
     scope.setContext("checkout_context", extras);
     Sentry.captureException(normalizedError);
   });

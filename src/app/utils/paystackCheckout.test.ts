@@ -18,6 +18,7 @@ describe("createPaystackSuccessHandler", () => {
       notifySuccess,
       notifyError,
       logError,
+      marketMode: "b2c",
     });
 
     await onSuccess({ reference: "pay-ref-1" });
@@ -52,6 +53,7 @@ describe("createPaystackSuccessHandler", () => {
       notifySuccess,
       notifyError,
       logError,
+      marketMode: "c2c",
     });
 
     await onSuccess({ reference: "pay-ref-2" });

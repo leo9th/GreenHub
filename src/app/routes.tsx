@@ -22,7 +22,6 @@ import Products from "./pages/Products";
 import Cart from "./pages/Cart";
 import Checkout from "./pages/Checkout";
 import Orders from "./pages/Orders";
-import OrderDetail from "./pages/OrderDetail";
 import WriteReview from "./pages/WriteReview";
 import SellerReviews from "./pages/SellerReviews";
 import Profile from "./pages/Profile";
@@ -122,8 +121,16 @@ export const router = createBrowserRouter([
       { path: "products/:id", lazy: lazyPage(() => import("./pages/ProductDetail")) },
       { path: "cart", Component: Cart },
       { path: "checkout", Component: CheckoutWithErrorBoundary },
+      {
+        path: "rider",
+        lazy: lazyPage(() => import("./pages/rider/RiderLayout")),
+        children: [
+          { index: true, lazy: lazyPage(() => import("./pages/rider/RiderDashboard")) },
+          { path: "requests/:requestId", lazy: lazyPage(() => import("./pages/rider/RiderRequestDetail")) },
+        ],
+      },
       { path: "orders", Component: Orders },
-      { path: "orders/:id", Component: OrderDetail },
+      { path: "orders/:id", lazy: lazyPage(() => import("./pages/OrderDetail")) },
       { path: "messages", lazy: lazyPage(() => import("./pages/Messages")) },
       /* c = thread by conversation id; u = DM by other user’s auth id. Do not use one path for both UUID types. */
       { path: "messages/c/:conversationId", lazy: lazyPage(() => import("./pages/Chat")) },
@@ -169,6 +176,8 @@ export const router = createBrowserRouter([
           { path: "job-applications", lazy: lazyPage(() => import("./pages/admin/JobApplications")) },
           { path: "boosts", lazy: lazyPage(() => import("./pages/admin/AdminBoosts")) },
           { path: "chatbot-learning", lazy: lazyPage(() => import("./pages/admin/AdminChatbotLearning")) },
+          { path: "dispatch", lazy: lazyPage(() => import("./pages/admin/Dispatch")) },
+          { path: "order-reviews", lazy: lazyPage(() => import("./pages/admin/OrderReviews")) },
           { path: "orders", Component: LegacyAdminRedirect },
           { path: "reports", Component: LegacyAdminRedirect },
         ],

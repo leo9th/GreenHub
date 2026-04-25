@@ -1,9 +1,10 @@
 import { captureCheckoutException, type CheckoutFailureStep } from "../../lib/sentry";
+import type { MarketMode } from "../config/commercePolicy";
 
 export type PaystackReference = { reference?: string };
 
 export type CreateOrderForPaystackParams = {
-  orderStatus: "paid";
+  orderStatus: "paid" | "needs_review";
   paymentReference: string | null;
   paymentChannel: "paystack";
 };
@@ -22,6 +23,7 @@ type PaystackSuccessDependencies = {
   notifySuccess: (message: string) => void;
   notifyError: (message: string) => void;
   logError?: (error: unknown) => void;
+  marketMode: MarketMode;
 };
 
 export function createPaystackSuccessHandler({
@@ -32,6 +34,7 @@ export function createPaystackSuccessHandler({
   notifySuccess,
   notifyError,
   logError,
+  marketMode,
 }: PaystackSuccessDependencies) {
   return async (reference: PaystackReference) => {
     // #region agent log
@@ -57,6 +60,8 @@ export function createPaystackSuccessHandler({
         captureCheckoutException(new Error("Missing authenticated user during Paystack checkout."), failedStep, {
           hasUser: false,
           paymentReference: reference?.reference ?? null,
+          market_mode: marketMode,
+          payment_channel: "paystack",
         });
         return;
       }
@@ -106,6 +111,8 @@ export function createPaystackSuccessHandler({
       captureCheckoutException(err, failedStep, {
         hasUser: Boolean(user),
         paymentReference: reference?.reference ?? null,
+        market_mode: marketMode,
+        payment_channel: "paystack",
       });
       logError?.(err);
       notifyError(

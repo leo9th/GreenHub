@@ -18,6 +18,8 @@ import { getAvatarUrl } from "../utils/getAvatar";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../../lib/supabase";
 import { isWarehouseShippingFulfillment } from "../utils/fulfillment";
+import { buyerDeliverySummary, deliveryJobStatusLabel, sellerDeliverySummary } from "../utils/deliveryJobs";
+import DeliveryTrackingMap from "../components/DeliveryTrackingMap";
 
 type OrderRow = {
   id: string;
@@ -65,6 +67,53 @@ type OrderEventRow = {
   created_at: string;
   metadata?: Record<string, unknown> | null;
 };
+
+type DeliveryJobRow = {
+  id: string;
+  order_id: string;
+  status: string | null;
+  buyer_pin: string | null;
+  quoted_fee: number | null;
+  rider_payout_amount: number | null;
+  pickup_summary: Record<string, unknown> | null;
+};
+
+type DeliveryEventRow = {
+  id: string;
+  event_type: string;
+  created_at: string;
+};
+
+type DeliveryRequestRow = {
+  id: string;
+  order_id: string;
+  status: string | null;
+  assigned_rider_id: string | null;
+  delivery_pin: string | null;
+  delivered_at: string | null;
+  created_at: string | null;
+};
+
+type DeliveryTrackingRow = {
+  latitude: number;
+  longitude: number;
+  recorded_at: string;
+};
+
+function parseLatLngFromAddress(addr: Record<string, unknown> | null | undefined): { lat: number; lng: number } | null {
+  if (!addr || typeof addr !== "object") return null;
+  const latRaw = addr.latitude ?? addr.lat;
+  const lngRaw = addr.longitude ?? addr.lng ?? addr.lon;
+  const lat = Number(latRaw);
+  const lng = Number(lngRaw);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+  return { lat, lng };
+}
+
+/** Default hub marker when order has guaranteed / hub fulfillment (align with ops). */
+const DEFAULT_HUB_LAT = 6.5244;
+const DEFAULT_HUB_LNG = 3.3792;
 
 type SellerLite = {
   id: string;
@@ -326,6 +375,10 @@ export default function OrderDetail() {
   const [reviewText, setReviewText] = useState("");
   const [reviewAnonymous, setReviewAnonymous] = useState(false);
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [deliveryJob, setDeliveryJob] = useState<DeliveryJobRow | null>(null);
+  const [deliveryEvents, setDeliveryEvents] = useState<DeliveryEventRow[]>([]);
+  const [deliveryRequest, setDeliveryRequest] = useState<DeliveryRequestRow | null>(null);
+  const [latestTracking, setLatestTracking] = useState<DeliveryTrackingRow | null>(null);
 
   const load = useCallback(async () => {
     const userId = authUser?.id?.trim();
@@ -334,6 +387,10 @@ export default function OrderDetail() {
       setOrder(null);
       setItems([]);
       setOrderEvents([]);
+      setDeliveryJob(null);
+      setDeliveryEvents([]);
+      setDeliveryRequest(null);
+      setLatestTracking(null);
       setLoading(false);
       return;
     }
@@ -352,6 +409,10 @@ export default function OrderDetail() {
         setOrder(null);
         setItems([]);
         setOrderEvents([]);
+        setDeliveryJob(null);
+        setDeliveryEvents([]);
+        setDeliveryRequest(null);
+        setLatestTracking(null);
         setError("Order not found.");
         return;
       }
@@ -367,19 +428,60 @@ export default function OrderDetail() {
       }
 
       const itemList = (its ?? []) as OrderItemRow[];
-      const isBuyer = buyerId === authUser.id;
-      const hasSellerLine = itemList.some((it) => it.seller_id && String(it.seller_id) === authUser.id);
+      const isBuyer = buyerId === userId;
+      const hasSellerLine = itemList.some((it) => it.seller_id && String(it.seller_id) === userId);
 
       if (!isBuyer && !hasSellerLine) {
         setOrder(null);
         setItems([]);
         setOrderEvents([]);
+        setDeliveryJob(null);
+        setDeliveryEvents([]);
+        setDeliveryRequest(null);
+        setLatestTracking(null);
         setError("Order not found.");
         return;
       }
 
       setIsBuyerView(isBuyer);
       setOrder(ord as OrderRow);
+
+      const { data: dr, error: drErr } = await supabase
+        .from("delivery_requests")
+        .select("id, order_id, status, assigned_rider_id, delivery_pin, delivered_at, created_at")
+        .eq("order_id", orderId)
+        .maybeSingle();
+      if (drErr) {
+        console.warn("[OrderDetail] delivery_requests select", drErr);
+        setDeliveryRequest(null);
+        setLatestTracking(null);
+      } else {
+        setDeliveryRequest((dr as DeliveryRequestRow) ?? null);
+      }
+
+      const { data: dj, error: djErr } = await supabase.from("delivery_jobs").select("*").eq("order_id", orderId).maybeSingle();
+      if (djErr) {
+        console.warn("[OrderDetail] delivery_jobs select", djErr);
+        setDeliveryJob(null);
+        setDeliveryEvents([]);
+      } else if (dj) {
+        const job = dj as DeliveryJobRow;
+        setDeliveryJob(job);
+        const { data: deRows, error: deErr } = await supabase
+          .from("delivery_events")
+          .select("id, event_type, created_at")
+          .eq("job_id", job.id)
+          .order("created_at", { ascending: true });
+        if (deErr) {
+          console.warn("[OrderDetail] delivery_events select", deErr);
+          setDeliveryEvents([]);
+        } else {
+          setDeliveryEvents((deRows ?? []) as DeliveryEventRow[]);
+        }
+      } else {
+        setDeliveryJob(null);
+        setDeliveryEvents([]);
+      }
 
       const { data: evRows, error: evErr } = await supabase
         .from("order_events")
@@ -424,10 +526,42 @@ export default function OrderDetail() {
       setOrder(null);
       setItems([]);
       setOrderEvents([]);
+      setDeliveryJob(null);
+      setDeliveryEvents([]);
+      setDeliveryRequest(null);
+      setLatestTracking(null);
     } finally {
       setLoading(false);
     }
   }, [authUser?.id, id]);
+
+  useEffect(() => {
+    const req = deliveryRequest;
+    if (!req?.id || !isBuyerView) return;
+    const st = String(req.status || "").toLowerCase();
+    if (!["assigned", "picked_up"].includes(st)) {
+      setLatestTracking(null);
+      return;
+    }
+    let cancelled = false;
+    const poll = async () => {
+      const { data, error } = await supabase
+        .from("delivery_tracking")
+        .select("latitude, longitude, recorded_at")
+        .eq("delivery_request_id", req.id)
+        .order("recorded_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (cancelled || error) return;
+      if (data) setLatestTracking(data as DeliveryTrackingRow);
+    };
+    void poll();
+    const t = window.setInterval(() => void poll(), 10000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(t);
+    };
+  }, [deliveryRequest?.id, deliveryRequest?.status, isBuyerView]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -439,6 +573,26 @@ export default function OrderDetail() {
   }, [authLoading, authUser, navigate, load]);
 
   const addr = useMemo(() => shippingLines(order?.shipping_address ?? null), [order?.shipping_address]);
+
+  const dropCoords = useMemo(
+    () => parseLatLngFromAddress(order?.shipping_address ?? null),
+    [order?.shipping_address],
+  );
+
+  const deliveryRequestTimeline = useMemo(() => {
+    if (!deliveryRequest) return [];
+    const st = String(deliveryRequest.status || "").toLowerCase();
+    const steps: { key: string; label: string; done: boolean }[] = [
+      { key: "pending", label: "Delivery request created", done: true },
+      { key: "assigned", label: "Rider assigned", done: ["assigned", "picked_up", "delivered"].includes(st) },
+      { key: "picked_up", label: "Picked up — on the way", done: ["picked_up", "delivered"].includes(st) },
+      { key: "delivered", label: "Delivered", done: st === "delivered" },
+    ];
+    if (st === "cancelled") {
+      return [{ key: "cancelled", label: "Delivery cancelled", done: true }];
+    }
+    return steps;
+  }, [deliveryRequest]);
 
   const hasGuaranteedItems = useMemo(
     () => items.some((it) => isWarehouseShippingFulfillment(it.fulfillment_type)),
@@ -706,6 +860,98 @@ export default function OrderDetail() {
             </div>
           </div>
         </div>
+
+        {deliveryRequest ? (
+          <div className="rounded-xl border border-sky-200/90 bg-gradient-to-br from-sky-50/90 to-white p-4 shadow-sm">
+            <div className="mb-2 flex items-center gap-2">
+              <Truck className="h-5 w-5 text-sky-700 shrink-0" aria-hidden />
+              <h2 className="font-semibold text-sky-950">Rider delivery</h2>
+            </div>
+            <p className="text-sm text-gray-800">
+              Status: <span className="font-medium capitalize">{String(deliveryRequest.status || "").replace(/_/g, " ") || "—"}</span>
+              {deliveryRequest.delivered_at ? (
+                <span className="text-xs text-gray-500"> · Completed {formatOrderEventTime(deliveryRequest.delivered_at)}</span>
+              ) : null}
+            </p>
+            <ol className="mt-3 space-y-2 border-t border-sky-100 pt-3 text-sm text-gray-700">
+              {deliveryRequestTimeline.map((step) => (
+                <li key={step.key} className={`flex items-center gap-2 ${step.done ? "text-gray-900" : "text-gray-400"}`}>
+                  <span
+                    className={`h-2 w-2 shrink-0 rounded-full ${step.done ? "bg-sky-600" : "bg-gray-300"}`}
+                    aria-hidden
+                  />
+                  {step.label}
+                </li>
+              ))}
+            </ol>
+            {isBuyerView &&
+            String(deliveryRequest.status || "").toLowerCase() === "picked_up" &&
+            deliveryRequest.delivery_pin ? (
+              <div className="mt-3 rounded-lg border border-sky-300/60 bg-white/90 px-3 py-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-sky-900/70">Give this PIN to your rider</p>
+                <p className="mt-1 font-mono text-2xl font-bold tracking-[0.2em] text-sky-950">{deliveryRequest.delivery_pin}</p>
+              </div>
+            ) : null}
+            {isBuyerView && ["assigned", "picked_up"].includes(String(deliveryRequest.status || "").toLowerCase()) ? (
+              <div className="mt-4">
+                <p className="mb-2 text-xs font-medium text-gray-600">Live map (rider position updates about every 10s)</p>
+                <DeliveryTrackingMap
+                  riderLat={latestTracking?.latitude ?? null}
+                  riderLng={latestTracking?.longitude ?? null}
+                  pickupLat={hasGuaranteedItems ? DEFAULT_HUB_LAT : null}
+                  pickupLng={hasGuaranteedItems ? DEFAULT_HUB_LNG : null}
+                  dropoffLat={dropCoords?.lat ?? null}
+                  dropoffLng={dropCoords?.lng ?? null}
+                />
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {deliveryJob ? (
+          <div className="rounded-xl border border-emerald-200/80 bg-gradient-to-br from-emerald-50/90 to-white p-4 shadow-sm">
+            <div className="mb-2 flex items-center gap-2">
+              <Truck className="h-5 w-5 text-emerald-700 shrink-0" aria-hidden />
+              <h2 className="font-semibold text-emerald-950">GreenHub rider delivery</h2>
+            </div>
+            <p className="text-sm text-gray-800">
+              {isBuyerView ? buyerDeliverySummary(deliveryJob.status) : sellerDeliverySummary(deliveryJob.status)}
+            </p>
+            <p className="mt-1 text-xs text-gray-600">
+              Logistics status: <span className="font-medium">{deliveryJobStatusLabel(deliveryJob.status)}</span>
+              {deliveryJob.quoted_fee != null ? (
+                <>
+                  {" "}
+                  · Quoted delivery {formatPrice(Number(deliveryJob.quoted_fee))}
+                </>
+              ) : null}
+            </p>
+            {isBuyerView &&
+            deliveryJob.buyer_pin &&
+            !["delivered", "cancelled", "failed"].includes(String(deliveryJob.status || "").toLowerCase()) ? (
+              <div className="mt-3 rounded-lg border border-emerald-300/60 bg-white/90 px-3 py-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-900/70">Handoff PIN (give to rider)</p>
+                <p className="mt-1 font-mono text-2xl font-bold tracking-[0.2em] text-emerald-950">{deliveryJob.buyer_pin}</p>
+              </div>
+            ) : null}
+            {deliveryEvents.length > 0 ? (
+              <details className="mt-3 text-xs text-gray-600">
+                <summary className="cursor-pointer font-medium text-emerald-800">Rider event log</summary>
+                <ul className="mt-2 space-y-1 border-t border-emerald-200/50 pt-2">
+                  {deliveryEvents.map((ev) => (
+                    <li key={ev.id}>
+                      {formatOrderEventTime(ev.created_at)} — {ev.event_type}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            ) : null}
+            <p className="mt-3 text-[11px] leading-relaxed text-gray-500">
+              Seller-arranged shipping (waybill, pickup meetups) still works as before. This card is only for GreenHub-managed
+              last-mile jobs tied to this order.
+            </p>
+          </div>
+        ) : null}
 
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
           <div className="flex items-center justify-between gap-3 mb-5">

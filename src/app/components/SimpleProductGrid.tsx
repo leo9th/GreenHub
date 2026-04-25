@@ -3,7 +3,7 @@ import { ProductCard } from "./cards/ProductCard";
 import type { ProductWithSeller } from "../types/productWithSeller";
 
 const GRID_CLASS =
-  "grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4 xl:grid-cols-5 [&>*]:min-h-0 [&>*]:min-w-0 [&>*]:w-full";
+  "grid grid-cols-2 gap-1 md:grid-cols-3 md:gap-1 xl:grid-cols-5 [&>*]:min-h-0 [&>*]:min-w-0 [&>*]:w-full";
 
 type SimpleProductGridProps = {
   products: ProductWithSeller[];
@@ -21,7 +21,7 @@ type SimpleProductGridProps = {
 
 function SkeletonTile() {
   return (
-    <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+    <div className="overflow-hidden rounded-none border border-gray-200 bg-white shadow-sm">
       <div className="product-card-skeleton__image aspect-[3/4] w-full bg-gray-200" />
       <div className="space-y-2 border-t border-gray-100 p-3">
         <div className="h-3 w-5/6 animate-pulse rounded bg-gray-200" />
@@ -105,13 +105,13 @@ export default function SimpleProductGrid({
           <section className="space-y-4" aria-label={emptyFallbackTitle}>
             <h2 className="text-base font-semibold text-gray-900 sm:text-lg">{emptyFallbackTitle}</h2>
             {emptyFallbackLoading ? (
-              <div className={GRID_CLASS}>
+              <div className={`-mx-4 sm:mx-0 ${GRID_CLASS}`}>
                 {Array.from({ length: 10 }).map((_, idx) => (
                   <SkeletonTile key={`empty-fallback-sk-${idx}`} />
                 ))}
               </div>
             ) : (
-              <div className={GRID_CLASS}>
+              <div className={`-mx-4 sm:mx-0 ${GRID_CLASS}`}>
                 {(emptyFallbackProducts ?? []).map((product, index) => (
                   <ProductCardFromProduct key={String(product.id)} product={product} index={index} />
                 ))}
@@ -129,7 +129,7 @@ export default function SimpleProductGrid({
 
   return (
     <div className="space-y-8">
-      <div className={GRID_CLASS}>
+      <div className={`-mx-4 sm:mx-0 ${GRID_CLASS}`}>
         {products.map((product, index) => (
           <ProductCardFromProduct key={String(product.id)} product={product} index={index} />
         ))}

@@ -94,6 +94,25 @@ export default function TopNav() {
     setMobileMenuOpen(false);
   }, [location.pathname]);
 
+  // #region agent log
+  void fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "35665f" },
+    body: JSON.stringify({
+      sessionId: "35665f",
+      runId: "run2",
+      hypothesisId: "H2",
+      location: "TopNav.tsx:post-hooks",
+      message: "TopNav reached post-hooks checkpoint",
+      data: {
+        pathname: location.pathname,
+        isHidden,
+      },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
+
   if (isHidden) return null;
 
   const fullName =

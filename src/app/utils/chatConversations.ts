@@ -159,6 +159,7 @@ export async function findConversationByPair(
     .select("id, buyer_id, seller_id, context_product_id, buyer_last_read_at, seller_last_read_at")
     .eq("buyer_id", userA)
     .eq("seller_id", userB)
+    .limit(1)
     .maybeSingle();
   if (e1) throw e1;
   if (row1) {
@@ -178,6 +179,7 @@ export async function findConversationByPair(
     .select("id, buyer_id, seller_id, context_product_id, buyer_last_read_at, seller_last_read_at")
     .eq("buyer_id", userB)
     .eq("seller_id", userA)
+    .limit(1)
     .maybeSingle();
   if (e2) throw e2;
   if (!row2) return null;

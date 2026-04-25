@@ -11,6 +11,7 @@ import {
 } from "../utils/chatConversations";
 import { CHAT_MESSAGE_BASE_COLUMNS } from "../utils/chatMessages";
 import type { ProductPk } from "../utils/engagement";
+import { playNotificationSound } from "../utils/soundNotifications";
 
 const QUICK_REPLIES = [
   { label: "Make an offer", text: "Hi, I would like to make an offer on this item." },
@@ -124,6 +125,7 @@ export default function NewProductDetailInlineChat({
       if (error) throw new Error(error.message);
 
       setMessage("");
+      playNotificationSound("message");
       toast.success("Message sent");
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to send message";

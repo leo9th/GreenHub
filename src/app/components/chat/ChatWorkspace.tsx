@@ -32,6 +32,7 @@ import { getAvatarUrl } from "../../utils/getAvatar";
 import { getProductPrice } from "../../utils/getProductPrice";
 import { getProductThumbnailUrl } from "../../utils/productImages";
 import { isWarehouseShippingFulfillment } from "../../utils/fulfillment";
+import { playNotificationSound } from "../../utils/soundNotifications";
 import {
   fetchConversationById,
   findConversationByPair,
@@ -1559,6 +1560,7 @@ export default function ChatWorkspace() {
             prev.map((m) => (m.id === tempId ? { ...row, client_sending: false } : m)),
           ),
         );
+        playNotificationSound("message");
         if (productId != null) {
           setProductIdFromQuery(null);
           clearStoredListingProductId();

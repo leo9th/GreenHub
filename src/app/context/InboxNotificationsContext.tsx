@@ -15,7 +15,12 @@ import {
   markAllNotificationsRead,
   type AppNotificationRow,
 } from "../utils/engagement";
-import { ensureMessageNotificationPermission, showDesktopMessageNotification } from "../utils/browserNotify";
+import { ensureMessageNotificationPermission, showDesktopNotification } from "../utils/browserNotify";
+import {
+  playNotificationSound,
+  setNotificationSoundEnabled,
+  unlockNotificationAudio,
+} from "../utils/soundNotifications";
 
 type InboxNotificationsContextValue = {
   messageUnread: number;
@@ -26,6 +31,32 @@ type InboxNotificationsContextValue = {
 };
 
 const InboxNotificationsContext = createContext<InboxNotificationsContextValue | null>(null);
+
+function fallbackNotificationTitle(type: string): string {
+  switch (type) {
+    case "message":
+      return "New message";
+    case "order_placed":
+    case "order":
+      return "New order placed";
+    case "delivery_status_changed":
+    case "delivery":
+      return "Delivery update";
+    case "delivery_job_assigned":
+      return "New delivery assignment";
+    case "payment_received":
+    case "payment":
+      return "Payment received";
+    case "weekend_greeting":
+    case "promotion":
+      return "GreenHub reminder";
+    case "birthday_greeting":
+    case "birthday":
+      return "Birthday greeting";
+    default:
+      return "Notification";
+  }
+}
 
 export function InboxNotificationsProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
@@ -53,6 +84,34 @@ export function InboxNotificationsProvider({ children }: { children: ReactNode }
   useEffect(() => {
     if (!user?.id) return;
     ensureMessageNotificationPermission();
+    unlockNotificationAudio();
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) {
+      setNotificationSoundEnabled(true);
+      return;
+    }
+    const uid = user.id;
+    let alive = true;
+    const loadSoundPreference = async () => {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("sound_notifications")
+        .eq("id", uid)
+        .maybeSingle();
+      if (!alive) return;
+      if (error) {
+        setNotificationSoundEnabled(true);
+        return;
+      }
+      const enabled = (data as { sound_notifications?: boolean } | null)?.sound_notifications;
+      setNotificationSoundEnabled(enabled !== false);
+    };
+    void loadSoundPreference();
+    return () => {
+      alive = false;
+    };
   }, [user?.id]);
 
   useEffect(() => {
@@ -62,9 +121,12 @@ export function InboxNotificationsProvider({ children }: { children: ReactNode }
     const onNotifEvent = (payload: { eventType?: string; new?: Record<string, unknown> }) => {
       if (payload.eventType === "INSERT" && payload.new) {
         const row = payload.new as AppNotificationRow;
-        if (row.type === "message") {
-          showDesktopMessageNotification(row.title || "New message", row.body || "", row.id);
-        }
+        showDesktopNotification(
+          row.title || fallbackNotificationTitle(row.type),
+          row.body || "",
+          row.id ?? `gh-${row.type}`,
+        );
+        playNotificationSound(row.type);
       }
       void refresh();
     };

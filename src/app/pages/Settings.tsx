@@ -1,17 +1,65 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { ArrowLeft, User, Lock, Globe, Bell, Shield, HelpCircle, Trash2, ChevronRight } from "lucide-react";
+import { supabase } from "../../lib/supabase";
+import { useAuth } from "../context/AuthContext";
+import { setNotificationSoundEnabled } from "../utils/soundNotifications";
+import { toast } from "sonner";
 
 export default function Settings() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [notifications, setNotifications] = useState(true);
+  const [soundNotifications, setSoundNotifications] = useState(true);
   const [emailUpdates, setEmailUpdates] = useState(true);
+  const [savingSound, setSavingSound] = useState(false);
 
   const handleDeleteAccount = () => {
     if (confirm("Are you sure you want to delete your account? This action cannot be undone.")) {
       // Delete account logic
       console.log("Delete account");
     }
+  };
+
+  useEffect(() => {
+    if (!user?.id) return;
+    let alive = true;
+    const loadPrefs = async () => {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("sound_notifications")
+        .eq("id", user.id)
+        .maybeSingle();
+      if (!alive) return;
+      if (!error) {
+        const enabled = (data as { sound_notifications?: boolean } | null)?.sound_notifications !== false;
+        setSoundNotifications(enabled);
+        setNotificationSoundEnabled(enabled);
+      }
+    };
+    void loadPrefs();
+    return () => {
+      alive = false;
+    };
+  }, [user?.id]);
+
+  const updateSoundPreference = async (enabled: boolean) => {
+    setSoundNotifications(enabled);
+    setNotificationSoundEnabled(enabled);
+    if (!user?.id) return;
+    setSavingSound(true);
+    const { error } = await supabase
+      .from("profiles")
+      .update({ sound_notifications: enabled })
+      .eq("id", user.id);
+    setSavingSound(false);
+    if (error) {
+      toast.error("Could not save sound preference");
+      setSoundNotifications(!enabled);
+      setNotificationSoundEnabled(!enabled);
+      return;
+    }
+    toast.success(enabled ? "Sound notifications enabled" : "Sound notifications muted");
   };
 
   return (
@@ -115,6 +163,28 @@ export default function Settings() {
                   type="checkbox"
                   checked={emailUpdates}
                   onChange={(e) => setEmailUpdates(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-[#22c55e]/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#22c55e]"></div>
+              </label>
+            </div>
+
+            <div className="flex items-center justify-between p-4">
+              <div className="flex items-center gap-3">
+                <span className="text-xl">🔊</span>
+                <div>
+                  <p className="font-medium text-gray-800">Sound Notifications</p>
+                  <p className="text-sm text-gray-600">Play sounds for chat, orders, and delivery updates</p>
+                </div>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={soundNotifications}
+                  disabled={savingSound}
+                  onChange={(e) => {
+                    void updateSoundPreference(e.target.checked);
+                  }}
                   className="sr-only peer"
                 />
                 <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-[#22c55e]/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#22c55e]"></div>

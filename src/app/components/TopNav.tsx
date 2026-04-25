@@ -82,9 +82,32 @@ export default function TopNav() {
         void refreshNotifications();
       }
       setShowNotifications(false);
-      const cid = n.data && typeof n.data === "object" ? (n.data as { conversation_id?: string }).conversation_id : null;
+      const data = n.data && typeof n.data === "object" ? (n.data as Record<string, unknown>) : {};
+      const cid = typeof data.conversation_id === "string" ? data.conversation_id : null;
+      const orderId = typeof data.order_id === "string" ? data.order_id : null;
+      const deliveryRequestId =
+        typeof data.delivery_request_id === "string"
+          ? data.delivery_request_id
+          : typeof data.delivery_id === "string"
+            ? data.delivery_id
+            : typeof data.job_id === "string"
+              ? data.job_id
+              : null;
+
       if (n.type === "message" && cid) {
         navigate(`/messages/c/${cid}`);
+        return;
+      }
+      if ((n.type === "order_placed" || n.type === "payment_received") && orderId) {
+        navigate(`/orders/${orderId}`);
+        return;
+      }
+      if (n.type === "delivery_job_assigned" && deliveryRequestId) {
+        navigate(`/rider/job/${deliveryRequestId}`);
+        return;
+      }
+      if (n.type === "delivery_status_changed" && orderId) {
+        navigate(`/orders/${orderId}`);
       }
     },
     [navigate, refreshNotifications],

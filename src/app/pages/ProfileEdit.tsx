@@ -30,6 +30,8 @@ export default function ProfileEdit() {
     gender: "Prefer not to say",
     showPhoneOnProfile: false,
     showEmailOnProfile: false,
+    birthday: "",
+    promoNotificationsEnabled: true,
   });
 
   useEffect(() => {
@@ -44,6 +46,12 @@ export default function ProfileEdit() {
         gender: normalizeGender(profile?.gender || authUser?.user_metadata?.gender),
         showPhoneOnProfile: Boolean(profile?.show_phone_on_profile),
         showEmailOnProfile: Boolean(profile?.show_email_on_profile),
+        birthday:
+          typeof (profile as { birthday?: string | null } | null)?.birthday === "string"
+            ? ((profile as { birthday?: string | null }).birthday ?? "")
+            : "",
+        promoNotificationsEnabled:
+          (profile as { promo_notifications_enabled?: boolean } | null)?.promo_notifications_enabled !== false,
       });
       const av = profile?.avatar_url || (authUser?.user_metadata?.avatar_url as string | undefined);
       if (av && typeof av === "string" && av.trim()) {
@@ -129,6 +137,8 @@ export default function ProfileEdit() {
         updated_at: new Date().toISOString(),
         show_phone_on_profile: formData.showPhoneOnProfile,
         show_email_on_profile: formData.showEmailOnProfile,
+        birthday: formData.birthday ? formData.birthday : null,
+        promo_notifications_enabled: formData.promoNotificationsEnabled,
       }, { onConflict: "id" });
 
       alert("Profile updated successfully!");
@@ -334,6 +344,28 @@ export default function ProfileEdit() {
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-gray-400"><path d="m6 9 6 6 6-6"/></svg>
                   </div>
                 </div>
+
+                <div className="relative">
+                  <label className="absolute -top-2 left-3 bg-white px-1 text-xs text-[#22c55e] font-semibold">Birthday</label>
+                  <input
+                    type="date"
+                    value={formData.birthday}
+                    onChange={(e) => setFormData({ ...formData, birthday: e.target.value })}
+                    className="w-full border border-gray-300 rounded p-3 text-sm focus:border-[#22c55e] focus:outline-none text-gray-800"
+                  />
+                </div>
+
+                <label className="flex items-center gap-3 cursor-pointer text-sm text-gray-800 rounded-lg border border-gray-200 bg-gray-50/80 p-4">
+                  <input
+                    type="checkbox"
+                    checked={formData.promoNotificationsEnabled}
+                    onChange={(e) =>
+                      setFormData({ ...formData, promoNotificationsEnabled: e.target.checked })
+                    }
+                    className="rounded border-gray-300 text-[#22c55e] focus:ring-[#22c55e]"
+                  />
+                  Receive promotional reminders (weekend/birthday greetings)
+                </label>
 
                 {/* Social Connect CTA */}
                 <div className="mt-8 bg-[#f4f7f8] rounded-xl p-4 flex items-center gap-3 relative">

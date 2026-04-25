@@ -5,7 +5,7 @@ export function ensureMessageNotificationPermission(): void {
   }
 }
 
-export function showDesktopMessageNotification(title: string, body: string, tag?: string) {
+export function showDesktopNotification(title: string, body: string, tag?: string) {
   if (typeof window === "undefined" || !("Notification" in window)) return;
   if (document.visibilityState === "visible") return;
   if (Notification.permission !== "granted") return;
@@ -14,4 +14,8 @@ export function showDesktopMessageNotification(title: string, body: string, tag?
   } catch {
     /* ignore */
   }
+}
+
+export function showDesktopMessageNotification(title: string, body: string, tag?: string) {
+  showDesktopNotification(title, body, tag);
 }

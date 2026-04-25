@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import {
   fetchConversationsForInbox,
@@ -32,6 +32,12 @@ export function useInboxConversationList(authUserId: string | undefined) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [unreadByConv, setUnreadByConv] = useState<Map<string, number>>(new Map());
+  const hasLoadedOnceRef = useRef(false);
+
+  useEffect(() => {
+    hasLoadedOnceRef.current = false;
+    setLoading(Boolean(authUserId));
+  }, [authUserId]);
 
   const load = useCallback(async () => {
     if (!authUserId) {
@@ -39,7 +45,7 @@ export function useInboxConversationList(authUserId: string | undefined) {
       setLoading(false);
       return;
     }
-    setLoading(true);
+    if (!hasLoadedOnceRef.current) setLoading(true);
     setLoadError(null);
     try {
       const { data: list, error: convErr } = await fetchConversationsForInbox(supabase, authUserId);
@@ -114,6 +120,7 @@ export function useInboxConversationList(authUserId: string | undefined) {
       setLoadError(e instanceof Error ? e.message : "Could not load conversations");
       setRows([]);
     } finally {
+      hasLoadedOnceRef.current = true;
       setLoading(false);
     }
   }, [authUserId]);

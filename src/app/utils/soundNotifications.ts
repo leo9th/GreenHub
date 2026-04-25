@@ -66,6 +66,11 @@ export function unlockNotificationAudio(): void {
   window.addEventListener("keydown", unlock, { once: true });
 }
 
+/** Use when already inside a trusted user gesture (e.g. send button click). */
+export function markNotificationAudioGesture(): void {
+  audioUnlocked = true;
+}
+
 export function resolveNotificationSoundKey(type: string): NotificationSoundKey {
   switch (type) {
     case "message":

@@ -9,7 +9,7 @@ import { formatListTime, useInboxConversationList } from "../../hooks/useInboxCo
 import { getAvatarUrl } from "../../utils/getAvatar";
 import { getProductPrice } from "../../utils/getProductPrice";
 import { getProductThumbnailUrl } from "../../utils/productImages";
-import { playNotificationSound } from "../../utils/soundNotifications";
+import { markNotificationAudioGesture, playNotificationSound } from "../../utils/soundNotifications";
 import {
   clearConversationForMe,
   clearConversationMessages,
@@ -1028,6 +1028,7 @@ export default function ChatRoomV2() {
         toast.message("Type a message or attach an image.");
         return;
       }
+      markNotificationAudioGesture();
       if (sendLockRef.current) return;
       sendLockRef.current = true;
       setSendBusy(true);

@@ -32,7 +32,7 @@ import { getAvatarUrl } from "../../utils/getAvatar";
 import { getProductPrice } from "../../utils/getProductPrice";
 import { getProductThumbnailUrl } from "../../utils/productImages";
 import { isWarehouseShippingFulfillment } from "../../utils/fulfillment";
-import { playNotificationSound } from "../../utils/soundNotifications";
+import { markNotificationAudioGesture, playNotificationSound } from "../../utils/soundNotifications";
 import {
   fetchConversationById,
   findConversationByPair,
@@ -1479,6 +1479,7 @@ export default function ChatWorkspace() {
         toast.message("Type a message or attach media.");
         return;
       }
+      markNotificationAudioGesture();
       if (sendLockRef.current) return;
       sendLockRef.current = true;
       setSendBusy(true);

@@ -1388,7 +1388,12 @@ export default function ProductDetail() {
       if (error) throw error;
       toast.success("You'll be notified when this item is restocked.");
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Could not save your request.");
+      const msg = e instanceof Error ? e.message : "Could not save your request.";
+      if (msg.includes("requested_items") && msg.includes("does not exist")) {
+        toast.error("Notify Me is being set up. Please try again shortly.");
+        return;
+      }
+      toast.error(msg);
     }
   };
 

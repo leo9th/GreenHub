@@ -5,7 +5,8 @@ import { useRiderPresence } from "../../hooks/useRiderPresence";
 
 type Pos = { x: number; y: number };
 const STORAGE_KEY = "gh_rider_presence_fab_pos";
-const LONG_PRESS_MS = 220;
+const LONG_PRESS_MS = 140;
+const DRAG_MOVE_THRESHOLD_PX = 6;
 
 function clampPos(pos: Pos): Pos {
   if (typeof window === "undefined") return pos;
@@ -31,11 +32,20 @@ export default function RiderPresenceFab() {
       return { x: 16, y: 220 };
     }
   });
-  const dragRef = useRef<{ active: boolean; startX: number; startY: number; pointerId: number | null }>({
+  const dragRef = useRef<{
+    active: boolean;
+    startX: number;
+    startY: number;
+    pointerId: number | null;
+    downClientX: number;
+    downClientY: number;
+  }>({
     active: false,
     startX: 0,
     startY: 0,
     pointerId: null,
+    downClientX: 0,
+    downClientY: 0,
   });
   const movedRef = useRef(false);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -61,9 +71,16 @@ export default function RiderPresenceFab() {
   return (
     <div
       className="fixed z-[80]"
-      style={{ left: `${pos.x}px`, top: `${pos.y}px` }}
+      style={{ left: `${pos.x}px`, top: `${pos.y}px`, touchAction: "none" }}
       onPointerDown={(e) => {
-        dragRef.current = { active: false, startX: e.clientX - pos.x, startY: e.clientY - pos.y, pointerId: e.pointerId };
+        dragRef.current = {
+          active: false,
+          startX: e.clientX - pos.x,
+          startY: e.clientY - pos.y,
+          pointerId: e.pointerId,
+          downClientX: e.clientX,
+          downClientY: e.clientY,
+        };
         movedRef.current = false;
         (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
         if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
@@ -73,7 +90,20 @@ export default function RiderPresenceFab() {
       }}
       onPointerMove={(e) => {
         if (dragRef.current.pointerId !== e.pointerId) return;
-        if (!dragRef.current.active) return;
+        if (!dragRef.current.active) {
+          const movedX = e.clientX - dragRef.current.downClientX;
+          const movedY = e.clientY - dragRef.current.downClientY;
+          const movedDistance = Math.hypot(movedX, movedY);
+          if (movedDistance >= DRAG_MOVE_THRESHOLD_PX) {
+            dragRef.current.active = true;
+            if (longPressTimerRef.current) {
+              clearTimeout(longPressTimerRef.current);
+              longPressTimerRef.current = null;
+            }
+          } else {
+            return;
+          }
+        }
         movedRef.current = true;
         setPos(
           clampPos({
@@ -91,6 +121,14 @@ export default function RiderPresenceFab() {
           dragRef.current.active = false;
           dragRef.current.pointerId = null;
         }
+      }}
+      onPointerCancel={() => {
+        if (longPressTimerRef.current) {
+          clearTimeout(longPressTimerRef.current);
+          longPressTimerRef.current = null;
+        }
+        dragRef.current.active = false;
+        dragRef.current.pointerId = null;
       }}
     >
       <button

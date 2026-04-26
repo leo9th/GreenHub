@@ -129,6 +129,7 @@ export function useRiderPresence() {
   const onlineSince = presenceRow?.is_online ? presenceRow?.last_seen_at ?? null : null;
 
   return {
+    hasUser: Boolean(uid),
     isOnline: Boolean(presenceRow?.is_online),
     toggleAvailability,
     lastLocation,

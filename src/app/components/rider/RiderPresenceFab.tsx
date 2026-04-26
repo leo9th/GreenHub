@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { useLocation } from "react-router";
 import { Bike, MapPin, X } from "lucide-react";
 import { toast } from "sonner";
 import { useRiderPresence } from "../../hooks/useRiderPresence";
@@ -19,8 +18,7 @@ function clampPos(pos: Pos): Pos {
 }
 
 export default function RiderPresenceFab() {
-  const location = useLocation();
-  const { isRider, isOnline, toggleAvailability, lastLocation, onlineSince, error, isBusy } = useRiderPresence();
+  const { hasUser, isRider, isOnline, toggleAvailability, lastLocation, onlineSince, error, isBusy } = useRiderPresence();
   const [isPanelOpen, setIsPanelOpen] = useState(false);
   const [pos, setPos] = useState<Pos>(() => {
     if (typeof window === "undefined") return { x: 16, y: 220 };
@@ -58,7 +56,7 @@ export default function RiderPresenceFab() {
     if (error) toast.error(error);
   }, [error]);
 
-  if (!isRider || !location.pathname.startsWith("/rider")) return null;
+  if (!hasUser) return null;
 
   return (
     <div
@@ -147,6 +145,7 @@ export default function RiderPresenceFab() {
           <p>
             Status: <span className={isOnline ? "text-emerald-300" : "text-slate-400"}>{isOnline ? "Online" : "Offline"}</span>
           </p>
+          {!isRider ? <p className="mt-1 text-[10px] text-amber-300">Rider account approval required to go online.</p> : null}
           <p className="mt-1 text-slate-400">
             Last update: {onlineSince ? new Date(onlineSince).toLocaleTimeString() : "—"}
           </p>
@@ -155,7 +154,7 @@ export default function RiderPresenceFab() {
           </p>
           <button
             type="button"
-            disabled={isBusy}
+            disabled={isBusy || !isRider}
             onClick={() => {
               if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
                 navigator.vibrate(18);

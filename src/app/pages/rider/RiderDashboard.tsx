@@ -19,6 +19,15 @@ type RiderTableRow = {
   vehicle_type: string | null;
 };
 
+type ProductRideBookingRow = {
+  id: string;
+  product_id: string;
+  status: string | null;
+  pickup_address: string;
+  dropoff_address: string;
+  created_at: string | null;
+};
+
 function statusLabel(s: string | null | undefined): string {
   const x = String(s || "").toLowerCase();
   const m: Record<string, string> = {
@@ -36,6 +45,7 @@ export default function RiderDashboard() {
   const [riderRow, setRiderRow] = useState<RiderTableRow | null | undefined>(undefined);
   const [available, setAvailable] = useState<DeliveryRequestRow[]>([]);
   const [mine, setMine] = useState<DeliveryRequestRow[]>([]);
+  const [myProductRideBookings, setMyProductRideBookings] = useState<ProductRideBookingRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [vehicleType, setVehicleType] = useState("");
   const [applying, setApplying] = useState(false);
@@ -81,10 +91,20 @@ export default function RiderDashboard() {
         .order("updated_at", { ascending: false });
       if (e2) throw e2;
       setMine((active as DeliveryRequestRow[]) ?? []);
+
+      const { data: productRideData, error: e3 } = await supabase
+        .from("product_ride_bookings")
+        .select("id, product_id, status, pickup_address, dropoff_address, created_at")
+        .eq("assigned_rider_id", uid)
+        .in("status", ["assigned", "accepted", "en_route"])
+        .order("updated_at", { ascending: false });
+      if (e3) throw e3;
+      setMyProductRideBookings((productRideData as ProductRideBookingRow[]) ?? []);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Could not load deliveries");
       setAvailable([]);
       setMine([]);
+      setMyProductRideBookings([]);
     } finally {
       setLoading(false);
     }
@@ -182,6 +202,33 @@ export default function RiderDashboard() {
                         <p className="font-medium text-white">Order {String(r.order_id).slice(0, 8)}…</p>
                         <p className="text-xs text-emerald-100/70">{statusLabel(r.status)}</p>
                       </div>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section className="mt-8">
+            <h2 className="text-sm font-semibold text-emerald-200">My product ride bookings</h2>
+            {myProductRideBookings.length === 0 ? (
+              <p className="mt-2 text-sm text-slate-500">No assigned product ride bookings.</p>
+            ) : (
+              <ul className="mt-2 space-y-2">
+                {myProductRideBookings.map((b) => (
+                  <li key={b.id}>
+                    <Link
+                      to={`/rider/product-rides/${encodeURIComponent(b.id)}`}
+                      className="block rounded-xl border border-emerald-500/30 bg-emerald-950/20 px-3 py-3 text-sm hover:bg-emerald-950/35"
+                    >
+                      <p className="font-medium text-white">Ride booking {b.id.slice(0, 8)}…</p>
+                      <p className="mt-0.5 text-xs text-emerald-100/80">{statusLabel(b.status)}</p>
+                      <p className="mt-1 text-xs text-slate-300">
+                        Pickup: <span className="text-slate-400">{b.pickup_address}</span>
+                      </p>
+                      <p className="mt-0.5 text-xs text-slate-300">
+                        Dropoff: <span className="text-slate-400">{b.dropoff_address}</span>
+                      </p>
                     </Link>
                   </li>
                 ))}

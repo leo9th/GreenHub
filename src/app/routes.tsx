@@ -127,6 +127,7 @@ export const router = createBrowserRouter([
         children: [
           { index: true, lazy: lazyPage(() => import("./pages/rider/RiderDashboard")) },
           { path: "requests/:requestId", lazy: lazyPage(() => import("./pages/rider/RiderRequestDetail")) },
+          { path: "product-rides/:bookingId", lazy: lazyPage(() => import("./pages/rider/RiderProductRideDetail")) },
         ],
       },
       { path: "orders", Component: Orders },

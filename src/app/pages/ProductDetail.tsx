@@ -26,6 +26,7 @@ import {
   CheckCircle2,
   Bell,
   Truck,
+  X,
 } from "lucide-react";
 import { useCurrency } from "../hooks/useCurrency";
 import { useCart, type CartItem } from "../context/CartContext";
@@ -59,8 +60,10 @@ import { EditProductModal } from "../components/EditProductModal";
 import { PriceNegotiation } from "../components/PriceNegotiation";
 import { MarketPricePrediction } from "../components/MarketPricePrediction";
 import { BuyNowActionIcon, CartActionIcon, RideActionIcon } from "../components/icons/ActionIcons";
+import DeliveryTrackingMap from "../components/DeliveryTrackingMap";
 
 type ParsedDeliveryOption = { name: string; fee: number; duration: string };
+type AddressSuggestion = { display_name: string; lat: number; lng: number };
 
 function parseDeliveryOptionsFromDb(raw: unknown): ParsedDeliveryOption[] {
   if (raw == null) return [];
@@ -97,6 +100,38 @@ function parseDeliveryOptionsFromDb(raw: unknown): ParsedDeliveryOption[] {
     }
   }
   return out;
+}
+
+async function searchAddressSuggestions(query: string): Promise<AddressSuggestion[]> {
+  const q = query.trim();
+  if (q.length < 3) return [];
+  const res = await fetch(
+    `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&q=${encodeURIComponent(q)}`,
+    { headers: { Accept: "application/json" } },
+  );
+  if (!res.ok) return [];
+  const rows = (await res.json()) as Array<{ display_name?: string; lat?: string; lon?: string }>;
+  return rows
+    .map((row) => ({
+      display_name: String(row.display_name ?? "").trim(),
+      lat: Number(row.lat),
+      lng: Number(row.lon),
+    }))
+    .filter((row) => row.display_name && Number.isFinite(row.lat) && Number.isFinite(row.lng));
+}
+
+async function reverseGeocode(lat: number, lng: number): Promise<string | null> {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  const res = await fetch(
+    `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(
+      String(lat),
+    )}&lon=${encodeURIComponent(String(lng))}`,
+    { headers: { Accept: "application/json" } },
+  );
+  if (!res.ok) return null;
+  const row = (await res.json()) as { display_name?: string };
+  const v = String(row.display_name ?? "").trim();
+  return v || null;
 }
 
 function shuffleRelatedProducts<T>(items: T[]): T[] {
@@ -380,6 +415,20 @@ export default function ProductDetail() {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [cartJustAdded, setCartJustAdded] = useState(false);
   const [openUserDialog, setOpenUserDialog] = useState(false);
+  const [openRideBooking, setOpenRideBooking] = useState(false);
+  const [pickupQuery, setPickupQuery] = useState("");
+  const [dropoffQuery, setDropoffQuery] = useState("");
+  const [pickupLat, setPickupLat] = useState<number | null>(null);
+  const [pickupLng, setPickupLng] = useState<number | null>(null);
+  const [dropoffLat, setDropoffLat] = useState<number | null>(null);
+  const [dropoffLng, setDropoffLng] = useState<number | null>(null);
+  const [pickupSuggestions, setPickupSuggestions] = useState<AddressSuggestion[]>([]);
+  const [dropoffSuggestions, setDropoffSuggestions] = useState<AddressSuggestion[]>([]);
+  const [searchingPickup, setSearchingPickup] = useState(false);
+  const [searchingDropoff, setSearchingDropoff] = useState(false);
+  const [rideContactPhone, setRideContactPhone] = useState("");
+  const [rideNote, setRideNote] = useState("");
+  const [rideSubmitting, setRideSubmitting] = useState(false);
   const [updatingAvailability, setUpdatingAvailability] = useState(false);
   const thumbnailClickDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const deliveryOptionsRef = useRef<HTMLElement | null>(null);
@@ -403,6 +452,14 @@ export default function ProductDetail() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [openUserDialog]);
+
+  useEffect(() => {
+    if (!openRideBooking) return;
+    const phone =
+      (authUser?.user_metadata as { phone?: string } | undefined)?.phone ??
+      (sellerProfile?.phone ?? "");
+    setRideContactPhone(String(phone ?? "").trim());
+  }, [openRideBooking, authUser?.user_metadata, sellerProfile?.phone]);
 
   useEffect(() => {
     const raw = serverProduct?.seller_id ?? serverProduct?.sellerId;
@@ -1130,9 +1187,116 @@ export default function ProductDetail() {
     // #endregion
   }, [foundProduct?.id, isOwner, isSoldOut]);
 
-  const scrollToDeliveryOptions = useCallback(() => {
-    deliveryOptionsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  const runPickupSearch = useCallback(async () => {
+    const q = pickupQuery.trim();
+    if (q.length < 3) {
+      setPickupSuggestions([]);
+      return;
+    }
+    setSearchingPickup(true);
+    try {
+      setPickupSuggestions(await searchAddressSuggestions(q));
+    } finally {
+      setSearchingPickup(false);
+    }
+  }, [pickupQuery]);
+
+  const runDropoffSearch = useCallback(async () => {
+    const q = dropoffQuery.trim();
+    if (q.length < 3) {
+      setDropoffSuggestions([]);
+      return;
+    }
+    setSearchingDropoff(true);
+    try {
+      setDropoffSuggestions(await searchAddressSuggestions(q));
+    } finally {
+      setSearchingDropoff(false);
+    }
+  }, [dropoffQuery]);
+
+  const useCurrentLocationForPickup = useCallback(() => {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      toast.error("GPS location is not supported by this browser.");
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        setPickupLat(lat);
+        setPickupLng(lng);
+        const label = await reverseGeocode(lat, lng);
+        if (label) setPickupQuery(label);
+        toast.success("Pickup location set from your GPS.");
+      },
+      (err) => {
+        toast.error(err.message || "Could not access your location.");
+      },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 },
+    );
   }, []);
+
+  const submitRideBooking = useCallback(async () => {
+    if (!authUser?.id) {
+      toast.error("Please sign in to book a ride.");
+      navigate(`/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+      return;
+    }
+    if (!pickupQuery.trim() || !dropoffQuery.trim()) {
+      toast.error("Pickup and dropoff are required.");
+      return;
+    }
+    if (pickupLat == null || pickupLng == null || dropoffLat == null || dropoffLng == null) {
+      toast.error("Please choose pickup and dropoff from suggestions or GPS.");
+      return;
+    }
+    if (!rideContactPhone.trim()) {
+      toast.error("Contact phone is required.");
+      return;
+    }
+    setRideSubmitting(true);
+    try {
+      const payload = {
+        user_id: authUser.id,
+        product_id: String(foundProduct?.id ?? product.id ?? ""),
+        seller_user_id: sellerPeerId ?? null,
+        pickup_address: pickupQuery.trim(),
+        pickup_lat: pickupLat,
+        pickup_lng: pickupLng,
+        dropoff_address: dropoffQuery.trim(),
+        dropoff_lat: dropoffLat,
+        dropoff_lng: dropoffLng,
+        contact_phone: rideContactPhone.trim(),
+        rider_note: rideNote.trim() || null,
+        source: "product_detail",
+        status: "pending",
+      };
+      const { error } = await supabase.from("product_ride_bookings").insert(payload);
+      if (error) throw error;
+      toast.success("Ride request submitted. GreenHub dispatch will assign a rider soon.");
+      setOpenRideBooking(false);
+      setRideNote("");
+      setPickupSuggestions([]);
+      setDropoffSuggestions([]);
+    } finally {
+      setRideSubmitting(false);
+    }
+  }, [
+    authUser?.id,
+    foundProduct?.id,
+    product.id,
+    dropoffLat,
+    dropoffLng,
+    dropoffQuery,
+    navigate,
+    pickupLat,
+    pickupLng,
+    pickupQuery,
+    rideNote,
+    rideContactPhone,
+    sellerPeerId,
+  ]);
   // #region agent log
   void fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
     method: "POST",
@@ -2450,7 +2614,7 @@ export default function ProductDetail() {
               ) : null}
               <button
                 type="button"
-                onClick={scrollToDeliveryOptions}
+                onClick={() => setOpenRideBooking(true)}
                 className={`flex min-h-[44px] w-full min-w-0 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 py-2.5 px-3 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 md:flex-1 ${
                   !canMessageSeller ? "col-span-2 md:col-span-auto" : ""
                 }`}
@@ -2511,6 +2675,198 @@ export default function ProductDetail() {
       </div>
 
       <AnimatePresence>
+        {openRideBooking ? (
+          <motion.div
+            key="pdp-ride-booking"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pdp-ride-booking-title"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+            onClick={() => setOpenRideBooking(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.96, y: 16, opacity: 0 }}
+              animate={{ scale: 1, y: 0, opacity: 1 }}
+              exit={{ scale: 0.98, y: 10, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="w-full max-w-2xl rounded-2xl bg-white p-5 shadow-2xl dark:bg-zinc-900"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <div>
+                  <h3 id="pdp-ride-booking-title" className="text-lg font-semibold text-gray-900 dark:text-zinc-100">
+                    Book a Ride
+                  </h3>
+                  <p className="text-xs text-gray-500 dark:text-zinc-400">
+                    GPS-assisted pickup and dropoff for {String(product.title || "this listing")}.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setOpenRideBooking(false)}
+                  className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-zinc-800"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-4">
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-zinc-300">
+                      Pickup
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        value={pickupQuery}
+                        onChange={(e) => setPickupQuery(e.target.value)}
+                        placeholder="Search pickup address"
+                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void runPickupSearch()}
+                        className="rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                      >
+                        {searchingPickup ? "..." : "Find"}
+                      </button>
+                    </div>
+                    <div className="mt-2 flex gap-2">
+                      <button
+                        type="button"
+                        onClick={useCurrentLocationForPickup}
+                        className="rounded-md bg-emerald-50 px-2.5 py-1.5 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100"
+                      >
+                        Use current location
+                      </button>
+                    </div>
+                    {pickupSuggestions.length > 0 ? (
+                      <div className="mt-2 max-h-28 overflow-y-auto rounded-md border border-gray-200">
+                        {pickupSuggestions.map((s, idx) => (
+                          <button
+                            key={`${s.lat}-${s.lng}-${idx}`}
+                            type="button"
+                            onClick={() => {
+                              setPickupQuery(s.display_name);
+                              setPickupLat(s.lat);
+                              setPickupLng(s.lng);
+                              setPickupSuggestions([]);
+                            }}
+                            className="block w-full border-b border-gray-100 px-2 py-1.5 text-left text-[11px] text-gray-700 last:border-0 hover:bg-gray-50"
+                          >
+                            {s.display_name}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-zinc-300">
+                      Dropoff
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        value={dropoffQuery}
+                        onChange={(e) => setDropoffQuery(e.target.value)}
+                        placeholder="Search dropoff address"
+                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void runDropoffSearch()}
+                        className="rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                      >
+                        {searchingDropoff ? "..." : "Find"}
+                      </button>
+                    </div>
+                    {dropoffSuggestions.length > 0 ? (
+                      <div className="mt-2 max-h-28 overflow-y-auto rounded-md border border-gray-200">
+                        {dropoffSuggestions.map((s, idx) => (
+                          <button
+                            key={`${s.lat}-${s.lng}-${idx}`}
+                            type="button"
+                            onClick={() => {
+                              setDropoffQuery(s.display_name);
+                              setDropoffLat(s.lat);
+                              setDropoffLng(s.lng);
+                              setDropoffSuggestions([]);
+                            }}
+                            className="block w-full border-b border-gray-100 px-2 py-1.5 text-left text-[11px] text-gray-700 last:border-0 hover:bg-gray-50"
+                          >
+                            {s.display_name}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-zinc-300">
+                      Contact phone
+                    </label>
+                    <input
+                      value={rideContactPhone}
+                      onChange={(e) => setRideContactPhone(e.target.value)}
+                      placeholder="e.g. 08012345678"
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-zinc-300">
+                      Note (optional)
+                    </label>
+                    <textarea
+                      value={rideNote}
+                      onChange={(e) => setRideNote(e.target.value)}
+                      rows={3}
+                      placeholder="Landmark or rider instructions"
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="overflow-hidden rounded-xl border border-gray-200">
+                    <DeliveryTrackingMap
+                      pickupLat={pickupLat}
+                      pickupLng={pickupLng}
+                      dropoffLat={dropoffLat}
+                      dropoffLng={dropoffLng}
+                      className="h-72 w-full"
+                    />
+                  </div>
+                  <p className="text-[11px] text-gray-500">
+                    Select pickup/dropoff from search suggestions to place accurate map pins.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setOpenRideBooking(false)}
+                  className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void submitRideBooking()}
+                  disabled={rideSubmitting}
+                  className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-60"
+                >
+                  {rideSubmitting ? "Submitting..." : "Submit Ride Request"}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        ) : null}
         {openUserDialog && sellerPeerId && !isOwner ? (
           <motion.div
             key="pdp-seller-dialog"

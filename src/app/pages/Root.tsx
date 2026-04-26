@@ -5,6 +5,7 @@ import { useEffect } from "react";
 import AnimatedOutlet from "../components/AnimatedOutlet";
 import Footer from "../components/Footer";
 import FloatingChatbotWidget from "../components/FloatingChatbotWidget";
+import RiderPresenceFab from "../components/rider/RiderPresenceFab";
 import TopNav from "../components/TopNav";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../../lib/supabase";
@@ -65,6 +66,7 @@ export default function Root() {
       </main>
 
       {!hideFloatingChatbot ? <FloatingChatbotWidget /> : null}
+      <RiderPresenceFab />
 
       {showBottomNav && (
         <nav className="fixed bottom-0 left-0 right-0 bg-white dark:bg-zinc-900 border-t border-gray-200 dark:border-zinc-800 z-50 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] dark:shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.25)]">

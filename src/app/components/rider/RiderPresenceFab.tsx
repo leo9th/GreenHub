@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
+import { motion } from "motion/react";
+import { useNavigate } from "react-router";
 import { Bike, MapPin, X } from "lucide-react";
 import { toast } from "sonner";
 import { useRiderPresence } from "../../hooks/useRiderPresence";
 
 type Pos = { x: number; y: number };
 const STORAGE_KEY = "gh_rider_presence_fab_pos";
-const LONG_PRESS_MS = 140;
-const DRAG_MOVE_THRESHOLD_PX = 6;
+const DRAG_MOVE_THRESHOLD_PX = 2;
 
 function clampPos(pos: Pos): Pos {
   if (typeof window === "undefined") return pos;
@@ -19,8 +20,10 @@ function clampPos(pos: Pos): Pos {
 }
 
 export default function RiderPresenceFab() {
-  const { hasUser, isRider, isOnline, toggleAvailability, lastLocation, onlineSince, error, isBusy } = useRiderPresence();
+  const navigate = useNavigate();
+  const { hasUser, role, isRider, isOnline, toggleAvailability, lastLocation, onlineSince, error, isBusy } = useRiderPresence();
   const [isPanelOpen, setIsPanelOpen] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const [pos, setPos] = useState<Pos>(() => {
     if (typeof window === "undefined") return { x: 16, y: 220 };
     try {
@@ -48,7 +51,6 @@ export default function RiderPresenceFab() {
     downClientY: 0,
   });
   const movedRef = useRef(false);
-  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -82,11 +84,8 @@ export default function RiderPresenceFab() {
           downClientY: e.clientY,
         };
         movedRef.current = false;
+        setIsDragging(false);
         (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
-        if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
-        longPressTimerRef.current = setTimeout(() => {
-          dragRef.current.active = true;
-        }, LONG_PRESS_MS);
       }}
       onPointerMove={(e) => {
         if (dragRef.current.pointerId !== e.pointerId) return;
@@ -96,15 +95,12 @@ export default function RiderPresenceFab() {
           const movedDistance = Math.hypot(movedX, movedY);
           if (movedDistance >= DRAG_MOVE_THRESHOLD_PX) {
             dragRef.current.active = true;
-            if (longPressTimerRef.current) {
-              clearTimeout(longPressTimerRef.current);
-              longPressTimerRef.current = null;
-            }
           } else {
             return;
           }
         }
         movedRef.current = true;
+        setIsDragging(true);
         setPos(
           clampPos({
             x: e.clientX - dragRef.current.startX,
@@ -113,49 +109,60 @@ export default function RiderPresenceFab() {
         );
       }}
       onPointerUp={(e) => {
-        if (longPressTimerRef.current) {
-          clearTimeout(longPressTimerRef.current);
-          longPressTimerRef.current = null;
-        }
         if (dragRef.current.pointerId === e.pointerId) {
           dragRef.current.active = false;
           dragRef.current.pointerId = null;
         }
+        setTimeout(() => setIsDragging(false), 0);
       }}
       onPointerCancel={() => {
-        if (longPressTimerRef.current) {
-          clearTimeout(longPressTimerRef.current);
-          longPressTimerRef.current = null;
-        }
         dragRef.current.active = false;
         dragRef.current.pointerId = null;
+        setIsDragging(false);
       }}
     >
-      <button
+      <motion.button
         type="button"
         disabled={isBusy && isPanelOpen}
         onClick={() => {
           if (movedRef.current) return;
+          if (role === "buyer") {
+            navigate("/book");
+            return;
+          }
           setIsPanelOpen((v) => !v);
         }}
         className={`group flex items-center gap-2 rounded-full border px-3 py-2 shadow-lg backdrop-blur-sm transition ${
-          isOnline
-            ? "border-emerald-400/50 bg-emerald-950/85 text-emerald-100"
-            : "border-slate-600 bg-slate-900/90 text-slate-200"
+          isRider
+            ? isOnline
+              ? "border-emerald-400/50 bg-emerald-950/85 text-emerald-100 drop-shadow-[0_0_12px_rgba(16,185,129,0.45)]"
+              : "border-slate-600 bg-slate-900/90 text-slate-200"
+            : "border-indigo-400/40 bg-indigo-950/85 text-indigo-100"
         }`}
-        title={isOnline ? "Tap for rider status panel" : "Tap for rider status panel"}
+        title={isRider ? (isOnline ? "On Duty" : "Offline") : "Request Ride"}
+        animate={isRider && isOnline && !isDragging ? { scale: [1, 1.05, 1] } : { scale: 1 }}
+        transition={isRider && isOnline && !isDragging ? { duration: 3, repeat: Infinity, ease: "easeInOut" } : { duration: 0.2 }}
+        whileTap={{ scale: 0.95 }}
       >
         <span
           className={`flex h-8 w-8 items-center justify-center rounded-full ${
-            isOnline ? "bg-emerald-500/25 text-emerald-300" : "bg-slate-700 text-slate-300"
+            isRider
+              ? isOnline
+                ? "bg-emerald-500/25 text-emerald-300"
+                : "bg-slate-700 text-slate-300"
+              : "bg-indigo-500/25 text-indigo-300"
           }`}
         >
           <Bike className="h-4 w-4" aria-hidden />
         </span>
         <span className="min-w-0 text-left">
-          <span className="block text-[11px] font-semibold leading-tight">{isOnline ? "Rider Live" : "Rider Offline"}</span>
+          <span className="block text-[11px] font-semibold leading-tight">
+            {isRider ? (isOnline ? "On Duty" : "Offline") : "Request Ride"}
+          </span>
           <span className="block text-[10px] opacity-80 leading-tight">
-            {lastLocation ? (
+            {!isRider ? (
+              "Tap to book"
+            ) : lastLocation ? (
               <>
                 <MapPin className="mr-1 inline h-3 w-3" aria-hidden />
                 {lastLocation.lat.toFixed(4)}, {lastLocation.lng.toFixed(4)}
@@ -167,8 +174,8 @@ export default function RiderPresenceFab() {
             )}
           </span>
         </span>
-      </button>
-      {isPanelOpen ? (
+      </motion.button>
+      {isPanelOpen && isRider ? (
         <div className="mt-2 w-64 rounded-2xl border border-slate-700 bg-slate-950/95 p-3 text-xs text-slate-200 shadow-xl backdrop-blur-md">
           <div className="mb-2 flex items-center justify-between">
             <p className="font-semibold text-slate-100">Rider presence</p>
@@ -205,7 +212,7 @@ export default function RiderPresenceFab() {
           >
             {isBusy ? "Updating..." : isOnline ? "Go offline" : "Go online"}
           </button>
-          <p className="mt-2 text-[10px] text-slate-500">Tip: long-press and drag to move this button.</p>
+          <p className="mt-2 text-[10px] text-slate-500">Tip: drag to move this button.</p>
         </div>
       ) : null}
     </div>

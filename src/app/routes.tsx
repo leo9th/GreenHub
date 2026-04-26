@@ -142,6 +142,7 @@ export const router = createBrowserRouter([
         lazy: lazyPage(() => import("./pages/WriteProductReview")),
       },
       { path: "products/:id", lazy: lazyPage(() => import("./pages/ProductDetail")) },
+      { path: "book", element: <Navigate to="/products" replace /> },
       { path: "cart", Component: Cart },
       { path: "checkout", Component: CheckoutWithErrorBoundary },
       {

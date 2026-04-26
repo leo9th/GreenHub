@@ -13,7 +13,8 @@ type PresenceRow = {
 export function useRiderPresence() {
   const { user, profile } = useAuth();
   const uid = user?.id?.trim() ?? "";
-  const isRider = String(profile?.role ?? "").toLowerCase() === "rider";
+  const role = String(profile?.role ?? "").toLowerCase();
+  const isRider = role === "rider";
   const [presenceRow, setPresenceRow] = useState<PresenceRow | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -93,6 +94,26 @@ export function useRiderPresence() {
     };
   }, [presenceRow?.is_online, heartbeat, uid, isRider]);
 
+  useEffect(() => {
+    if (!uid || !isRider || !presenceRow?.is_online) return;
+    const channel = supabase
+      .channel(`rider-presence-self:${uid}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "rider_presence", filter: `rider_user_id=eq.${uid}` },
+        (payload) => {
+          const row = payload.new as PresenceRow | null;
+          if (!row) return;
+          setPresenceRow(row);
+        },
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [uid, isRider, presenceRow?.is_online]);
+
   const toggleAvailability = useCallback(
     async (nextState?: boolean) => {
       if (!uid || !isRider) return;
@@ -130,6 +151,7 @@ export function useRiderPresence() {
 
   return {
     hasUser: Boolean(uid),
+    role,
     isOnline: Boolean(presenceRow?.is_online),
     toggleAvailability,
     lastLocation,

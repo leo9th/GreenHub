@@ -10,11 +10,14 @@ type PresenceRow = {
   last_seen_at: string | null;
 };
 
+type RiderStatus = "none" | "pending" | "approved" | "blocked";
+
 export function useRiderPresence() {
   const { user, profile } = useAuth();
   const uid = user?.id?.trim() ?? "";
   const role = String(profile?.role ?? user?.user_metadata?.role ?? "buyer").toLowerCase();
   const isRider = role === "rider";
+  const [riderStatus, setRiderStatus] = useState<RiderStatus>("none");
   const [presenceRow, setPresenceRow] = useState<PresenceRow | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,9 +40,31 @@ export function useRiderPresence() {
     setPresenceRow((data as PresenceRow) ?? null);
   }, [uid, isRider]);
 
+  const loadRiderStatus = useCallback(async () => {
+    if (!uid) {
+      setRiderStatus("none");
+      return;
+    }
+    const { data, error: e } = await supabase.from("riders").select("status").eq("user_id", uid).maybeSingle();
+    if (e) {
+      setRiderStatus("none");
+      return;
+    }
+    const status = String((data as { status?: string } | null)?.status ?? "").toLowerCase();
+    if (status === "pending" || status === "approved" || status === "blocked") {
+      setRiderStatus(status);
+      return;
+    }
+    setRiderStatus("none");
+  }, [uid]);
+
   useEffect(() => {
     void loadPresence();
   }, [loadPresence]);
+
+  useEffect(() => {
+    void loadRiderStatus();
+  }, [loadRiderStatus]);
 
   const heartbeat = useCallback(async () => {
     if (!uid || !isRider) return;
@@ -153,7 +178,9 @@ export function useRiderPresence() {
 
   return {
     hasUser: Boolean(uid),
+    currentUserId: uid,
     role,
+    riderStatus,
     isOnline: Boolean(presenceRow?.is_online),
     toggleAvailability,
     lastLocation,

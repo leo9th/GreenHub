@@ -4,6 +4,7 @@ import { ArrowLeft, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "../../context/AuthContext";
 import { supabase } from "../../../lib/supabase";
+import { riderActionErrorMessage } from "../../utils/riderActionErrors";
 
 type ProductRideBookingRow = {
   id: string;
@@ -79,13 +80,43 @@ export default function RiderProductRideDetail() {
   const callAction = async (rpcName: string, successMessage: string) => {
     if (!bid) return;
     setBusy(true);
+    // #region agent log
+    fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "7ae02f" },
+      body: JSON.stringify({
+        sessionId: "7ae02f",
+        runId: "initial",
+        hypothesisId: "H2_SERVER_REJECTION",
+        location: "RiderProductRideDetail.tsx:83",
+        message: "Rider product action RPC attempt",
+        data: { rpcName, hasBookingId: Boolean(bid), statusBefore: String(row?.status || "").toLowerCase() },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
     try {
       const { error } = await supabase.rpc(rpcName, { p_booking_id: bid });
       if (error) throw error;
       toast.success(successMessage);
       await load();
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Could not update ride booking");
+      // #region agent log
+      fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "7ae02f" },
+        body: JSON.stringify({
+          sessionId: "7ae02f",
+          runId: "initial",
+          hypothesisId: "H2_SERVER_REJECTION",
+          location: "RiderProductRideDetail.tsx:99",
+          message: "Rider product action RPC error",
+          data: { rpcName, error: e instanceof Error ? e.message : String(e ?? "") },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
+      toast.error(riderActionErrorMessage(e, "Could not update ride booking"));
     } finally {
       setBusy(false);
     }
@@ -112,9 +143,27 @@ export default function RiderProductRideDetail() {
 
   const st = String(row.status || "").toLowerCase();
   const isMine = row.assigned_rider_id === uid;
-  const canAccept = isMine && (st === "assigned" || st === "accepted");
-  const canStartRide = isMine && (st === "assigned" || st === "accepted" || st === "en_route");
-  const canDeliver = isMine && (st === "assigned" || st === "accepted" || st === "en_route");
+  const canAccept = isMine && st === "assigned";
+  const canStartRide = isMine && st === "accepted";
+  const canDeliver = isMine && st === "en_route";
+
+  useEffect(() => {
+    // #region agent log
+    fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "7ae02f" },
+      body: JSON.stringify({
+        sessionId: "7ae02f",
+        runId: "initial",
+        hypothesisId: "H1_UI_GATE_MISMATCH",
+        location: "RiderProductRideDetail.tsx:131",
+        message: "Rider product action gates evaluated",
+        data: { hasBooking: Boolean(row?.id), status: st, isMine, canAccept, canStartRide, canDeliver },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+  }, [row?.id, st, isMine, canAccept, canStartRide, canDeliver]);
 
   return (
     <div className="mx-auto max-w-lg px-4 py-6">

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "../../../lib/supabase";
+import { riderActionErrorMessage } from "../../utils/riderActionErrors";
 
 interface DeclineButtonProps {
   type: "delivery_request" | "product_ride_booking";
@@ -36,7 +37,7 @@ export function DeclineButton({
       toast.success("Delivery declined");
       onDeclined?.();
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Could not decline delivery");
+      toast.error(riderActionErrorMessage(e, "Could not decline delivery"));
     } finally {
       setIsDeclining(false);
       setShowConfirm(false);

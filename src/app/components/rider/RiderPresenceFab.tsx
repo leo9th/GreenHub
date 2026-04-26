@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { motion } from "motion/react";
 import { useNavigate } from "react-router";
-import { Bike, MapPin, X } from "lucide-react";
+import { Bike, MapPin, ShoppingBag, X } from "lucide-react";
 import { toast } from "sonner";
 import { useRiderPresence } from "../../hooks/useRiderPresence";
+import { normalizeRiderFabMode, resolveInitialRiderFabMode, type RiderFabMode, riderFabModeStorageKey } from "../../utils/riderFabMode";
 
 type Pos = { x: number; y: number };
 type Edge = "left" | "right";
@@ -27,9 +28,13 @@ function clampPos(pos: Pos): Pos {
 
 export default function RiderPresenceFab() {
   const navigate = useNavigate();
-  const { hasUser, role, isRider, isOnline, toggleAvailability, lastLocation, onlineSince, error, isBusy } = useRiderPresence();
+  const { hasUser, currentUserId, role, riderStatus, isRider, isOnline, toggleAvailability, lastLocation, onlineSince, error, isBusy } =
+    useRiderPresence();
+  const isRiderCapable = isRider || riderStatus !== "none";
+  const canUseRiderPresence = isRider && riderStatus === "approved";
   const [isPanelOpen, setIsPanelOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [mode, setMode] = useState<RiderFabMode>("booking");
   const [edge, setEdge] = useState<Edge>("left");
   const [pos, setPos] = useState<Pos>(() => {
     if (typeof window === "undefined") return { x: 16, y: 220 };
@@ -66,6 +71,15 @@ export default function RiderPresenceFab() {
     moveCleanup: null,
   });
   const suppressClickRef = useRef(false);
+  const lastErrorRef = useRef<string | null>(null);
+
+  const applyMode = (nextMode: RiderFabMode) => {
+    const normalized: RiderFabMode = nextMode === "rider" && !isRiderCapable ? "booking" : nextMode;
+    setMode(normalized);
+    setIsPanelOpen(false);
+    if (typeof window === "undefined" || !currentUserId) return;
+    window.localStorage.setItem(riderFabModeStorageKey(currentUserId), normalized);
+  };
 
   const persistPos = (next: Pos, nextEdge: Edge) => {
     if (typeof window === "undefined") return;
@@ -198,8 +212,21 @@ export default function RiderPresenceFab() {
   }, [pos]);
 
   useEffect(() => {
-    if (error) toast.error(error);
+    if (!error || error === lastErrorRef.current) return;
+    lastErrorRef.current = error;
+    toast.error(error);
   }, [error]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!hasUser || !currentUserId) {
+      setMode("booking");
+      return;
+    }
+    const saved = normalizeRiderFabMode(window.localStorage.getItem(riderFabModeStorageKey(currentUserId)));
+    const resolved = resolveInitialRiderFabMode({ isRiderCapable, savedMode: saved });
+    setMode(resolved);
+  }, [hasUser, currentUserId, isRiderCapable]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -230,42 +257,52 @@ export default function RiderPresenceFab() {
         onTouchStart={onTouchStart}
         onClick={() => {
           if (isDragging || suppressClickRef.current) return;
-          if (!isRider) {
+          if (mode === "booking") {
             navigate("/book");
             return;
           }
           setIsPanelOpen((v) => !v);
         }}
         className={`group flex items-center gap-2 rounded-full border px-3 py-2 shadow-lg backdrop-blur-sm transition ${
-          isRider
-            ? isOnline
-              ? "border-emerald-400/50 bg-emerald-950/85 text-emerald-100 drop-shadow-[0_0_12px_rgba(16,185,129,0.45)]"
-              : "border-slate-600 bg-slate-900/90 text-slate-200"
+          mode === "rider"
+            ? canUseRiderPresence
+              ? isOnline
+                ? "border-emerald-400/50 bg-emerald-950/85 text-emerald-100 drop-shadow-[0_0_12px_rgba(16,185,129,0.45)]"
+                : "border-slate-600 bg-slate-900/90 text-slate-200"
+              : "border-amber-400/40 bg-amber-950/85 text-amber-100"
             : "border-indigo-400/40 bg-indigo-950/85 text-indigo-100"
         }`}
-        title={isRider ? (isOnline ? "On Duty" : "Offline") : "Request Ride"}
-        animate={isRider && isOnline ? { scale: [1, 1.05, 1] } : { scale: 1 }}
-        transition={isRider && isOnline ? { duration: 3, repeat: Infinity, ease: "easeInOut" } : { duration: 0.2 }}
+        title={mode === "booking" ? "Booking mode" : canUseRiderPresence ? (isOnline ? "On Duty" : "Offline") : "Rider mode"}
+        animate={mode === "rider" && canUseRiderPresence && isOnline ? { scale: [1, 1.05, 1] } : { scale: 1 }}
+        transition={mode === "rider" && canUseRiderPresence && isOnline ? { duration: 3, repeat: Infinity, ease: "easeInOut" } : { duration: 0.2 }}
         whileTap={{ scale: 0.95 }}
       >
         <span
           className={`flex h-8 w-8 items-center justify-center rounded-full ${
-            isRider
-              ? isOnline
-                ? "bg-emerald-500/25 text-emerald-300"
-                : "bg-slate-700 text-slate-300"
+            mode === "rider"
+              ? canUseRiderPresence
+                ? isOnline
+                  ? "bg-emerald-500/25 text-emerald-300"
+                  : "bg-slate-700 text-slate-300"
+                : "bg-amber-500/25 text-amber-300"
               : "bg-indigo-500/25 text-indigo-300"
           }`}
         >
-          <Bike className="h-4 w-4" aria-hidden />
+          {mode === "booking" ? <ShoppingBag className="h-4 w-4" aria-hidden /> : <Bike className="h-4 w-4" aria-hidden />}
         </span>
         <span className="min-w-0 text-left">
           <span className="block text-[11px] font-semibold leading-tight">
-            {isRider ? (isOnline ? "On Duty" : "Offline") : "Request Ride"}
+            {mode === "booking" ? "Booking Mode" : canUseRiderPresence ? (isOnline ? "On Duty" : "Offline") : "Rider Mode"}
           </span>
           <span className="block text-[10px] opacity-80 leading-tight">
-            {!isRider ? (
+            {mode === "booking" ? (
               "Tap to book"
+            ) : !canUseRiderPresence ? (
+              riderStatus === "pending"
+                ? "Approval pending"
+                : riderStatus === "blocked"
+                  ? "Access blocked"
+                  : "Rider approval required"
             ) : lastLocation ? (
               <>
                 <MapPin className="mr-1 inline h-3 w-3" aria-hidden />
@@ -279,7 +316,14 @@ export default function RiderPresenceFab() {
           </span>
         </span>
       </motion.button>
-      {isPanelOpen && isRider ? (
+      <button
+        type="button"
+        onClick={() => applyMode(mode === "booking" ? "rider" : "booking")}
+        className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900/95 px-3 py-2 text-[11px] font-semibold text-slate-100 shadow-md hover:bg-slate-800"
+      >
+        Switch to {mode === "booking" ? "Rider" : "Booking"} mode
+      </button>
+      {isPanelOpen && mode === "rider" ? (
         <div className="mt-2 w-64 rounded-2xl border border-slate-700 bg-slate-950/95 p-3 text-xs text-slate-200 shadow-xl backdrop-blur-md">
           <div className="mb-2 flex items-center justify-between">
             <p className="font-semibold text-slate-100">Rider presence</p>
@@ -292,9 +336,22 @@ export default function RiderPresenceFab() {
             </button>
           </div>
           <p>
-            Status: <span className={isOnline ? "text-emerald-300" : "text-slate-400"}>{isOnline ? "Online" : "Offline"}</span>
+            Status:{" "}
+            <span className={canUseRiderPresence && isOnline ? "text-emerald-300" : "text-slate-400"}>
+              {canUseRiderPresence ? (isOnline ? "Online" : "Offline") : "Unavailable"}
+            </span>
           </p>
-          {!isRider ? <p className="mt-1 text-[10px] text-amber-300">Rider account approval required to go online.</p> : null}
+          {!canUseRiderPresence ? (
+            <p className="mt-1 text-[10px] text-amber-300">
+              {isRider
+                ? riderStatus === "pending"
+                  ? "Your rider account is pending approval."
+                  : riderStatus === "blocked"
+                    ? "Your rider account is blocked."
+                    : "Rider approval required to go online."
+                : "Switch account role to rider to use rider presence."}
+            </p>
+          ) : null}
           <p className="mt-1 text-slate-400">
             Last update: {onlineSince ? new Date(onlineSince).toLocaleTimeString() : "—"}
           </p>
@@ -303,7 +360,7 @@ export default function RiderPresenceFab() {
           </p>
           <button
             type="button"
-            disabled={isBusy}
+            disabled={isBusy || !canUseRiderPresence}
             onClick={() => {
               if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
                 navigator.vibrate(18);
@@ -316,6 +373,22 @@ export default function RiderPresenceFab() {
           >
             {isBusy ? "Updating..." : isOnline ? "Go offline" : "Go online"}
           </button>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => applyMode("booking")}
+              className="rounded-lg border border-indigo-500/50 bg-indigo-950/70 px-2 py-1.5 text-[11px] font-semibold text-indigo-100"
+            >
+              Booking mode
+            </button>
+            <button
+              type="button"
+              onClick={() => applyMode("rider")}
+              className="rounded-lg border border-slate-600 bg-slate-800 px-2 py-1.5 text-[11px] font-semibold text-slate-100"
+            >
+              Rider mode
+            </button>
+          </div>
           <p className="mt-2 text-[10px] text-slate-500">Tip: drag to move this button.</p>
         </div>
       ) : null}

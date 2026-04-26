@@ -1,6 +1,6 @@
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
-import { Loader2, MapPin, Navigation } from "lucide-react";
+import { Loader2, MapPin, Navigation, X } from "lucide-react";
 import { toast } from "sonner";
 import DeliveryTrackingMap from "../../components/DeliveryTrackingMap";
 
@@ -82,6 +82,9 @@ function pushRecentLocation(value: string) {
 
 export default function BookRide() {
   const navigate = useNavigate();
+  const [isMapExpanded, setIsMapExpanded] = useState(false);
+  const [mapInteractionMode, setMapInteractionMode] = useState<"fixedPin" | "markers">("fixedPin");
+  const [activeField, setActiveField] = useState<"pickup" | "dropoff">("pickup");
   const [pickupAddress, setPickupAddress] = useState("");
   const [dropoffAddress, setDropoffAddress] = useState("");
   const [pickupLat, setPickupLat] = useState<number | null>(null);
@@ -94,6 +97,9 @@ export default function BookRide() {
   const [isSearchingPickup, setIsSearchingPickup] = useState(false);
   const [isSearchingDropoff, setIsSearchingDropoff] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [isResolvingAddress, setIsResolvingAddress] = useState(false);
+  const [draftPickup, setDraftPickup] = useState<{ lat: number | null; lng: number | null }>({ lat: null, lng: null });
+  const [draftDropoff, setDraftDropoff] = useState<{ lat: number | null; lng: number | null }>({ lat: null, lng: null });
 
   const [recentLocations, setRecentLocations] = useState<string[]>(() => readRecentLocations());
 
@@ -108,6 +114,24 @@ export default function BookRide() {
     const distanceCost = distanceKm * 320;
     return Math.round((base + distanceCost) * PACKAGE_MULTIPLIER[packageType]);
   }, [distanceKm, packageType]);
+
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !navigator.geolocation) return undefined;
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        setPickupLat(lat);
+        setPickupLng(lng);
+        setDraftPickup({ lat, lng });
+        const label = await reverseGeocode(lat, lng);
+        if (label) setPickupAddress(label);
+      },
+      () => {},
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 },
+    );
+    return undefined;
+  }, []);
 
   const runPickupSearch = async () => {
     setIsSearchingPickup(true);
@@ -184,6 +208,39 @@ export default function BookRide() {
     });
   };
 
+  const openExpandedMap = (field: "pickup" | "dropoff") => {
+    setActiveField(field);
+    setDraftPickup({ lat: pickupLat, lng: pickupLng });
+    setDraftDropoff({ lat: dropoffLat, lng: dropoffLng });
+    setIsMapExpanded(true);
+  };
+
+  const applyDraftToActiveField = async () => {
+    setIsResolvingAddress(true);
+    if (activeField === "pickup") {
+      setPickupLat(draftPickup.lat);
+      setPickupLng(draftPickup.lng);
+      if (draftPickup.lat != null && draftPickup.lng != null) {
+        const label = await reverseGeocode(draftPickup.lat, draftPickup.lng);
+        if (label) setPickupAddress(label);
+      }
+      setIsResolvingAddress(false);
+      return;
+    }
+    setDropoffLat(draftDropoff.lat);
+    setDropoffLng(draftDropoff.lng);
+    if (draftDropoff.lat != null && draftDropoff.lng != null) {
+      const label = await reverseGeocode(draftDropoff.lat, draftDropoff.lng);
+      if (label) setDropoffAddress(label);
+    }
+    setIsResolvingAddress(false);
+  };
+
+  const expandedPickupLat = draftPickup.lat ?? pickupLat;
+  const expandedPickupLng = draftPickup.lng ?? pickupLng;
+  const expandedDropoffLat = draftDropoff.lat ?? dropoffLat;
+  const expandedDropoffLng = draftDropoff.lng ?? dropoffLng;
+
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-6 md:py-8">
       <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm md:p-6">
@@ -196,7 +253,11 @@ export default function BookRide() {
             <div className="flex gap-2">
               <input
                 value={pickupAddress}
-                onChange={(e) => setPickupAddress(e.target.value)}
+                onFocus={() => setActiveField("pickup")}
+                onChange={(e) => {
+                  setPickupAddress(e.target.value);
+                  setActiveField("pickup");
+                }}
                 placeholder="Enter pickup address"
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none"
                 required
@@ -240,7 +301,11 @@ export default function BookRide() {
             <div className="flex gap-2">
               <input
                 value={dropoffAddress}
-                onChange={(e) => setDropoffAddress(e.target.value)}
+                onFocus={() => setActiveField("dropoff")}
+                onChange={(e) => {
+                  setDropoffAddress(e.target.value);
+                  setActiveField("dropoff");
+                }}
                 placeholder="Enter dropoff address"
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none"
                 required
@@ -272,16 +337,22 @@ export default function BookRide() {
 
           <div>
             <label className="mb-1 block text-sm font-semibold text-gray-700">Package size</label>
-            <select
-              value={packageType}
-              onChange={(e) => setPackageType(e.target.value as PackageType)}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none"
-            >
-              <option value="small">Small</option>
-              <option value="medium">Medium</option>
-              <option value="large">Large</option>
-              <option value="xlarge">Extra Large</option>
-            </select>
+            <div className="flex gap-2 overflow-x-auto">
+              {(["small", "medium", "large", "xlarge"] as PackageType[]).map((size) => (
+                <button
+                  key={size}
+                  type="button"
+                  onClick={() => setPackageType(size)}
+                  className={`rounded-lg px-3 py-2 text-sm capitalize ${
+                    packageType === size
+                      ? "bg-gray-300 font-bold text-gray-900"
+                      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                  }`}
+                >
+                  {size === "xlarge" ? "XL" : size}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="grid gap-2 rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm md:grid-cols-2">
@@ -295,14 +366,21 @@ export default function BookRide() {
             </p>
           </div>
 
-          <div className="overflow-hidden rounded-xl border border-gray-200">
+          <div className="relative overflow-hidden rounded-xl border border-gray-200">
             <DeliveryTrackingMap
               pickupLat={pickupLat}
               pickupLng={pickupLng}
               dropoffLat={dropoffLat}
               dropoffLng={dropoffLng}
-              className="h-64 w-full"
+              className="h-[200px] w-full"
             />
+            <button
+              type="button"
+              onClick={() => openExpandedMap(activeField)}
+              className="absolute right-3 top-3 rounded-md bg-white/95 px-3 py-1.5 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-gray-200"
+            >
+              ⛶ Expand Map
+            </button>
           </div>
 
           {recentLocations.length > 0 ? (
@@ -340,6 +418,96 @@ export default function BookRide() {
           </button>
         </form>
       </div>
+      {isMapExpanded ? (
+        <div className="fixed inset-0 z-50 bg-white">
+          <div className="flex h-16 items-center justify-between border-b border-gray-200 px-3 sm:px-4">
+            <button
+              type="button"
+              onClick={() => setIsMapExpanded(false)}
+              className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 shadow-sm hover:bg-gray-50"
+              aria-label="Close map"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            <div className="flex items-center gap-2 rounded-xl bg-gray-100 p-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setMapInteractionMode("fixedPin");
+                  if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") navigator.vibrate(12);
+                }}
+                className={`min-h-11 rounded-lg px-3 py-2 text-xs font-semibold ${
+                  mapInteractionMode === "fixedPin" ? "bg-gray-300 text-gray-900" : "bg-gray-100 text-gray-600"
+                }`}
+              >
+                Fixed Pin
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setMapInteractionMode("markers");
+                  if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") navigator.vibrate(12);
+                }}
+                className={`min-h-11 rounded-lg px-3 py-2 text-xs font-semibold ${
+                  mapInteractionMode === "markers" ? "bg-gray-300 text-gray-900" : "bg-gray-100 text-gray-600"
+                }`}
+              >
+                Markers
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => setActiveField((prev) => (prev === "pickup" ? "dropoff" : "pickup"))}
+              className="min-h-11 rounded-lg bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-700"
+            >
+              Switch
+            </button>
+          </div>
+          <div className="h-[calc(100vh-64px)] p-2 sm:p-3">
+            <div className="relative h-full w-full">
+              <DeliveryTrackingMap
+                pickupLat={expandedPickupLat}
+                pickupLng={expandedPickupLng}
+                dropoffLat={expandedDropoffLat}
+                dropoffLng={expandedDropoffLng}
+                className="h-full w-full rounded-xl"
+                interactive
+                interactionMode={mapInteractionMode}
+                activeField={activeField}
+                showRoute
+                onMapCenterChange={(lat, lng) => {
+                  if (activeField === "pickup") {
+                    setDraftPickup({ lat, lng });
+                  } else {
+                    setDraftDropoff({ lat, lng });
+                  }
+                }}
+                onPickupChange={(lat, lng) => setDraftPickup({ lat, lng })}
+                onDropoffChange={(lat, lng) => setDraftDropoff({ lat, lng })}
+              />
+              <div className="pointer-events-none absolute left-3 top-3 z-[600] rounded-full bg-white/95 px-3 py-2 text-xs font-semibold text-gray-800 shadow">
+                <span className={`mr-2 inline-block h-2.5 w-2.5 rounded-full ${activeField === "pickup" ? "bg-emerald-500" : "bg-violet-600"}`} />
+                Editing {activeField === "pickup" ? "Pickup" : "Dropoff"}
+              </div>
+              <div className="pointer-events-none absolute bottom-16 left-1/2 z-[600] w-[90%] -translate-x-1/2 rounded-lg bg-black/45 px-3 py-2 text-center text-xs text-white">
+                {mapInteractionMode === "fixedPin" ? "Drag map to position the pin" : "Drag markers to adjust locations"}
+              </div>
+              <button
+                type="button"
+                disabled={isResolvingAddress}
+                onClick={async () => {
+                  await applyDraftToActiveField();
+                  setIsMapExpanded(false);
+                }}
+                className="absolute bottom-3 right-3 z-[700] inline-flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-lg hover:bg-emerald-700 disabled:opacity-60"
+              >
+                {isResolvingAddress ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                {isResolvingAddress ? "Finding address..." : "Done"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

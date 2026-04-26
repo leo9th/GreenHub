@@ -4,6 +4,7 @@ import { ArrowLeft, Loader2, MapPin } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "../../context/AuthContext";
 import { supabase } from "../../../lib/supabase";
+import { DeclineButton } from "../../components/rider/DeclineButton";
 
 type RequestRow = {
   id: string;
@@ -175,6 +176,7 @@ export default function RiderRequestDetail() {
   const st = String(row.status || "").toLowerCase();
   const isMine = row.assigned_rider_id === uid;
   const canAccept = st === "pending" && !row.assigned_rider_id;
+  const canDecline = isMine && st === "assigned";
 
   return (
     <div className="mx-auto max-w-lg px-4 py-6">
@@ -208,14 +210,34 @@ export default function RiderRequestDetail() {
 
       <div className="mt-6 space-y-3">
         {canAccept ? (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void accept()}
-            className="w-full rounded-xl bg-emerald-600 py-3 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
-          >
-            Accept job
-          </button>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void accept()}
+              className="w-full rounded-xl bg-emerald-600 py-3 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
+            >
+              Accept job
+            </button>
+          </div>
+        ) : null}
+
+        {canDecline ? (
+          <DeclineButton
+            type="delivery_request"
+            id={rid}
+            onDeclined={() =>
+              setRow((prev) =>
+                prev
+                  ? {
+                      ...prev,
+                      status: "rejected",
+                      assigned_rider_id: null,
+                    }
+                  : prev,
+              )
+            }
+          />
         ) : null}
 
         {isMine && st === "assigned" ? (

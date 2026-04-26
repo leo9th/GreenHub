@@ -1,0 +1,25 @@
+Task: Add weekend and birthday notification scheduler foundation.
+
+First, add DB columns to profiles (if missing):
+- notification_preferences (jsonb, default: {"weekend_marketing": true, "birthday_greetings": true})
+- birthday_date (date, nullable)
+
+Create: supabase/migrations/YYYYMMDD_notification_scheduler.sql
+
+Add table: notification_campaign_deliveries (
+  id uuid PRIMARY KEY,
+  user_id uuid REFERENCES auth.users,
+  campaign_key text, -- 'weekend_greeting' or 'birthday_greeting'
+  period_key text,   -- '2026-W17' for weekend, '2026-04-26' for birthday
+  sent_at timestamptz,
+  UNIQUE(user_id, campaign_key, period_key)
+)
+
+Add Edge Function: send-weekend-birthday-notifications
+
+Logic:
+- Birthday: users with birthday_date matching today (month/day)
+- Weekend: all active users, randomized between Sat/Sun at signup hour
+- Skip if user has notifications disabled or campaign opt-out false
+
+Deploy function but do NOT schedule cron yet (manual testing first).

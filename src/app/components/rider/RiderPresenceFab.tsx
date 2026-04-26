@@ -7,7 +7,6 @@ import { useRiderPresence } from "../../hooks/useRiderPresence";
 
 type Pos = { x: number; y: number };
 const STORAGE_KEY = "gh_rider_presence_fab_pos";
-const DRAG_MOVE_THRESHOLD_PX = 2;
 
 function clampPos(pos: Pos): Pos {
   if (typeof window === "undefined") return pos;
@@ -23,7 +22,6 @@ export default function RiderPresenceFab() {
   const navigate = useNavigate();
   const { hasUser, role, isRider, isOnline, toggleAvailability, lastLocation, onlineSince, error, isBusy } = useRiderPresence();
   const [isPanelOpen, setIsPanelOpen] = useState(false);
-  const [isDragging, setIsDragging] = useState(false);
   const [pos, setPos] = useState<Pos>(() => {
     if (typeof window === "undefined") return { x: 16, y: 220 };
     try {
@@ -34,21 +32,6 @@ export default function RiderPresenceFab() {
     } catch {
       return { x: 16, y: 220 };
     }
-  });
-  const dragRef = useRef<{
-    active: boolean;
-    startX: number;
-    startY: number;
-    pointerId: number | null;
-    downClientX: number;
-    downClientY: number;
-  }>({
-    active: false,
-    startX: 0,
-    startY: 0,
-    pointerId: null,
-    downClientX: 0,
-    downClientY: 0,
   });
   const movedRef = useRef(false);
 
@@ -73,60 +56,14 @@ export default function RiderPresenceFab() {
   return (
     <div
       className="fixed z-[80]"
-      style={{ left: `${pos.x}px`, top: `${pos.y}px`, touchAction: "none" }}
-      onPointerDown={(e) => {
-        dragRef.current = {
-          active: false,
-          startX: e.clientX - pos.x,
-          startY: e.clientY - pos.y,
-          pointerId: e.pointerId,
-          downClientX: e.clientX,
-          downClientY: e.clientY,
-        };
-        movedRef.current = false;
-        setIsDragging(false);
-        (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
-      }}
-      onPointerMove={(e) => {
-        if (dragRef.current.pointerId !== e.pointerId) return;
-        if (!dragRef.current.active) {
-          const movedX = e.clientX - dragRef.current.downClientX;
-          const movedY = e.clientY - dragRef.current.downClientY;
-          const movedDistance = Math.hypot(movedX, movedY);
-          if (movedDistance >= DRAG_MOVE_THRESHOLD_PX) {
-            dragRef.current.active = true;
-          } else {
-            return;
-          }
-        }
-        movedRef.current = true;
-        setIsDragging(true);
-        setPos(
-          clampPos({
-            x: e.clientX - dragRef.current.startX,
-            y: e.clientY - dragRef.current.startY,
-          }),
-        );
-      }}
-      onPointerUp={(e) => {
-        if (dragRef.current.pointerId === e.pointerId) {
-          dragRef.current.active = false;
-          dragRef.current.pointerId = null;
-        }
-        setTimeout(() => setIsDragging(false), 0);
-      }}
-      onPointerCancel={() => {
-        dragRef.current.active = false;
-        dragRef.current.pointerId = null;
-        setIsDragging(false);
-      }}
+      style={{ left: `${pos.x}px`, top: `${pos.y}px`, touchAction: "manipulation" }}
     >
       <motion.button
         type="button"
         disabled={isBusy && isPanelOpen}
         onClick={() => {
           if (movedRef.current) return;
-          if (role === "buyer") {
+          if (!isRider) {
             navigate("/book");
             return;
           }
@@ -140,8 +77,8 @@ export default function RiderPresenceFab() {
             : "border-indigo-400/40 bg-indigo-950/85 text-indigo-100"
         }`}
         title={isRider ? (isOnline ? "On Duty" : "Offline") : "Request Ride"}
-        animate={isRider && isOnline && !isDragging ? { scale: [1, 1.05, 1] } : { scale: 1 }}
-        transition={isRider && isOnline && !isDragging ? { duration: 3, repeat: Infinity, ease: "easeInOut" } : { duration: 0.2 }}
+        animate={isRider && isOnline ? { scale: [1, 1.05, 1] } : { scale: 1 }}
+        transition={isRider && isOnline ? { duration: 3, repeat: Infinity, ease: "easeInOut" } : { duration: 0.2 }}
         whileTap={{ scale: 0.95 }}
       >
         <span
@@ -199,7 +136,7 @@ export default function RiderPresenceFab() {
           </p>
           <button
             type="button"
-            disabled={isBusy || !isRider}
+            disabled={isBusy}
             onClick={() => {
               if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
                 navigator.vibrate(18);

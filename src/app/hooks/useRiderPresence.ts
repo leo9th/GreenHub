@@ -13,7 +13,7 @@ type PresenceRow = {
 export function useRiderPresence() {
   const { user, profile } = useAuth();
   const uid = user?.id?.trim() ?? "";
-  const role = String(profile?.role ?? "").toLowerCase();
+  const role = String(profile?.role ?? user?.user_metadata?.role ?? "buyer").toLowerCase();
   const isRider = role === "rider";
   const [presenceRow, setPresenceRow] = useState<PresenceRow | null>(null);
   const [isBusy, setIsBusy] = useState(false);
@@ -116,7 +116,9 @@ export function useRiderPresence() {
 
   const toggleAvailability = useCallback(
     async (nextState?: boolean) => {
-      if (!uid || !isRider) return;
+      if (!uid || !isRider) {
+        return;
+      }
       const nextOnline = typeof nextState === "boolean" ? nextState : !Boolean(presenceRow?.is_online);
       setIsBusy(true);
       try {

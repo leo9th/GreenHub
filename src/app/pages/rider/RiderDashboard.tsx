@@ -4,6 +4,7 @@ import { Loader2, Package, Smartphone } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "../../context/AuthContext";
 import { supabase } from "../../../lib/supabase";
+import { DeclineButton } from "../../components/rider/DeclineButton";
 
 type DeliveryRequestRow = {
   id: string;
@@ -33,6 +34,7 @@ function statusLabel(s: string | null | undefined): string {
   const m: Record<string, string> = {
     pending: "Pending pickup",
     assigned: "Assigned to you",
+    rejected: "Declined",
     picked_up: "Picked up",
     delivered: "Delivered",
     cancelled: "Cancelled",
@@ -77,7 +79,7 @@ export default function RiderDashboard() {
       const { data: open, error: e1 } = await supabase
         .from("delivery_requests")
         .select("id, order_id, status, assigned_rider_id, created_at")
-        .eq("status", "pending")
+        .in("status", ["pending", "rejected"])
         .is("assigned_rider_id", null)
         .order("created_at", { ascending: false });
       if (e1) throw e1;
@@ -130,6 +132,17 @@ export default function RiderDashboard() {
       toast.error(e instanceof Error ? e.message : "Could not save");
     } finally {
       setApplying(false);
+    }
+  };
+
+  const acceptRequest = async (requestId: string) => {
+    try {
+      const { error } = await supabase.rpc("rider_accept_delivery_request", { p_request_id: requestId });
+      if (error) throw error;
+      toast.success("Job accepted");
+      await loadJobs();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Could not accept");
     }
   };
 
@@ -217,19 +230,29 @@ export default function RiderDashboard() {
               <ul className="mt-2 space-y-2">
                 {myProductRideBookings.map((b) => (
                   <li key={b.id}>
-                    <Link
-                      to={`/rider/product-rides/${encodeURIComponent(b.id)}`}
-                      className="block rounded-xl border border-emerald-500/30 bg-emerald-950/20 px-3 py-3 text-sm hover:bg-emerald-950/35"
-                    >
-                      <p className="font-medium text-white">Ride booking {b.id.slice(0, 8)}…</p>
-                      <p className="mt-0.5 text-xs text-emerald-100/80">{statusLabel(b.status)}</p>
-                      <p className="mt-1 text-xs text-slate-300">
-                        Pickup: <span className="text-slate-400">{b.pickup_address}</span>
-                      </p>
-                      <p className="mt-0.5 text-xs text-slate-300">
-                        Dropoff: <span className="text-slate-400">{b.dropoff_address}</span>
-                      </p>
-                    </Link>
+                    <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/20 px-3 py-3 text-sm">
+                      <Link to={`/rider/product-rides/${encodeURIComponent(b.id)}`} className="block hover:opacity-90">
+                        <p className="font-medium text-white">Ride booking {b.id.slice(0, 8)}…</p>
+                        <p className="mt-0.5 text-xs text-emerald-100/80">{statusLabel(b.status)}</p>
+                        <p className="mt-1 text-xs text-slate-300">
+                          Pickup: <span className="text-slate-400">{b.pickup_address}</span>
+                        </p>
+                        <p className="mt-0.5 text-xs text-slate-300">
+                          Dropoff: <span className="text-slate-400">{b.dropoff_address}</span>
+                        </p>
+                      </Link>
+                      {["assigned", "accepted"].includes(String(b.status || "").toLowerCase()) ? (
+                        <div className="mt-2">
+                          <DeclineButton
+                            type="product_ride_booking"
+                            id={b.id}
+                            onDeclined={() =>
+                              setMyProductRideBookings((prev) => prev.filter((row) => row.id !== b.id))
+                            }
+                          />
+                        </div>
+                      ) : null}
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -244,16 +267,25 @@ export default function RiderDashboard() {
               <ul className="mt-2 space-y-2">
                 {available.map((r) => (
                   <li key={r.id}>
-                    <Link
-                      to={`/rider/requests/${encodeURIComponent(r.id)}`}
-                      className="flex items-center gap-3 rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-3 text-sm hover:border-emerald-500/40"
-                    >
-                      <Package className="h-5 w-5 shrink-0 text-slate-400" aria-hidden />
-                      <div className="min-w-0 flex-1">
-                        <p className="font-medium text-white">Order {String(r.order_id).slice(0, 8)}…</p>
-                        <p className="text-xs text-slate-500">{statusLabel(r.status)}</p>
-                      </div>
-                    </Link>
+                    <div className="rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-3 text-sm">
+                      <Link
+                        to={`/rider/requests/${encodeURIComponent(r.id)}`}
+                        className="flex items-center gap-3 hover:opacity-90"
+                      >
+                        <Package className="h-5 w-5 shrink-0 text-slate-400" aria-hidden />
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium text-white">Order {String(r.order_id).slice(0, 8)}…</p>
+                          <p className="text-xs text-slate-500">{statusLabel(r.status)}</p>
+                        </div>
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() => void acceptRequest(r.id)}
+                        className="mt-2 w-full rounded-lg bg-emerald-600 py-2 text-xs font-semibold text-white hover:bg-emerald-500"
+                      >
+                        Accept
+                      </button>
+                    </div>
                   </li>
                 ))}
               </ul>

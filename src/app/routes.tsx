@@ -18,6 +18,7 @@ import VerifyOTP from "./pages/auth/VerifyOTP";
 import CheckEmail from "./pages/auth/CheckEmail";
 import CompleteProfile from "./pages/auth/CompleteProfile";
 import Welcome from "./pages/Welcome";
+import BookRide from "./pages/buyer/BookRide";
 import Products from "./pages/Products";
 import Cart from "./pages/Cart";
 import Checkout from "./pages/Checkout";
@@ -102,6 +103,12 @@ function LegacySellerProductEditRedirect() {
   return <Navigate to={`/seller/products/edit/${encodeURIComponent(id.trim())}`} replace />;
 }
 
+function LegacyRiderJobRedirect() {
+  const { id } = useParams();
+  if (!id?.trim()) return <Navigate to="/rider" replace />;
+  return <Navigate to={`/rider/requests/${encodeURIComponent(id.trim())}`} replace />;
+}
+
 function CheckoutWithErrorBoundary() {
   return (
     <AppErrorBoundary scope="section" boundaryName="checkout">
@@ -142,7 +149,7 @@ export const router = createBrowserRouter([
         lazy: lazyPage(() => import("./pages/WriteProductReview")),
       },
       { path: "products/:id", lazy: lazyPage(() => import("./pages/ProductDetail")) },
-      { path: "book", element: <Navigate to="/products" replace /> },
+      { path: "book", Component: BookRide },
       { path: "cart", Component: Cart },
       { path: "checkout", Component: CheckoutWithErrorBoundary },
       {
@@ -154,6 +161,7 @@ export const router = createBrowserRouter([
           { path: "product-rides/:bookingId", lazy: lazyPage(() => import("./pages/rider/RiderProductRideDetail")) },
         ],
       },
+      { path: "rider/job/:id", Component: LegacyRiderJobRedirect },
       { path: "orders", Component: Orders },
       { path: "orders/:id", lazy: lazyPage(() => import("./pages/OrderDetail")) },
       { path: "messages", lazy: lazyPage(() => import("./pages/Messages")) },

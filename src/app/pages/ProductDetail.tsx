@@ -380,10 +380,6 @@ function RelatedProductsCarousel({
   );
 }
 
-// #region agent log
-console.warn("[PDMOD-6af1a9] src/app/pages/ProductDetail.tsx module loaded");
-// #endregion
-
 export default function ProductDetail() {
   const formatPrice = useCurrency();
   const { id } = useParams();
@@ -531,19 +527,6 @@ export default function ProductDetail() {
     },
     onError: (message) => toast.error(message),
   });
-  // #region agent log
-  console.warn("[PDDBG-6af1a9] ProductDetail render core", {
-    path: typeof window !== "undefined" ? window.location.pathname : null,
-    routeProductId: routeProductId ?? null,
-    isServerProductLoading,
-    hasServerProduct: Boolean(serverProduct),
-    serverProductId: serverProduct?.id ?? null,
-    likeProductId: likeProductId ?? null,
-  });
-  if (typeof window !== "undefined") {
-    (window as Window & { __pdDebugMarker?: string }).__pdDebugMarker = "PDDBG-6af1a9";
-  }
-  // #endregion
 
   useEffect(() => {
     const origin = getAuthSiteOrigin() || (typeof window !== "undefined" ? window.location.origin : "");
@@ -745,11 +728,6 @@ export default function ProductDetail() {
     let cancelled = false;
 
     const loadServerProduct = async () => {
-      // #region agent log
-      console.warn("[PDDBG-6af1a9] loadServerProduct start", {
-        routeProductId: routeProductId ?? null,
-      });
-      // #endregion
       if (routeProductId == null) {
         setServerProduct(null);
         setIsServerProductLoading(false);
@@ -769,15 +747,6 @@ export default function ProductDetail() {
       const { data, error } = await supabase.from("products").select("*").eq("id", routeProductId).maybeSingle();
 
       if (cancelled) return;
-      // #region agent log
-      console.warn("[PDDBG-6af1a9] loadServerProduct result", {
-        routeProductId: routeProductId ?? null,
-        hasData: Boolean(data),
-        hasError: Boolean(error),
-        errorMessage: error?.message ?? null,
-        productId: data?.id ?? null,
-      });
-      // #endregion
 
       if (error) {
         console.warn("ProductDetail:", error.message);
@@ -1072,46 +1041,8 @@ export default function ProductDetail() {
   }, [addToCart, buildCartLineItem]);
 
   const buyNow = useCallback(() => {
-    // #region agent log
-    void fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "35665f" },
-      body: JSON.stringify({
-        sessionId: "35665f",
-        runId: "run4",
-        hypothesisId: "H1",
-        location: "ProductDetail.tsx:buyNow:start",
-        message: "Buy now clicked",
-        data: {
-          foundProductId: foundProduct?.id ?? null,
-          isOwner,
-          isSoldOut,
-          sellerPeerIdPresent: Boolean(sellerPeerId),
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
-
     const cartLineItem = buildCartLineItem();
     if (!cartLineItem) {
-      // #region agent log
-      void fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "35665f" },
-        body: JSON.stringify({
-          sessionId: "35665f",
-          runId: "run4",
-          hypothesisId: "H2",
-          location: "ProductDetail.tsx:buyNow:no-cart-item",
-          message: "Buy now aborted because cart line item is null",
-          data: {
-            foundProductId: foundProduct?.id ?? null,
-          },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
       return;
     }
 
@@ -1120,71 +1051,14 @@ export default function ProductDetail() {
       icon: <CheckCircle2 className="h-4 w-4 text-emerald-600" />,
       className: "bg-emerald-50 text-emerald-950 border border-emerald-200/80",
     });
-    // #region agent log
-    void fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "35665f" },
-      body: JSON.stringify({
-        sessionId: "35665f",
-        runId: "run4",
-        hypothesisId: "H3",
-        location: "ProductDetail.tsx:buyNow:navigate",
-        message: "Buy now navigating to checkout",
-        data: {
-          checkoutPath: "/checkout",
-          cartItemId: cartLineItem.id,
-          cartItemQty: cartLineItem.quantity,
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
     navigate("/checkout");
   }, [addToCart, buildCartLineItem, navigate]);
 
   const handleBuyNowFromSoldOut = useCallback(() => {
-    // #region agent log
-    void fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "35665f" },
-      body: JSON.stringify({
-        sessionId: "35665f",
-        runId: "run5",
-        hypothesisId: "H1",
-        location: "ProductDetail.tsx:buyNow:sold-out-click",
-        message: "Sold-out buy now button clicked",
-        data: {
-          foundProductId: foundProduct?.id ?? null,
-          isOwner,
-          isSoldOut,
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
     buyNow();
   }, [buyNow, foundProduct?.id, isOwner, isSoldOut]);
 
   useEffect(() => {
-    // #region agent log
-    void fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "35665f" },
-      body: JSON.stringify({
-        sessionId: "35665f",
-        runId: "run5",
-        hypothesisId: "H2",
-        location: "ProductDetail.tsx:action-row:render",
-        message: "Action row render state",
-        data: {
-          foundProductId: foundProduct?.id ?? null,
-          isOwner,
-          isSoldOut,
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
   }, [foundProduct?.id, isOwner, isSoldOut]);
 
   const runPickupSearch = useCallback(async () => {
@@ -1297,32 +1171,7 @@ export default function ProductDetail() {
     rideContactPhone,
     sellerPeerId,
   ]);
-  // #region agent log
-  void fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "35665f" },
-    body: JSON.stringify({
-      sessionId: "35665f",
-      runId: "run2",
-      hypothesisId: "H1",
-      location: "ProductDetail.tsx:post-hooks",
-      message: "ProductDetail reached post-hooks checkpoint",
-      data: {
-        isServerProductLoading,
-        hasFoundProduct: Boolean(foundProduct),
-        routeProductId: routeProductId ?? null,
-      },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
   if (isServerProductLoading) {
-    // #region agent log
-    console.warn("[PDDBG-6af1a9] ProductDetail loading return", {
-      routeProductId: routeProductId ?? null,
-      hasServerProduct: Boolean(serverProduct),
-    });
-    // #endregion
     return (
       <div className="min-h-screen bg-white flex items-center justify-center p-4 text-gray-500 text-sm">
         Loading…
@@ -1331,31 +1180,6 @@ export default function ProductDetail() {
   }
 
   if (!foundProduct) {
-    // #region agent log
-    console.warn("[PDDBG-6af1a9] ProductDetail not-found return", {
-      routeProductId: routeProductId ?? null,
-      isServerProductLoading,
-      serverProductId: serverProduct?.id ?? null,
-    });
-    // #endregion
-    // #region agent log
-    void fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "35665f" },
-      body: JSON.stringify({
-        sessionId: "35665f",
-        runId: "run2",
-        hypothesisId: "H1",
-        location: "ProductDetail.tsx:not-found-return",
-        message: "ProductDetail rendered not-found after hooks",
-        data: {
-          isServerProductLoading,
-          routeProductId: routeProductId ?? null,
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
     return (
       <div className="min-h-screen bg-white flex items-center justify-center p-4">
         <div className="text-center max-w-sm">
@@ -1373,39 +1197,6 @@ export default function ProductDetail() {
     );
   }
 
-  // #region agent log
-  console.warn("[PDDBG-6af1a9] ProductDetail guard-passed", {
-    isServerProductLoading,
-    hasFoundProduct: Boolean(foundProduct),
-    foundProductId: foundProduct?.id ?? null,
-  });
-  // #endregion
-  // #region agent log
-  void fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "35665f" },
-    body: JSON.stringify({
-      sessionId: "35665f",
-      runId: "run2",
-      hypothesisId: "H1",
-      location: "ProductDetail.tsx:guard-passed",
-      message: "ProductDetail passed loading/not-found guards",
-      data: {
-        foundProductId: foundProduct?.id ?? null,
-      },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
-
-  // #region agent log
-  console.warn("[PDDBG-6af1a9] ProductDetail post-guard state", {
-    foundProductId: foundProduct.id ?? null,
-    sellerPeerIdPresent: Boolean(sellerPeerId),
-    isOwner,
-    galleryImageCount: galleryImages.length,
-  });
-  // #endregion
   console.log('isOwner:', isOwner, 'sellerId:', sellerPeerId, 'currentUserId:', authUser?.id);
   const canMessageSeller = Boolean(sellerPeerId);
 

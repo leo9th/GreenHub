@@ -38,7 +38,30 @@ import { AppErrorBoundary } from "./components/errors/AppErrorBoundary";
 
 /** Code-split heavy routes (chat, seller, admin, large listing detail). */
 function lazyPage(importer: () => Promise<{ default: ComponentType<unknown> }>) {
-  return () => importer().then((m) => ({ Component: m.default }));
+  return async () => {
+    try {
+      const m = await importer();
+      return { Component: m.default };
+    } catch (error) {
+      // Vite can reject lazy imports on transient chunk/CSS preload failures.
+      // Retry once before giving up so mobile/network hiccups don't blank the app.
+      try {
+        const m = await importer();
+        return { Component: m.default };
+      } catch {
+        if (typeof window !== "undefined") {
+          const key = "gh_lazy_reload_once";
+          if (window.sessionStorage.getItem(key) !== "1") {
+            window.sessionStorage.setItem(key, "1");
+            window.location.reload();
+            return { Component: () => null };
+          }
+          window.sessionStorage.removeItem(key);
+        }
+        throw error;
+      }
+    }
+  };
 }
 
 function LegacySellRouteRedirect() {

@@ -1133,7 +1133,7 @@ export default function ProductDetail() {
     try {
       const payload = {
         user_id: authUser.id,
-        product_id: String(foundProduct?.id ?? product.id ?? ""),
+        product_id: String(foundProduct?.id ?? ""),
         seller_user_id: sellerPeerId ?? null,
         pickup_address: pickupQuery.trim(),
         pickup_lat: pickupLat,
@@ -1159,7 +1159,6 @@ export default function ProductDetail() {
   }, [
     authUser?.id,
     foundProduct?.id,
-    product.id,
     dropoffLat,
     dropoffLng,
     dropoffQuery,

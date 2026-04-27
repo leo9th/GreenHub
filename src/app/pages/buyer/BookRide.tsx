@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
-import { Loader2, MapPin, Navigation, X } from "lucide-react";
+import { ArrowUpDown, CalendarDays, Clock3, Loader2, MapPin, Navigation, ShieldCheck, X } from "lucide-react";
 import { toast } from "sonner";
 import DeliveryTrackingMap from "../../components/DeliveryTrackingMap";
 
@@ -18,6 +18,19 @@ const PACKAGE_MULTIPLIER: Record<PackageType, number> = {
   large: 1.5,
   xlarge: 1.9,
 };
+
+const RIDE_OPTIONS: Array<{
+  type: PackageType;
+  name: string;
+  seats: number;
+  etaLabel: string;
+  description: string;
+}> = [
+  { type: "small", name: "GreenGo", seats: 4, etaLabel: "2 - 4 min", description: "Affordable everyday rides" },
+  { type: "medium", name: "GreenComfort", seats: 4, etaLabel: "3 - 6 min", description: "Extra comfort and space" },
+  { type: "large", name: "GreenPremium", seats: 4, etaLabel: "4 - 7 min", description: "Premium rides, top quality" },
+  { type: "xlarge", name: "GreenXL", seats: 6, etaLabel: "5 - 8 min", description: "For groups and larger trips" },
+];
 
 const RECENT_LOCATIONS_KEY = "gh_recent_ride_locations";
 
@@ -114,6 +127,7 @@ export default function BookRide() {
     const distanceCost = distanceKm * 320;
     return Math.round((base + distanceCost) * PACKAGE_MULTIPLIER[packageType]);
   }, [distanceKm, packageType]);
+  const selectedRide = useMemo(() => RIDE_OPTIONS.find((r) => r.type === packageType) ?? RIDE_OPTIONS[0], [packageType]);
 
   useEffect(() => {
     if (typeof navigator === "undefined" || !navigator.geolocation) return undefined;
@@ -242,39 +256,95 @@ export default function BookRide() {
   const expandedDropoffLng = draftDropoff.lng ?? dropoffLng;
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-4 py-6 md:py-8">
-      <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm md:p-6">
-        <h1 className="text-xl font-bold text-gray-900 md:text-2xl">Book a Ride</h1>
-        <p className="mt-1 text-sm text-gray-500">Request pickup and delivery, then continue to checkout.</p>
+    <div className="mx-auto w-full max-w-4xl px-3 py-4 md:px-4 md:py-6">
+      <div className="overflow-hidden rounded-3xl border border-emerald-100 bg-white shadow-sm">
+        <div className="bg-gradient-to-r from-emerald-700 to-emerald-600 px-4 py-5 text-white md:px-6">
+          <h1 className="text-2xl font-bold tracking-tight">Book GreenGo</h1>
+          <p className="mt-1 text-sm text-emerald-50">Choose ride mode and confirm your trip in seconds.</p>
+        </div>
 
-        <form className="mt-5 space-y-4" onSubmit={handleSubmit}>
-          <div>
-            <label className="mb-1 block text-sm font-semibold text-gray-700">Pickup location</label>
-            <div className="flex gap-2">
-              <input
-                value={pickupAddress}
-                onFocus={() => setActiveField("pickup")}
-                onChange={(e) => {
-                  setPickupAddress(e.target.value);
-                  setActiveField("pickup");
+        <form className="space-y-5 p-4 md:p-6" onSubmit={handleSubmit}>
+          <div className="rounded-2xl border border-gray-200 bg-white p-3 md:p-4">
+            <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">Route</label>
+            <div className="relative mt-2 rounded-xl border border-gray-200 p-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Pickup</p>
+              <div className="mt-1 flex gap-2">
+                <input
+                  value={pickupAddress}
+                  onFocus={() => setActiveField("pickup")}
+                  onChange={(e) => {
+                    setPickupAddress(e.target.value);
+                    setActiveField("pickup");
+                  }}
+                  placeholder="Enter pickup address"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none"
+                  required
+                />
+                <button type="button" onClick={() => void runPickupSearch()} className="rounded-lg border border-gray-300 px-3 text-xs font-semibold text-gray-700">
+                  {isSearchingPickup ? "..." : "Find"}
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const nextPickupAddress = dropoffAddress;
+                  const nextDropoffAddress = pickupAddress;
+                  const nextPickupLat = dropoffLat;
+                  const nextPickupLng = dropoffLng;
+                  const nextDropoffLat = pickupLat;
+                  const nextDropoffLng = pickupLng;
+                  setPickupAddress(nextPickupAddress);
+                  setDropoffAddress(nextDropoffAddress);
+                  setPickupLat(nextPickupLat);
+                  setPickupLng(nextPickupLng);
+                  setDropoffLat(nextDropoffLat);
+                  setDropoffLng(nextDropoffLng);
                 }}
-                placeholder="Enter pickup address"
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none"
-                required
-              />
-              <button type="button" onClick={() => void runPickupSearch()} className="rounded-lg border border-gray-300 px-3 text-xs font-semibold">
-                {isSearchingPickup ? "..." : "Find"}
+                className="absolute right-3 top-3 inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 hover:bg-gray-50"
+                aria-label="Swap pickup and dropoff"
+              >
+                <ArrowUpDown className="h-4 w-4" />
               </button>
+
+              <div className="mt-3 border-t border-gray-100 pt-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Drop-off</p>
+                <div className="mt-1 flex gap-2">
+                  <input
+                    value={dropoffAddress}
+                    onFocus={() => setActiveField("dropoff")}
+                    onChange={(e) => {
+                      setDropoffAddress(e.target.value);
+                      setActiveField("dropoff");
+                    }}
+                    placeholder="Enter dropoff address"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none"
+                    required
+                  />
+                  <button type="button" onClick={() => void runDropoffSearch()} className="rounded-lg border border-gray-300 px-3 text-xs font-semibold text-gray-700">
+                    {isSearchingDropoff ? "..." : "Find"}
+                  </button>
+                </div>
+              </div>
             </div>
-            <div className="mt-2 flex gap-2">
+
+            <div className="mt-3 flex flex-wrap gap-2">
               <button
                 type="button"
                 onClick={useCurrentLocation}
-                className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2.5 py-1.5 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100"
+                className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
               >
                 <Navigation className="h-3.5 w-3.5" /> Use current location
               </button>
+              <button
+                type="button"
+                onClick={() => openExpandedMap(activeField)}
+                className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-200"
+              >
+                <MapPin className="h-3.5 w-3.5" /> Open map
+              </button>
             </div>
+
             {pickupSuggestions.length > 0 ? (
               <div className="mt-2 max-h-28 overflow-y-auto rounded-md border border-gray-200">
                 {pickupSuggestions.map((s, idx) => (
@@ -294,26 +364,6 @@ export default function BookRide() {
                 ))}
               </div>
             ) : null}
-          </div>
-
-          <div>
-            <label className="mb-1 block text-sm font-semibold text-gray-700">Dropoff location</label>
-            <div className="flex gap-2">
-              <input
-                value={dropoffAddress}
-                onFocus={() => setActiveField("dropoff")}
-                onChange={(e) => {
-                  setDropoffAddress(e.target.value);
-                  setActiveField("dropoff");
-                }}
-                placeholder="Enter dropoff address"
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none"
-                required
-              />
-              <button type="button" onClick={() => void runDropoffSearch()} className="rounded-lg border border-gray-300 px-3 text-xs font-semibold">
-                {isSearchingDropoff ? "..." : "Find"}
-              </button>
-            </div>
             {dropoffSuggestions.length > 0 ? (
               <div className="mt-2 max-h-28 overflow-y-auto rounded-md border border-gray-200">
                 {dropoffSuggestions.map((s, idx) => (
@@ -335,21 +385,62 @@ export default function BookRide() {
             ) : null}
           </div>
 
+          <div className="relative overflow-hidden rounded-2xl border border-gray-200">
+            <DeliveryTrackingMap
+              pickupLat={pickupLat}
+              pickupLng={pickupLng}
+              dropoffLat={dropoffLat}
+              dropoffLng={dropoffLng}
+              className="h-[300px] w-full"
+              showRoute
+            />
+            <div className="pointer-events-none absolute left-3 top-3 rounded-full bg-white/95 px-3 py-1.5 text-xs font-semibold text-gray-700 shadow">
+              {distanceKm == null ? "Set route points" : `${distanceKm.toFixed(2)} km route`}
+            </div>
+            <div className="absolute inset-x-0 bottom-0 p-3">
+              <div className="rounded-2xl border border-white/80 bg-white/95 p-3 shadow-lg backdrop-blur">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-bold text-gray-900">{selectedRide.name}</p>
+                    <p className="text-xs text-gray-500">{selectedRide.etaLabel} away</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-lg font-extrabold text-emerald-700">{estimatedPrice == null ? "—" : `NGN ${estimatedPrice.toLocaleString()}`}</p>
+                    <p className="text-[11px] font-semibold text-gray-500">Cash</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div>
-            <label className="mb-1 block text-sm font-semibold text-gray-700">Package size</label>
-            <div className="flex gap-2 overflow-x-auto">
-              {(["small", "medium", "large", "xlarge"] as PackageType[]).map((size) => (
+            <label className="mb-2 block text-sm font-semibold text-gray-800">Choose Ride Mode</label>
+            <div className="space-y-2">
+              {RIDE_OPTIONS.map((ride) => (
                 <button
-                  key={size}
+                  key={ride.type}
                   type="button"
-                  onClick={() => setPackageType(size)}
-                  className={`rounded-lg px-3 py-2 text-sm capitalize ${
-                    packageType === size
-                      ? "bg-gray-300 font-bold text-gray-900"
-                      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                  onClick={() => setPackageType(ride.type)}
+                  className={`w-full rounded-2xl border p-3 text-left transition ${
+                    packageType === ride.type
+                      ? "border-emerald-500 bg-emerald-50 ring-2 ring-emerald-100"
+                      : "border-gray-200 bg-white hover:border-emerald-200 hover:bg-emerald-50/30"
                   }`}
                 >
-                  {size === "xlarge" ? "XL" : size}
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <p className="text-base font-bold text-gray-900">{ride.name}</p>
+                      <p className="text-xs text-gray-500">{ride.description}</p>
+                      <p className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-gray-600">
+                        <Clock3 className="h-3.5 w-3.5 text-emerald-600" /> {ride.etaLabel} · {ride.seats} seats
+                      </p>
+                    </div>
+                    <p className="text-sm font-extrabold text-emerald-700">
+                      {distanceKm == null
+                        ? "—"
+                        : `NGN ${Math.round((1500 + distanceKm * 320) * PACKAGE_MULTIPLIER[ride.type]).toLocaleString()}`}
+                    </p>
+                  </div>
                 </button>
               ))}
             </div>
@@ -366,21 +457,50 @@ export default function BookRide() {
             </p>
           </div>
 
-          <div className="relative overflow-hidden rounded-xl border border-gray-200">
-            <DeliveryTrackingMap
-              pickupLat={pickupLat}
-              pickupLng={pickupLng}
-              dropoffLat={dropoffLat}
-              dropoffLng={dropoffLng}
-              className="h-[200px] w-full"
-            />
-            <button
-              type="button"
-              onClick={() => openExpandedMap(activeField)}
-              className="absolute right-3 top-3 rounded-md bg-white/95 px-3 py-1.5 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-gray-200"
-            >
-              ⛶ Expand Map
-            </button>
+          <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-3">
+            <div className="grid grid-cols-2 gap-2 text-xs text-emerald-800 md:grid-cols-4">
+              <p className="inline-flex items-center gap-1.5 font-semibold">
+                <ShieldCheck className="h-4 w-4" /> Safe Rides
+              </p>
+              <p className="inline-flex items-center gap-1.5 font-semibold">
+                <MapPin className="h-4 w-4" /> Live Tracking
+              </p>
+              <p className="inline-flex items-center gap-1.5 font-semibold">
+                <Clock3 className="h-4 w-4" /> 24/7 Support
+              </p>
+              <p className="inline-flex items-center gap-1.5 font-semibold">
+                <Navigation className="h-4 w-4" /> Eco Friendly
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-gray-200 bg-white p-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Payment method</p>
+            <div className="mt-2 flex items-center justify-between rounded-xl border border-gray-200 px-3 py-2.5">
+              <div>
+                <p className="text-sm font-semibold text-gray-900">Cash</p>
+                <p className="text-xs text-gray-500">You can change at checkout</p>
+              </div>
+              <p className="text-xs font-semibold text-gray-500">Default</p>
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-semibold text-gray-700">Package size (advanced)</label>
+            <div className="flex gap-2 overflow-x-auto">
+              {(["small", "medium", "large", "xlarge"] as PackageType[]).map((size) => (
+                <button
+                  key={size}
+                  type="button"
+                  onClick={() => setPackageType(size)}
+                  className={`rounded-lg px-3 py-2 text-sm capitalize ${
+                    packageType === size ? "bg-gray-900 font-bold text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                  }`}
+                >
+                  {size === "xlarge" ? "XL" : size}
+                </button>
+              ))}
+            </div>
           </div>
 
           {recentLocations.length > 0 ? (
@@ -408,19 +528,28 @@ export default function BookRide() {
             </div>
           ) : null}
 
-          <button
-            type="submit"
-            disabled={submitting}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-60"
-          >
-            {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            Continue to Checkout
-          </button>
+          <div className="sticky bottom-2 z-20 grid grid-cols-[1fr_auto] gap-2 rounded-2xl border border-gray-200 bg-white/95 p-2 backdrop-blur supports-[backdrop-filter]:bg-white/70">
+            <button
+              type="submit"
+              disabled={submitting}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-base font-extrabold text-white hover:bg-emerald-700 disabled:opacity-60"
+            >
+              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {submitting ? "Processing..." : `Book ${selectedRide.name}`}
+            </button>
+            <button
+              type="button"
+              className="inline-flex h-full min-h-[52px] w-[52px] items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+              aria-label="Schedule ride"
+            >
+              <CalendarDays className="h-5 w-5" />
+            </button>
+          </div>
         </form>
       </div>
       {isMapExpanded ? (
         <div className="fixed inset-0 z-50 bg-white">
-          <div className="flex h-16 items-center justify-between border-b border-gray-200 px-3 sm:px-4">
+          <div className="flex h-16 items-center justify-between border-b border-gray-200 bg-white/95 px-3 backdrop-blur sm:px-4">
             <button
               type="button"
               onClick={() => setIsMapExpanded(false)}
@@ -429,7 +558,7 @@ export default function BookRide() {
             >
               <X className="h-5 w-5" />
             </button>
-            <div className="flex items-center gap-2 rounded-xl bg-gray-100 p-1">
+            <div className="flex items-center gap-1 rounded-xl bg-gray-100 p-1">
               <button
                 type="button"
                 onClick={() => {
@@ -437,7 +566,7 @@ export default function BookRide() {
                   if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") navigator.vibrate(12);
                 }}
                 className={`min-h-11 rounded-lg px-3 py-2 text-xs font-semibold ${
-                  mapInteractionMode === "fixedPin" ? "bg-gray-300 text-gray-900" : "bg-gray-100 text-gray-600"
+                  mapInteractionMode === "fixedPin" ? "bg-white text-gray-900 shadow-sm" : "bg-gray-100 text-gray-600"
                 }`}
               >
                 Fixed Pin
@@ -449,7 +578,7 @@ export default function BookRide() {
                   if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") navigator.vibrate(12);
                 }}
                 className={`min-h-11 rounded-lg px-3 py-2 text-xs font-semibold ${
-                  mapInteractionMode === "markers" ? "bg-gray-300 text-gray-900" : "bg-gray-100 text-gray-600"
+                  mapInteractionMode === "markers" ? "bg-white text-gray-900 shadow-sm" : "bg-gray-100 text-gray-600"
                 }`}
               >
                 Markers
@@ -475,6 +604,7 @@ export default function BookRide() {
                 interactionMode={mapInteractionMode}
                 activeField={activeField}
                 showRoute
+                followPosition={false}
                 onMapCenterChange={(lat, lng) => {
                   if (activeField === "pickup") {
                     setDraftPickup({ lat, lng });

@@ -272,7 +272,7 @@ export default function RiderPresenceFab() {
               : "border-amber-400/40 bg-amber-950/85 text-amber-100"
             : "border-indigo-400/40 bg-indigo-950/85 text-indigo-100"
         }`}
-        title={mode === "booking" ? "Booking mode" : canUseRiderPresence ? (isOnline ? "On Duty" : "Offline") : "Rider mode"}
+        title={mode === "booking" ? "GreenGo booking mode" : canUseRiderPresence ? (isOnline ? "On Duty" : "Offline") : "Rider mode"}
         animate={mode === "rider" && canUseRiderPresence && isOnline ? { scale: [1, 1.05, 1] } : { scale: 1 }}
         transition={mode === "rider" && canUseRiderPresence && isOnline ? { duration: 3, repeat: Infinity, ease: "easeInOut" } : { duration: 0.2 }}
         whileTap={{ scale: 0.95 }}
@@ -292,11 +292,11 @@ export default function RiderPresenceFab() {
         </span>
         <span className="min-w-0 text-left">
           <span className="block text-[11px] font-semibold leading-tight">
-            {mode === "booking" ? "Booking Mode" : canUseRiderPresence ? (isOnline ? "On Duty" : "Offline") : "Rider Mode"}
+            {mode === "booking" ? "GreenGo Booking" : canUseRiderPresence ? (isOnline ? "On Duty" : "Offline") : "Rider Mode"}
           </span>
           <span className="block text-[10px] opacity-80 leading-tight">
             {mode === "booking" ? (
-              "Tap to book"
+              "Tap to open GreenGo"
             ) : !canUseRiderPresence ? (
               riderStatus === "pending"
                 ? "Approval pending"
@@ -321,7 +321,7 @@ export default function RiderPresenceFab() {
         onClick={() => applyMode(mode === "booking" ? "rider" : "booking")}
         className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900/95 px-3 py-2 text-[11px] font-semibold text-slate-100 shadow-md hover:bg-slate-800"
       >
-        Switch to {mode === "booking" ? "Rider" : "Booking"} mode
+        Switch to {mode === "booking" ? "Rider" : "GreenGo"} mode
       </button>
       {isPanelOpen && mode === "rider" ? (
         <div className="mt-2 w-64 rounded-2xl border border-slate-700 bg-slate-950/95 p-3 text-xs text-slate-200 shadow-xl backdrop-blur-md">
@@ -341,6 +341,7 @@ export default function RiderPresenceFab() {
               {canUseRiderPresence ? (isOnline ? "Online" : "Offline") : "Unavailable"}
             </span>
           </p>
+          {canUseRiderPresence ? <p className="mt-1 text-[10px] text-emerald-300/80">Live status for GreenGo rider dispatch.</p> : null}
           {!canUseRiderPresence ? (
             <p className="mt-1 text-[10px] text-amber-300">
               {isRider
@@ -349,7 +350,7 @@ export default function RiderPresenceFab() {
                   : riderStatus === "blocked"
                     ? "Your rider account is blocked."
                     : "Rider approval required to go online."
-                : "Switch account role to rider to use rider presence."}
+                : "Switch account role to rider to use GreenGo rider mode."}
             </p>
           ) : null}
           <p className="mt-1 text-slate-400">
@@ -379,7 +380,7 @@ export default function RiderPresenceFab() {
               onClick={() => applyMode("booking")}
               className="rounded-lg border border-indigo-500/50 bg-indigo-950/70 px-2 py-1.5 text-[11px] font-semibold text-indigo-100"
             >
-              Booking mode
+              GreenGo mode
             </button>
             <button
               type="button"

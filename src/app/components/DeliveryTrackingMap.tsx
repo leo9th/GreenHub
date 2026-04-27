@@ -25,6 +25,7 @@ interface DeliveryTrackingMapProps {
   onMapCenterChange?: (lat: number, lng: number) => void;
   onPickupChange?: (lat: number, lng: number) => void;
   onDropoffChange?: (lat: number, lng: number) => void;
+  followPosition?: boolean;
 }
 
 function RecenterMap({
@@ -75,6 +76,7 @@ export default function DeliveryTrackingMap({
   onMapCenterChange,
   onPickupChange,
   onDropoffChange,
+  followPosition = true,
 }: DeliveryTrackingMapProps) {
   const centerLat = riderLat ?? pickupLat ?? dropoffLat ?? 9.082;
   const centerLng = riderLng ?? pickupLng ?? dropoffLng ?? 8.6753;
@@ -93,8 +95,10 @@ export default function DeliveryTrackingMap({
         zoom={13}
         className={className}
         style={{ height: "100%", width: "100%", minHeight: "300px" }}
+        scrollWheelZoom={interactive}
+        zoomControl={interactive}
       >
-      <RecenterMap centerLat={centerLat} centerLng={centerLng} />
+      {followPosition ? <RecenterMap centerLat={centerLat} centerLng={centerLng} /> : null}
       <CenterReporter
         enabled={interactive && interactionMode === "fixedPin"}
         onCenterChange={(lat, lng) => {
@@ -141,7 +145,12 @@ export default function DeliveryTrackingMap({
           <Popup>Rider is here</Popup>
         </Marker>
       ) : null}
-      {routePoints ? <Polyline positions={routePoints} pathOptions={{ color: "#16a34a", weight: 4, opacity: 0.85 }} /> : null}
+      {routePoints ? (
+        <>
+          <Polyline positions={routePoints} pathOptions={{ color: "#16a34a", weight: 6, opacity: 0.25 }} />
+          <Polyline positions={routePoints} pathOptions={{ color: "#059669", weight: 4, opacity: 0.95, lineCap: "round" }} />
+        </>
+      ) : null}
       </MapContainer>
       {interactive && interactionMode === "fixedPin" ? (
         <div className="pointer-events-none absolute inset-0 z-[500] flex items-center justify-center">

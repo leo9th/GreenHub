@@ -66,6 +66,18 @@ async function fetchFeaturedProducts(
   priceRange: string = "all",
   more: BrowseMoreFiltersState = defaultBrowseMoreFilters(),
 ): Promise<{ rows: ProductWithSeller[]; error: string | null }> {
+  const fetchBaselineActiveProducts = async (): Promise<{ rows: ProductWithSeller[]; error: string | null }> => {
+    const { data, error } = await supabase
+      .from("products")
+      .select(productsSelectWithSellerEmbed())
+      .eq("status", "active")
+      .order("created_at", { ascending: false })
+      .limit(HOME_PAGE_SIZE);
+
+    if (error) return { rows: [], error: error.message };
+    return { rows: ((data as ProductWithSeller[]) ?? []).filter(Boolean), error: null };
+  };
+
   const searchT = normalizedGlobalSearchTerm(globalSearchTerm);
   let sellerIds: string[] = [];
   if (searchT) {
@@ -88,9 +100,12 @@ async function fetchFeaturedProducts(
   const { data, error } = await query;
 
   if (error) {
-    return { rows: [], error: error.message };
+    return fetchBaselineActiveProducts();
   }
   const pool = ((data as ProductWithSeller[]) ?? []).filter(Boolean);
+  if (pool.length === 0) {
+    return fetchBaselineActiveProducts();
+  }
   const rows =
     sortBy === "recent"
       ? shuffleArray(pool).slice(0, HOME_PAGE_SIZE)

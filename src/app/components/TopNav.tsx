@@ -181,30 +181,28 @@ export default function TopNav() {
   const iconClass = isHome
     ? "text-white"
     : "text-gray-600 hover:text-[#22c55e] dark:text-zinc-400 dark:hover:text-emerald-400";
-  const badgeClass = isHome ? "bg-white text-[#22c55e]" : "bg-[#22c55e] text-white dark:bg-emerald-600";
   const designClass = isHome
     ? "text-green-100 hover:text-white"
     : "text-gray-500 hover:text-[#22c55e] dark:text-zinc-400 dark:hover:text-emerald-400";
   const themeBtnHover = isHome ? "hover:bg-white/15" : "hover:bg-gray-100 dark:hover:bg-zinc-800";
 
   const navIconClass = `h-4 w-4 sm:h-5 sm:w-5 shrink-0 transition-colors ${iconClass}`;
+  const countBadgeClass = "absolute -top-0.5 -right-1 text-[10px] font-bold leading-none text-red-500";
 
   const messageBadgeEl =
     messageUnread > 0 ? (
-      <span
-        className={`absolute -top-1 -right-2 text-[10px] font-bold rounded-full min-w-[1.25rem] h-5 px-0.5 flex items-center justify-center border border-white ${badgeClass}`}
-      >
+      <span className={countBadgeClass} aria-hidden>
         {messageUnread > 99 ? "99+" : messageUnread}
       </span>
     ) : null;
 
   return (
     <div className={`${bgClass} sticky top-0 z-[45] transition-colors duration-200`}>
-      <div className="h-16 px-2 sm:px-4 max-w-7xl mx-auto flex items-center justify-between gap-2 min-w-0">
-        <div className="flex min-w-0 flex-1 items-center gap-1.5 sm:gap-3 md:gap-4">
+      <div className="h-16 px-2 sm:px-4 max-w-7xl mx-auto flex items-center justify-between gap-3 min-w-0">
+        <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3 md:gap-4">
           <Link
             to="/"
-            className={`flex min-w-0 flex-1 items-center gap-1 truncate text-base font-bold sm:flex-initial sm:text-xl md:text-2xl ${textClass}`}
+            className={`flex min-w-0 shrink-0 items-center gap-1 whitespace-nowrap pr-1 text-sm font-bold sm:text-xl md:text-2xl ${textClass}`}
           >
             🌿 GreenHub
           </Link>
@@ -419,10 +417,9 @@ export default function TopNav() {
                 <span className="relative inline-flex">
                   <Bell className={navIconClass} />
                   {notificationUnreadCount > 0 ? (
-                    <span
-                      className="absolute -right-0.5 -top-0.5 h-2.5 min-w-[10px] rounded-full border-2 border-white bg-red-500 dark:border-zinc-900 animate-pulse"
-                      aria-hidden
-                    />
+                    <span className={countBadgeClass} aria-hidden>
+                      {notificationUnreadCount > 99 ? "99+" : notificationUnreadCount}
+                    </span>
                   ) : null}
                 </span>
               </button>
@@ -497,11 +494,7 @@ export default function TopNav() {
           >
             <ShoppingCart className={navIconClass} />
             {cartCount > 0 && (
-              <span
-                className={`absolute -top-1 -right-2 text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center border border-white ${badgeClass}`}
-              >
-                {cartCount}
-              </span>
+              <span className={countBadgeClass} aria-hidden>{cartCount > 99 ? "99+" : cartCount}</span>
             )}
           </Link>
 

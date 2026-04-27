@@ -33,10 +33,23 @@ function clampPos(pos: Pos): Pos {
 
 export default function RiderPresenceFab() {
   const navigate = useNavigate();
-  const { hasUser, currentUserId, role, riderStatus, isRider, isOnline, toggleAvailability, lastLocation, onlineSince, error, isBusy } =
+  const {
+    hasUser,
+    currentUserId,
+    role,
+    riderStatus,
+    isRider,
+    isOnline,
+    toggleAvailability,
+    lastLocation,
+    onlineSince,
+    error,
+    isPresenceTableMissing,
+    isBusy,
+  } =
     useRiderPresence();
   const isRiderCapable = isRider || riderStatus !== "none";
-  const canUseRiderPresence = isRider && riderStatus === "approved";
+  const canUseRiderPresence = riderStatus === "approved";
   const [isPanelOpen, setIsPanelOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [mode, setMode] = useState<RiderFabMode>("booking");
@@ -223,6 +236,13 @@ export default function RiderPresenceFab() {
       >
         Switch to {mode === "booking" ? "Rider" : "GreenGo"} mode
       </button>
+      {mode === "rider" && isPresenceTableMissing ? (
+        <div className="mt-2 w-64 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[10px] text-amber-100">
+          Rider presence is unavailable: missing backend table
+          <code className="mx-1 rounded bg-amber-900/40 px-1 py-0.5">rider_presence</code>.
+          Ask an admin to run rider presence migrations.
+        </div>
+      ) : null}
       {isPanelOpen && mode === "rider" ? (
         <div className="mt-2 w-64 rounded-2xl border border-slate-700 bg-slate-950/95 p-3 text-xs text-slate-200 shadow-xl backdrop-blur-md">
           <div className="mb-2 flex items-center justify-between">

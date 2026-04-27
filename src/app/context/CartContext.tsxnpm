@@ -1,0 +1,1 @@
+"Fix the icons. Import { ShoppingBag, Truck, ShoppingCart } from 'lucide-react' at the very top. Use these icons inside the buttons with className='w-5 h-5 mr-2 text-emerald-500'."

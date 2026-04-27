@@ -2329,12 +2329,13 @@ export default function ProductDetail() {
                 pickup and third-party couriers.
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
-                <Link
-                  to="/rider"
+                <button
+                  type="button"
+                  onClick={() => setOpenRideBooking(true)}
                   className="inline-flex items-center rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800"
                 >
-                  Rider hub / apply
-                </Link>
+                  bookGo delivery
+                </button>
                 <Link
                   to="/orders"
                   className="inline-flex items-center rounded-lg border border-emerald-600/40 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-900 hover:bg-emerald-50"
@@ -2410,7 +2411,7 @@ export default function ProductDetail() {
                 }`}
               >
                 <RideActionIcon className="h-4 w-4 shrink-0 text-emerald-700" />
-                <span className="min-w-0 truncate leading-tight">Delivery &amp; riders</span>
+                <span className="min-w-0 truncate leading-tight">bookGo delivery</span>
               </button>
               {!isSoldOut ? (
                 <>
@@ -2489,7 +2490,7 @@ export default function ProductDetail() {
               <div className="mb-4 flex items-start justify-between gap-3">
                 <div>
                   <h3 id="pdp-ride-booking-title" className="text-lg font-semibold text-gray-900 dark:text-zinc-100">
-                    Book a Ride
+                    Book with bookGo
                   </h3>
                   <p className="text-xs text-gray-500 dark:text-zinc-400">
                     GPS-assisted pickup and dropoff for {String(product.title || "this listing")}.

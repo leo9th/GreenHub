@@ -49,6 +49,13 @@ type NearbyRiderRow = {
 
 const LIVE_PRESENCE_THRESHOLD_MS = 90_000;
 
+function isMissingRelationError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const e = error as { code?: string; message?: string };
+  const msg = String(e.message ?? "").toLowerCase();
+  return e.code === "42P01" || msg.includes("does not exist");
+}
+
 function formatTs(ts: string | null | undefined): string {
   if (!ts) return "—";
   const d = new Date(ts);
@@ -112,6 +119,8 @@ export default function AdminDispatch() {
   const [nearbyByBooking, setNearbyByBooking] = useState<Record<string, NearbyRiderRow[]>>({});
   const [lastSyncSeconds, setLastSyncSeconds] = useState(0);
   const [isStale, setIsStale] = useState(false);
+  const [missingProductRideBookingsTable, setMissingProductRideBookingsTable] = useState(false);
+  const [missingRiderPresenceTable, setMissingRiderPresenceTable] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const approvedRiders = useMemo(() => riders.filter((r) => String(r.status).toLowerCase() === "approved"), [riders]);
@@ -151,11 +160,12 @@ export default function AdminDispatch() {
       ]);
       if (jRes.error) throw jRes.error;
       if (rRes.error) throw rRes.error;
-      if (prbRes.error) throw prbRes.error;
+      if (prbRes.error && !isMissingRelationError(prbRes.error)) throw prbRes.error;
       setJobs((jRes.data as RequestRow[]) ?? []);
       const allR = (rRes.data as RiderRow[]) ?? [];
       setRiders(allR);
-      setProductRideBookings((prbRes.data as ProductRideBookingRow[]) ?? []);
+      setMissingProductRideBookingsTable(Boolean(prbRes.error && isMissingRelationError(prbRes.error)));
+      setProductRideBookings(prbRes.error ? [] : ((prbRes.data as ProductRideBookingRow[]) ?? []));
       setPending(allR.filter((x) => String(x.status).toLowerCase() === "pending"));
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Could not load dispatch data");
@@ -245,6 +255,7 @@ export default function AdminDispatch() {
         p_radius_km: 5,
       });
       if (error) throw error;
+      setMissingRiderPresenceTable(false);
       setNearbyByBooking((prev) => ({ ...prev, [bookingId]: (data as NearbyRiderRow[]) ?? [] }));
       resetFreshness();
       if (!silent) {
@@ -255,7 +266,11 @@ export default function AdminDispatch() {
         }
       }
     } catch (e: unknown) {
-      if (!silent) toast.error(e instanceof Error ? e.message : "Could not find nearby riders");
+      const message = e instanceof Error ? e.message : "Could not find nearby riders";
+      if (isMissingRelationError(e) || message.toLowerCase().includes("rider_presence")) {
+        setMissingRiderPresenceTable(true);
+      }
+      if (!silent) toast.error(message);
       setNearbyByBooking((prev) => ({ ...prev, [bookingId]: [] }));
     } finally {
       setFindingNearbyId(null);
@@ -349,6 +364,25 @@ export default function AdminDispatch() {
             ← Dashboard
           </Link>
         </div>
+        {missingProductRideBookingsTable || missingRiderPresenceTable ? (
+          <div className="mb-4 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-100">
+            <p className="font-semibold">Dispatch integrations need backend migration.</p>
+            {missingProductRideBookingsTable ? (
+              <p className="mt-1">
+                Missing table
+                <code className="mx-1 rounded bg-amber-900/40 px-1.5 py-0.5 text-[11px]">product_ride_bookings</code>
+                blocks product ride dispatch rows.
+              </p>
+            ) : null}
+            {missingRiderPresenceTable ? (
+              <p className="mt-1">
+                Missing table
+                <code className="mx-1 rounded bg-amber-900/40 px-1.5 py-0.5 text-[11px]">rider_presence</code>
+                blocks nearby rider visibility and auto-assign accuracy.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
 
         <div className="mb-6 flex flex-wrap gap-2 border-b border-slate-700/80 pb-3">
           {(

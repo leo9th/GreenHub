@@ -29,6 +29,13 @@ type ProductRideBookingRow = {
   created_at: string | null;
 };
 
+function isMissingRelationError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const e = error as { code?: string; message?: string };
+  const msg = String(e.message ?? "").toLowerCase();
+  return e.code === "42P01" || msg.includes("does not exist");
+}
+
 function statusLabel(s: string | null | undefined): string {
   const x = String(s || "").toLowerCase();
   const m: Record<string, string> = {
@@ -49,6 +56,7 @@ export default function RiderDashboard() {
   const [mine, setMine] = useState<DeliveryRequestRow[]>([]);
   const [myProductRideBookings, setMyProductRideBookings] = useState<ProductRideBookingRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [missingProductRideBookingsTable, setMissingProductRideBookingsTable] = useState(false);
   const [vehicleType, setVehicleType] = useState("");
   const [applying, setApplying] = useState(false);
 
@@ -100,8 +108,14 @@ export default function RiderDashboard() {
         .eq("assigned_rider_id", uid)
         .in("status", ["assigned", "accepted", "en_route"])
         .order("updated_at", { ascending: false });
-      if (e3) throw e3;
-      setMyProductRideBookings((productRideData as ProductRideBookingRow[]) ?? []);
+      if (e3) {
+        if (!isMissingRelationError(e3)) throw e3;
+        setMissingProductRideBookingsTable(true);
+        setMyProductRideBookings([]);
+      } else {
+        setMissingProductRideBookingsTable(false);
+        setMyProductRideBookings((productRideData as ProductRideBookingRow[]) ?? []);
+      }
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Could not load deliveries");
       setAvailable([]);
@@ -119,6 +133,28 @@ export default function RiderDashboard() {
   useEffect(() => {
     void loadJobs();
   }, [loadJobs]);
+
+  useEffect(() => {
+    if (!uid) return;
+    const deliveryChannel = supabase
+      .channel(`rider-dashboard-delivery:${uid}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "delivery_requests" }, () => {
+        void loadJobs();
+      })
+      .subscribe();
+
+    const productRideChannel = supabase
+      .channel(`rider-dashboard-product-rides:${uid}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "product_ride_bookings" }, () => {
+        void loadJobs();
+      })
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(deliveryChannel);
+      void supabase.removeChannel(productRideChannel);
+    };
+  }, [uid, loadJobs]);
 
   const applyProfile = async () => {
     if (!uid) return;
@@ -198,6 +234,13 @@ export default function RiderDashboard() {
         </div>
       ) : (
         <>
+          {missingProductRideBookingsTable ? (
+            <div className="mt-6 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-100">
+              Product ride bookings are temporarily unavailable because the backend table
+              <code className="mx-1 rounded bg-amber-900/40 px-1.5 py-0.5 text-[11px]">product_ride_bookings</code>
+              is missing. Ask an admin to run the latest rider dispatch migrations.
+            </div>
+          ) : null}
           <section className="mt-8">
             <h2 className="text-sm font-semibold text-emerald-200">My active jobs</h2>
             {mine.length === 0 ? (

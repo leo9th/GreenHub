@@ -21,10 +21,12 @@ export function useRiderPresence() {
   const [presenceRow, setPresenceRow] = useState<PresenceRow | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isPresenceTableMissing, setIsPresenceTableMissing] = useState(false);
   const heartbeatTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const canUsePresence = riderStatus === "approved";
 
   const loadPresence = useCallback(async () => {
-    if (!uid || !isRider) {
+    if (!uid || !canUsePresence) {
       setPresenceRow(null);
       return;
     }
@@ -34,11 +36,13 @@ export function useRiderPresence() {
       .eq("rider_user_id", uid)
       .maybeSingle();
     if (e) {
+      setIsPresenceTableMissing(e.code === "42P01" || String(e.message ?? "").toLowerCase().includes("does not exist"));
       setError(e.message || "Could not load presence.");
       return;
     }
+    setIsPresenceTableMissing(false);
     setPresenceRow((data as PresenceRow) ?? null);
-  }, [uid, isRider]);
+  }, [uid, canUsePresence]);
 
   const loadRiderStatus = useCallback(async () => {
     if (!uid) {
@@ -67,7 +71,7 @@ export function useRiderPresence() {
   }, [loadRiderStatus]);
 
   const heartbeat = useCallback(async () => {
-    if (!uid || !isRider) return;
+    if (!uid || !canUsePresence) return;
     if (typeof navigator === "undefined" || !navigator.geolocation) {
       setError("Geolocation is not available in this browser.");
       return;
@@ -80,9 +84,11 @@ export function useRiderPresence() {
           p_longitude: longitude,
         });
         if (e) {
+          setIsPresenceTableMissing(e.code === "42P01" || String(e.message ?? "").toLowerCase().includes("does not exist"));
           setError(e.message || "Could not update location.");
           return;
         }
+        setIsPresenceTableMissing(false);
         setError(null);
         setPresenceRow((prev) => ({
           rider_user_id: prev?.rider_user_id ?? uid,
@@ -97,10 +103,10 @@ export function useRiderPresence() {
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
     );
-  }, [uid, isRider]);
+  }, [uid, canUsePresence]);
 
   useEffect(() => {
-    if (!presenceRow?.is_online || !uid || !isRider) {
+    if (!presenceRow?.is_online || !uid || !canUsePresence) {
       if (heartbeatTimerRef.current) {
         clearInterval(heartbeatTimerRef.current);
         heartbeatTimerRef.current = null;
@@ -117,10 +123,10 @@ export function useRiderPresence() {
         heartbeatTimerRef.current = null;
       }
     };
-  }, [presenceRow?.is_online, heartbeat, uid, isRider]);
+  }, [presenceRow?.is_online, heartbeat, uid, canUsePresence]);
 
   useEffect(() => {
-    if (!uid || !isRider || !presenceRow?.is_online) return;
+    if (!uid || !canUsePresence || !presenceRow?.is_online) return;
     const channel = supabase
       .channel(`rider-presence-self:${uid}`)
       .on(
@@ -137,11 +143,11 @@ export function useRiderPresence() {
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [uid, isRider, presenceRow?.is_online]);
+  }, [uid, canUsePresence, presenceRow?.is_online]);
 
   const toggleAvailability = useCallback(
     async (nextState?: boolean) => {
-      if (!uid || !isRider) {
+      if (!uid || !canUsePresence) {
         return;
       }
       const nextOnline = typeof nextState === "boolean" ? nextState : !Boolean(presenceRow?.is_online);
@@ -149,6 +155,7 @@ export function useRiderPresence() {
       try {
         const { error: e } = await supabase.rpc("rider_set_availability", { p_is_online: nextOnline });
         if (e) throw e;
+        setIsPresenceTableMissing(false);
         setPresenceRow((prev) => ({
           rider_user_id: prev?.rider_user_id ?? uid,
           is_online: nextOnline,
@@ -159,12 +166,14 @@ export function useRiderPresence() {
         setError(null);
         if (nextOnline) void heartbeat();
       } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : "Could not update availability.";
+        setIsPresenceTableMissing(message.toLowerCase().includes("does not exist"));
         setError(e instanceof Error ? e.message : "Could not update availability.");
       } finally {
         setIsBusy(false);
       }
     },
-    [uid, isRider, presenceRow?.is_online, heartbeat],
+    [uid, canUsePresence, presenceRow?.is_online, heartbeat],
   );
 
   const lastLocation = useMemo(
@@ -186,6 +195,7 @@ export function useRiderPresence() {
     lastLocation,
     onlineSince,
     error,
+    isPresenceTableMissing,
     isBusy,
     isRider,
   };

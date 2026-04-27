@@ -50,7 +50,7 @@ export default function TopNav() {
   const bookGoRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    function handleClickOutside(event: MouseEvent | TouchEvent) {
+    function handleClickOutside(event: MouseEvent) {
       const target = event.target as Node | null;
       if (!target) return;
       if (dropdownRef.current && !dropdownRef.current.contains(target)) {
@@ -66,11 +66,9 @@ export default function TopNav() {
         setShowBookGoMenu(false);
       }
     }
-    document.addEventListener("mousedown", handleClickOutside);
-    document.addEventListener("touchstart", handleClickOutside, { passive: true });
+    document.addEventListener("click", handleClickOutside);
     return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-      document.removeEventListener("touchstart", handleClickOutside);
+      document.removeEventListener("click", handleClickOutside);
     };
   }, []);
 
@@ -344,7 +342,7 @@ export default function TopNav() {
             ) : null}
           </div>
         </div>
-        <div className="flex items-center gap-1 md:gap-2 shrink-0">
+        <div className="relative z-10 flex items-center gap-1 md:gap-2 shrink-0">
           <button
             type="button"
             onClick={() => toggleTheme()}

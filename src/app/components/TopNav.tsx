@@ -190,13 +190,7 @@ export default function TopNav() {
   const countBadgeClass =
     "absolute -top-0.5 -right-1.5 p-0 text-[10px] font-bold leading-none text-red-500 dark:text-red-400";
   const contrastIconClass = isHome ? "text-white" : "text-gray-600 dark:text-gray-300";
-
-  const messageBadgeEl =
-    messageUnread > 0 ? (
-      <span className={countBadgeClass} aria-hidden>
-        {messageUnread > 99 ? "99+" : messageUnread}
-      </span>
-    ) : null;
+  const totalUnread = (notificationUnreadCount || 0) + (messageUnread || 0);
 
   return (
     <div className={`${bgClass} sticky top-0 z-[45] transition-colors duration-200`}>
@@ -418,9 +412,9 @@ export default function TopNav() {
               >
                 <span className="relative inline-flex">
                   <Bell className={navIconClass} />
-                  {notificationUnreadCount > 0 ? (
+                  {totalUnread > 0 ? (
                     <span className={countBadgeClass} aria-hidden>
-                      {notificationUnreadCount > 99 ? "99+" : notificationUnreadCount}
+                      {totalUnread > 99 ? "99+" : totalUnread}
                     </span>
                   ) : null}
                 </span>
@@ -499,18 +493,6 @@ export default function TopNav() {
               <span className={countBadgeClass} aria-hidden>{cartCount > 99 ? "99+" : cartCount}</span>
             )}
           </Link>
-
-          {session ? (
-            <Link
-              to="/messages"
-              className="relative flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg p-0.5"
-              title="Messages"
-              aria-label="Messages"
-            >
-              <MessageSquare className={navIconClass} />
-              {messageBadgeEl}
-            </Link>
-          ) : null}
 
           {session ? (
             <div className="flex items-center gap-1 sm:gap-2 md:gap-3">

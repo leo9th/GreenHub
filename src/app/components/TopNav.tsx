@@ -142,25 +142,6 @@ export default function TopNav() {
     setShowBookGoMenu(false);
   }, [location.pathname]);
 
-  // #region agent log
-  void fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "35665f" },
-    body: JSON.stringify({
-      sessionId: "35665f",
-      runId: "run2",
-      hypothesisId: "H2",
-      location: "TopNav.tsx:post-hooks",
-      message: "TopNav reached post-hooks checkpoint",
-      data: {
-        pathname: location.pathname,
-        isHidden,
-      },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
-
   if (isHidden) return null;
 
   const fullName =
@@ -195,52 +176,6 @@ export default function TopNav() {
     "absolute -top-0.5 -right-1.5 p-0 text-[10px] font-bold leading-none text-red-500 dark:text-red-400";
   const contrastIconClass = isHome ? "text-white" : "text-gray-600 dark:text-gray-300";
   const totalUnread = (notificationUnreadCount || 0) + (messageUnread || 0);
-
-  useEffect(() => {
-    // #region agent log
-    void fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6b8d89" },
-      body: JSON.stringify({
-        sessionId: "6b8d89",
-        runId: "run1",
-        hypothesisId: "H1",
-        location: "TopNav.tsx:render-state",
-        message: "TopNav render state snapshot",
-        data: {
-          pathname: location.pathname,
-          isHidden,
-          hasSession: Boolean(session),
-          totalUnread,
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
-  }, [isHidden, location.pathname, session, totalUnread]);
-
-  useEffect(() => {
-    // #region agent log
-    void fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6b8d89" },
-      body: JSON.stringify({
-        sessionId: "6b8d89",
-        runId: "run1",
-        hypothesisId: "H2",
-        location: "TopNav.tsx:menu-state",
-        message: "TopNav menu state changed",
-        data: {
-          showDropdown,
-          showNotifications,
-          mobileMenuOpen,
-          showBookGoMenu,
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
-  }, [showDropdown, showNotifications, mobileMenuOpen, showBookGoMenu]);
 
   return (
     <div className={`${bgClass} sticky top-0 z-[45] transition-colors duration-200`}>
@@ -403,22 +338,8 @@ export default function TopNav() {
           <div className="relative" ref={bookGoRef}>
             <button
               type="button"
-              onClick={() => {
-                // #region agent log
-                void fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6b8d89" },
-                  body: JSON.stringify({
-                    sessionId: "6b8d89",
-                    runId: "run1",
-                    hypothesisId: "H3",
-                    location: "TopNav.tsx:bookgo-click",
-                    message: "bookGo icon clicked",
-                    data: { nextOpen: !showBookGoMenu },
-                    timestamp: Date.now(),
-                  }),
-                }).catch(() => {});
-                // #endregion
+              onClick={(e) => {
+                e.stopPropagation();
                 setShowBookGoMenu((v) => !v);
                 setShowNotifications(false);
                 setShowDropdown(false);
@@ -462,22 +383,8 @@ export default function TopNav() {
             <div className="relative" ref={notifRef}>
               <button
                 type="button"
-                onClick={() => {
-                  // #region agent log
-                  void fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6b8d89" },
-                    body: JSON.stringify({
-                      sessionId: "6b8d89",
-                      runId: "run1",
-                      hypothesisId: "H3",
-                      location: "TopNav.tsx:notifications-click",
-                      message: "Notifications icon clicked",
-                      data: { currentOpen: showNotifications, totalUnread },
-                      timestamp: Date.now(),
-                    }),
-                  }).catch(() => {});
-                  // #endregion
+                onClick={(e) => {
+                  e.stopPropagation();
                   void markAllNotificationsReadAndRefresh().then(({ error }) => {
                     if (error) notifyMarkAllReadError(error);
                   });
@@ -579,22 +486,8 @@ export default function TopNav() {
               <div className="relative border-l border-gray-200/30 pl-1.5 dark:border-zinc-700/50 sm:pl-2 md:pl-3" ref={dropdownRef}>
                 <button
                   type="button"
-                  onClick={() => {
-                    // #region agent log
-                    void fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6b8d89" },
-                      body: JSON.stringify({
-                        sessionId: "6b8d89",
-                        runId: "run1",
-                        hypothesisId: "H3",
-                        location: "TopNav.tsx:account-click",
-                        message: "Account icon clicked",
-                        data: { nextOpen: !showDropdown },
-                        timestamp: Date.now(),
-                      }),
-                    }).catch(() => {});
-                    // #endregion
+                  onClick={(e) => {
+                    e.stopPropagation();
                     setShowDropdown((prev) => !prev);
                     setShowNotifications(false);
                     setMobileMenuOpen(false);

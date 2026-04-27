@@ -1,6 +1,7 @@
 import { Link, useLocation, useNavigate } from "react-router";
 import {
   Bell,
+  Bike,
   ShoppingCart,
   LogOut,
   Settings,
@@ -21,6 +22,7 @@ import { supabase } from "../../lib/supabase";
 import { toast } from "sonner";
 import { markNotificationReadById } from "../utils/engagement";
 import { formatGreenHubRelative } from "../utils/formatGreenHubTime";
+import { riderFabModeStorageKey } from "../utils/riderFabMode";
 import { useTheme } from "../context/ThemeContext";
 import AdvancedSearch from "./AdvancedSearch";
 
@@ -41,9 +43,11 @@ export default function TopNav() {
   const [showDropdown, setShowDropdown] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [showBookGoMenu, setShowBookGoMenu] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
+  const bookGoRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -56,6 +60,9 @@ export default function TopNav() {
       if (mobileMenuRef.current && !mobileMenuRef.current.contains(event.target as Node)) {
         setMobileMenuOpen(false);
       }
+      if (bookGoRef.current && !bookGoRef.current.contains(event.target as Node)) {
+        setShowBookGoMenu(false);
+      }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
@@ -64,8 +71,21 @@ export default function TopNav() {
   const handleSignOut = async () => {
     await signOut();
     setShowDropdown(false);
+    setShowBookGoMenu(false);
     navigate("/login");
   };
+
+  const handleSwitchToRiderMode = useCallback(() => {
+    setShowBookGoMenu(false);
+    if (!authUser?.id) {
+      navigate("/login");
+      return;
+    }
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(riderFabModeStorageKey(authUser.id), "rider");
+    }
+    navigate("/rider");
+  }, [authUser?.id, navigate]);
 
   const hideNavOnPaths = ["/login", "/register", "/verify-otp", "/welcome"];
   const isHidden = hideNavOnPaths.some((path) => location.pathname.startsWith(path));
@@ -115,6 +135,7 @@ export default function TopNav() {
 
   useEffect(() => {
     setMobileMenuOpen(false);
+    setShowBookGoMenu(false);
   }, [location.pathname]);
 
   // #region agent log
@@ -166,7 +187,7 @@ export default function TopNav() {
     : "text-gray-500 hover:text-[#22c55e] dark:text-zinc-400 dark:hover:text-emerald-400";
   const themeBtnHover = isHome ? "hover:bg-white/15" : "hover:bg-gray-100 dark:hover:bg-zinc-800";
 
-  const navIconClass = `w-5 h-5 sm:w-6 sm:h-6 shrink-0 transition-colors ${iconClass}`;
+  const navIconClass = `h-4 w-4 sm:h-5 sm:w-5 shrink-0 transition-colors ${iconClass}`;
 
   const messageBadgeEl =
     messageUnread > 0 ? (
@@ -209,12 +230,17 @@ export default function TopNav() {
                 setMobileMenuOpen((o) => !o);
                 setShowDropdown(false);
                 setShowNotifications(false);
+                setShowBookGoMenu(false);
               }}
-              className={`rounded-lg p-1.5 outline-none transition-colors ${iconClass} ${themeBtnHover}`}
+              className={`flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg p-1 outline-none transition-colors ${iconClass} ${themeBtnHover}`}
               aria-expanded={mobileMenuOpen}
               aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
             >
-              {mobileMenuOpen ? <X className="w-5 h-5" strokeWidth={2.25} /> : <Menu className="w-5 h-5" strokeWidth={2.25} />}
+              {mobileMenuOpen ? (
+                <X className="h-4 w-4" strokeWidth={2.25} />
+              ) : (
+                <Menu className="h-4 w-4" strokeWidth={2.25} />
+              )}
             </button>
             {mobileMenuOpen ? (
               <div className="absolute left-0 top-full z-[60] mt-2 min-w-[12.5rem] rounded-lg border border-gray-200 bg-white py-2 shadow-xl dark:border-border dark:bg-card">
@@ -322,7 +348,7 @@ export default function TopNav() {
           <button
             type="button"
             onClick={() => toggleTheme()}
-            className={`relative shrink-0 rounded-lg p-1 sm:p-1.5 outline-none transition-colors ${iconClass} ${themeBtnHover}`}
+            className={`relative flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-lg p-1 outline-none transition-colors ${iconClass} ${themeBtnHover}`}
             aria-label={resolvedTheme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
             title={resolvedTheme === "dark" ? "Light mode" : "Dark mode"}
           >
@@ -330,6 +356,49 @@ export default function TopNav() {
               {resolvedTheme === "dark" ? "☀️" : "🌙"}
             </span>
           </button>
+          <div className="relative" ref={bookGoRef}>
+            <button
+              type="button"
+              onClick={() => {
+                setShowBookGoMenu((v) => !v);
+                setShowNotifications(false);
+                setShowDropdown(false);
+                setMobileMenuOpen(false);
+              }}
+              className={`relative flex min-h-[44px] min-w-[44px] items-center justify-center gap-1 rounded-lg px-1.5 py-0.5 outline-none transition-colors ${iconClass} ${themeBtnHover}`}
+              aria-haspopup="menu"
+              aria-expanded={showBookGoMenu}
+              aria-label="bookGo menu"
+              title="bookGo"
+            >
+              <Bike className={`hidden sm:block ${navIconClass}`} />
+              <span className="text-[10px] font-semibold leading-none sm:text-[11px]">bookGo</span>
+            </button>
+            {showBookGoMenu ? (
+              <div className="absolute top-full right-0 z-50 mt-2 w-44 rounded-lg border border-gray-200 bg-white py-2 shadow-xl dark:border-border dark:bg-card">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowBookGoMenu(false);
+                    navigate("/rider");
+                  }}
+                  className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-medium text-gray-800 transition-colors hover:bg-gray-50 dark:text-foreground dark:hover:bg-muted"
+                >
+                  <Bike className="h-[18px] w-[18px] text-gray-500 dark:text-muted-foreground" />
+                  <span>Book dashboard</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSwitchToRiderMode}
+                  className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-semibold text-[#15803d] transition-colors hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-950/40"
+                >
+                  <Bike className="h-[18px] w-[18px]" />
+                  <span>Switch to Rider mode</span>
+                </button>
+              </div>
+            ) : null}
+          </div>
+
           {session ? (
             <div className="relative" ref={notifRef}>
               <button
@@ -342,8 +411,9 @@ export default function TopNav() {
                   setShowNotifications(willOpen);
                   setShowDropdown(false);
                   setMobileMenuOpen(false);
+                  setShowBookGoMenu(false);
                 }}
-                className="relative flex p-1 outline-none"
+                className="relative flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg p-0.5 outline-none"
                 aria-label="Notifications"
               >
                 <span className="relative inline-flex">
@@ -419,7 +489,12 @@ export default function TopNav() {
             </div>
           ) : null}
 
-          <Link to="/cart" className="relative flex p-1" title="Cart" aria-label="Cart">
+          <Link
+            to="/cart"
+            className="relative flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg p-0.5"
+            title="Cart"
+            aria-label="Cart"
+          >
             <ShoppingCart className={navIconClass} />
             {cartCount > 0 && (
               <span
@@ -431,7 +506,12 @@ export default function TopNav() {
           </Link>
 
           {session ? (
-            <Link to="/messages" className="relative flex p-1" title="Messages" aria-label="Messages">
+            <Link
+              to="/messages"
+              className="relative flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg p-0.5"
+              title="Messages"
+              aria-label="Messages"
+            >
               <MessageSquare className={navIconClass} />
               {messageBadgeEl}
             </Link>
@@ -446,6 +526,7 @@ export default function TopNav() {
                     setShowDropdown(!showDropdown);
                     setShowNotifications(false);
                     setMobileMenuOpen(false);
+                    setShowBookGoMenu(false);
                   }}
                   className="relative flex items-center gap-2 rounded-lg p-0.5 outline-none"
                   aria-haspopup="menu"

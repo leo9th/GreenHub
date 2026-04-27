@@ -461,8 +461,8 @@ export default function Home() {
   }, [slugsToShow, loadPageForSlug, selectedCondition, globalSearchTerm, listingSort, priceRange, moreFilters]);
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="mx-auto max-w-7xl px-4 py-6">
+    <div className="h-screen overflow-y-hidden bg-gray-50">
+      <div className="mx-auto h-full max-w-7xl overflow-y-hidden px-4 py-6">
         <div className="mb-4 flex items-center justify-between">
           <h1 className="text-xl font-semibold text-gray-900">Featured Products</h1>
           <Link to="/products" className="text-sm font-medium text-[#16a34a] hover:underline">

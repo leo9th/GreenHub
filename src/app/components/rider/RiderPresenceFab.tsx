@@ -41,6 +41,7 @@ export default function RiderPresenceFab() {
   const [isDragging, setIsDragging] = useState(false);
   const [mode, setMode] = useState<RiderFabMode>("booking");
   const [pos, setPos] = useState<Pos>(() => getDefaultPos());
+  const dragStartPosRef = useRef<Pos>(getDefaultPos());
   const suppressClickRef = useRef(false);
   const lastErrorRef = useRef<string | null>(null);
   const fabStorageKey = useMemo(() => (currentUserId ? `fab_position_${currentUserId}` : null), [currentUserId]);
@@ -112,12 +113,14 @@ export default function RiderPresenceFab() {
   }, [fabStorageKey]);
 
   const dragBounds = useMemo(() => {
-    if (typeof window === "undefined") return { left: FAB_MARGIN_PX, top: FAB_MIN_Y_PX, right: FAB_MARGIN_PX, bottom: FAB_MIN_Y_PX };
+    if (typeof window === "undefined") return { left: 0, top: 0, right: 0, bottom: 0 };
+    const maxX = Math.max(FAB_MARGIN_PX, window.innerWidth - FAB_SIZE_PX - FAB_MARGIN_PX);
+    const maxY = Math.max(FAB_MIN_Y_PX, window.innerHeight - FAB_SIZE_PX);
     return {
-      left: FAB_MARGIN_PX,
-      top: FAB_MIN_Y_PX,
-      right: Math.max(FAB_MARGIN_PX, window.innerWidth - FAB_SIZE_PX - FAB_MARGIN_PX),
-      bottom: Math.max(FAB_MIN_Y_PX, window.innerHeight - FAB_SIZE_PX),
+      left: FAB_MARGIN_PX - pos.x,
+      top: FAB_MIN_Y_PX - pos.y,
+      right: maxX - pos.x,
+      bottom: maxY - pos.y,
     };
   }, [pos.x, pos.y]);
 
@@ -132,13 +135,14 @@ export default function RiderPresenceFab() {
       dragMomentum={false}
       dragElastic={0}
       onDragStart={() => {
+        dragStartPosRef.current = pos;
         setIsDragging(true);
         suppressClickRef.current = true;
       }}
       onDragEnd={(_, info) => {
         const next = clampPos({
-          x: info.point.x - FAB_SIZE_PX / 2,
-          y: info.point.y - FAB_SIZE_PX / 2,
+          x: dragStartPosRef.current.x + info.offset.x,
+          y: dragStartPosRef.current.y + info.offset.y,
         });
         setPos(next);
         persistPos(next);

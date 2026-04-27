@@ -50,7 +50,7 @@ export default function TopNav() {
   const bookGoRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
+    function handleClickOutside(event: PointerEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setShowDropdown(false);
       }
@@ -64,8 +64,8 @@ export default function TopNav() {
         setShowBookGoMenu(false);
       }
     }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    document.addEventListener("pointerdown", handleClickOutside);
+    return () => document.removeEventListener("pointerdown", handleClickOutside);
   }, []);
 
   const handleSignOut = async () => {
@@ -499,13 +499,14 @@ export default function TopNav() {
               <div className="relative border-l border-gray-200/30 pl-1.5 dark:border-zinc-700/50 sm:pl-2 md:pl-3" ref={dropdownRef}>
                 <button
                   type="button"
-                  onClick={() => {
-                    setShowDropdown(!showDropdown);
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setShowDropdown((prev) => !prev);
                     setShowNotifications(false);
                     setMobileMenuOpen(false);
                     setShowBookGoMenu(false);
                   }}
-                className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg p-1 sm:h-11 sm:w-11 sm:p-1.5 outline-none transition-colors ${contrastIconClass} ${themeBtnHover}`}
+                  className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg p-1 sm:h-11 sm:w-11 sm:p-1.5 outline-none transition-colors ${contrastIconClass} ${themeBtnHover}`}
                   aria-haspopup="menu"
                   aria-expanded={showDropdown}
                   aria-label="Account menu"

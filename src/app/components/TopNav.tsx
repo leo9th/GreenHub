@@ -187,7 +187,9 @@ export default function TopNav() {
   const themeBtnHover = isHome ? "hover:bg-white/15" : "hover:bg-gray-100 dark:hover:bg-zinc-800";
 
   const navIconClass = `h-4 w-4 sm:h-5 sm:w-5 shrink-0 transition-colors ${iconClass}`;
-  const countBadgeClass = "absolute -top-0.5 -right-1 text-[10px] font-bold leading-none text-red-500";
+  const countBadgeClass =
+    "absolute -top-0.5 -right-1.5 p-0 text-[10px] font-bold leading-none text-red-500 dark:text-red-400";
+  const contrastIconClass = isHome ? "text-white" : "text-gray-600 dark:text-gray-300";
 
   const messageBadgeEl =
     messageUnread > 0 ? (
@@ -230,7 +232,7 @@ export default function TopNav() {
                 setShowNotifications(false);
                 setShowBookGoMenu(false);
               }}
-              className={`flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg p-1 outline-none transition-colors ${iconClass} ${themeBtnHover}`}
+                className={`flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg p-1 outline-none transition-colors ${contrastIconClass} ${themeBtnHover}`}
               aria-expanded={mobileMenuOpen}
               aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
             >
@@ -363,7 +365,7 @@ export default function TopNav() {
                 setShowDropdown(false);
                 setMobileMenuOpen(false);
               }}
-              className={`relative flex min-h-[44px] min-w-[44px] items-center justify-center gap-1 rounded-lg px-1.5 py-0.5 outline-none transition-colors ${iconClass} ${themeBtnHover}`}
+              className={`relative flex min-h-[44px] min-w-[44px] items-center justify-center gap-1 rounded-lg px-1.5 py-0.5 outline-none transition-colors ${contrastIconClass} ${themeBtnHover}`}
               aria-haspopup="menu"
               aria-expanded={showBookGoMenu}
               aria-label="bookGo menu"
@@ -411,7 +413,7 @@ export default function TopNav() {
                   setMobileMenuOpen(false);
                   setShowBookGoMenu(false);
                 }}
-                className="relative flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg p-0.5 outline-none"
+                className={`relative flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg p-0.5 outline-none transition-colors ${contrastIconClass} ${themeBtnHover}`}
                 aria-label="Notifications"
               >
                 <span className="relative inline-flex">
@@ -521,7 +523,7 @@ export default function TopNav() {
                     setMobileMenuOpen(false);
                     setShowBookGoMenu(false);
                   }}
-                  className="relative flex items-center gap-2 rounded-lg p-0.5 outline-none"
+                className={`relative flex items-center gap-2 rounded-lg p-0.5 outline-none transition-colors ${contrastIconClass} ${themeBtnHover}`}
                   aria-haspopup="menu"
                   aria-expanded={showDropdown}
                   aria-label="Account menu"

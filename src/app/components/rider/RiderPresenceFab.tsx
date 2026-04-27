@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "motion/react";
 import { useNavigate } from "react-router";
 import { Bike, MapPin, ShoppingBag, X } from "lucide-react";
@@ -7,21 +7,26 @@ import { useRiderPresence } from "../../hooks/useRiderPresence";
 import { normalizeRiderFabMode, resolveInitialRiderFabMode, type RiderFabMode, riderFabModeStorageKey } from "../../utils/riderFabMode";
 
 type Pos = { x: number; y: number };
-type Edge = "left" | "right";
-type SavedFabPos = { x: number; y: number; edge: Edge };
-const STORAGE_KEY = "gh_rider_presence_fab_pos";
+type SavedFabPos = { x: number; y: number };
 const FAB_SIZE_PX = 72;
-const FAB_MIN_X_PX = 8;
+const FAB_MARGIN_PX = 16;
 const FAB_MIN_Y_PX = 80;
-const LONG_PRESS_MS = 200;
-const DRAG_START_THRESHOLD_PX = 5;
+const DRAG_SUPPRESS_CLICK_MS = 120;
+
+function getDefaultPos(): Pos {
+  if (typeof window === "undefined") return { x: FAB_MARGIN_PX, y: 220 };
+  return {
+    x: Math.max(FAB_MARGIN_PX, window.innerWidth - FAB_SIZE_PX - FAB_MARGIN_PX),
+    y: Math.max(FAB_MIN_Y_PX, window.innerHeight - FAB_SIZE_PX - FAB_MARGIN_PX),
+  };
+}
 
 function clampPos(pos: Pos): Pos {
   if (typeof window === "undefined") return pos;
   const w = window.innerWidth;
   const h = window.innerHeight;
   return {
-    x: Math.min(Math.max(FAB_MIN_X_PX, pos.x), Math.max(FAB_MIN_X_PX, w - FAB_SIZE_PX)),
+    x: Math.min(Math.max(FAB_MARGIN_PX, pos.x), Math.max(FAB_MARGIN_PX, w - FAB_SIZE_PX - FAB_MARGIN_PX)),
     y: Math.min(Math.max(FAB_MIN_Y_PX, pos.y), Math.max(FAB_MIN_Y_PX, h - FAB_SIZE_PX)),
   };
 }
@@ -35,43 +40,10 @@ export default function RiderPresenceFab() {
   const [isPanelOpen, setIsPanelOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [mode, setMode] = useState<RiderFabMode>("booking");
-  const [edge, setEdge] = useState<Edge>("left");
-  const [pos, setPos] = useState<Pos>(() => {
-    if (typeof window === "undefined") return { x: 16, y: 220 };
-    try {
-      const raw = window.localStorage.getItem(STORAGE_KEY);
-      if (!raw) return { x: 16, y: 220 };
-      const parsed = JSON.parse(raw) as Partial<SavedFabPos>;
-      if (typeof parsed?.x !== "number" || typeof parsed?.y !== "number") return { x: 16, y: 220 };
-      return clampPos({ x: parsed.x, y: parsed.y });
-    } catch {
-      return { x: 16, y: 220 };
-    }
-  });
-  const edgeRef = useRef<Edge>("left");
-  const dragRef = useRef<{
-    pressed: boolean;
-    longPressReady: boolean;
-    dragging: boolean;
-    startX: number;
-    startY: number;
-    offsetX: number;
-    offsetY: number;
-    timerId: ReturnType<typeof setTimeout> | null;
-    moveCleanup: (() => void) | null;
-  }>({
-    pressed: false,
-    longPressReady: false,
-    dragging: false,
-    startX: 0,
-    startY: 0,
-    offsetX: 0,
-    offsetY: 0,
-    timerId: null,
-    moveCleanup: null,
-  });
+  const [pos, setPos] = useState<Pos>(() => getDefaultPos());
   const suppressClickRef = useRef(false);
   const lastErrorRef = useRef<string | null>(null);
+  const fabStorageKey = useMemo(() => (currentUserId ? `fab_position_${currentUserId}` : null), [currentUserId]);
 
   const applyMode = (nextMode: RiderFabMode) => {
     const normalized: RiderFabMode = nextMode === "rider" && !isRiderCapable ? "booking" : nextMode;
@@ -81,135 +53,23 @@ export default function RiderPresenceFab() {
     window.localStorage.setItem(riderFabModeStorageKey(currentUserId), normalized);
   };
 
-  const persistPos = (next: Pos, nextEdge: Edge) => {
+  const persistPos = (next: Pos) => {
     if (typeof window === "undefined") return;
-    const payload: SavedFabPos = { x: next.x, y: next.y, edge: nextEdge };
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-  };
-
-  const snapToEdge = (draft: Pos): { snapped: Pos; nextEdge: Edge } => {
-    if (typeof window === "undefined") return { snapped: draft, nextEdge: edgeRef.current };
-    const w = window.innerWidth;
-    const h = window.innerHeight;
-    const nextEdge: Edge = draft.x + FAB_SIZE_PX / 2 < w / 2 ? "left" : "right";
-    const snapped = clampPos({
-      x: nextEdge === "left" ? FAB_MIN_X_PX : Math.max(FAB_MIN_X_PX, w - FAB_SIZE_PX),
-      y: Math.min(Math.max(FAB_MIN_Y_PX, draft.y), Math.max(FAB_MIN_Y_PX, h - FAB_SIZE_PX)),
-    });
-    return { snapped, nextEdge };
-  };
-
-  const moveDrag = (clientX: number, clientY: number) => {
-    const st = dragRef.current;
-    if (!st.pressed) return;
-    const dx = clientX - st.startX;
-    const dy = clientY - st.startY;
-    const distance = Math.hypot(dx, dy);
-
-    if (!st.dragging) {
-      if (!st.longPressReady || distance <= DRAG_START_THRESHOLD_PX) return;
-      st.dragging = true;
-      setIsDragging(true);
-    }
-
-    setPos(
-      clampPos({
-        x: clientX - st.offsetX,
-        y: clientY - st.offsetY,
-      }),
-    );
-  };
-
-  const endDrag = () => {
-    const st = dragRef.current;
-    if (st.timerId) {
-      clearTimeout(st.timerId);
-      st.timerId = null;
-    }
-    st.moveCleanup?.();
-    st.moveCleanup = null;
-
-    if (st.dragging) {
-      const { snapped, nextEdge } = snapToEdge(pos);
-      setPos(snapped);
-      setEdge(nextEdge);
-      edgeRef.current = nextEdge;
-      persistPos(snapped, nextEdge);
-      suppressClickRef.current = true;
-      window.setTimeout(() => {
-        suppressClickRef.current = false;
-      }, 0);
-    }
-
-    st.pressed = false;
-    st.longPressReady = false;
-    st.dragging = false;
-    setIsDragging(false);
-  };
-
-  const beginPress = (clientX: number, clientY: number) => {
-    const st = dragRef.current;
-    st.pressed = true;
-    st.longPressReady = false;
-    st.dragging = false;
-    st.startX = clientX;
-    st.startY = clientY;
-    st.offsetX = clientX - pos.x;
-    st.offsetY = clientY - pos.y;
-    if (st.timerId) clearTimeout(st.timerId);
-    st.timerId = window.setTimeout(() => {
-      st.longPressReady = true;
-    }, LONG_PRESS_MS);
-  };
-
-  const onMouseDown = (e: { clientX: number; clientY: number }) => {
-    beginPress(e.clientX, e.clientY);
-    const handleMove = (ev: MouseEvent) => moveDrag(ev.clientX, ev.clientY);
-    const handleUp = () => endDrag();
-    window.addEventListener("mousemove", handleMove);
-    window.addEventListener("mouseup", handleUp, { once: true });
-    dragRef.current.moveCleanup = () => {
-      window.removeEventListener("mousemove", handleMove);
-      window.removeEventListener("mouseup", handleUp);
-    };
-  };
-
-  const onTouchStart = (e: { touches: Array<{ clientX: number; clientY: number }> }) => {
-    const touch = e.touches[0];
-    if (!touch) return;
-    beginPress(touch.clientX, touch.clientY);
-    const handleMove = (ev: TouchEvent) => {
-      const t = ev.touches[0];
-      if (!t) return;
-      moveDrag(t.clientX, t.clientY);
-      if (dragRef.current.dragging) ev.preventDefault();
-    };
-    const handleEnd = () => endDrag();
-    window.addEventListener("touchmove", handleMove, { passive: false });
-    window.addEventListener("touchend", handleEnd, { once: true });
-    window.addEventListener("touchcancel", handleEnd, { once: true });
-    dragRef.current.moveCleanup = () => {
-      window.removeEventListener("touchmove", handleMove);
-      window.removeEventListener("touchend", handleEnd);
-      window.removeEventListener("touchcancel", handleEnd);
-    };
+    if (!fabStorageKey) return;
+    const payload: SavedFabPos = { x: next.x, y: next.y };
+    window.localStorage.setItem(fabStorageKey, JSON.stringify(payload));
   };
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     const onResize = () => {
-      const clamped = clampPos(pos);
-      const snappedX =
-        edgeRef.current === "left"
-          ? FAB_MIN_X_PX
-          : Math.max(FAB_MIN_X_PX, window.innerWidth - FAB_SIZE_PX);
-      const next = clampPos({ x: snappedX, y: clamped.y });
+      const next = clampPos(pos);
       setPos(next);
-      persistPos(next, edgeRef.current);
+      persistPos(next);
     };
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
-  }, [pos]);
+  }, [pos, fabStorageKey]);
 
   useEffect(() => {
     if (!error || error === lastErrorRef.current) return;
@@ -230,31 +90,67 @@ export default function RiderPresenceFab() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    try {
-      const raw = window.localStorage.getItem(STORAGE_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as Partial<SavedFabPos>;
-      const restoredEdge: Edge = parsed.edge === "right" ? "right" : "left";
-      setEdge(restoredEdge);
-      edgeRef.current = restoredEdge;
-    } catch {
-      setEdge("left");
-      edgeRef.current = "left";
+    if (!fabStorageKey) {
+      setPos(getDefaultPos());
+      return;
     }
-  }, []);
+    try {
+      const raw = window.localStorage.getItem(fabStorageKey);
+      if (!raw) {
+        setPos(getDefaultPos());
+        return;
+      }
+      const parsed = JSON.parse(raw) as Partial<SavedFabPos>;
+      if (typeof parsed.x !== "number" || typeof parsed.y !== "number") {
+        setPos(getDefaultPos());
+        return;
+      }
+      setPos(clampPos({ x: parsed.x, y: parsed.y }));
+    } catch {
+      setPos(getDefaultPos());
+    }
+  }, [fabStorageKey]);
+
+  const dragBounds = useMemo(() => {
+    if (typeof window === "undefined") return { left: FAB_MARGIN_PX, top: FAB_MIN_Y_PX, right: FAB_MARGIN_PX, bottom: FAB_MIN_Y_PX };
+    return {
+      left: FAB_MARGIN_PX,
+      top: FAB_MIN_Y_PX,
+      right: Math.max(FAB_MARGIN_PX, window.innerWidth - FAB_SIZE_PX - FAB_MARGIN_PX),
+      bottom: Math.max(FAB_MIN_Y_PX, window.innerHeight - FAB_SIZE_PX),
+    };
+  }, [pos.x, pos.y]);
 
   if (!hasUser) return null;
 
   return (
-    <div
-      className="fixed z-[80]"
-      style={{ left: `${pos.x}px`, top: `${pos.y}px`, touchAction: "manipulation" }}
+    <motion.div
+      className="fixed left-0 top-0 z-[80]"
+      style={{ x: pos.x, y: pos.y, touchAction: "manipulation" }}
+      drag
+      dragConstraints={dragBounds}
+      dragMomentum={false}
+      dragElastic={0}
+      onDragStart={() => {
+        setIsDragging(true);
+        suppressClickRef.current = true;
+      }}
+      onDragEnd={(_, info) => {
+        const next = clampPos({
+          x: info.point.x - FAB_SIZE_PX / 2,
+          y: info.point.y - FAB_SIZE_PX / 2,
+        });
+        setPos(next);
+        persistPos(next);
+        window.setTimeout(() => {
+          suppressClickRef.current = false;
+          setIsDragging(false);
+        }, DRAG_SUPPRESS_CLICK_MS);
+      }}
     >
       <motion.button
         type="button"
         disabled={isBusy && isPanelOpen}
-        onMouseDown={onMouseDown}
-        onTouchStart={onTouchStart}
         onClick={() => {
           if (isDragging || suppressClickRef.current) return;
           if (mode === "booking") {
@@ -393,6 +289,6 @@ export default function RiderPresenceFab() {
           <p className="mt-2 text-[10px] text-slate-500">Tip: drag to move this button.</p>
         </div>
       ) : null}
-    </div>
+    </motion.div>
   );
 }

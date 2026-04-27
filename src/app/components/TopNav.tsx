@@ -196,6 +196,52 @@ export default function TopNav() {
   const contrastIconClass = isHome ? "text-white" : "text-gray-600 dark:text-gray-300";
   const totalUnread = (notificationUnreadCount || 0) + (messageUnread || 0);
 
+  useEffect(() => {
+    // #region agent log
+    void fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6b8d89" },
+      body: JSON.stringify({
+        sessionId: "6b8d89",
+        runId: "run1",
+        hypothesisId: "H1",
+        location: "TopNav.tsx:render-state",
+        message: "TopNav render state snapshot",
+        data: {
+          pathname: location.pathname,
+          isHidden,
+          hasSession: Boolean(session),
+          totalUnread,
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+  }, [isHidden, location.pathname, session, totalUnread]);
+
+  useEffect(() => {
+    // #region agent log
+    void fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6b8d89" },
+      body: JSON.stringify({
+        sessionId: "6b8d89",
+        runId: "run1",
+        hypothesisId: "H2",
+        location: "TopNav.tsx:menu-state",
+        message: "TopNav menu state changed",
+        data: {
+          showDropdown,
+          showNotifications,
+          mobileMenuOpen,
+          showBookGoMenu,
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+  }, [showDropdown, showNotifications, mobileMenuOpen, showBookGoMenu]);
+
   return (
     <div className={`${bgClass} sticky top-0 z-[45] transition-colors duration-200`}>
       <div className="h-16 px-2 sm:px-4 max-w-7xl mx-auto flex flex-nowrap items-center justify-between gap-1 md:gap-2 min-w-0 overflow-x-hidden overflow-y-visible">
@@ -358,6 +404,21 @@ export default function TopNav() {
             <button
               type="button"
               onClick={() => {
+                // #region agent log
+                void fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6b8d89" },
+                  body: JSON.stringify({
+                    sessionId: "6b8d89",
+                    runId: "run1",
+                    hypothesisId: "H3",
+                    location: "TopNav.tsx:bookgo-click",
+                    message: "bookGo icon clicked",
+                    data: { nextOpen: !showBookGoMenu },
+                    timestamp: Date.now(),
+                  }),
+                }).catch(() => {});
+                // #endregion
                 setShowBookGoMenu((v) => !v);
                 setShowNotifications(false);
                 setShowDropdown(false);
@@ -402,6 +463,21 @@ export default function TopNav() {
               <button
                 type="button"
                 onClick={() => {
+                  // #region agent log
+                  void fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6b8d89" },
+                    body: JSON.stringify({
+                      sessionId: "6b8d89",
+                      runId: "run1",
+                      hypothesisId: "H3",
+                      location: "TopNav.tsx:notifications-click",
+                      message: "Notifications icon clicked",
+                      data: { currentOpen: showNotifications, totalUnread },
+                      timestamp: Date.now(),
+                    }),
+                  }).catch(() => {});
+                  // #endregion
                   void markAllNotificationsReadAndRefresh().then(({ error }) => {
                     if (error) notifyMarkAllReadError(error);
                   });
@@ -504,6 +580,21 @@ export default function TopNav() {
                 <button
                   type="button"
                   onClick={() => {
+                    // #region agent log
+                    void fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6b8d89" },
+                      body: JSON.stringify({
+                        sessionId: "6b8d89",
+                        runId: "run1",
+                        hypothesisId: "H3",
+                        location: "TopNav.tsx:account-click",
+                        message: "Account icon clicked",
+                        data: { nextOpen: !showDropdown },
+                        timestamp: Date.now(),
+                      }),
+                    }).catch(() => {});
+                    // #endregion
                     setShowDropdown((prev) => !prev);
                     setShowNotifications(false);
                     setMobileMenuOpen(false);

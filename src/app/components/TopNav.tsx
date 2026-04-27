@@ -50,22 +50,28 @@ export default function TopNav() {
   const bookGoRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    function handleClickOutside(event: PointerEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+    function handleClickOutside(event: MouseEvent | TouchEvent) {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (dropdownRef.current && !dropdownRef.current.contains(target)) {
         setShowDropdown(false);
       }
-      if (notifRef.current && !notifRef.current.contains(event.target as Node)) {
+      if (notifRef.current && !notifRef.current.contains(target)) {
         setShowNotifications(false);
       }
-      if (mobileMenuRef.current && !mobileMenuRef.current.contains(event.target as Node)) {
+      if (mobileMenuRef.current && !mobileMenuRef.current.contains(target)) {
         setMobileMenuOpen(false);
       }
-      if (bookGoRef.current && !bookGoRef.current.contains(event.target as Node)) {
+      if (bookGoRef.current && !bookGoRef.current.contains(target)) {
         setShowBookGoMenu(false);
       }
     }
-    document.addEventListener("pointerdown", handleClickOutside);
-    return () => document.removeEventListener("pointerdown", handleClickOutside);
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("touchstart", handleClickOutside, { passive: true });
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("touchstart", handleClickOutside);
+    };
   }, []);
 
   const handleSignOut = async () => {
@@ -499,8 +505,7 @@ export default function TopNav() {
               <div className="relative border-l border-gray-200/30 pl-1.5 dark:border-zinc-700/50 sm:pl-2 md:pl-3" ref={dropdownRef}>
                 <button
                   type="button"
-                  onClick={(event) => {
-                    event.stopPropagation();
+                  onClick={() => {
                     setShowDropdown((prev) => !prev);
                     setShowNotifications(false);
                     setMobileMenuOpen(false);

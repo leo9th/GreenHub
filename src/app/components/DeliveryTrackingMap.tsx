@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import { MapContainer, Marker, Polyline, Popup, TileLayer, useMap, useMapEvents } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
@@ -31,15 +31,40 @@ interface DeliveryTrackingMapProps {
 function RecenterMap({
   centerLat,
   centerLng,
+  canAutoCenter,
 }: {
   centerLat: number;
   centerLng: number;
+  canAutoCenter: boolean;
 }) {
   const map = useMap();
+  const isInteractingRef = useRef(false);
 
   useEffect(() => {
+    const onMoveStart = () => {
+      isInteractingRef.current = true;
+    };
+    const onMoveEnd = () => {
+      window.setTimeout(() => {
+        isInteractingRef.current = false;
+      }, 220);
+    };
+    map.on("movestart", onMoveStart);
+    map.on("zoomstart", onMoveStart);
+    map.on("moveend", onMoveEnd);
+    map.on("zoomend", onMoveEnd);
+    return () => {
+      map.off("movestart", onMoveStart);
+      map.off("zoomstart", onMoveStart);
+      map.off("moveend", onMoveEnd);
+      map.off("zoomend", onMoveEnd);
+    };
+  }, [map]);
+
+  useEffect(() => {
+    if (!canAutoCenter || isInteractingRef.current) return;
     map.setView([centerLat, centerLng], map.getZoom(), { animate: true });
-  }, [centerLat, centerLng, map]);
+  }, [centerLat, centerLng, map, canAutoCenter]);
 
   return null;
 }
@@ -61,7 +86,16 @@ function CenterReporter({
   return null;
 }
 
-export default function DeliveryTrackingMap({
+function createDotMarker(color: string): L.DivIcon {
+  return L.divIcon({
+    className: "gh-map-dot-marker",
+    html: `<span style="display:block;width:14px;height:14px;border-radius:9999px;background:${color};border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.35);"></span>`,
+    iconSize: [14, 14],
+    iconAnchor: [7, 7],
+  });
+}
+
+function DeliveryTrackingMap({
   pickupLat,
   pickupLng,
   dropoffLat,
@@ -78,8 +112,12 @@ export default function DeliveryTrackingMap({
   onDropoffChange,
   followPosition = true,
 }: DeliveryTrackingMapProps) {
+  const [isMapReady, setIsMapReady] = useState(false);
   const centerLat = riderLat ?? pickupLat ?? dropoffLat ?? 9.082;
   const centerLng = riderLng ?? pickupLng ?? dropoffLng ?? 8.6753;
+  const pickupIcon = useMemo(() => createDotMarker("#16a34a"), []);
+  const dropoffIcon = useMemo(() => createDotMarker("#dc2626"), []);
+  const riderIcon = useMemo(() => createDotMarker("#2563eb"), []);
   const routePoints =
     showRoute && pickupLat != null && pickupLng != null && dropoffLat != null && dropoffLng != null
       ? ([
@@ -90,6 +128,9 @@ export default function DeliveryTrackingMap({
 
   return (
     <div className="relative h-full w-full">
+      {!isMapReady ? (
+        <div className="absolute inset-0 z-[400] animate-pulse rounded-xl bg-gradient-to-br from-gray-100 to-gray-200" />
+      ) : null}
       <MapContainer
         center={[centerLat, centerLng]}
         zoom={13}
@@ -97,8 +138,9 @@ export default function DeliveryTrackingMap({
         style={{ height: "100%", width: "100%", minHeight: "300px" }}
         scrollWheelZoom={interactive}
         zoomControl={interactive}
+        whenReady={() => setIsMapReady(true)}
       >
-      {followPosition ? <RecenterMap centerLat={centerLat} centerLng={centerLng} /> : null}
+      {followPosition ? <RecenterMap centerLat={centerLat} centerLng={centerLng} canAutoCenter={followPosition} /> : null}
       <CenterReporter
         enabled={interactive && interactionMode === "fixedPin"}
         onCenterChange={(lat, lng) => {
@@ -113,6 +155,7 @@ export default function DeliveryTrackingMap({
       {pickupLat != null && pickupLng != null ? (
         <Marker
           position={[pickupLat, pickupLng]}
+          icon={pickupIcon}
           draggable={interactive && interactionMode === "markers"}
           eventHandlers={{
             dragend: (event) => {
@@ -128,6 +171,7 @@ export default function DeliveryTrackingMap({
       {dropoffLat != null && dropoffLng != null ? (
         <Marker
           position={[dropoffLat, dropoffLng]}
+          icon={dropoffIcon}
           draggable={interactive && interactionMode === "markers"}
           eventHandlers={{
             dragend: (event) => {
@@ -141,7 +185,7 @@ export default function DeliveryTrackingMap({
         </Marker>
       ) : null}
       {riderLat != null && riderLng != null ? (
-        <Marker position={[riderLat, riderLng]}>
+        <Marker position={[riderLat, riderLng]} icon={riderIcon}>
           <Popup>Rider is here</Popup>
         </Marker>
       ) : null}
@@ -163,6 +207,8 @@ export default function DeliveryTrackingMap({
     </div>
   );
 }
+const MemoizedDeliveryTrackingMap = memo(DeliveryTrackingMap);
+export default MemoizedDeliveryTrackingMap;
 
 function MapPinIcon({ color }: { color: string }) {
   return (

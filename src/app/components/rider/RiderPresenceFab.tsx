@@ -185,7 +185,15 @@ export default function RiderPresenceFab() {
               : "border-amber-400/40 bg-amber-950/85 text-amber-100"
             : "border-indigo-400/40 bg-indigo-950/85 text-indigo-100"
         }`}
-        title={mode === "booking" ? "GreenGo booking mode" : canUseRiderPresence ? (isOnline ? "On Duty" : "Offline") : "Rider mode"}
+        title={
+          mode === "booking"
+            ? "GreenGo booking mode"
+            : canUseRiderPresence
+              ? isOnline
+                ? "Online"
+                : "Go online to receive delivery requests"
+              : "Rider mode"
+        }
         animate={mode === "rider" && canUseRiderPresence && isOnline ? { scale: [1, 1.05, 1] } : { scale: 1 }}
         transition={mode === "rider" && canUseRiderPresence && isOnline ? { duration: 3, repeat: Infinity, ease: "easeInOut" } : { duration: 0.2 }}
         whileTap={{ scale: 0.95 }}
@@ -205,7 +213,7 @@ export default function RiderPresenceFab() {
         </span>
         <span className="min-w-0 text-left">
           <span className="block text-[11px] font-semibold leading-tight">
-            {mode === "booking" ? "GreenGo Booking" : canUseRiderPresence ? (isOnline ? "On Duty" : "Offline") : "Rider Mode"}
+            {mode === "booking" ? "GreenGo Booking" : canUseRiderPresence ? (isOnline ? "Online" : "Offline") : "Rider Mode"}
           </span>
           <span className="block text-[10px] opacity-80 leading-tight">
             {mode === "booking" ? (
@@ -236,7 +244,12 @@ export default function RiderPresenceFab() {
       >
         Switch to {mode === "booking" ? "Rider" : "GreenGo"} mode
       </button>
-      {mode === "rider" && isPresenceTableMissing ? (
+      {mode === "rider" && !canUseRiderPresence ? (
+        <div className="mt-2 w-64 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[10px] text-amber-100">
+          Rider approval required before going online to receive delivery requests.
+        </div>
+      ) : null}
+      {mode === "rider" && canUseRiderPresence && isPresenceTableMissing ? (
         <div className="mt-2 w-64 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[10px] text-amber-100">
           Rider presence is unavailable: missing backend table
           <code className="mx-1 rounded bg-amber-900/40 px-1 py-0.5">rider_presence</code>.
@@ -257,8 +270,11 @@ export default function RiderPresenceFab() {
           </div>
           <p>
             Status:{" "}
-            <span className={canUseRiderPresence && isOnline ? "text-emerald-300" : "text-slate-400"}>
-              {canUseRiderPresence ? (isOnline ? "Online" : "Offline") : "Unavailable"}
+            <span className="inline-flex items-center gap-1.5">
+              <span className={`h-2 w-2 rounded-full ${canUseRiderPresence && isOnline ? "bg-emerald-400" : "bg-rose-400"}`} />
+              <span className={canUseRiderPresence && isOnline ? "text-emerald-300" : "text-slate-400"}>
+                {canUseRiderPresence ? (isOnline ? "Online" : "Offline") : "Offline"}
+              </span>
             </span>
           </p>
           {canUseRiderPresence ? <p className="mt-1 text-[10px] text-emerald-300/80">Live status for GreenGo rider dispatch.</p> : null}

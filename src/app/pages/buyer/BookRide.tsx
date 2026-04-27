@@ -1,8 +1,8 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, Suspense, lazy, memo, useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { ArrowUpDown, CalendarDays, Clock3, Loader2, MapPin, Navigation, ShieldCheck, X } from "lucide-react";
 import { toast } from "sonner";
-import DeliveryTrackingMap from "../../components/DeliveryTrackingMap";
+const DeliveryTrackingMap = lazy(() => import("../../components/DeliveryTrackingMap"));
 
 type PackageType = "small" | "medium" | "large" | "xlarge";
 
@@ -93,7 +93,45 @@ function pushRecentLocation(value: string) {
   window.localStorage.setItem(RECENT_LOCATIONS_KEY, JSON.stringify(next));
 }
 
-export default function BookRide() {
+function RideOptionCard({
+  ride,
+  distanceKm,
+  selected,
+  onSelect,
+}: {
+  ride: (typeof RIDE_OPTIONS)[number];
+  distanceKm: number | null;
+  selected: boolean;
+  onSelect: (type: PackageType) => void;
+}) {
+  const ridePrice = useMemo(
+    () => (distanceKm == null ? null : Math.round((1500 + distanceKm * 320) * PACKAGE_MULTIPLIER[ride.type])),
+    [distanceKm, ride.type],
+  );
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(ride.type)}
+      className={`flex min-h-[92px] w-full items-center justify-between rounded-2xl border p-3 text-left transition ${
+        selected
+          ? "border-emerald-500 bg-emerald-50 ring-2 ring-emerald-100"
+          : "border-gray-200 bg-white hover:border-emerald-200 hover:bg-emerald-50/30"
+      }`}
+    >
+      <div>
+        <p className="text-sm font-medium text-gray-900">{ride.name}</p>
+        <p className="text-xs text-gray-500">{ride.description}</p>
+        <p className="mt-1 inline-flex items-center gap-1 text-xs text-gray-500">
+          <Clock3 className="h-3.5 w-3.5 text-emerald-600" /> {ride.etaLabel} · {ride.seats} seats
+        </p>
+      </div>
+      <p className="text-base font-bold text-emerald-700">{ridePrice == null ? "—" : `NGN ${ridePrice.toLocaleString()}`}</p>
+    </button>
+  );
+}
+const MemoRideOptionCard = memo(RideOptionCard);
+
+function BookRide() {
   const navigate = useNavigate();
   const [isMapExpanded, setIsMapExpanded] = useState(false);
   const [mapInteractionMode, setMapInteractionMode] = useState<"fixedPin" | "markers">("fixedPin");
@@ -147,31 +185,53 @@ export default function BookRide() {
     return undefined;
   }, []);
 
-  const runPickupSearch = async () => {
+  const runPickupSearch = useCallback(async (query: string) => {
+    if (query.trim().length < 3) {
+      setPickupSuggestions([]);
+      return;
+    }
     setIsSearchingPickup(true);
     try {
-      setPickupSuggestions(await searchAddressSuggestions(pickupAddress));
+      setPickupSuggestions(await searchAddressSuggestions(query));
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Search failed");
       setPickupSuggestions([]);
     } finally {
       setIsSearchingPickup(false);
     }
-  };
+  }, []);
 
-  const runDropoffSearch = async () => {
+  const runDropoffSearch = useCallback(async (query: string) => {
+    if (query.trim().length < 3) {
+      setDropoffSuggestions([]);
+      return;
+    }
     setIsSearchingDropoff(true);
     try {
-      setDropoffSuggestions(await searchAddressSuggestions(dropoffAddress));
+      setDropoffSuggestions(await searchAddressSuggestions(query));
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Search failed");
       setDropoffSuggestions([]);
     } finally {
       setIsSearchingDropoff(false);
     }
-  };
+  }, []);
 
-  const useCurrentLocation = () => {
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      void runPickupSearch(pickupAddress);
+    }, 300);
+    return () => window.clearTimeout(t);
+  }, [pickupAddress, runPickupSearch]);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      void runDropoffSearch(dropoffAddress);
+    }, 300);
+    return () => window.clearTimeout(t);
+  }, [dropoffAddress, runDropoffSearch]);
+
+  const useCurrentLocation = useCallback(() => {
     if (typeof navigator === "undefined" || !navigator.geolocation) {
       toast.error("Geolocation is not supported by this browser.");
       return;
@@ -191,9 +251,9 @@ export default function BookRide() {
       },
       { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 },
     );
-  };
+  }, []);
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = useCallback((e: FormEvent) => {
     e.preventDefault();
     if (!pickupAddress.trim() || !dropoffAddress.trim()) {
       toast.error("Pickup and dropoff are required.");
@@ -220,16 +280,16 @@ export default function BookRide() {
         },
       },
     });
-  };
+  }, [dropoffAddress, dropoffLat, dropoffLng, estimatedPrice, distanceKm, navigate, packageType, pickupAddress, pickupLat, pickupLng]);
 
-  const openExpandedMap = (field: "pickup" | "dropoff") => {
+  const openExpandedMap = useCallback((field: "pickup" | "dropoff") => {
     setActiveField(field);
     setDraftPickup({ lat: pickupLat, lng: pickupLng });
     setDraftDropoff({ lat: dropoffLat, lng: dropoffLng });
     setIsMapExpanded(true);
-  };
+  }, [pickupLat, pickupLng, dropoffLat, dropoffLng]);
 
-  const applyDraftToActiveField = async () => {
+  const applyDraftToActiveField = useCallback(async () => {
     setIsResolvingAddress(true);
     if (activeField === "pickup") {
       setPickupLat(draftPickup.lat);
@@ -237,6 +297,7 @@ export default function BookRide() {
       if (draftPickup.lat != null && draftPickup.lng != null) {
         const label = await reverseGeocode(draftPickup.lat, draftPickup.lng);
         if (label) setPickupAddress(label);
+        toast.success("Pickup location saved");
       }
       setIsResolvingAddress(false);
       return;
@@ -246,9 +307,10 @@ export default function BookRide() {
     if (draftDropoff.lat != null && draftDropoff.lng != null) {
       const label = await reverseGeocode(draftDropoff.lat, draftDropoff.lng);
       if (label) setDropoffAddress(label);
+      toast.success("Dropoff location saved");
     }
     setIsResolvingAddress(false);
-  };
+  }, [activeField, draftDropoff.lat, draftDropoff.lng, draftPickup.lat, draftPickup.lng]);
 
   const expandedPickupLat = draftPickup.lat ?? pickupLat;
   const expandedPickupLng = draftPickup.lng ?? pickupLng;
@@ -259,15 +321,15 @@ export default function BookRide() {
     <div className="mx-auto w-full max-w-4xl px-3 py-4 md:px-4 md:py-6">
       <div className="overflow-hidden rounded-3xl border border-emerald-100 bg-white shadow-sm">
         <div className="bg-gradient-to-r from-emerald-700 to-emerald-600 px-4 py-5 text-white md:px-6">
-          <h1 className="text-2xl font-bold tracking-tight">Book GreenGo</h1>
-          <p className="mt-1 text-sm text-emerald-50">Choose ride mode and confirm your trip in seconds.</p>
+          <h1 className="text-xl font-bold tracking-tight">Book GreenGo</h1>
+          <p className="mt-1 text-sm font-medium text-emerald-50">Choose ride mode and confirm your trip in seconds.</p>
         </div>
 
-        <form className="space-y-5 p-4 md:p-6" onSubmit={handleSubmit}>
+        <form className="space-y-6 p-4 md:p-6" onSubmit={handleSubmit}>
           <div className="rounded-2xl border border-gray-200 bg-white p-3 md:p-4">
-            <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">Route</label>
+            <label className="text-sm font-medium text-gray-800">Route</label>
             <div className="relative mt-2 rounded-xl border border-gray-200 p-3">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Pickup</p>
+              <p className="text-xs text-gray-500">Pickup</p>
               <div className="mt-1 flex gap-2">
                 <input
                   value={pickupAddress}
@@ -280,7 +342,7 @@ export default function BookRide() {
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none"
                   required
                 />
-                <button type="button" onClick={() => void runPickupSearch()} className="rounded-lg border border-gray-300 px-3 text-xs font-semibold text-gray-700">
+                  <button type="button" onClick={() => void runPickupSearch(pickupAddress)} className="rounded-lg border border-gray-300 px-3 text-xs font-semibold text-gray-700">
                   {isSearchingPickup ? "..." : "Find"}
                 </button>
               </div>
@@ -308,7 +370,7 @@ export default function BookRide() {
               </button>
 
               <div className="mt-3 border-t border-gray-100 pt-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Drop-off</p>
+                <p className="text-xs text-gray-500">Drop-off</p>
                 <div className="mt-1 flex gap-2">
                   <input
                     value={dropoffAddress}
@@ -321,7 +383,7 @@ export default function BookRide() {
                     className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none"
                     required
                   />
-                  <button type="button" onClick={() => void runDropoffSearch()} className="rounded-lg border border-gray-300 px-3 text-xs font-semibold text-gray-700">
+                  <button type="button" onClick={() => void runDropoffSearch(dropoffAddress)} className="rounded-lg border border-gray-300 px-3 text-xs font-semibold text-gray-700">
                     {isSearchingDropoff ? "..." : "Find"}
                   </button>
                 </div>
@@ -386,14 +448,16 @@ export default function BookRide() {
           </div>
 
           <div className="relative overflow-hidden rounded-2xl border border-gray-200">
-            <DeliveryTrackingMap
-              pickupLat={pickupLat}
-              pickupLng={pickupLng}
-              dropoffLat={dropoffLat}
-              dropoffLng={dropoffLng}
-              className="h-[300px] w-full"
-              showRoute
-            />
+            <Suspense fallback={<div className="h-[340px] w-full animate-pulse rounded-xl bg-gradient-to-br from-gray-100 to-gray-200" />}>
+              <DeliveryTrackingMap
+                pickupLat={pickupLat}
+                pickupLng={pickupLng}
+                dropoffLat={dropoffLat}
+                dropoffLng={dropoffLng}
+                className="h-[340px] w-full rounded-xl shadow-sm"
+                showRoute
+              />
+            </Suspense>
             <div className="pointer-events-none absolute left-3 top-3 rounded-full bg-white/95 px-3 py-1.5 text-xs font-semibold text-gray-700 shadow">
               {distanceKm == null ? "Set route points" : `${distanceKm.toFixed(2)} km route`}
             </div>
@@ -401,11 +465,11 @@ export default function BookRide() {
               <div className="rounded-2xl border border-white/80 bg-white/95 p-3 shadow-lg backdrop-blur">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <p className="text-sm font-bold text-gray-900">{selectedRide.name}</p>
+                    <p className="text-sm font-medium text-gray-900">{selectedRide.name}</p>
                     <p className="text-xs text-gray-500">{selectedRide.etaLabel} away</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-lg font-extrabold text-emerald-700">{estimatedPrice == null ? "—" : `NGN ${estimatedPrice.toLocaleString()}`}</p>
+                    <p className="text-2xl font-bold text-emerald-700">{estimatedPrice == null ? "—" : `NGN ${estimatedPrice.toLocaleString()}`}</p>
                     <p className="text-[11px] font-semibold text-gray-500">Cash</p>
                   </div>
                 </div>
@@ -414,34 +478,16 @@ export default function BookRide() {
           </div>
 
           <div>
-            <label className="mb-2 block text-sm font-semibold text-gray-800">Choose Ride Mode</label>
-            <div className="space-y-2">
+            <label className="mb-2 block text-sm font-medium text-gray-800">Choose Ride Mode</label>
+            <div className="space-y-3">
               {RIDE_OPTIONS.map((ride) => (
-                <button
+                <MemoRideOptionCard
                   key={ride.type}
-                  type="button"
-                  onClick={() => setPackageType(ride.type)}
-                  className={`w-full rounded-2xl border p-3 text-left transition ${
-                    packageType === ride.type
-                      ? "border-emerald-500 bg-emerald-50 ring-2 ring-emerald-100"
-                      : "border-gray-200 bg-white hover:border-emerald-200 hover:bg-emerald-50/30"
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <p className="text-base font-bold text-gray-900">{ride.name}</p>
-                      <p className="text-xs text-gray-500">{ride.description}</p>
-                      <p className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-gray-600">
-                        <Clock3 className="h-3.5 w-3.5 text-emerald-600" /> {ride.etaLabel} · {ride.seats} seats
-                      </p>
-                    </div>
-                    <p className="text-sm font-extrabold text-emerald-700">
-                      {distanceKm == null
-                        ? "—"
-                        : `NGN ${Math.round((1500 + distanceKm * 320) * PACKAGE_MULTIPLIER[ride.type]).toLocaleString()}`}
-                    </p>
-                  </div>
-                </button>
+                  ride={ride}
+                  distanceKm={distanceKm}
+                  selected={packageType === ride.type}
+                  onSelect={setPackageType}
+                />
               ))}
             </div>
           </div>
@@ -532,7 +578,7 @@ export default function BookRide() {
             <button
               type="submit"
               disabled={submitting}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-base font-extrabold text-white hover:bg-emerald-700 disabled:opacity-60"
+              className="inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 px-4 py-3 text-base font-extrabold text-white hover:from-emerald-700 hover:to-emerald-600 disabled:opacity-60"
             >
               {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               {submitting ? "Processing..." : `Book ${selectedRide.name}`}
@@ -594,27 +640,29 @@ export default function BookRide() {
           </div>
           <div className="h-[calc(100vh-64px)] p-2 sm:p-3">
             <div className="relative h-full w-full">
-              <DeliveryTrackingMap
-                pickupLat={expandedPickupLat}
-                pickupLng={expandedPickupLng}
-                dropoffLat={expandedDropoffLat}
-                dropoffLng={expandedDropoffLng}
-                className="h-full w-full rounded-xl"
-                interactive
-                interactionMode={mapInteractionMode}
-                activeField={activeField}
-                showRoute
-                followPosition={false}
-                onMapCenterChange={(lat, lng) => {
-                  if (activeField === "pickup") {
-                    setDraftPickup({ lat, lng });
-                  } else {
-                    setDraftDropoff({ lat, lng });
-                  }
-                }}
-                onPickupChange={(lat, lng) => setDraftPickup({ lat, lng })}
-                onDropoffChange={(lat, lng) => setDraftDropoff({ lat, lng })}
-              />
+              <Suspense fallback={<div className="h-full w-full animate-pulse rounded-xl bg-gradient-to-br from-gray-100 to-gray-200" />}>
+                <DeliveryTrackingMap
+                  pickupLat={expandedPickupLat}
+                  pickupLng={expandedPickupLng}
+                  dropoffLat={expandedDropoffLat}
+                  dropoffLng={expandedDropoffLng}
+                  className="h-full w-full rounded-xl shadow-sm"
+                  interactive
+                  interactionMode={mapInteractionMode}
+                  activeField={activeField}
+                  showRoute
+                  followPosition={false}
+                  onMapCenterChange={(lat, lng) => {
+                    if (activeField === "pickup") {
+                      setDraftPickup({ lat, lng });
+                    } else {
+                      setDraftDropoff({ lat, lng });
+                    }
+                  }}
+                  onPickupChange={(lat, lng) => setDraftPickup({ lat, lng })}
+                  onDropoffChange={(lat, lng) => setDraftDropoff({ lat, lng })}
+                />
+              </Suspense>
               <div className="pointer-events-none absolute left-3 top-3 z-[600] rounded-full bg-white/95 px-3 py-2 text-xs font-semibold text-gray-800 shadow">
                 <span className={`mr-2 inline-block h-2.5 w-2.5 rounded-full ${activeField === "pickup" ? "bg-emerald-500" : "bg-violet-600"}`} />
                 Editing {activeField === "pickup" ? "Pickup" : "Dropoff"}
@@ -641,4 +689,5 @@ export default function BookRide() {
     </div>
   );
 }
+export default memo(BookRide);
 

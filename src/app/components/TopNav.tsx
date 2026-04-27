@@ -194,11 +194,11 @@ export default function TopNav() {
 
   return (
     <div className={`${bgClass} sticky top-0 z-[45] transition-colors duration-200`}>
-      <div className="h-16 px-1.5 sm:px-3 max-w-7xl mx-auto flex flex-nowrap items-center justify-between gap-0.5 md:gap-1.5 min-w-0 overflow-hidden">
-        <div className="flex min-w-0 flex-1 items-center gap-1 md:gap-2">
+      <div className="h-16 px-2 sm:px-4 max-w-7xl mx-auto flex flex-nowrap items-center justify-between gap-1 md:gap-2 min-w-0 overflow-hidden">
+        <div className="flex min-w-0 flex-1 items-center gap-2 md:gap-2">
           <Link
             to="/"
-            className={`flex min-w-0 shrink items-center gap-0.5 truncate pr-0.5 text-[12px] font-bold sm:text-lg md:text-2xl ${textClass}`}
+            className={`flex min-w-0 shrink-0 items-center gap-1 whitespace-nowrap pr-1 text-sm font-bold sm:text-xl md:text-2xl ${textClass}`}
           >
             🌿 GreenHub
           </Link>
@@ -226,7 +226,7 @@ export default function TopNav() {
                 setShowNotifications(false);
                 setShowBookGoMenu(false);
               }}
-              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg p-0.5 sm:h-10 sm:w-10 sm:p-1 outline-none transition-colors ${contrastIconClass} ${themeBtnHover}`}
+              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg p-1 sm:h-11 sm:w-11 sm:p-1.5 outline-none transition-colors ${contrastIconClass} ${themeBtnHover}`}
               aria-expanded={mobileMenuOpen}
               aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
             >
@@ -338,11 +338,11 @@ export default function TopNav() {
             ) : null}
           </div>
         </div>
-        <div className="flex items-center gap-0.5 md:gap-1.5 shrink-0">
+        <div className="flex items-center gap-1 md:gap-2 shrink-0">
           <button
             type="button"
             onClick={() => toggleTheme()}
-            className={`relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg p-0.5 sm:h-10 sm:w-10 sm:p-1 outline-none transition-colors ${iconClass} ${themeBtnHover}`}
+            className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg p-1 sm:h-11 sm:w-11 sm:p-1.5 outline-none transition-colors ${iconClass} ${themeBtnHover}`}
             aria-label={resolvedTheme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
             title={resolvedTheme === "dark" ? "Light mode" : "Dark mode"}
           >
@@ -359,14 +359,14 @@ export default function TopNav() {
                 setShowDropdown(false);
                 setMobileMenuOpen(false);
               }}
-              className={`relative flex h-9 shrink-0 items-center justify-center gap-0.5 rounded-lg px-0.5 py-0.5 sm:h-10 sm:px-1 outline-none transition-colors ${contrastIconClass} ${themeBtnHover}`}
+              className={`relative flex h-10 shrink-0 items-center justify-center gap-1 rounded-lg px-1 py-0.5 sm:h-11 sm:px-1.5 outline-none transition-colors ${contrastIconClass} ${themeBtnHover}`}
               aria-haspopup="menu"
               aria-expanded={showBookGoMenu}
               aria-label="bookGo menu"
               title="bookGo"
             >
               <Bike className={`hidden sm:block ${navIconClass}`} />
-              <span className="text-[8px] font-semibold leading-none sm:text-[10px]">bookGo</span>
+              <span className="text-[9px] font-semibold leading-none sm:text-[11px]">bookGo</span>
             </button>
             {showBookGoMenu ? (
               <div className="absolute top-full right-0 z-50 mt-2 w-44 rounded-lg border border-gray-200 bg-white py-2 shadow-xl dark:border-border dark:bg-card">
@@ -407,7 +407,7 @@ export default function TopNav() {
                   setMobileMenuOpen(false);
                   setShowBookGoMenu(false);
                 }}
-                className={`relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg p-0.5 sm:h-10 sm:w-10 sm:p-1 outline-none transition-colors ${contrastIconClass} ${themeBtnHover}`}
+                className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg p-1 sm:h-11 sm:w-11 sm:p-1.5 outline-none transition-colors ${contrastIconClass} ${themeBtnHover}`}
                 aria-label="Notifications"
               >
                 <span className="relative inline-flex">
@@ -484,7 +484,7 @@ export default function TopNav() {
 
           <Link
             to="/cart"
-            className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg p-0.5 sm:h-10 sm:w-10 sm:p-1"
+            className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg p-1 sm:h-11 sm:w-11 sm:p-1.5"
             title="Cart"
             aria-label="Cart"
           >
@@ -495,7 +495,7 @@ export default function TopNav() {
           </Link>
 
           {session ? (
-            <div className="flex items-center gap-0.5 md:gap-1.5">
+            <div className="flex items-center gap-1 md:gap-2">
               <div className="relative border-l border-gray-200/30 pl-1.5 dark:border-zinc-700/50 sm:pl-2 md:pl-3" ref={dropdownRef}>
                 <button
                   type="button"
@@ -505,7 +505,7 @@ export default function TopNav() {
                     setMobileMenuOpen(false);
                     setShowBookGoMenu(false);
                   }}
-                className={`relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg p-0.5 sm:h-10 sm:w-10 sm:p-1 outline-none transition-colors ${contrastIconClass} ${themeBtnHover}`}
+                className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg p-1 sm:h-11 sm:w-11 sm:p-1.5 outline-none transition-colors ${contrastIconClass} ${themeBtnHover}`}
                   aria-haspopup="menu"
                   aria-expanded={showDropdown}
                   aria-label="Account menu"

@@ -119,8 +119,9 @@ export default function Login() {
       navigate(next ?? "/dashboard", { replace: true });
     } catch (err) {
       if (err && typeof err === "object" && "message" in err && isEmailNotConfirmedError(err as AuthError)) {
-        setError("Please confirm your email first.");
-        toast.message("Check your inbox for the confirmation link.", { duration: 5000 });
+        const message = "Please confirm your email before logging in.";
+        setError(message);
+        toast.error(message);
       } else {
         const message = err instanceof Error ? err.message : "Could not sign in.";
         setError(message);

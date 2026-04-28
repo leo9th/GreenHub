@@ -96,8 +96,8 @@ export default function Register() {
         full_name: nameTrim || null,
         phone: phone.trim() || null,
       });
-      toast.success("Account created! Please verify your email.");
-      navigate(`/verify?email=${encodeURIComponent(emailNorm)}`, { replace: true });
+      toast.success("Check your email for a confirmation link.");
+      navigate("/login", { replace: true });
     } catch (err) {
       const message = err instanceof Error ? mapSignUpErrorToToast(err.message) : "Could not create account.";
       toast.error(message);

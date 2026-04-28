@@ -143,7 +143,6 @@ export const router = createBrowserRouter([
       { path: "register", Component: Register },
       { path: "forgot-password", Component: ForgotPassword },
       { path: "reset-password", Component: ResetPassword },
-      { path: "verify", Component: VerifyOTP },
       { path: "verify-otp", Component: VerifyOTP },
       { path: "check-email", Component: CheckEmail },
       { path: "complete-profile", Component: CompleteProfile },

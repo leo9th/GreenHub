@@ -42,8 +42,8 @@ export default function TopNav() {
 
   const [showDropdown, setShowDropdown] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showBookGo, setShowBookGo] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [showBookGoMenu, setShowBookGoMenu] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
@@ -63,7 +63,7 @@ export default function TopNav() {
         setMobileMenuOpen(false);
       }
       if (bookGoRef.current && !bookGoRef.current.contains(target)) {
-        setShowBookGoMenu(false);
+        setShowBookGo(false);
       }
     }
     document.addEventListener("click", handleClickOutside);
@@ -75,12 +75,12 @@ export default function TopNav() {
   const handleSignOut = async () => {
     await signOut();
     setShowDropdown(false);
-    setShowBookGoMenu(false);
+    setShowBookGo(false);
     navigate("/login");
   };
 
   const handleSwitchToRiderMode = useCallback(() => {
-    setShowBookGoMenu(false);
+    setShowBookGo(false);
     if (!authUser?.id) {
       navigate("/login");
       return;
@@ -149,7 +149,7 @@ export default function TopNav() {
 
   useEffect(() => {
     setMobileMenuOpen(false);
-    setShowBookGoMenu(false);
+    setShowBookGo(false);
   }, [location.pathname]);
 
   if (isHidden) return null;
@@ -189,7 +189,7 @@ export default function TopNav() {
 
   return (
     <div className={`${bgClass} sticky top-0 z-[45] transition-colors duration-200`}>
-      <div className="h-16 px-2 sm:px-4 max-w-7xl mx-auto flex flex-nowrap items-center justify-between gap-1 md:gap-2 min-w-0 overflow-x-hidden overflow-y-visible">
+      <div className="h-16 px-2 sm:px-4 max-w-7xl mx-auto flex flex-nowrap items-center justify-between gap-1 md:gap-2 min-w-0 overflow-visible">
         <div className="flex min-w-0 flex-1 items-center gap-2 md:gap-2">
           <Link
             to="/"
@@ -219,7 +219,7 @@ export default function TopNav() {
                 setMobileMenuOpen((o) => !o);
                 setShowDropdown(false);
                 setShowNotifications(false);
-                setShowBookGoMenu(false);
+                setShowBookGo(false);
               }}
               className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg p-1 sm:h-11 sm:w-11 sm:p-1.5 outline-none transition-colors ${contrastIconClass} ${themeBtnHover}`}
               aria-expanded={mobileMenuOpen}
@@ -348,28 +348,28 @@ export default function TopNav() {
           <div className="relative" ref={bookGoRef}>
             <button
               type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setShowBookGoMenu((v) => !v);
+              onClick={(event) => {
+                event.stopPropagation();
+                setShowBookGo((prev) => !prev);
                 setShowNotifications(false);
                 setShowDropdown(false);
                 setMobileMenuOpen(false);
               }}
               className={`relative flex h-10 shrink-0 items-center justify-center gap-1 rounded-lg px-1 py-0.5 sm:h-11 sm:px-1.5 outline-none transition-colors ${contrastIconClass} ${themeBtnHover}`}
               aria-haspopup="menu"
-              aria-expanded={showBookGoMenu}
+              aria-expanded={showBookGo}
               aria-label="bookGo menu"
               title="bookGo"
             >
               <Bike className={`hidden sm:block ${navIconClass}`} />
               <span className="text-[9px] font-semibold leading-none sm:text-[11px]">bookGo</span>
             </button>
-            {showBookGoMenu ? (
+            {showBookGo ? (
               <div className="absolute top-full right-0 z-50 mt-2 w-44 rounded-lg border border-gray-200 bg-white py-2 shadow-xl dark:border-border dark:bg-card">
                 <button
                   type="button"
                   onClick={() => {
-                    setShowBookGoMenu(false);
+                    setShowBookGo(false);
                     navigate("/rider");
                   }}
                   className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-medium text-gray-800 transition-colors hover:bg-gray-50 dark:text-foreground dark:hover:bg-muted"
@@ -393,16 +393,15 @@ export default function TopNav() {
             <div className="relative" ref={notifRef}>
               <button
                 type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
+                onClick={(event) => {
+                  event.stopPropagation();
                   void markAllNotificationsReadAndRefresh().then(({ error }) => {
                     if (error) notifyMarkAllReadError(error);
                   });
-                  const willOpen = !showNotifications;
-                  setShowNotifications(willOpen);
+                  setShowNotifications((prev) => !prev);
                   setShowDropdown(false);
                   setMobileMenuOpen(false);
-                  setShowBookGoMenu(false);
+                  setShowBookGo(false);
                 }}
                 className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg p-1 sm:h-11 sm:w-11 sm:p-1.5 outline-none transition-colors ${contrastIconClass} ${themeBtnHover}`}
                 aria-label="Notifications"
@@ -495,7 +494,14 @@ export default function TopNav() {
             <div className="flex items-center gap-1 md:gap-2">
               <div className="relative border-l border-gray-200/30 pl-1.5 dark:border-zinc-700/50 sm:pl-2 md:pl-3" ref={dropdownRef}>
                 <button
-                  onClick={() => setShowDropdown(!showDropdown)}
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setShowDropdown((prev) => !prev);
+                    setShowNotifications(false);
+                    setShowBookGo(false);
+                    setMobileMenuOpen(false);
+                  }}
                   className="relative flex items-center gap-2 rounded-lg p-0.5 outline-none hover:bg-gray-100 dark:hover:bg-zinc-800"
                   aria-haspopup="menu"
                   aria-expanded={showDropdown}

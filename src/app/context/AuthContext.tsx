@@ -1,11 +1,12 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js';
+import type { AuthChangeEvent, Provider, Session, User } from '@supabase/supabase-js';
 import { supabase } from '../../lib/supabase';
 import { ensureOAuthProfile, isOAuthUser } from '../utils/ensureOAuthProfile';
 
 export interface UserProfile {
   id: string;
   full_name?: string | null;
+  username?: string | null;
   email?: string | null;
   role?: string | null;
   avatar_url?: string | null;
@@ -33,6 +34,17 @@ interface AuthContextType {
   user: User | null;
   profile: UserProfile | null;
   loading: boolean;
+  signIn: (email: string, password: string) => Promise<void>;
+  signUp: (email: string, password: string, metadata?: Record<string, unknown>) => Promise<void>;
+  signInWithOAuth: (
+    provider: Extract<Provider, 'google' | 'facebook'>,
+    options?: { redirectTo?: string; queryParams?: Record<string, string> },
+  ) => Promise<void>;
+  exchangeCodeForSession: (code: string) => Promise<void>;
+  sendOtp: (params: { email?: string; phone?: string; shouldCreateUser?: boolean }) => Promise<void>;
+  verifyOtp: (identifier: string, token: string, type: 'email' | 'sms') => Promise<void>;
+  updateProfile: (updates: Record<string, unknown>) => Promise<void>;
+  resetPasswordForEmail: (email: string, redirectTo: string) => Promise<void>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
@@ -42,6 +54,14 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   profile: null,
   loading: true,
+  signIn: async () => {},
+  signUp: async () => {},
+  signInWithOAuth: async () => {},
+  exchangeCodeForSession: async () => {},
+  sendOtp: async () => {},
+  verifyOtp: async () => {},
+  updateProfile: async () => {},
+  resetPasswordForEmail: async () => {},
   signOut: async () => {},
   refreshProfile: async () => {},
 });
@@ -55,7 +75,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const fetchProfile = async (uid: string): Promise<UserProfile | null> => {
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, role, full_name, email, avatar_url, gender, phone, phone_verified, address, state, lga, bio, cover_url, created_at, updated_at, last_active, unique_id, is_verified_advertiser, show_phone_on_profile, show_email_on_profile')
+      .select('id, role, full_name, username, email, avatar_url, gender, phone, phone_verified, address, state, lga, bio, cover_url, created_at, updated_at, last_active, unique_id, is_verified_advertiser, show_phone_on_profile, show_email_on_profile')
       .eq('id', uid)
       .single();
 
@@ -127,8 +147,138 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await supabase.auth.signOut();
   };
 
+  const signIn = useCallback(async (email: string, password: string) => {
+    const { error } = await supabase.auth.signInWithPassword({
+      email: email.trim().toLowerCase(),
+      password,
+    });
+    if (error) throw error;
+  }, []);
+
+  const signUp = useCallback(async (email: string, password: string, metadata: Record<string, unknown> = {}) => {
+    const normalizedEmail = email.trim().toLowerCase();
+    const { error } = await supabase.auth.signUp({
+      email: normalizedEmail,
+      password,
+      options: {
+        data: {
+          ...metadata,
+          email: normalizedEmail,
+          role: metadata.role ?? 'buyer',
+        },
+      },
+    });
+    if (error) throw error;
+  }, []);
+
+  const signInWithOAuth = useCallback(
+    async (
+      provider: Extract<Provider, 'google' | 'facebook'>,
+      options: { redirectTo?: string; queryParams?: Record<string, string> } = {},
+    ) => {
+      const { error } = await supabase.auth.signInWithOAuth({ provider, options });
+      if (error) throw error;
+    },
+    [],
+  );
+
+  const exchangeCodeForSession = useCallback(async (code: string) => {
+    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    if (error) throw error;
+  }, []);
+
+  const sendOtp = useCallback(async ({ email, phone, shouldCreateUser = false }: { email?: string; phone?: string; shouldCreateUser?: boolean }) => {
+    const normalizedEmail = email?.trim().toLowerCase();
+    const normalizedPhone = phone?.trim();
+    if (!normalizedEmail && !normalizedPhone) throw new Error('Email or phone is required.');
+
+    const { error } = await supabase.auth.signInWithOtp(
+      normalizedPhone
+        ? {
+            phone: normalizedPhone,
+            options: { shouldCreateUser },
+          }
+        : {
+            email: normalizedEmail!,
+            options: { shouldCreateUser },
+          },
+    );
+    if (error) throw error;
+  }, []);
+
+  const verifyOtp = useCallback(async (identifier: string, token: string, type: 'email' | 'sms') => {
+    const normalizedIdentifier = identifier.trim();
+    const normalizedToken = token.trim();
+    const { error } =
+      type === 'sms'
+        ? await supabase.auth.verifyOtp({
+            phone: normalizedIdentifier,
+            token: normalizedToken,
+            type: 'sms',
+          })
+        : await supabase.auth.verifyOtp({
+            email: normalizedIdentifier.toLowerCase(),
+            token: normalizedToken,
+            type: 'email',
+          });
+
+    if (error) throw error;
+  }, []);
+
+  const updateProfile = useCallback(async (updates: Record<string, unknown>) => {
+    const { data: authData, error: userError } = await supabase.auth.getUser();
+    if (userError) throw userError;
+    const authUser = authData.user;
+    if (!authUser) throw new Error('You must be signed in to update your profile.');
+
+    const cleanUpdates = Object.fromEntries(Object.entries(updates).filter(([, value]) => value !== undefined));
+
+    const { error: updateUserError } = await supabase.auth.updateUser({
+      data: cleanUpdates,
+    });
+    if (updateUserError) throw updateUserError;
+
+    const { error: profileError } = await supabase.from('profiles').upsert(
+      {
+        id: authUser.id,
+        email: authUser.email ?? null,
+        phone: authUser.phone ?? null,
+        ...cleanUpdates,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'id' },
+    );
+    if (profileError) throw profileError;
+
+    setProfile(await fetchProfile(authUser.id));
+  }, []);
+
+  const resetPasswordForEmail = useCallback(async (email: string, redirectTo: string) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+      redirectTo,
+    });
+    if (error) throw error;
+  }, []);
+
   return (
-    <AuthContext.Provider value={{ session, user, profile, loading, signOut, refreshProfile }}>
+    <AuthContext.Provider
+      value={{
+        session,
+        user,
+        profile,
+        loading,
+        signIn,
+        signUp,
+        signInWithOAuth,
+        exchangeCodeForSession,
+        sendOtp,
+        verifyOtp,
+        updateProfile,
+        resetPasswordForEmail,
+        signOut,
+        refreshProfile,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

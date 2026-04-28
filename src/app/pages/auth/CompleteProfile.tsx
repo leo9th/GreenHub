@@ -1,20 +1,21 @@
-import { Link, useNavigate } from "react-router";
+import { Link, useNavigate } from "react-router-dom";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../context/AuthContext";
 import { toast } from "sonner";
-import { nigerianStates } from "../../data/catalogConstants";
-import { getLGAsForState } from "../../data/mockData";
+import { getLGAsForState, nigerianStates } from "../../data/nigeriaData";
 
 /**
  * Shown after phone OTP signup — user is authenticated but should add profile details.
  */
 export default function CompleteProfile() {
   const navigate = useNavigate();
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, updateProfile } = useAuth();
 
   const [fullName, setFullName] = useState("");
+  const [username, setUsername] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState("");
+  const [bio, setBio] = useState("");
   const [gender, setGender] = useState("Prefer not to say");
   const [selectedState, setSelectedState] = useState("");
   const [lga, setLga] = useState("");
@@ -31,6 +32,9 @@ export default function CompleteProfile() {
     }
     const meta = user.user_metadata as Record<string, string | undefined> | undefined;
     if (meta?.full_name) setFullName(meta.full_name);
+    if (meta?.username) setUsername(meta.username);
+    if (meta?.avatar_url) setAvatarUrl(meta.avatar_url);
+    if (meta?.bio) setBio(meta.bio);
     if (meta?.gender) setGender(meta.gender);
     if (meta?.state) setSelectedState(meta.state);
     if (meta?.lga) setLga(meta.lga);
@@ -49,43 +53,24 @@ export default function CompleteProfile() {
       toast.error("Please select state and LGA.");
       return;
     }
+    const cleanUsername = username.trim().replace(/^@/, "");
 
     setBusy(true);
     try {
-      const { error: uErr } = await supabase.auth.updateUser({
-        data: {
-          full_name: name,
-          gender,
-          state: selectedState,
-          lga,
-          address: address.trim() || null,
-          role: "buyer",
-        },
+      await updateProfile({
+        full_name: name,
+        username: cleanUsername || null,
+        avatar_url: avatarUrl.trim() || null,
+        bio: bio.trim() || null,
+        gender,
+        state: selectedState,
+        lga,
+        address: address.trim() || null,
+        role: "buyer",
       });
-      if (uErr) throw uErr;
 
-      const { error: pErr } = await supabase.from("profiles").upsert(
-        {
-          id: user.id,
-          full_name: name,
-          phone: user.phone ?? null,
-          gender,
-          state: selectedState,
-          lga,
-          address: address.trim() || null,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "id" },
-      );
-
-      if (pErr) {
-        console.warn("Profile upsert:", pErr);
-        toast.error(pErr.message);
-        return;
-      }
-
-      toast.success("Profile saved. Welcome to GreenHub.");
-      navigate("/", { replace: true });
+      toast.success("Profile completed!");
+      navigate("/dashboard", { replace: true });
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Could not save profile");
     } finally {
@@ -115,7 +100,7 @@ export default function CompleteProfile() {
 
         <h1 className="text-2xl font-bold text-gray-900">Complete your profile</h1>
         <p className="mt-2 text-sm text-gray-600">
-          Phone verified. Add a few details so buyers and sellers can trust your account.
+          Add a few details so buyers and sellers can trust your account.
         </p>
 
         <form onSubmit={(e) => void handleSubmit(e)} className="mt-8 space-y-4">
@@ -128,6 +113,39 @@ export default function CompleteProfile() {
               className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-[#22c55e] focus:outline-none focus:ring-2 focus:ring-[#22c55e]/20"
               placeholder="As on your ID"
               autoComplete="name"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-gray-700">Username</label>
+            <input
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-[#22c55e] focus:outline-none focus:ring-2 focus:ring-[#22c55e]/20"
+              placeholder="greenhub_seller"
+              autoComplete="username"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-gray-700">Avatar URL (optional)</label>
+            <input
+              type="url"
+              value={avatarUrl}
+              onChange={(e) => setAvatarUrl(e.target.value)}
+              className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-[#22c55e] focus:outline-none focus:ring-2 focus:ring-[#22c55e]/20"
+              placeholder="https://..."
+            />
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-gray-700">Bio (optional)</label>
+            <textarea
+              value={bio}
+              onChange={(e) => setBio(e.target.value)}
+              rows={3}
+              className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-[#22c55e] focus:outline-none focus:ring-2 focus:ring-[#22c55e]/20"
+              placeholder="Tell buyers and sellers a little about you"
             />
           </div>
 

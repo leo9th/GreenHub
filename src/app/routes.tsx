@@ -93,6 +93,10 @@ function LegacyAdminRedirect() {
   return <Navigate to="/admin/dashboard" replace />;
 }
 
+function DashboardRedirect() {
+  return <Navigate to="/products" replace />;
+}
+
 function LegacyAdvertiseSetupRedirect() {
   return <Navigate to="/seller/advertise" replace />;
 }
@@ -139,9 +143,11 @@ export const router = createBrowserRouter([
       { path: "register", Component: Register },
       { path: "forgot-password", Component: ForgotPassword },
       { path: "reset-password", Component: ResetPassword },
+      { path: "verify", Component: VerifyOTP },
       { path: "verify-otp", Component: VerifyOTP },
       { path: "check-email", Component: CheckEmail },
       { path: "complete-profile", Component: CompleteProfile },
+      { path: "dashboard", Component: DashboardRedirect },
       { path: "welcome", Component: Welcome },
       { path: "products", Component: Products },
       {

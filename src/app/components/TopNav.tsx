@@ -91,7 +91,17 @@ export default function TopNav() {
     navigate("/rider");
   }, [authUser?.id, navigate]);
 
-  const hideNavOnPaths = ["/login", "/register", "/verify-otp", "/welcome"];
+  const hideNavOnPaths = [
+    "/login",
+    "/register",
+    "/verify",
+    "/verify-otp",
+    "/forgot-password",
+    "/reset-password",
+    "/check-email",
+    "/complete-profile",
+    "/welcome",
+  ];
   const isHidden = hideNavOnPaths.some((path) => location.pathname.startsWith(path));
   const isHome = location.pathname === "/";
   const notifyMarkAllReadError = useCallback((error: string) => {
@@ -485,18 +495,10 @@ export default function TopNav() {
             <div className="flex items-center gap-1 md:gap-2">
               <div className="relative border-l border-gray-200/30 pl-1.5 dark:border-zinc-700/50 sm:pl-2 md:pl-3" ref={dropdownRef}>
                 <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShowDropdown((prev) => !prev);
-                    setShowNotifications(false);
-                    setMobileMenuOpen(false);
-                    setShowBookGoMenu(false);
-                  }}
-                  className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg p-1 sm:h-11 sm:w-11 sm:p-1.5 outline-none transition-colors ${contrastIconClass} ${themeBtnHover}`}
+                  onClick={() => setShowDropdown(!showDropdown)}
+                  className="relative flex items-center gap-2 rounded-lg p-0.5 outline-none hover:bg-gray-100 dark:hover:bg-zinc-800"
                   aria-haspopup="menu"
                   aria-expanded={showDropdown}
-                  aria-label="Account menu"
                 >
                   <img
                     src={avatarUrl}
@@ -511,8 +513,8 @@ export default function TopNav() {
                       <div className="flex items-center gap-3">
                         <img src={avatarUrl} alt={fullName} className="w-10 h-10 rounded-full object-cover" />
                         <div>
-                          <p className="text-[11px] uppercase tracking-[0.24em] text-gray-500 dark:text-muted-foreground">Welcome back</p>
-                          <p className="text-base font-semibold text-gray-900 dark:text-foreground leading-tight">{fullName}</p>
+                          <p className="text-[11px] uppercase tracking-[0.24em] text-gray-500">Welcome back</p>
+                          <p className="text-base font-semibold text-gray-900 leading-tight">{fullName}</p>
                           <Link
                             to="/profile"
                             onClick={() => setShowDropdown(false)}

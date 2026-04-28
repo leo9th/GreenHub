@@ -1,11 +1,10 @@
-import { Link, useNavigate } from "react-router";
-import { ArrowLeft, Check, Eye, EyeOff, Loader2, Lock, Smartphone, Users, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { Check, Eye, EyeOff, Loader2, Lock, Users, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "motion/react";
-import { supabase } from "../../../lib/supabase";
 import { toast } from "sonner";
+import { useAuth } from "../../context/AuthContext";
 import { AuthSocialButtons } from "../../components/auth/AuthSocialButtons";
-import { toE164Ng } from "../../utils/phoneE164";
 import { authRedirectTo } from "../../utils/authSiteUrl";
 import {
   getPasswordStrength,
@@ -15,14 +14,11 @@ import {
 } from "../../utils/authSignupValidation";
 import { cn } from "../../components/ui/utils";
 
-type Step = "email" | "phone";
-
 const FORM_ID = "greenhub-signup-form";
-const SIGNUP_PENDING_STORAGE_KEY = "greenhub.pendingSignup";
 
 export default function Register() {
   const navigate = useNavigate();
-  const [step, setStep] = useState<Step>("email");
+  const { user, signUp, signInWithOAuth } = useAuth();
 
   const [email, setEmail] = useState("");
   const [fullName, setFullName] = useState("");
@@ -37,6 +33,12 @@ export default function Register() {
 
   const oauthRedirect = authRedirectTo("/login?next=/welcome");
 
+  useEffect(() => {
+    if (user) {
+      navigate("/dashboard", { replace: true });
+    }
+  }, [navigate, user]);
+
   const emailOk = useMemo(() => isValidEmailFormat(email), [email]);
   const emailTouched = email.length > 0;
   const pwdStrength = useMemo(() => getPasswordStrength(password), [password]);
@@ -47,112 +49,61 @@ export default function Register() {
   const handleSocialLogin = async (provider: "google" | "facebook") => {
     setOauthBusy(provider);
     try {
-      const { error: signInError } = await supabase.auth.signInWithOAuth({
-        provider,
-        options: {
-          redirectTo: oauthRedirect,
-          ...(provider === "google"
-            ? {
-                queryParams: {
-                  prompt: "select_account",
-                  access_type: "offline",
-                },
-              }
-            : {}),
-        },
+      await signInWithOAuth(provider, {
+        redirectTo: oauthRedirect,
+        ...(provider === "google"
+          ? {
+              queryParams: {
+                prompt: "select_account",
+                access_type: "offline",
+              },
+            }
+          : {}),
       });
-      if (signInError) {
-        toast.error(signInError.message);
-      } else {
-        toast.message("Redirecting to Google…", { duration: 2500 });
-      }
+      toast.message("Redirecting…", { duration: 2500 });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not start social sign-in.");
     } finally {
       setOauthBusy(null);
     }
   };
 
-  const savePendingSignup = (payload: {
-    email: string;
-    password: string;
-    fullName: string;
-    phone: string;
-  }) => {
-    sessionStorage.setItem(
-      SIGNUP_PENDING_STORAGE_KEY,
-      JSON.stringify({
-        ...payload,
-        createdAt: Date.now(),
-      }),
-    );
-  };
-
-  const sendPhoneSignupCode = async (
-    parsedPhoneE164: string,
-    pending?: { email: string; password: string; fullName: string },
-  ) => {
-    setLoading(true);
-    try {
-      const { error: otpErr } = await supabase.auth.signInWithOtp({
-        phone: parsedPhoneE164,
-        options: {
-          shouldCreateUser: true,
-        },
-      });
-      if (otpErr) {
-        toast.error(otpErr.message);
-        return;
-      }
-      if (pending) {
-        savePendingSignup({
-          email: pending.email,
-          password: pending.password,
-          fullName: pending.fullName,
-          phone: parsedPhoneE164,
-        });
-      }
-      toast.success("Check your phone for the verification code.");
-      navigate("/verify-otp", {
-        replace: true,
-        state: { phone: parsedPhoneE164, flow: "signup" as const },
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const validateBeforeSubmit = (): { ok: true; phoneE164: string } | { ok: false } => {
+  const validateBeforeSubmit = (): boolean => {
     if (!isValidEmailFormat(email)) {
       toast.error("Please enter a valid email.");
-      return { ok: false };
+      return false;
     }
     if (!passwordMeetsRequirements(password)) {
       toast.error("Use a stronger password: at least 8 characters with letters and numbers.");
-      return { ok: false };
+      return false;
     }
     if (password !== confirmPassword) {
       toast.error("Passwords don’t match.");
-      return { ok: false };
+      return false;
     }
-    const parsedPhone = toE164Ng(phone);
-    if ("error" in parsedPhone) {
-      toast.error(parsedPhone.error);
-      return { ok: false };
-    }
-    return { ok: true, phoneE164: parsedPhone.e164 };
+    return true;
   };
 
   const handleEmailRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    const validated = validateBeforeSubmit();
-    if (!validated.ok) return;
+    if (!validateBeforeSubmit()) return;
 
     const emailNorm = email.trim().toLowerCase();
     const nameTrim = fullName.trim();
-    await sendPhoneSignupCode(validated.phoneE164, {
-      email: emailNorm,
-      password,
-      fullName: nameTrim,
-    });
+    setLoading(true);
+    try {
+      await signUp(emailNorm, password, {
+        full_name: nameTrim || null,
+        phone: phone.trim() || null,
+      });
+      toast.success("Account created! Please verify your email.");
+      navigate(`/verify?email=${encodeURIComponent(emailNorm)}`, { replace: true });
+    } catch (err) {
+      const message = err instanceof Error ? mapSignUpErrorToToast(err.message) : "Could not create account.";
+      toast.error(message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const strengthColor =
@@ -161,8 +112,7 @@ export default function Register() {
 
   return (
     <div className="flex min-h-dvh flex-col bg-gradient-to-b from-emerald-50/90 via-white to-gray-50">
-      {step === "email" ? (
-        <>
+      <>
           <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 px-4 pb-4 pt-6 sm:px-6">
             <motion.div
               className="mx-auto w-full max-w-[440px]"
@@ -271,20 +221,19 @@ export default function Register() {
 
                 <div>
                   <label htmlFor="reg-phone" className="mb-1.5 block text-sm font-medium text-gray-700">
-                    Phone number
+                    Phone number <span className="font-normal text-gray-400">(optional)</span>
                   </label>
                   <input
                     id="reg-phone"
                     type="tel"
                     inputMode="tel"
                     autoComplete="tel"
-                    required
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
                     placeholder="e.g. 0803 123 4567"
                     className="h-12 w-full rounded-xl border border-gray-200 bg-white px-4 text-[15px] outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20"
                   />
-                  <p className="mt-1 text-[11px] text-gray-500">Nigerian number only. We will verify by SMS OTP.</p>
+                  <p className="mt-1 text-[11px] text-gray-500">Optional. You can verify it later from profile settings.</p>
                 </div>
 
                 <div>
@@ -398,57 +347,7 @@ export default function Register() {
               </button>
             </div>
           </div>
-        </>
-      ) : (
-        <div className="flex flex-1 flex-col overflow-y-auto px-4 py-8 sm:px-6">
-          <div className="mx-auto w-full max-w-[440px]">
-            <div className="mb-6 flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => setStep("email")}
-                className="rounded-full p-2 text-gray-600 hover:bg-gray-100"
-                aria-label="Back"
-              >
-                <ArrowLeft className="h-5 w-5" />
-              </button>
-              <div>
-                <h2 className="text-lg font-bold text-gray-900">Phone number</h2>
-                <p className="text-xs text-gray-500">We’ll text you a code to confirm.</p>
-              </div>
-            </div>
-            <label className="mb-2 block text-sm font-medium text-gray-700">Mobile number</label>
-            <input
-              type="tel"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="e.g. 0803 123 4567"
-              autoComplete="tel"
-              className="mb-6 h-12 w-full rounded-xl border border-gray-200 px-4 text-[15px] outline-none focus:ring-2 focus:ring-emerald-500/20"
-            />
-            <div className="sticky bottom-0 pb-[max(12px,env(safe-area-inset-bottom))]">
-              <button
-                type="button"
-                onClick={() => {
-                  const validated = validateBeforeSubmit();
-                  if (!validated.ok) return;
-                  void sendPhoneSignupCode(validated.phoneE164, {
-                    email: email.trim().toLowerCase(),
-                    password,
-                    fullName: fullName.trim(),
-                  });
-                }}
-                disabled={loading}
-                className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 text-sm font-bold text-white shadow-md transition-transform duration-200 ease-out hover:scale-[1.02] hover:brightness-110 hover:bg-emerald-800 active:scale-[0.98] disabled:opacity-60"
-              >
-                {loading ? <Loader2 className="h-5 w-5 shrink-0 animate-spin" aria-hidden /> : "Send verification code"}
-              </button>
-            </div>
-            <p className="mt-4 text-center text-[11px] text-gray-500">
-              SMS requires Phone auth in your Supabase project settings.
-            </p>
-          </div>
-        </div>
-      )}
+      </>
     </div>
   );
 }

@@ -1,10 +1,10 @@
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { AuthError } from "@supabase/supabase-js";
-import { supabase } from "../../../lib/supabase";
 import { toast } from "sonner";
 import { authRedirectTo, getAuthSiteOrigin } from "../../utils/authSiteUrl";
+import { useAuth } from "../../context/AuthContext";
 
 function formatRecoveryError(err: AuthError): { title: string; detail: string } {
   const raw = (err.message || "").trim();
@@ -53,10 +53,17 @@ function formatRecoveryError(err: AuthError): { title: string; detail: string } 
 }
 
 export default function ForgotPassword() {
+  const navigate = useNavigate();
+  const { user, resetPasswordForEmail } = useAuth();
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<{ title: string; detail: string } | null>(null);
   const [success, setSuccess] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    navigate("/", { replace: true });
+  }, [navigate, user]);
 
   const handleReset = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -81,16 +88,11 @@ export default function ForgotPassword() {
     }
 
     try {
-      const { error: resetErr } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
-        redirectTo,
-      });
-      if (resetErr) {
-        console.error("resetPasswordForEmail:", resetErr.message, resetErr);
-        setError(formatRecoveryError(resetErr));
-        return;
-      }
+      await resetPasswordForEmail(email, redirectTo);
       setSuccess(true);
-      toast.success("If an account exists for that email, we sent reset instructions.");
+      toast.success("Password reset email sent");
+    } catch (err) {
+      setError(formatRecoveryError(err as AuthError));
     } finally {
       setLoading(false);
     }

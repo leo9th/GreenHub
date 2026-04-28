@@ -1,9 +1,8 @@
-import { Link, useNavigate, useSearchParams } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Eye, EyeOff, Loader2, Smartphone } from "lucide-react";
 import { useState, useEffect } from "react";
 import { motion } from "motion/react";
 import type { AuthError } from "@supabase/supabase-js";
-import { supabase } from "../../../lib/supabase";
 import { toast } from "sonner";
 import { useAuth } from "../../context/AuthContext";
 import { AuthSocialButtons } from "../../components/auth/AuthSocialButtons";
@@ -42,29 +41,29 @@ export default function Login() {
 
   const [oauthBusy, setOauthBusy] = useState<"google" | "facebook" | null>(null);
 
-  const { session } = useAuth();
+  const { session, signIn, signInWithOAuth, exchangeCodeForSession, sendOtp } = useAuth();
 
   useEffect(() => {
     if (!session?.user) return;
     const next = safeInternalPath(nextParam);
-    navigate(next ?? "/", { replace: true });
+    navigate(next ?? "/dashboard", { replace: true });
   }, [session?.user, navigate, nextParam]);
 
   useEffect(() => {
     const code = searchParams.get("code");
     if (code) {
       setLoading(true);
-      void supabase.auth.exchangeCodeForSession(code).then(({ error: exErr }) => {
-        setLoading(false);
-        if (!exErr) {
+      void exchangeCodeForSession(code)
+        .then(() => {
           toast.success("You’re signed in.");
           stripOAuthCodeFromUrl();
-        } else {
+        })
+        .catch(() => {
           toast.error("This sign-in link is invalid or expired.");
           setError("Verification failed. Try signing in again.");
           stripOAuthCodeFromUrl();
-        }
-      });
+        })
+        .finally(() => setLoading(false));
       return;
     }
 
@@ -79,7 +78,7 @@ export default function Login() {
     } else if (hash && hash.includes("access_token")) {
       toast.success("You’re signed in.");
     }
-  }, [searchParams]);
+  }, [exchangeCodeForSession, searchParams]);
 
   const safeNext = safeInternalPath(nextParam);
   const oauthRedirect = authRedirectTo(safeNext ? `/login?next=${encodeURIComponent(safeNext)}` : "/login");
@@ -88,24 +87,21 @@ export default function Login() {
     setError(null);
     setOauthBusy(provider);
     try {
-      const { error: signInError } = await supabase.auth.signInWithOAuth({
-        provider,
-        options: {
-          redirectTo: oauthRedirect,
-          ...(provider === "google"
-            ? {
-                queryParams: {
-                  prompt: "select_account",
-                  access_type: "offline",
-                },
-              }
-            : {}),
-        },
+      await signInWithOAuth(provider, {
+        redirectTo: oauthRedirect,
+        ...(provider === "google"
+          ? {
+              queryParams: {
+                prompt: "select_account",
+                access_type: "offline",
+              },
+            }
+          : {}),
       });
-      if (signInError) {
-        toast.error(signInError.message);
-        setError(signInError.message);
-      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Could not start social sign-in.";
+      toast.error(message);
+      setError(message);
     } finally {
       setOauthBusy(null);
     }
@@ -116,22 +112,22 @@ export default function Login() {
     setLoading(true);
     setError(null);
 
-    const { error: pwErr } = await supabase.auth.signInWithPassword({
-      email: email.trim().toLowerCase(),
-      password,
-    });
-
-    if (pwErr) {
-      if (isEmailNotConfirmedError(pwErr)) {
+    try {
+      await signIn(email, password);
+      toast.success("Welcome back!");
+      const next = safeInternalPath(nextParam);
+      navigate(next ?? "/dashboard", { replace: true });
+    } catch (err) {
+      if (err && typeof err === "object" && "message" in err && isEmailNotConfirmedError(err as AuthError)) {
         setError("Please confirm your email first.");
         toast.message("Check your inbox for the confirmation link.", { duration: 5000 });
       } else {
-        setError(pwErr.message);
+        const message = err instanceof Error ? err.message : "Could not sign in.";
+        setError(message);
+        toast.error(message);
       }
+    } finally {
       setLoading(false);
-    } else {
-      const next = safeInternalPath(nextParam);
-      navigate(next ?? "/", { replace: true });
     }
   };
 
@@ -144,21 +140,15 @@ export default function Login() {
     }
     setPhoneBusy(true);
     try {
-      const { error: otpErr } = await supabase.auth.signInWithOtp({
-        phone: parsed.e164,
-        options: {
-          shouldCreateUser: false,
-        },
-      });
-      if (otpErr) {
-        setError(otpErr.message);
-        toast.error(otpErr.message);
-        return;
-      }
+      await sendOtp({ phone: parsed.e164, shouldCreateUser: false });
       toast.success("Code sent. Enter it below on the next screen.");
       navigate("/verify-otp", {
         state: { phone: parsed.e164, flow: "login" as const },
       });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Could not send code.";
+      setError(message);
+      toast.error(message);
     } finally {
       setPhoneBusy(false);
     }

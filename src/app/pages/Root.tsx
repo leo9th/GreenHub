@@ -35,6 +35,7 @@ export default function Root() {
   const hideNavOnPaths = [
     "/login",
     "/register",
+    "/verify",
     "/verify-otp",
     "/check-email",
     "/complete-profile",

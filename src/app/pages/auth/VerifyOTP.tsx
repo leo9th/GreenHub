@@ -1,33 +1,29 @@
-import { Link, useLocation, useNavigate } from "react-router";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { useState, useRef, useEffect, useCallback } from "react";
-import { supabase } from "../../../lib/supabase";
 import { maskPhoneE164 } from "../../utils/phoneE164";
-import { useNotification } from "../../context/NotificationProvider";
+import { useAuth } from "../../context/AuthContext";
+import { toast } from "sonner";
 
 const OTP_LEN = 6;
 
 type LocationState = {
   phone?: string;
+  email?: string;
   flow?: "signup" | "login";
 };
-type PendingSignup = {
-  email: string;
-  password: string;
-  fullName: string;
-  phone: string;
-  createdAt: number;
-};
-const SIGNUP_PENDING_STORAGE_KEY = "greenhub.pendingSignup";
-const SIGNUP_PENDING_MAX_AGE_MS = 30 * 60 * 1000;
 
 export default function VerifyOTP() {
   const navigate = useNavigate();
   const location = useLocation();
-  const notif = useNotification();
+  const [searchParams] = useSearchParams();
+  const { verifyOtp, sendOtp, user } = useAuth();
   const state = (location.state ?? {}) as LocationState;
   const phone = state.phone?.trim() ?? "";
+  const email = (searchParams.get("email") ?? state.email ?? user?.email ?? "").trim().toLowerCase();
   const flow: "signup" | "login" = state.flow === "login" ? "login" : "signup";
+  const channel: "email" | "sms" = phone ? "sms" : "email";
+  const target = phone || email;
 
   const [otp, setOtp] = useState<string[]>(() => Array(OTP_LEN).fill(""));
   const [countdown, setCountdown] = useState(0);
@@ -36,11 +32,11 @@ export default function VerifyOTP() {
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   useEffect(() => {
-    if (!phone) {
-      notif.error("Session Error", "Start again from sign in or sign up.");
+    if (!target) {
+      toast.error("Start again from sign in or sign up.");
       navigate("/login", { replace: true });
     }
-  }, [phone, navigate, notif]);
+  }, [navigate, target]);
 
   useEffect(() => {
     if (countdown <= 0) return;
@@ -56,94 +52,15 @@ export default function VerifyOTP() {
 
   const codeString = otp.join("");
 
-  const readPendingSignup = (): PendingSignup | null => {
-    try {
-      const raw = sessionStorage.getItem(SIGNUP_PENDING_STORAGE_KEY);
-      if (!raw) return null;
-      const parsed = JSON.parse(raw) as PendingSignup;
-      const age = Date.now() - Number(parsed.createdAt || 0);
-      if (
-        !parsed.email ||
-        !parsed.password ||
-        !parsed.phone ||
-        !Number.isFinite(age) ||
-        age > SIGNUP_PENDING_MAX_AGE_MS
-      ) {
-        sessionStorage.removeItem(SIGNUP_PENDING_STORAGE_KEY);
-        return null;
-      }
-      return parsed;
-    } catch {
-      sessionStorage.removeItem(SIGNUP_PENDING_STORAGE_KEY);
-      return null;
-    }
-  };
-
-  const clearPendingSignup = () => {
-    sessionStorage.removeItem(SIGNUP_PENDING_STORAGE_KEY);
-  };
-
-  const completeSignupFromPending = async (verifiedPhone: string) => {
-    const pending = readPendingSignup();
-    if (!pending || pending.phone !== verifiedPhone) {
-      throw new Error("Signup session expired. Please start signup again.");
-    }
-
-    const { error: updateAuthError } = await supabase.auth.updateUser({
-      email: pending.email,
-      password: pending.password,
-      data: {
-        ...(pending.fullName ? { full_name: pending.fullName } : {}),
-        phone: verifiedPhone,
-        role: "buyer",
-      },
-    });
-    if (updateAuthError) throw new Error(updateAuthError.message);
-
-    const { data: authData } = await supabase.auth.getUser();
-    const userId = authData.user?.id;
-    if (!userId) throw new Error("Could not finalize signup. Please sign in again.");
-
-    const { error: profileErr } = await supabase.from("profiles").upsert(
-      {
-        id: userId,
-        full_name: pending.fullName || null,
-        email: pending.email,
-        phone: verifiedPhone,
-        phone_verified: true,
-      },
-      { onConflict: "id" },
-    );
-    if (profileErr) throw new Error(profileErr.message);
-
-    clearPendingSignup();
-  };
-
   const verifyAndFinish = async (code: string) => {
-    if (!phone || code.length !== OTP_LEN) return;
+    if (!target || code.length !== OTP_LEN) return;
     setVerifying(true);
     try {
-      const { data, error } = await supabase.auth.verifyOtp({
-        phone,
-        token: code,
-        type: "sms",
-      });
-      if (error) {
-        notif.authError("Verification Failed", error.message);
-        return;
-      }
-      if (!data.session) {
-        notif.error("Verification Incomplete", "Try again.");
-        return;
-      }
-      if (flow === "signup") {
-        await completeSignupFromPending(phone);
-        notif.success("Phone Verified", "Signup completed successfully.");
-        navigate("/welcome", { replace: true });
-      } else {
-        notif.success("Signed In Successfully");
-        navigate("/", { replace: true });
-      }
+      await verifyOtp(target, code, channel);
+      toast.success(flow === "signup" ? "Email verified!" : "Signed in successfully.");
+      navigate(flow === "signup" ? "/complete-profile" : "/dashboard", { replace: true });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Verification failed.");
     } finally {
       setVerifying(false);
     }
@@ -180,29 +97,22 @@ export default function VerifyOTP() {
   };
 
   const handleResend = async () => {
-    if (!phone || countdown > 0 || resending) return;
+    if (!target || countdown > 0 || resending) return;
     setResending(true);
     try {
-      const { error } = await supabase.auth.signInWithOtp({
-        phone,
-        options: {
-          shouldCreateUser: true,
-        },
-      });
-      if (error) {
-        notif.error("Resend Failed", error.message);
-        return;
-      }
-      notif.success("Code Sent", "New verification code sent to your phone.");
+      await sendOtp(phone ? { phone, shouldCreateUser: flow === "signup" } : { email, shouldCreateUser: false });
+      toast.success(`New verification code sent to your ${channel === "sms" ? "phone" : "email"}.`);
       startCooldown();
       setOtp(Array(OTP_LEN).fill(""));
       inputRefs.current[0]?.focus();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not resend code.");
     } finally {
       setResending(false);
     }
   };
 
-  if (!phone) {
+  if (!target) {
     return null;
   }
 
@@ -226,7 +136,9 @@ export default function VerifyOTP() {
         <p className="mt-2 text-center text-sm text-gray-600">
           {flow === "signup" ? "Finish signing up." : "Sign in."} We sent a {OTP_LEN}-digit code to
         </p>
-        <p className="mt-1 text-center text-sm font-semibold text-gray-900">{maskPhoneE164(phone)}</p>
+        <p className="mt-1 text-center text-sm font-semibold text-gray-900">
+          {phone ? maskPhoneE164(phone) : email}
+        </p>
 
         <div className="mt-8" onPaste={handlePaste}>
           <div className="flex justify-center gap-2 sm:gap-3">
@@ -287,7 +199,7 @@ export default function VerifyOTP() {
 
         <p className="mt-4 text-center text-sm">
           <Link to={flow === "signup" ? "/register" : "/login"} className="font-medium text-[#15803d] hover:underline">
-            Use a different number
+            Use a different {channel === "sms" ? "number" : "email"}
           </Link>
         </p>
       </div>

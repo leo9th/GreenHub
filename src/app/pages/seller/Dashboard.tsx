@@ -205,7 +205,7 @@ export default function SellerDashboard() {
               </div>
               <h2 className="text-xl font-medium text-gray-800 text-center">{userName}</h2>
               <Link
-                to="/settings/profile/edit"
+                to="/settings"
                 className="text-[11px] font-bold text-gray-400 mt-2 tracking-wider uppercase hover:text-[#22c55e] transition-colors"
               >
                 {userPhone}

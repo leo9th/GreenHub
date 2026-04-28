@@ -223,7 +223,7 @@ export default function CompleteProfile() {
 
         <p className="mt-6 text-center text-xs text-gray-500">
           You can update these later in{" "}
-          <Link to="/settings/profile/edit" className="font-medium text-[#15803d] hover:underline">
+          <Link to="/settings" className="font-medium text-[#15803d] hover:underline">
             profile settings
           </Link>
           .

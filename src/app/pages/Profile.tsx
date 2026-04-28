@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import {
   ArrowLeft,
@@ -8,19 +8,10 @@ import {
   BadgeCheck,
   MessageCircle,
   Phone,
-  Settings,
-  LogOut,
   Loader2,
   Shield,
   ShieldAlert,
   Clock,
-  Camera,
-  Lock,
-  Mail,
-  Plus,
-  Save,
-  Trash2,
-  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth, type UserProfile } from "../context/AuthContext";
@@ -33,10 +24,8 @@ import { getProductPrice } from "../utils/getProductPrice";
 import { isOnlineFromLastActive, formatLastSeen } from "../utils/presence";
 import { FollowButton } from "../components/FollowButton";
 import { cn } from "../components/ui/utils";
-import { validateProfileImageFile, uploadProfileImage } from "../utils/profileMediaUpload";
-import { PhoneVerification } from "../components/PhoneVerification";
 
-type TabId = "products" | "reviews" | "about" | "contact" | "settings";
+type TabId = "products" | "reviews" | "about" | "contact";
 
 type Listing = {
   id: string | number;
@@ -72,32 +61,6 @@ type ListingProductReviewRow = {
 type SellerReviewSummary = {
   avg: number;
   count: number;
-};
-
-type UserAddress = {
-  address_id: string;
-  user_id: string;
-  label: string;
-  street: string;
-  city: string;
-  state: string;
-  is_default: boolean;
-  created_at?: string;
-  updated_at?: string;
-};
-
-type ProfileDetailsForm = {
-  full_name: string;
-  bio: string;
-  avatar_url: string;
-};
-
-type AddressForm = {
-  label: string;
-  street: string;
-  city: string;
-  state: string;
-  is_default: boolean;
 };
 
 function isUuid(s: string): boolean {
@@ -157,7 +120,7 @@ export default function Profile() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tabFromUrl = (searchParams.get("tab") || "").toLowerCase();
   const formatPrice = useCurrency();
-  const { user: authUser, loading: authLoading, signOut, refreshProfile } = useAuth();
+  const { user: authUser, loading: authLoading } = useAuth();
 
   const targetUserId = useMemo(() => {
     const raw = routeUserId?.trim();
@@ -167,7 +130,7 @@ export default function Profile() {
 
   const isOwnProfile = Boolean(authUser && targetUserId && authUser.id === targetUserId);
 
-  const validTabs: TabId[] = ["products", "reviews", "about", "contact", "settings"];
+  const validTabs: TabId[] = ["products", "reviews", "about", "contact"];
   const initialTab = validTabs.includes(tabFromUrl as TabId) ? (tabFromUrl as TabId) : "products";
   const [tab, setTab] = useState<TabId>(initialTab);
 
@@ -176,12 +139,6 @@ export default function Profile() {
     if (validTabs.includes(t as TabId)) setTab(t as TabId);
   }, [searchParams]);
 
-  useEffect(() => {
-    if (!isOwnProfile && tab === "settings") {
-      setTab("products");
-      setSearchParams({ tab: "products" }, { replace: true });
-    }
-  }, [isOwnProfile, tab, setSearchParams]);
 
   const setTabAndUrl = (next: TabId) => {
     setTab(next);
@@ -201,41 +158,6 @@ export default function Profile() {
   const [followingCount, setFollowingCount] = useState(0);
   const [sellerReviewSummary, setSellerReviewSummary] = useState<SellerReviewSummary>({ avg: 0, count: 0 });
 
-  const avatarFileInputRef = useRef<HTMLInputElement>(null);
-  const coverFileInputRef = useRef<HTMLInputElement>(null);
-  const [pendingAvatar, setPendingAvatar] = useState<{ file: File; preview: string } | null>(null);
-  const [pendingCover, setPendingCover] = useState<{ file: File; preview: string } | null>(null);
-  const [uploadingAvatar, setUploadingAvatar] = useState(false);
-  const [uploadingCover, setUploadingCover] = useState(false);
-  const [profileDetailsForm, setProfileDetailsForm] = useState<ProfileDetailsForm>({
-    full_name: "",
-    bio: "",
-    avatar_url: "",
-  });
-  const [savingProfileDetails, setSavingProfileDetails] = useState(false);
-  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
-  const [passwordForm, setPasswordForm] = useState({
-    currentPassword: "",
-    newPassword: "",
-    confirmPassword: "",
-  });
-  const [savingPassword, setSavingPassword] = useState(false);
-  const [emailModalOpen, setEmailModalOpen] = useState(false);
-  const [newEmail, setNewEmail] = useState("");
-  const [savingEmail, setSavingEmail] = useState(false);
-  const [addresses, setAddresses] = useState<UserAddress[]>([]);
-  const [addressesLoading, setAddressesLoading] = useState(false);
-  const [savingAddress, setSavingAddress] = useState(false);
-  const [editingAddressId, setEditingAddressId] = useState<string | null>(null);
-  const [addressForm, setAddressForm] = useState<AddressForm>({
-    label: "",
-    street: "",
-    city: "",
-    state: "",
-    is_default: false,
-  });
-  const [privacySaving, setPrivacySaving] = useState<"phone" | "email" | null>(null);
-
   const displayName =
     viewProfile?.full_name?.trim() ||
     (isOwnProfile ? authUser?.user_metadata?.full_name : null)?.trim() ||
@@ -247,24 +169,8 @@ export default function Profile() {
     displayName,
   );
 
-  const avatarDisplayed = pendingAvatar?.preview ?? avatar;
+  const coverDisplayed = (viewProfile as { cover_url?: string | null } | null)?.cover_url?.trim() || null;
 
-  const coverFromProfile = (viewProfile as { cover_url?: string | null } | null)?.cover_url?.trim() || null;
-  const coverDisplayed = pendingCover?.preview ?? coverFromProfile;
-
-  const clearPendingAvatar = useCallback(() => {
-    setPendingAvatar((current) => {
-      if (current?.preview.startsWith("blob:")) URL.revokeObjectURL(current.preview);
-      return null;
-    });
-  }, []);
-
-  const clearPendingCover = useCallback(() => {
-    setPendingCover((current) => {
-      if (current?.preview.startsWith("blob:")) URL.revokeObjectURL(current.preview);
-      return null;
-    });
-  }, []);
 
   const locationLabel = useMemo(() => {
     const state = viewProfile?.state?.trim();
@@ -591,245 +497,16 @@ export default function Profile() {
     }
   }, [targetUserId, isOwnProfile, authUser, routeUserId]);
 
-  const resetAddressForm = () => {
-    setEditingAddressId(null);
-    setAddressForm({
-      label: "",
-      street: "",
-      city: "",
-      state: "",
-      is_default: false,
-    });
-  };
-
-  const loadAddresses = useCallback(async () => {
-    if (!isOwnProfile || !authUser?.id) {
-      setAddresses([]);
-      return;
-    }
-    setAddressesLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from("user_addresses")
-        .select("address_id, user_id, label, street, city, state, is_default, created_at, updated_at")
-        .eq("user_id", authUser.id)
-        .order("is_default", { ascending: false })
-        .order("created_at", { ascending: true });
-      if (error) throw error;
-      setAddresses((data ?? []) as UserAddress[]);
-    } catch (e: unknown) {
-      console.warn("Profile user_addresses:", e);
-      toast.error(e instanceof Error ? e.message : "Could not load saved addresses");
-      setAddresses([]);
-    } finally {
-      setAddressesLoading(false);
-    }
-  }, [authUser?.id, isOwnProfile]);
-
-  useEffect(() => {
-    if (!isOwnProfile || !authUser) return;
-    setProfileDetailsForm({
-      full_name: viewProfile?.full_name ?? authUser.user_metadata?.full_name ?? "",
-      bio: viewProfile?.bio ?? "",
-      avatar_url: viewProfile?.avatar_url ?? authUser.user_metadata?.avatar_url ?? "",
-    });
-    setNewEmail(authUser.email ?? viewProfile?.email ?? "");
-  }, [authUser, isOwnProfile, viewProfile?.avatar_url, viewProfile?.bio, viewProfile?.email, viewProfile?.full_name]);
-
-  useEffect(() => {
-    void loadAddresses();
-  }, [loadAddresses]);
-
-  const saveProfileDetails = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!authUser) return;
-    const fullName = profileDetailsForm.full_name.trim();
-    const bio = profileDetailsForm.bio.trim();
-    const avatarUrl = profileDetailsForm.avatar_url.trim();
-    if (!fullName) {
-      toast.error("Full name is required.");
-      return;
-    }
-    setSavingProfileDetails(true);
-    try {
-      const { error } = await supabase.from("profiles").upsert(
-        {
-          id: authUser.id,
-          full_name: fullName,
-          bio: bio || null,
-          avatar_url: avatarUrl || null,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "id" },
-      );
-      if (error) throw error;
-      await supabase.auth.updateUser({
-        data: {
-          full_name: fullName,
-          bio: bio || undefined,
-          avatar_url: avatarUrl || null,
-        },
-      });
-      setViewProfile((prev) =>
-        prev
-          ? {
-              ...prev,
-              full_name: fullName,
-              bio: bio || null,
-              avatar_url: avatarUrl || null,
-              updated_at: new Date().toISOString(),
-            }
-          : prev,
-      );
-      await refreshProfile();
-      toast.success("Personal details updated");
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Could not update personal details");
-    } finally {
-      setSavingProfileDetails(false);
-    }
-  };
-
-  const savePasswordChange = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!passwordForm.currentPassword.trim()) {
-      toast.error("Enter your current password.");
-      return;
-    }
-    if (passwordForm.newPassword.length < 6) {
-      toast.error("New password must be at least 6 characters.");
-      return;
-    }
-    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      toast.error("New passwords do not match.");
-      return;
-    }
-    setSavingPassword(true);
-    try {
-      const { error } = await supabase.auth.updateUser({ password: passwordForm.newPassword });
-      if (error) throw error;
-      toast.success("Password updated");
-      setPasswordForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
-      setPasswordModalOpen(false);
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Could not update password");
-    } finally {
-      setSavingPassword(false);
-    }
-  };
-
-  const saveEmailChange = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const email = newEmail.trim();
-    if (!email || !email.includes("@")) {
-      toast.error("Enter a valid email address.");
-      return;
-    }
-    setSavingEmail(true);
-    try {
-      const { error } = await supabase.auth.updateUser({ email });
-      if (error) throw error;
-      toast.success("Confirmation email sent to your new address.");
-      setEmailModalOpen(false);
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Could not send confirmation email");
-    } finally {
-      setSavingEmail(false);
-    }
-  };
-
-  const saveAddress = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!authUser) return;
-    const payload = {
-      user_id: authUser.id,
-      label: addressForm.label.trim(),
-      street: addressForm.street.trim(),
-      city: addressForm.city.trim(),
-      state: addressForm.state.trim(),
-      is_default: addressForm.is_default,
-      updated_at: new Date().toISOString(),
-    };
-    if (!payload.label || !payload.street || !payload.city || !payload.state) {
-      toast.error("Complete all address fields.");
-      return;
-    }
-    setSavingAddress(true);
-    try {
-      const query = supabase.from("user_addresses");
-      const { error } = editingAddressId
-        ? await query.update(payload).eq("address_id", editingAddressId).eq("user_id", authUser.id)
-        : await query.insert(payload);
-      if (error) throw error;
-      toast.success(editingAddressId ? "Address updated" : "Address added");
-      resetAddressForm();
-      await loadAddresses();
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Could not save address");
-    } finally {
-      setSavingAddress(false);
-    }
-  };
-
-  const editAddress = (address: UserAddress) => {
-    setEditingAddressId(address.address_id);
-    setAddressForm({
-      label: address.label,
-      street: address.street,
-      city: address.city,
-      state: address.state,
-      is_default: address.is_default,
-    });
-  };
-
-  const deleteAddress = async (addressId: string) => {
-    if (!authUser) return;
-    setSavingAddress(true);
-    try {
-      const { error } = await supabase.from("user_addresses").delete().eq("address_id", addressId).eq("user_id", authUser.id);
-      if (error) throw error;
-      toast.success("Address deleted");
-      if (editingAddressId === addressId) resetAddressForm();
-      await loadAddresses();
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Could not delete address");
-    } finally {
-      setSavingAddress(false);
-    }
-  };
-
-  const updatePrivacySetting = async (key: "show_phone_on_profile" | "show_email_on_profile", value: boolean) => {
-    if (!authUser) return;
-    setPrivacySaving(key === "show_phone_on_profile" ? "phone" : "email");
-    try {
-      const { error } = await supabase
-        .from("profiles")
-        .update({ [key]: value, updated_at: new Date().toISOString() })
-        .eq("id", authUser.id);
-      if (error) throw error;
-      setViewProfile((prev) => (prev ? { ...prev, [key]: value } : prev));
-      toast.success("Privacy setting updated");
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Could not update privacy setting");
-    } finally {
-      setPrivacySaving(null);
-    }
-  };
-
   useEffect(() => {
     if (authLoading) return;
-    if (!authUser) {
-      navigate("/login", { replace: true });
-      return;
-    }
     if (!targetUserId) {
       navigate("/login", { replace: true });
       return;
     }
     void loadData();
-  }, [authLoading, authUser, navigate, loadData, targetUserId]);
+  }, [authLoading, navigate, loadData, targetUserId]);
 
-  if (authLoading || !authUser) {
+  if (authLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <Loader2 className="w-10 h-10 animate-spin text-[#22c55e]" />
@@ -846,7 +523,6 @@ export default function Profile() {
     { id: "reviews", label: "Reviews" },
     { id: "about", label: "About" },
     { id: "contact", label: "Contact" },
-    ...(isOwnProfile ? [{ id: "settings" as const, label: "Settings" }] : []),
   ];
 
   const phoneDisplay =
@@ -876,83 +552,6 @@ export default function Profile() {
 
   const profileOnline = isOnlineFromLastActive(viewProfile?.last_active);
 
-  const handleAvatarFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    const msg = validateProfileImageFile(file);
-    if (msg) {
-      toast.error(msg);
-      return;
-    }
-    clearPendingAvatar();
-    setPendingAvatar({ file, preview: URL.createObjectURL(file) });
-  };
-
-  const handleCoverFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    const msg = validateProfileImageFile(file);
-    if (msg) {
-      toast.error(msg);
-      return;
-    }
-    clearPendingCover();
-    setPendingCover({ file, preview: URL.createObjectURL(file) });
-  };
-
-  const commitAvatar = async () => {
-    if (!authUser || !pendingAvatar) return;
-    const msg = validateProfileImageFile(pendingAvatar.file);
-    if (msg) {
-      toast.error(msg);
-      return;
-    }
-    setUploadingAvatar(true);
-    try {
-      const publicUrl = await uploadProfileImage(supabase, authUser.id, pendingAvatar.file, "avatar");
-      const { error } = await supabase
-        .from("profiles")
-        .update({ avatar_url: publicUrl, updated_at: new Date().toISOString() })
-        .eq("id", authUser.id);
-      if (error) throw error;
-      await supabase.auth.updateUser({ data: { avatar_url: publicUrl } });
-      setViewProfile((prev) => (prev ? { ...prev, avatar_url: publicUrl } : prev));
-      clearPendingAvatar();
-      toast.success("Profile photo updated");
-    } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Could not upload photo");
-    } finally {
-      setUploadingAvatar(false);
-    }
-  };
-
-  const commitCover = async () => {
-    if (!authUser || !pendingCover) return;
-    const msg = validateProfileImageFile(pendingCover.file);
-    if (msg) {
-      toast.error(msg);
-      return;
-    }
-    setUploadingCover(true);
-    try {
-      const publicUrl = await uploadProfileImage(supabase, authUser.id, pendingCover.file, "cover");
-      const { error } = await supabase
-        .from("profiles")
-        .update({ cover_url: publicUrl, updated_at: new Date().toISOString() })
-        .eq("id", authUser.id);
-      if (error) throw error;
-      setViewProfile((prev) => (prev ? { ...prev, cover_url: publicUrl } : prev));
-      clearPendingCover();
-      toast.success("Cover photo updated");
-    } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Could not upload cover");
-    } finally {
-      setUploadingCover(false);
-    }
-  };
-
   return (
     <div className="min-h-screen bg-gray-100 pb-28">
       <header className="sticky top-0 z-40 border-b border-gray-200 bg-white">
@@ -971,58 +570,12 @@ export default function Profile() {
           </div>
         ) : null}
 
-        {isOwnProfile && viewProfile && !viewProfile.phone_verified ? (
-          <PhoneVerification userId={authUser.id} onVerified={() => void loadData()} />
-        ) : null}
 
         <div className="lg:flex lg:items-start lg:gap-8">
           <div className="overflow-hidden rounded-2xl bg-white text-center shadow-sm ring-1 ring-gray-200/80 lg:sticky lg:top-20 lg:w-80 lg:shrink-0 lg:text-left">
-            {isOwnProfile || coverDisplayed ? (
+            {coverDisplayed ? (
               <div className="relative h-32 w-full bg-gradient-to-br from-slate-200 via-gray-100 to-emerald-50 sm:h-36">
-                {coverDisplayed ? (
-                  <img src={coverDisplayed} alt="" className="absolute inset-0 h-full w-full object-cover" />
-                ) : null}
-                {isOwnProfile ? (
-                  <>
-                    <input
-                      ref={coverFileInputRef}
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp"
-                      className="hidden"
-                      onChange={handleCoverFileChange}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => coverFileInputRef.current?.click()}
-                      disabled={uploadingCover}
-                      className="absolute bottom-2 right-2 inline-flex items-center gap-1 rounded-full bg-black/45 px-2.5 py-1 text-[11px] font-medium text-white shadow-sm backdrop-blur-sm hover:bg-black/55 disabled:opacity-50"
-                    >
-                      <Camera className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                      {pendingCover ? "Preview" : coverDisplayed ? "Change cover" : "Add cover"}
-                    </button>
-                    {pendingCover ? (
-                      <div className="absolute bottom-2 left-2 flex gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => void commitCover()}
-                          disabled={uploadingCover}
-                          className="inline-flex items-center gap-1 rounded-lg bg-[#22c55e] px-2.5 py-1 text-[11px] font-semibold text-white disabled:opacity-50"
-                        >
-                          {uploadingCover ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
-                          {uploadingCover ? "Saving…" : "Save cover"}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={clearPendingCover}
-                          disabled={uploadingCover}
-                          className="rounded-lg bg-white/95 px-2.5 py-1 text-[11px] font-medium text-gray-800 shadow-sm"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    ) : null}
-                  </>
-                ) : null}
+                <img src={coverDisplayed} alt="" className="absolute inset-0 h-full w-full object-cover" />
               </div>
             ) : null}
 
@@ -1035,62 +588,12 @@ export default function Profile() {
               <div className={cn((isOwnProfile || coverDisplayed) && "flex justify-center lg:justify-start")}>
                 <div className="relative mx-auto w-24 shrink-0 lg:mx-0">
                   <img
-                    src={avatarDisplayed}
+                    src={avatar}
                     alt=""
                     className="mx-auto h-24 w-24 rounded-full border border-gray-100 bg-white object-cover shadow-md ring-4 ring-white lg:mx-0"
                   />
-                  {uploadingAvatar ? (
-                    <div className="absolute inset-0 flex items-center justify-center rounded-full bg-white/65">
-                      <Loader2 className="h-7 w-7 animate-spin text-[#22c55e]" aria-hidden />
-                    </div>
-                  ) : null}
-                  {isOwnProfile ? (
-                    <>
-                      <input
-                        ref={avatarFileInputRef}
-                        type="file"
-                        accept="image/jpeg,image/png,image/webp"
-                        className="hidden"
-                        onChange={handleAvatarFileChange}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => avatarFileInputRef.current?.click()}
-                        disabled={uploadingAvatar}
-                        className="absolute inset-0 cursor-pointer rounded-full hover:ring-4 hover:ring-[#22c55e]/20 focus:outline-none focus-visible:ring-4 focus-visible:ring-[#22c55e]/35 disabled:cursor-not-allowed"
-                        aria-label="Change profile photo"
-                      />
-                    </>
-                  ) : null}
                 </div>
               </div>
-              {isOwnProfile && pendingAvatar ? (
-                <div className="mt-3 flex flex-wrap justify-center gap-2 lg:justify-start">
-                  <button
-                    type="button"
-                    onClick={() => void commitAvatar()}
-                    disabled={uploadingAvatar}
-                    className="inline-flex items-center justify-center rounded-lg bg-[#22c55e] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
-                  >
-                    {uploadingAvatar ? (
-                      <>
-                        <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" aria-hidden />
-                        Saving…
-                      </>
-                    ) : (
-                      "Save photo"
-                    )}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={clearPendingAvatar}
-                    disabled={uploadingAvatar}
-                    className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              ) : null}
             <h2 className="mt-4 flex flex-wrap items-center justify-center gap-1.5 text-xl font-semibold text-gray-900 lg:justify-start lg:text-2xl">
               <span>{displayName}</span>
               {verificationLabel === "approved" ? <VerifiedBadge title="Verified seller" size="md" /> : null}
@@ -1212,14 +715,13 @@ export default function Profile() {
 
             <div className="mt-4 flex flex-col items-stretch justify-center gap-2 sm:flex-row sm:items-center lg:flex-col lg:items-stretch">
               {isOwnProfile ? (
-                <button
-                  type="button"
-                  onClick={() => setTabAndUrl("settings")}
+                <Link
+                  to="/settings"
                   className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-gray-50 px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-100"
                 >
                   <Edit className="w-3.5 h-3.5" />
                   Edit profile
-                </button>
+                </Link>
               ) : (
                 <div className="flex flex-col gap-2 sm:flex-row sm:w-full">
                   <FollowButton
@@ -1429,7 +931,7 @@ export default function Profile() {
                     {viewProfile?.bio?.trim()
                       ? viewProfile.bio
                       : isOwnProfile
-                        ? "Add a short bio in Edit profile → About you."
+                        ? "Add a short bio in Settings."
                         : "This member hasn’t added a bio yet."}
                   </p>
                 </div>
@@ -1455,11 +957,11 @@ export default function Profile() {
                           {phoneDisplay}
                         </a>
                       ) : (
-                        <p className="text-sm text-gray-500">Add a phone number in Edit profile.</p>
+                        <p className="text-sm text-gray-500">Add a phone number in Settings.</p>
                       )}
                       {phoneDisplay && viewProfile?.show_phone_on_profile === false ? (
                         <p className="text-[11px] text-amber-700 mt-2">
-                          Your number is hidden on your public profile. Enable “Show phone on profile” in Edit profile to let buyers call you from your page.
+                          Your number is hidden on your public profile. Enable “Show phone on profile” in Settings to let buyers call you from your page.
                         </p>
                       ) : null}
                     </div>
@@ -1476,8 +978,8 @@ export default function Profile() {
                       ) : (
                         <p className="text-sm text-gray-500">
                           {viewProfile?.show_email_on_profile
-                            ? "Add an email on your profile in Edit profile."
-                            : "Enable “Show email on profile” in Edit profile to display your contact email to others."}
+                            ? "Add an email in Settings."
+                            : "Enable “Show email on profile” in Settings to display your contact email to others."}
                         </p>
                       )}
                     </div>
@@ -1532,390 +1034,11 @@ export default function Profile() {
               </div>
             )}
 
-            {tab === "settings" && isOwnProfile ? (
-              <div className="space-y-5">
-                <section className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-gray-100">
-                  <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <h3 className="text-sm font-semibold text-gray-900">Personal details</h3>
-                      <p className="mt-1 text-xs text-gray-500">Update the public details buyers see on your profile.</p>
-                    </div>
-                  </div>
-                  <form className="space-y-3" onSubmit={(e) => void saveProfileDetails(e)}>
-                    <div>
-                      <label htmlFor="profile-full-name" className="mb-1 block text-xs font-semibold text-gray-600">
-                        Full name
-                      </label>
-                      <input
-                        id="profile-full-name"
-                        type="text"
-                        value={profileDetailsForm.full_name}
-                        onChange={(e) => setProfileDetailsForm((prev) => ({ ...prev, full_name: e.target.value }))}
-                        className="h-11 w-full rounded-xl border border-gray-200 px-3 text-sm outline-none focus:border-[#22c55e] focus:ring-2 focus:ring-[#22c55e]/15"
-                      />
-                    </div>
-                    <div>
-                      <label htmlFor="profile-bio" className="mb-1 block text-xs font-semibold text-gray-600">
-                        Bio
-                      </label>
-                      <textarea
-                        id="profile-bio"
-                        rows={3}
-                        value={profileDetailsForm.bio}
-                        onChange={(e) => setProfileDetailsForm((prev) => ({ ...prev, bio: e.target.value }))}
-                        placeholder="Short intro buyers see on your profile..."
-                        className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#22c55e] focus:ring-2 focus:ring-[#22c55e]/15"
-                      />
-                    </div>
-                    <div>
-                      <label htmlFor="profile-avatar-url" className="mb-1 block text-xs font-semibold text-gray-600">
-                        Avatar URL
-                      </label>
-                      <input
-                        id="profile-avatar-url"
-                        type="url"
-                        value={profileDetailsForm.avatar_url}
-                        onChange={(e) => setProfileDetailsForm((prev) => ({ ...prev, avatar_url: e.target.value }))}
-                        placeholder="https://..."
-                        className="h-11 w-full rounded-xl border border-gray-200 px-3 text-sm outline-none focus:border-[#22c55e] focus:ring-2 focus:ring-[#22c55e]/15"
-                      />
-                    </div>
-                    <button
-                      type="submit"
-                      disabled={savingProfileDetails}
-                      className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#22c55e] px-4 text-sm font-semibold text-white hover:bg-[#16a34a] disabled:opacity-60"
-                    >
-                      {savingProfileDetails ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Save className="h-4 w-4" aria-hidden />}
-                      Save personal details
-                    </button>
-                  </form>
-                </section>
-
-                <section className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-gray-100">
-                  <h3 className="text-sm font-semibold text-gray-900">Phone number</h3>
-                  <p className="mt-1 text-xs text-gray-500">
-                    {phoneDisplay ? `Current phone: ${phoneDisplay}` : "Add and verify your phone number."}
-                  </p>
-                  <PhoneVerification userId={authUser.id} onVerified={() => void loadData()} className="mt-4" />
-                </section>
-
-                <section className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-gray-100">
-                  <h3 className="text-sm font-semibold text-gray-900">Account security</h3>
-                  <p className="mt-1 text-xs text-gray-500">Manage sign-in credentials for this account.</p>
-                  <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                    <button
-                      type="button"
-                      onClick={() => setPasswordModalOpen(true)}
-                      className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 text-sm font-semibold text-gray-800 hover:bg-gray-50"
-                    >
-                      <Lock className="h-4 w-4 text-[#15803d]" aria-hidden />
-                      Change password
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setNewEmail(authUser.email ?? "");
-                        setEmailModalOpen(true);
-                      }}
-                      className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 text-sm font-semibold text-gray-800 hover:bg-gray-50"
-                    >
-                      <Mail className="h-4 w-4 text-[#15803d]" aria-hidden />
-                      Change email
-                    </button>
-                  </div>
-                </section>
-
-                <section className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-gray-100">
-                  <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <h3 className="text-sm font-semibold text-gray-900">Saved addresses</h3>
-                      <p className="mt-1 text-xs text-gray-500">Save delivery addresses for faster checkout.</p>
-                    </div>
-                    {addressesLoading ? <Loader2 className="h-4 w-4 animate-spin text-[#22c55e]" aria-hidden /> : null}
-                  </div>
-
-                  <form className="grid gap-3 md:grid-cols-2" onSubmit={(e) => void saveAddress(e)}>
-                    <input
-                      type="text"
-                      value={addressForm.label}
-                      onChange={(e) => setAddressForm((prev) => ({ ...prev, label: e.target.value }))}
-                      placeholder="Label, e.g. Home"
-                      className="h-11 rounded-xl border border-gray-200 px-3 text-sm outline-none focus:border-[#22c55e] focus:ring-2 focus:ring-[#22c55e]/15"
-                    />
-                    <input
-                      type="text"
-                      value={addressForm.street}
-                      onChange={(e) => setAddressForm((prev) => ({ ...prev, street: e.target.value }))}
-                      placeholder="Street address"
-                      className="h-11 rounded-xl border border-gray-200 px-3 text-sm outline-none focus:border-[#22c55e] focus:ring-2 focus:ring-[#22c55e]/15"
-                    />
-                    <input
-                      type="text"
-                      value={addressForm.city}
-                      onChange={(e) => setAddressForm((prev) => ({ ...prev, city: e.target.value }))}
-                      placeholder="City"
-                      className="h-11 rounded-xl border border-gray-200 px-3 text-sm outline-none focus:border-[#22c55e] focus:ring-2 focus:ring-[#22c55e]/15"
-                    />
-                    <input
-                      type="text"
-                      value={addressForm.state}
-                      onChange={(e) => setAddressForm((prev) => ({ ...prev, state: e.target.value }))}
-                      placeholder="State"
-                      className="h-11 rounded-xl border border-gray-200 px-3 text-sm outline-none focus:border-[#22c55e] focus:ring-2 focus:ring-[#22c55e]/15"
-                    />
-                    <label className="flex items-center gap-2 rounded-xl bg-gray-50 px-3 py-2 text-sm text-gray-700 md:col-span-2">
-                      <input
-                        type="checkbox"
-                        checked={addressForm.is_default}
-                        onChange={(e) => setAddressForm((prev) => ({ ...prev, is_default: e.target.checked }))}
-                        className="rounded border-gray-300 text-[#22c55e] focus:ring-[#22c55e]"
-                      />
-                      Make this my default address
-                    </label>
-                    <div className="flex flex-wrap gap-2 md:col-span-2">
-                      <button
-                        type="submit"
-                        disabled={savingAddress}
-                        className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#22c55e] px-4 text-sm font-semibold text-white hover:bg-[#16a34a] disabled:opacity-60"
-                      >
-                        {savingAddress ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Plus className="h-4 w-4" aria-hidden />}
-                        {editingAddressId ? "Update address" : "Add address"}
-                      </button>
-                      {editingAddressId ? (
-                        <button
-                          type="button"
-                          onClick={resetAddressForm}
-                          className="inline-flex h-11 items-center justify-center rounded-xl border border-gray-200 px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50"
-                        >
-                          Cancel edit
-                        </button>
-                      ) : null}
-                    </div>
-                  </form>
-
-                  <div className="mt-4 space-y-2">
-                    {addresses.length === 0 ? (
-                      <p className="rounded-xl bg-gray-50 p-3 text-sm text-gray-500">No saved addresses yet.</p>
-                    ) : (
-                      addresses.map((address) => (
-                        <article key={address.address_id} className="rounded-xl border border-gray-100 bg-gray-50/70 p-3">
-                          <div className="flex flex-wrap items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <p className="font-semibold text-gray-900">
-                                {address.label}
-                                {address.is_default ? (
-                                  <span className="ml-2 rounded-full bg-[#dcfce7] px-2 py-0.5 text-[10px] font-semibold text-[#15803d]">
-                                    Default
-                                  </span>
-                                ) : null}
-                              </p>
-                              <p className="mt-1 text-sm text-gray-600">
-                                {address.street}, {address.city}, {address.state}
-                              </p>
-                            </div>
-                            <div className="flex gap-2">
-                              <button
-                                type="button"
-                                onClick={() => editAddress(address)}
-                                className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
-                              >
-                                Edit
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => void deleteAddress(address.address_id)}
-                                className="inline-flex items-center gap-1 rounded-lg border border-red-100 bg-white px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" aria-hidden />
-                                Delete
-                              </button>
-                            </div>
-                          </div>
-                        </article>
-                      ))
-                    )}
-                  </div>
-                </section>
-
-                <section className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-gray-100">
-                  <h3 className="text-sm font-semibold text-gray-900">Privacy settings</h3>
-                  <p className="mt-1 text-xs text-gray-500">Choose which contact details appear on your public profile.</p>
-                  <div className="mt-4 space-y-3">
-                    <label className="flex items-center justify-between gap-4 rounded-xl bg-gray-50 p-3">
-                      <span className="text-sm font-medium text-gray-800">Show phone on profile</span>
-                      <input
-                        type="checkbox"
-                        checked={Boolean(viewProfile?.show_phone_on_profile)}
-                        disabled={privacySaving === "phone"}
-                        onChange={(e) => void updatePrivacySetting("show_phone_on_profile", e.target.checked)}
-                        className="rounded border-gray-300 text-[#22c55e] focus:ring-[#22c55e]"
-                      />
-                    </label>
-                    <label className="flex items-center justify-between gap-4 rounded-xl bg-gray-50 p-3">
-                      <span className="text-sm font-medium text-gray-800">Show email on profile</span>
-                      <input
-                        type="checkbox"
-                        checked={Boolean(viewProfile?.show_email_on_profile)}
-                        disabled={privacySaving === "email"}
-                        onChange={(e) => void updatePrivacySetting("show_email_on_profile", e.target.checked)}
-                        className="rounded border-gray-300 text-[#22c55e] focus:ring-[#22c55e]"
-                      />
-                    </label>
-                  </div>
-                </section>
-              </div>
-            ) : null}
           </div>
         </div>
         </div>
       </div>
 
-      {passwordModalOpen ? (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true">
-          <form
-            onSubmit={(e) => void savePasswordChange(e)}
-            className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl"
-          >
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900">Change password</h2>
-                <p className="mt-1 text-sm text-gray-500">Choose a new password for your GreenHub account.</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setPasswordModalOpen(false)}
-                className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100"
-                aria-label="Close change password"
-              >
-                <X className="h-5 w-5" aria-hidden />
-              </button>
-            </div>
-            <div className="mt-5 space-y-3">
-              <input
-                type="password"
-                autoComplete="current-password"
-                value={passwordForm.currentPassword}
-                onChange={(e) => setPasswordForm((prev) => ({ ...prev, currentPassword: e.target.value }))}
-                placeholder="Current password"
-                className="h-11 w-full rounded-xl border border-gray-200 px-3 text-sm outline-none focus:border-[#22c55e] focus:ring-2 focus:ring-[#22c55e]/15"
-              />
-              <input
-                type="password"
-                autoComplete="new-password"
-                value={passwordForm.newPassword}
-                onChange={(e) => setPasswordForm((prev) => ({ ...prev, newPassword: e.target.value }))}
-                placeholder="New password"
-                className="h-11 w-full rounded-xl border border-gray-200 px-3 text-sm outline-none focus:border-[#22c55e] focus:ring-2 focus:ring-[#22c55e]/15"
-              />
-              <input
-                type="password"
-                autoComplete="new-password"
-                value={passwordForm.confirmPassword}
-                onChange={(e) => setPasswordForm((prev) => ({ ...prev, confirmPassword: e.target.value }))}
-                placeholder="Confirm new password"
-                className="h-11 w-full rounded-xl border border-gray-200 px-3 text-sm outline-none focus:border-[#22c55e] focus:ring-2 focus:ring-[#22c55e]/15"
-              />
-            </div>
-            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <button
-                type="button"
-                onClick={() => setPasswordModalOpen(false)}
-                className="h-11 rounded-xl border border-gray-200 px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={savingPassword}
-                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#22c55e] px-4 text-sm font-semibold text-white hover:bg-[#16a34a] disabled:opacity-60"
-              >
-                {savingPassword ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
-                Update password
-              </button>
-            </div>
-          </form>
-        </div>
-      ) : null}
-
-      {emailModalOpen ? (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true">
-          <form
-            onSubmit={(e) => void saveEmailChange(e)}
-            className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl"
-          >
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900">Change email</h2>
-                <p className="mt-1 text-sm text-gray-500">We’ll send a confirmation link to the new email address.</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setEmailModalOpen(false)}
-                className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100"
-                aria-label="Close change email"
-              >
-                <X className="h-5 w-5" aria-hidden />
-              </button>
-            </div>
-            <div className="mt-5">
-              <label htmlFor="new-email" className="mb-1 block text-xs font-semibold text-gray-600">
-                New email address
-              </label>
-              <input
-                id="new-email"
-                type="email"
-                autoComplete="email"
-                value={newEmail}
-                onChange={(e) => setNewEmail(e.target.value)}
-                className="h-11 w-full rounded-xl border border-gray-200 px-3 text-sm outline-none focus:border-[#22c55e] focus:ring-2 focus:ring-[#22c55e]/15"
-              />
-            </div>
-            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <button
-                type="button"
-                onClick={() => setEmailModalOpen(false)}
-                className="h-11 rounded-xl border border-gray-200 px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={savingEmail}
-                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#22c55e] px-4 text-sm font-semibold text-white hover:bg-[#16a34a] disabled:opacity-60"
-              >
-                {savingEmail ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
-                Send confirmation
-              </button>
-            </div>
-          </form>
-        </div>
-      ) : null}
-
-      {isOwnProfile ? (
-        <footer className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-30">
-          <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-center gap-6">
-            <button
-              type="button"
-              onClick={() => setTabAndUrl("settings")}
-              className="flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-gray-900"
-            >
-              <Settings className="w-4 h-4" />
-              Settings
-            </button>
-            <button
-              type="button"
-              onClick={async () => {
-                await signOut();
-                navigate("/login", { replace: true });
-              }}
-              className="flex items-center gap-2 text-sm font-medium text-red-600 hover:text-red-700"
-            >
-              <LogOut className="w-4 h-4" />
-              Log out
-            </button>
-          </div>
-        </footer>
-      ) : null}
     </div>
   );
 }

@@ -27,7 +27,6 @@ import WriteReview from "./pages/WriteReview";
 import SellerReviews from "./pages/SellerReviews";
 import Profile from "./pages/Profile";
 import ProfileFollowList from "./pages/ProfileFollowList";
-import ProfileEdit from "./pages/ProfileEdit";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 import WorkersBrowse from "./pages/workers/WorkersBrowse";
@@ -195,7 +194,7 @@ export const router = createBrowserRouter([
       { path: "profile", Component: Profile },
       { path: "favorites", Component: LegacyFavoritesRedirect },
       { path: "reviews", Component: LegacyReviewsRedirect },
-      { path: "settings/profile/edit", Component: ProfileEdit },
+      { path: "settings/profile/edit", Component: LegacySettingsRedirect },
       { path: "settings", Component: Settings },
       { path: "settings/password", Component: LegacySettingsRedirect },
       { path: "settings/address", Component: LegacySettingsRedirect },

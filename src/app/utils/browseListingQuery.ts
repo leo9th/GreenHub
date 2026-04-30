@@ -68,7 +68,7 @@ export function defaultBrowseMoreFilters(): BrowseMoreFiltersState {
 }
 
 export function sanitizeBrowseIlike(s: string): string {
-  return s.replace(/[%_\\"]/g, "").trim();
+  return String(s ?? "").replace(/[%_\\"]/g, "").trim();
 }
 
 /**

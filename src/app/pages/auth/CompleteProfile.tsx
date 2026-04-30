@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { toast } from "sonner";
 import { getLGAsForState, nigerianStates } from "../../data/nigeriaData";
+import { AuthFloatingIcons } from "../../components/auth/AuthFloatingIcons";
 
 /**
  * Shown after phone OTP signup — user is authenticated but should add profile details.
@@ -80,15 +81,17 @@ export default function CompleteProfile() {
 
   if (authLoading || !user) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <Loader2 className="h-10 w-10 animate-spin text-[#22c55e]" />
+      <div className="relative min-h-screen flex items-center justify-center bg-gray-50 overflow-x-hidden">
+        <AuthFloatingIcons />
+        <Loader2 className="relative z-10 h-10 w-10 animate-spin text-[#22c55e]" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#f0fdf4] via-white to-gray-50 py-12 px-4">
-      <div className="mx-auto w-full max-w-[480px] rounded-2xl border border-gray-100 bg-white p-6 shadow-xl shadow-gray-200/50 md:p-8">
+    <div className="relative min-h-screen overflow-x-hidden bg-gradient-to-b from-[#f0fdf4] via-white to-gray-50 py-12 px-4">
+      <AuthFloatingIcons />
+      <div className="relative z-10 mx-auto w-full max-w-[480px] rounded-2xl border border-gray-100 bg-white p-6 shadow-xl shadow-gray-200/50 md:p-8">
         <button
           type="button"
           onClick={() => navigate(-1)}

@@ -15,6 +15,7 @@ import Register from "./pages/auth/Register";
 import ForgotPassword from "./pages/auth/ForgotPassword";
 import ResetPassword from "./pages/auth/ResetPassword";
 import VerifyOTP from "./pages/auth/VerifyOTP";
+import AuthCallback from "./pages/auth/AuthCallback";
 import CheckEmail from "./pages/auth/CheckEmail";
 import CompleteProfile from "./pages/auth/CompleteProfile";
 import Welcome from "./pages/Welcome";
@@ -139,6 +140,7 @@ export const router = createBrowserRouter([
       { path: "chatbot", element: <Navigate to="/" replace /> },
       { path: "design-system", Component: DesignSystem },
       { path: "login", Component: Login },
+      { path: "auth/callback", Component: AuthCallback },
       { path: "register", Component: Register },
       { path: "forgot-password", Component: ForgotPassword },
       { path: "reset-password", Component: ResetPassword },

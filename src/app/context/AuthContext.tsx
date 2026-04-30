@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, useCallback } from 'rea
 import type { AuthChangeEvent, Provider, Session, User } from '@supabase/supabase-js';
 import { supabase } from '../../lib/supabase';
 import { ensureOAuthProfile, isOAuthUser } from '../utils/ensureOAuthProfile';
+import { authRedirectTo } from '../utils/authSiteUrl';
 
 export interface UserProfile {
   id: string;
@@ -87,11 +88,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const refreshProfile = useCallback(async () => {
-    if (user?.id) {
-      setLoading(true);
-      const data = await fetchProfile(user.id);
-      setProfile(data);
-      setLoading(false);
+    if (!user?.id) return;
+    try {
+      setProfile(await fetchProfile(user.id));
+    } catch (e) {
+      console.warn('refreshProfile:', e);
     }
   }, [user?.id]);
 
@@ -105,7 +106,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setLoading(false);
         return;
       }
-      setLoading(true);
+      // Token refresh only extends the JWT — avoid a global loading screen and extra profile fetch.
+      if (event === 'TOKEN_REFRESHED') {
+        return;
+      }
+      // USER_UPDATED (e.g. metadata) should not block the app with loading=true; that races with
+      // updateProfile()'s DB write and makes Settings look like "save did nothing".
+      const showGlobalLoading =
+        event === 'INITIAL_LOAD' ||
+        event === 'INITIAL_SESSION' ||
+        event === 'SIGNED_IN' ||
+        event === 'PASSWORD_RECOVERY';
+      if (showGlobalLoading) {
+        setLoading(true);
+      }
       try {
         if (isOAuthUser(session.user) && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'INITIAL_LOAD')) {
           await ensureOAuthProfile(session.user);
@@ -115,7 +129,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.warn('Auth session hydrate:', e);
         setProfile(await fetchProfile(session.user.id));
       } finally {
-        setLoading(false);
+        if (showGlobalLoading) {
+          setLoading(false);
+        }
       }
     };
 
@@ -161,6 +177,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       email: normalizedEmail,
       password,
       options: {
+        emailRedirectTo: authRedirectTo('/auth/callback?next=/welcome'),
         data: {
           ...metadata,
           email: normalizedEmail,
@@ -233,11 +250,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const cleanUpdates = Object.fromEntries(Object.entries(updates).filter(([, value]) => value !== undefined));
 
-    const { error: updateUserError } = await supabase.auth.updateUser({
-      data: cleanUpdates,
-    });
-    if (updateUserError) throw updateUserError;
-
+    // Persist to Postgres first so any USER_UPDATED listener sees up-to-date profile rows.
     const { error: profileError } = await supabase.from('profiles').upsert(
       {
         id: authUser.id,
@@ -249,6 +262,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       { onConflict: 'id' },
     );
     if (profileError) throw profileError;
+
+    const { error: updateUserError } = await supabase.auth.updateUser({
+      data: cleanUpdates,
+    });
+    if (updateUserError) throw updateUserError;
 
     setProfile(await fetchProfile(authUser.id));
   }, []);

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useReducer, useState } from "react";
 import { Link, useParams, useNavigate } from "react-router";
 import {
   ArrowLeft,
@@ -18,23 +18,14 @@ import { getAvatarUrl } from "../utils/getAvatar";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../../lib/supabase";
 import { isWarehouseShippingFulfillment } from "../utils/fulfillment";
-import { buyerDeliverySummary, deliveryJobStatusLabel, sellerDeliverySummary } from "../utils/deliveryJobs";
-import DeliveryTrackingMap from "../components/DeliveryTrackingMap";
+import DeliveryMapBottomPanel from "../components/maps/DeliveryMapBottomPanel";
+import { initialOrderState, orderReducer } from "../state/OrderReducer";
+import { OrderState, OrderAction, OrderStatus as OrderStateType, OrderUiState, OrderActionType } from "../state/OrderState";
+import { OrderActionBar } from "../components/order/OrderActionBar";
+import { getOrderActions } from "../state/OrderActionEngine";
 
-type OrderRow = {
-  id: string;
-  created_at: string | null;
-  status: string | null;
-  total_amount?: number | null;
-  total_price?: number | null;
-  amount?: number | null;
-  delivery_fee: number | null;
-  platform_fee: number | null;
-  payment_method: string | null;
-  payment_reference: string | null;
-  shipping_address: Record<string, unknown> | null;
-  buyer_id?: string | null;
-};
+const DeliveryTrackingMap = lazy(() => import("../components/maps/DeliveryTrackingMap"));
+
 
 type LineItemStatus = "pending" | "processing" | "shipped" | "delivered" | "cancelled";
 
@@ -68,37 +59,80 @@ type OrderEventRow = {
   metadata?: Record<string, unknown> | null;
 };
 
-type DeliveryJobRow = {
-  id: string;
-  order_id: string;
-  status: string | null;
-  buyer_pin: string | null;
-  quoted_fee: number | null;
-  rider_payout_amount: number | null;
-  pickup_summary: Record<string, unknown> | null;
+type OrderUiState =
+  | "searching_rider"
+  | "rider_assigned"
+  | "rider_picking_up"
+  | "rider_on_the_way"
+  | "arriving"
+  | "delivered"
+  | "cancelled"
+  | "unknown";
+
+type OrderMeta = {
+  paymentMethod: string | null;
+  paymentReference: string | null;
+  deliveryFee: number | null;
+  totalAmount: number | null;
 };
 
-type DeliveryEventRow = {
-  id: string;
-  event_type: string;
-  created_at: string;
-};
+function safeText(value: unknown, fallback = "—"): string {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : fallback;
+  }
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return fallback;
+}
 
-type DeliveryRequestRow = {
-  id: string;
-  order_id: string;
-  status: string | null;
-  assigned_rider_id: string | null;
-  delivery_pin: string | null;
-  delivered_at: string | null;
-  created_at: string | null;
-};
+function orderUiStateFromOrderStatus(status: OrderStateType): OrderUiState {
+  switch (status) {
+    case "PENDING":
+      return "searching_rider";
+    case "ACCEPTED":
+      return "rider_assigned";
+    case "EN_ROUTE_TO_PICKUP":
+      return "rider_picking_up";
+    case "AT_PICKUP":
+    case "EN_ROUTE_TO_DROPOFF":
+      return "rider_on_the_way";
+    case "AT_DROPOFF":
+      return "arriving";
+    case "DELIVERED":
+    case "COMPLETED":
+      return "delivered";
+    case "CANCELLED_BY_BUYER":
+    case "CANCELLED_BY_RIDER":
+      return "cancelled";
+    default:
+      return "unknown";
+  }
+}
 
-type DeliveryTrackingRow = {
-  latitude: number;
-  longitude: number;
-  recorded_at: string;
-};
+function orderUiStatusLabel(state: OrderUiState): string {
+  switch (state) {
+    case "searching_rider":
+      return "Finding rider";
+    case "rider_assigned":
+      return "Rider assigned";
+    case "rider_picking_up":
+      return "Rider going to pickup";
+    case "rider_on_the_way":
+      return "On the way";
+    case "arriving":
+      return "Arriving";
+    case "delivered":
+      return "Delivered";
+    case "cancelled":
+      return "Cancelled";
+    default:
+      return "—";
+  }
+}
+
+
+
+
 
 function parseLatLngFromAddress(addr: Record<string, unknown> | null | undefined): { lat: number; lng: number } | null {
   if (!addr || typeof addr !== "object") return null;
@@ -114,6 +148,12 @@ function parseLatLngFromAddress(addr: Record<string, unknown> | null | undefined
 /** Default hub marker when order has guaranteed / hub fulfillment (align with ops). */
 const DEFAULT_HUB_LAT = 6.5244;
 const DEFAULT_HUB_LNG = 3.3792;
+
+function MapSkeleton() {
+  return (
+    <div className="h-72 w-full animate-pulse rounded-xl border border-gray-200 bg-gradient-to-br from-gray-100 via-gray-50 to-gray-200" />
+  );
+}
 
 type SellerLite = {
   id: string;
@@ -157,11 +197,11 @@ function shippingLines(addr: Record<string, unknown> | null): { fullName: string
     return { fullName: "—", phone: "—", address: "—", state: "—", lga: "—" };
   }
   return {
-    fullName: String(addr.fullName ?? addr.full_name ?? "—"),
-    phone: String(addr.phone ?? "—"),
-    address: String(addr.address ?? "—"),
-    state: String(addr.state ?? "—"),
-    lga: String(addr.lga ?? "—"),
+    fullName: safeText(addr.fullName ?? addr.full_name),
+    phone: safeText(addr.phone),
+    address: safeText(addr.address),
+    state: safeText(addr.state),
+    lga: safeText(addr.lga),
   };
 }
 
@@ -170,12 +210,6 @@ function paymentMethodLabel(raw: string | null | undefined): string {
   if (s === "paystack") return "Paystack";
   if (s === "pod") return "Pay on delivery";
   return raw?.trim() || "—";
-}
-
-function orderGrandTotal(o: OrderRow | null): number {
-  if (!o) return 0;
-  const v = o.total_price || o.total_amount || o.amount || 0;
-  return Number.isFinite(Number(v)) ? Number(v) : 0;
 }
 
 function formatOrderEventTime(iso: string | null | undefined): string {
@@ -204,6 +238,7 @@ type SellerActionCenterProps = {
   orderId: string;
   onSync: () => void;
 };
+
 
 function SellerActionCenter({ item, orderId, onSync }: SellerActionCenterProps) {
   const { user } = useAuth();
@@ -363,34 +398,34 @@ export default function OrderDetail() {
   const navigate = useNavigate();
   const { user: authUser, loading: authLoading } = useAuth();
 
-  const [order, setOrder] = useState<OrderRow | null>(null);
+  const [orderState, dispatch] = useReducer(orderReducer, initialOrderState);
   const [items, setItems] = useState<OrderItemRow[]>([]);
   const [orderEvents, setOrderEvents] = useState<OrderEventRow[]>([]);
   const [sellers, setSellers] = useState<Map<string, SellerLite>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isBuyerView, setIsBuyerView] = useState(true);
+  const [orderMeta, setOrderMeta] = useState<OrderMeta>({
+    paymentMethod: null,
+    paymentReference: null,
+    deliveryFee: null,
+    totalAmount: null,
+  });
+  // Review-related states are kept separate for now, as they are not part of the core order state machine
   const [reviewItem, setReviewItem] = useState<OrderItemRow | null>(null);
   const [reviewRating, setReviewRating] = useState(0);
   const [reviewText, setReviewText] = useState("");
   const [reviewAnonymous, setReviewAnonymous] = useState(false);
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
-  const [deliveryJob, setDeliveryJob] = useState<DeliveryJobRow | null>(null);
-  const [deliveryEvents, setDeliveryEvents] = useState<DeliveryEventRow[]>([]);
-  const [deliveryRequest, setDeliveryRequest] = useState<DeliveryRequestRow | null>(null);
-  const [latestTracking, setLatestTracking] = useState<DeliveryTrackingRow | null>(null);
 
   const load = useCallback(async () => {
     const userId = authUser?.id?.trim();
     const orderId = id?.trim();
     if (!userId || !orderId) {
-      setOrder(null);
-      setItems([]);
-      setOrderEvents([]);
-      setDeliveryJob(null);
-      setDeliveryEvents([]);
-      setDeliveryRequest(null);
-      setLatestTracking(null);
+      dispatch({ type: "RESET_ORDER" as any }); // Placeholder action for reset
+      setItems([]); // Items are separate for now
+      setOrderEvents([]); // Events are separate for now
+      setOrderMeta({ paymentMethod: null, paymentReference: null, deliveryFee: null, totalAmount: null });
       setLoading(false);
       return;
     }
@@ -406,13 +441,10 @@ export default function OrderDetail() {
         throw oErr;
       }
       if (!ord) {
-        setOrder(null);
+        dispatch({ type: "RESET_ORDER" as any }); // Placeholder action for reset
         setItems([]);
         setOrderEvents([]);
-        setDeliveryJob(null);
-        setDeliveryEvents([]);
-        setDeliveryRequest(null);
-        setLatestTracking(null);
+        setOrderMeta({ paymentMethod: null, paymentReference: null, deliveryFee: null, totalAmount: null });
         setError("Order not found.");
         return;
       }
@@ -432,19 +464,35 @@ export default function OrderDetail() {
       const hasSellerLine = itemList.some((it) => it.seller_id && String(it.seller_id) === userId);
 
       if (!isBuyer && !hasSellerLine) {
-        setOrder(null);
+        dispatch({ type: "RESET_ORDER" as any }); // Placeholder action for reset
         setItems([]);
         setOrderEvents([]);
-        setDeliveryJob(null);
-        setDeliveryEvents([]);
-        setDeliveryRequest(null);
-        setLatestTracking(null);
+        setOrderMeta({ paymentMethod: null, paymentReference: null, deliveryFee: null, totalAmount: null });
         setError("Order not found.");
         return;
       }
 
       setIsBuyerView(isBuyer);
-      setOrder(ord as OrderRow);
+      setOrderMeta({
+        paymentMethod: ord.payment_method ?? null,
+        paymentReference: ord.payment_reference ?? null,
+        deliveryFee: Number.isFinite(Number(ord.delivery_fee)) ? Number(ord.delivery_fee) : null,
+        totalAmount: Number.isFinite(Number(ord.total_amount ?? ord.total_price ?? ord.amount))
+          ? Number(ord.total_amount ?? ord.total_price ?? ord.amount)
+          : null,
+      });
+      // setOrder(ord as OrderRow); // Removed, now handled by reducer
+
+      dispatch({
+        type: "SET_ORDER_DETAILS" as any,
+        payload: {
+          orderId: ord.id,
+          status: ord.status as OrderStateType,
+          pickupLocation: parseLatLngFromAddress(ord.shipping_address) ? { ...parseLatLngFromAddress(ord.shipping_address), address: shippingLines(ord.shipping_address).address } : initialOrderState.pickupLocation,
+          dropoffLocation: parseLatLngFromAddress(ord.shipping_address) ? { ...parseLatLngFromAddress(ord.shipping_address), address: shippingLines(ord.shipping_address).address } : initialOrderState.dropoffLocation,
+          // Add other initial order details that directly map to OrderState
+        },
+      });
 
       const { data: dr, error: drErr } = await supabase
         .from("delivery_requests")
@@ -453,35 +501,56 @@ export default function OrderDetail() {
         .maybeSingle();
       if (drErr) {
         console.warn("[OrderDetail] delivery_requests select", drErr);
-        setDeliveryRequest(null);
-        setLatestTracking(null);
+        dispatch({ type: "UPDATE_RIDER_INFO", riderInfo: null });
       } else {
-        setDeliveryRequest((dr as DeliveryRequestRow) ?? null);
+        if (dr?.assigned_rider_id) {
+          const { data: riderProfile, error: rErr } = await supabase
+            .from("profiles_public")
+            .select("id, full_name, avatar_url, gender, phone")
+            .eq("id", dr.assigned_rider_id)
+            .maybeSingle();
+          if (!rErr && riderProfile) {
+            dispatch({
+              type: "UPDATE_RIDER_INFO",
+              riderInfo: {
+                id: riderProfile.id,
+                name: riderProfile.full_name || "Rider",
+                vehicle: "Bike", // Placeholder, needs actual vehicle type from data
+                plateNumber: "ABC-123", // Placeholder
+                phone: riderProfile.phone || "",
+                photoUrl: getAvatarUrl(riderProfile.avatar_url, riderProfile.gender, riderProfile.full_name || "Rider"),
+              },
+            });
+          } else {
+            console.warn("[OrderDetail] rider profile select", rErr);
+            dispatch({ type: "UPDATE_RIDER_INFO", riderInfo: null });
+          }
+        } else {
+          dispatch({ type: "UPDATE_RIDER_INFO", riderInfo: null });
+        }
+        dispatch({ type: "UPDATE_ORDER_STATUS", status: (dr?.status as OrderStateType) || "PENDING" });
+        // Dispatch action for estimated arrival time if available
+        // dispatch({ type: "UPDATE_ESTIMATED_ARRIVAL_TIME", time: dr?.delivered_at ? formatOrderEventTime(dr.delivered_at) : null });
       }
 
-      const { data: dj, error: djErr } = await supabase.from("delivery_jobs").select("*").eq("order_id", orderId).maybeSingle();
-      if (djErr) {
-        console.warn("[OrderDetail] delivery_jobs select", djErr);
-        setDeliveryJob(null);
-        setDeliveryEvents([]);
-      } else if (dj) {
-        const job = dj as DeliveryJobRow;
-        setDeliveryJob(job);
-        const { data: deRows, error: deErr } = await supabase
-          .from("delivery_events")
-          .select("id, event_type, created_at")
-          .eq("job_id", job.id)
-          .order("created_at", { ascending: true });
-        if (deErr) {
-          console.warn("[OrderDetail] delivery_events select", deErr);
-          setDeliveryEvents([]);
-        } else {
-          setDeliveryEvents((deRows ?? []) as DeliveryEventRow[]);
-        }
-      } else {
-        setDeliveryJob(null);
-        setDeliveryEvents([]);
-      }
+      // Remove fetching delivery_jobs as its data will be managed by OrderState
+      // const { data: dj, error: djErr } = await supabase.from("delivery_jobs").select("*").eq("order_id", orderId).maybeSingle();
+      // if (djErr) {
+      //   console.warn("[OrderDetail] delivery_jobs select", djErr);
+      // } else if (dj) {
+      //   const job = dj as DeliveryJobRow;
+      //   const { data: deRows, error: deErr } = await supabase
+      //     .from("delivery_events")
+      //     .select("id, event_type, created_at")
+      //     .eq("job_id", job.id)
+      //     .order("created_at", { ascending: true });
+      //   if (deErr) {
+      //     console.warn("[OrderDetail] delivery_events select", deErr);
+      //   } else {
+      //     setDeliveryEvents((deRows ?? []) as DeliveryEventRow[]);
+      //   }
+      // }
+
 
       const { data: evRows, error: evErr } = await supabase
         .from("order_events")
@@ -523,37 +592,22 @@ export default function OrderDetail() {
     } catch (e: unknown) {
       console.error("[OrderDetail] load failed", e);
       setError(e instanceof Error ? e.message : "Could not load order");
-      setOrder(null);
+      dispatch({ type: "RESET_ORDER" as any }); // Placeholder action for reset
       setItems([]);
       setOrderEvents([]);
-      setDeliveryJob(null);
-      setDeliveryEvents([]);
-      setDeliveryRequest(null);
-      setLatestTracking(null);
+      setOrderMeta({ paymentMethod: null, paymentReference: null, deliveryFee: null, totalAmount: null });
     } finally {
       setLoading(false);
     }
   }, [authUser?.id, id]);
 
   useEffect(() => {
-    const req = deliveryRequest;
-    if (!req?.id || !isBuyerView) return;
-    const st = String(req.status || "").toLowerCase();
-    if (!["assigned", "picked_up"].includes(st)) {
-      setLatestTracking(null);
+    if (!orderState.orderId || !isBuyerView) {
       return;
     }
     let cancelled = false;
     const poll = async () => {
-      const { data, error } = await supabase
-        .from("delivery_tracking")
-        .select("latitude, longitude, recorded_at")
-        .eq("delivery_request_id", req.id)
-        .order("recorded_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (cancelled || error) return;
-      if (data) setLatestTracking(data as DeliveryTrackingRow);
+      if (cancelled) return;
     };
     void poll();
     const t = window.setInterval(() => void poll(), 10000);
@@ -561,7 +615,7 @@ export default function OrderDetail() {
       cancelled = true;
       window.clearInterval(t);
     };
-  }, [deliveryRequest?.id, deliveryRequest?.status, isBuyerView]);
+  }, [orderState.orderId, orderState.status, isBuyerView, dispatch]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -572,27 +626,59 @@ export default function OrderDetail() {
     void load();
   }, [authLoading, authUser, navigate, load]);
 
-  const addr = useMemo(() => shippingLines(order?.shipping_address ?? null), [order?.shipping_address]);
+  const addr = useMemo(() => shippingLines(orderState.pickupLocation.address ? { address: orderState.pickupLocation.address } : null), [orderState.pickupLocation.address]); // Assuming pickupLocation.address is a string
 
   const dropCoords = useMemo(
-    () => parseLatLngFromAddress(order?.shipping_address ?? null),
-    [order?.shipping_address],
+    () => orderState.dropoffLocation,
+    [orderState.dropoffLocation],
   );
 
   const deliveryRequestTimeline = useMemo(() => {
-    if (!deliveryRequest) return [];
-    const st = String(deliveryRequest.status || "").toLowerCase();
+    // Simplified timeline based on OrderState status
+    const st = orderState.status;
     const steps: { key: string; label: string; done: boolean }[] = [
       { key: "pending", label: "Delivery request created", done: true },
-      { key: "assigned", label: "Rider assigned", done: ["assigned", "picked_up", "delivered"].includes(st) },
-      { key: "picked_up", label: "Picked up — on the way", done: ["picked_up", "delivered"].includes(st) },
-      { key: "delivered", label: "Delivered", done: st === "delivered" },
+      { key: "assigned", label: "Rider assigned", done: ["ACCEPTED", "EN_ROUTE_TO_PICKUP", "AT_PICKUP", "EN_ROUTE_TO_DROPOFF", "AT_DROPOFF", "DELIVERED", "COMPLETED"].includes(st) },
+      { key: "picked_up", label: "Picked up — on the way", done: ["AT_PICKUP", "EN_ROUTE_TO_DROPOFF", "AT_DROPOFF", "DELIVERED", "COMPLETED"].includes(st) },
+      { key: "delivered", label: "Delivered", done: ["AT_DROPOFF", "DELIVERED", "COMPLETED"].includes(st) },
     ];
-    if (st === "cancelled") {
+    if (st.startsWith("CANCELLED")) {
       return [{ key: "cancelled", label: "Delivery cancelled", done: true }];
     }
     return steps;
-  }, [deliveryRequest]);
+  }, [orderState.status]);
+  const liveRiderLocation = useMemo(
+    () =>
+      orderState.currentRiderLocation != null
+        ? {
+            lat: orderState.currentRiderLocation.lat,
+            lng: orderState.currentRiderLocation.lng,
+            bearing: orderState.currentRiderLocation.bearing,
+            lastSeenAt: new Date().toISOString(), // Placeholder, needs actual timestamp from tracking data
+          }
+        : null,
+    [orderState.currentRiderLocation],
+  );
+  const deliveryPanelStatus = useMemo<"rider_on_the_way" | "picked_up_item" | "arriving_soon">(() => {
+    // Map OrderState status to delivery panel status
+    switch (orderState.status) {
+      case "EN_ROUTE_TO_PICKUP":
+      case "AT_PICKUP":
+        return "rider_on_the_way";
+      case "EN_ROUTE_TO_DROPOFF":
+        return "picked_up_item";
+      case "AT_DROPOFF":
+      case "DELIVERED":
+      case "COMPLETED":
+        return "arriving_soon";
+      default:
+        return "rider_on_the_way";
+    }
+  }, [orderState.status]);
+  const deliveryPanelRiderName = useMemo(() => {
+    if (!orderState.riderInfo) return "Rider";
+    return `Rider ${orderState.riderInfo.name}`; // Or slice(0,8) if needed
+  }, [orderState.riderInfo]);
 
   const hasGuaranteedItems = useMemo(
     () => items.some((it) => isWarehouseShippingFulfillment(it.fulfillment_type)),
@@ -611,10 +697,10 @@ export default function OrderDetail() {
       {
         key: "fallback-placed",
         label: "Order Placed",
-        timeLabel: formatOrderEventTime(order?.created_at ?? null),
+        timeLabel: formatOrderEventTime(orderState.orderId ? new Date().toISOString() : null), // Placeholder, use orderState.created_at once available
       },
     ];
-  }, [orderEvents, order?.created_at, hasGuaranteedItems]);
+  }, [orderEvents, orderState.orderId, hasGuaranteedItems]);
 
   const paymentSubtotal = useMemo(() => {
     return items.reduce((sum, it) => {
@@ -625,14 +711,31 @@ export default function OrderDetail() {
   }, [items]);
 
   const deliverySum = items.reduce((sum, it) => sum + (Number(it.delivery_fee_at_time) || 0), 0);
-  const platformFee = order?.platform_fee != null ? Number(order.platform_fee) : 0;
-  const dbTotal = orderGrandTotal(order);
+  const platformFee = 0; // Placeholder, fetch from orderState when available
+  const dbTotal = orderMeta.totalAmount ?? 0;
   const total = dbTotal > 0 ? dbTotal : paymentSubtotal + deliverySum + platformFee;
+  const orderUiState = useMemo(() => orderUiStateFromOrderStatus(orderState.status), [orderState.status]);
+  const orderStatusLabel = useMemo(() => orderUiStatusLabel(orderUiState), [orderUiState]);
 
-  const statusLower = (order?.status || "").toLowerCase();
-  const isDelivered = statusLower === "delivered" || statusLower === "completed";
+  const hasReviewableItems = useMemo(() => items.some(item => !item.is_reviewed), [items]);
+  const resolvedActions = useMemo(() => getOrderActions(orderUiState, isBuyerView, orderState.riderInfo, orderState.orderId, hasReviewableItems), [
+    orderUiState,
+    isBuyerView,
+    orderState.riderInfo,
+    orderState.orderId,
+    hasReviewableItems,
+  ]);
+
+  const statusLower = orderState.status.toLowerCase();
+  const isDelivered = ["delivered", "completed", "at_dropoff"].includes(statusLower);
+
+  // Old submitReview logic is now part of handleOrderAction
+  // const submitReview = useCallback(async () => {
+  //   ...
+  // }, [authUser?.id, reviewItem, reviewRating, reviewText, reviewAnonymous]);
 
   const openReviewModal = (item: OrderItemRow) => {
+    dispatch({ type: "INITIATE_REVIEW", itemId: item.id, productId: String(item.product_id), orderId: orderState.orderId });
     setReviewItem(item);
     setReviewRating(0);
     setReviewText("");
@@ -641,49 +744,112 @@ export default function OrderDetail() {
 
   const closeReviewModal = () => {
     if (reviewSubmitting) return;
+    dispatch({ type: "CANCEL_REVIEW" });
     setReviewItem(null);
   };
 
-  const submitReview = async () => {
-    if (!authUser?.id || !reviewItem?.id || !reviewItem.product_id || !order?.id) return;
-    if (reviewRating < 1 || reviewRating > 5) {
-      toast.error("Please select a star rating.");
+  const handleOrderAction = useCallback(async (actionType: OrderActionType, payload?: any) => {
+    if (!authUser?.id || !orderState.orderId) {
+      toast.error("User not authenticated or order not loaded.");
       return;
     }
+
     setReviewSubmitting(true);
     try {
-      const { error: reviewErr } = await supabase.from("reviews").insert({
-        product_id: reviewItem.product_id,
-        buyer_id: authUser.id,
-        order_item_id: reviewItem.id,
-        order_id: order.id,
-        rating: reviewRating,
-        feedback: reviewText.trim() || null,
-        is_anonymous: reviewAnonymous,
-      });
-      if (reviewErr) throw reviewErr;
+      switch (actionType) {
+        case "CANCEL_ORDER":
+          // TODO: Implement actual cancellation API call
+          toast.info("Order cancellation initiated (mock).", { description: "This will be a real cancellation soon." });
+          dispatch({ type: "UPDATE_ORDER_STATUS", status: "CANCELLED_BY_BUYER" });
+          break;
+        case "MESSAGE_RIDER":
+          navigate(`/messages/u/${payload?.riderId}`);
+          break;
+        case "CALL_RIDER":
+          if (payload?.riderPhone) {
+            window.location.href = `tel:${payload.riderPhone.replace(/\s/g, "")}`;
+          } else {
+            toast.error("Rider phone number not available.");
+          }
+          break;
+        case "SHOP_AGAIN":
+          navigate("/products");
+          break;
+        case "GET_HELP":
+          navigate("/support");
+          break;
+        case "RATE_ORDER":
+          // This action will trigger the review modal for all reviewable items.
+          // For now, we'll just open the review modal if there's an item to review.
+          const itemToReview = items.find(item => !item.is_reviewed);
+          if (itemToReview) {
+            openReviewModal(itemToReview); 
+          } else {
+            toast.info("No items left to review.");
+          }
+          break;
+        case "GO_HOME":
+          navigate("/");
+          break;
+        case "GO_BACK":
+          navigate(payload?.steps ?? -1);
+          break;
+        case "REFRESH":
+          window.location.reload();
+          break;
+        case "TRACK_STATUS":
+          // No-op for now, as tracking is on the same page. Could implement scroll to map.
+          toast.info("Tracking status is updated live on this page.");
+          break;
+        case "SUBMIT_RATING":
+          if (!reviewItem?.id || !reviewItem.product_id || !orderState.orderId) {
+            toast.error("Review item details missing.");
+            return;
+          }
+          if (reviewRating < 1 || reviewRating > 5) {
+            toast.error("Please select a star rating.");
+            return;
+          }
 
-      const { error: updateErr } = await supabase
-        .from("order_items")
-        .update({ is_reviewed: true })
-        .eq("id", reviewItem.id)
-        .eq("order_id", order.id);
-      if (updateErr) throw updateErr;
+          const { error: reviewErr } = await supabase.from("reviews").insert({
+            product_id: reviewItem.product_id,
+            buyer_id: authUser.id,
+            order_item_id: reviewItem.id,
+            order_id: orderState.orderId,
+            rating: reviewRating,
+            feedback: reviewText.trim() || null,
+            is_anonymous: reviewAnonymous,
+          });
+          if (reviewErr) throw reviewErr;
 
-      setItems((prev) =>
-        prev.map((it) => (it.id === reviewItem.id ? { ...it, is_reviewed: true } : it)),
-      );
-      toast.success("Review submitted. Thank you!", {
-        icon: <CheckCircle className="h-4 w-4 text-emerald-600" />,
-        className: "bg-emerald-50 text-emerald-950 border border-emerald-200/80",
-      });
-      setReviewItem(null);
+          const { error: updateErr } = await supabase
+            .from("order_items")
+            .update({ is_reviewed: true })
+            .eq("id", reviewItem.id)
+            .eq("order_id", orderState.orderId);
+          if (updateErr) throw updateErr;
+
+          setItems((prev) =>
+            prev.map((it) => (it.id === reviewItem.id ? { ...it, is_reviewed: true } : it)),
+          );
+          toast.success("Review submitted. Thank you!", {
+            icon: <CheckCircle className="h-4 w-4 text-emerald-600" />,
+            className: "bg-emerald-50 text-emerald-950 border border-emerald-200/80",
+          });
+          setReviewItem(null);
+          break;
+        case "CANCEL_REVIEW_RATING":
+          setReviewItem(null);
+          break;
+        // No default case to ensure all actions are explicitly handled
+      }
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Could not submit review");
+      toast.error(e instanceof Error ? e.message : `Failed to perform action: ${actionType}`);
     } finally {
       setReviewSubmitting(false);
     }
-  };
+  }, [authUser?.id, orderState.orderId, reviewItem, reviewRating, reviewText, reviewAnonymous, navigate, items, dispatch]);
+
 
   if (authLoading || loading) {
     return (
@@ -691,17 +857,31 @@ export default function OrderDetail() {
     );
   }
 
-  if (error || !order) {
+  if (error || !orderState.orderId) {
+    const goBackAction = resolvedActions.passive?.find(a => a.actionType === "GO_BACK");
+    const getHelpAction = resolvedActions.secondary.find(a => a.actionType === "GET_HELP");
+
     return (
       <div className="min-h-screen bg-gray-50 px-4 py-12 text-center">
         <p className="text-gray-800 mb-4">{error || "Order not found."}</p>
-        <button
-          type="button"
-          onClick={() => navigate(-1)}
-          className="px-4 py-2 bg-[#22c55e] text-white rounded-lg text-sm font-medium"
-        >
-          Go back
-        </button>
+        {goBackAction ? (
+          <button
+            type="button"
+            onClick={() => handleOrderAction(goBackAction.actionType, goBackAction.payload)}
+            className="px-4 py-2 bg-[#22c55e] text-white rounded-lg text-sm font-medium"
+          >
+            {goBackAction.label}
+          </button>
+        ) : null}
+        {getHelpAction ? (
+          <button
+            type="button"
+            onClick={() => handleOrderAction(getHelpAction.actionType, getHelpAction.payload)}
+            className="ml-2 px-4 py-2 bg-gray-200 text-gray-800 rounded-lg text-sm font-medium"
+          >
+            {getHelpAction.label}
+          </button>
+        ) : null}
       </div>
     );
   }
@@ -710,14 +890,16 @@ export default function OrderDetail() {
     <div className="min-h-screen bg-gray-50 pb-6">
       <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
         <div className="px-4 py-3 max-w-7xl mx-auto flex items-center gap-3">
-          <button type="button" onClick={() => navigate(-1)} className="p-2 -ml-2">
-            <ArrowLeft className="w-5 h-5 text-gray-700" />
-          </button>
+          {resolvedActions.passive?.find(a => a.actionType === "GO_BACK") ? (
+            <button type="button" onClick={() => handleOrderAction("GO_BACK")} className="p-2 -ml-2">
+              <ArrowLeft className="w-5 h-5 text-gray-700" />
+            </button>
+          ) : null}
           <div className="flex-1 min-w-0">
             <h1 className="text-lg font-semibold text-gray-800">
               {isBuyerView ? "Order Details" : "Fulfillment · Order"}
             </h1>
-            <p className="text-sm text-gray-600 font-mono truncate">{order.id}</p>
+            <p className="text-sm text-gray-600 font-mono truncate">{orderState.orderId}</p>
           </div>
         </div>
       </header>
@@ -731,12 +913,10 @@ export default function OrderDetail() {
           <div className="flex items-center gap-3 mb-2">
             <CheckCircle className="w-6 h-6 shrink-0" />
             <div>
-              <h2 className="font-semibold capitalize">{(order.status || "Order").replace(/_/g, " ")}</h2>
+              <h2 className="font-semibold capitalize">{orderState.status.replace(/_/g, " ")}</h2>
               <p className="text-sm text-white/90">
                 Placed{" "}
-                {order.created_at
-                  ? new Date(order.created_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
-                  : "—"}
+                {new Date().toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })} // Placeholder, use orderState.createdAt once available
               </p>
             </div>
           </div>
@@ -806,40 +986,21 @@ export default function OrderDetail() {
                         <p className="text-sm font-medium text-gray-800">{sName}</p>
                         <p className="text-xs text-gray-600">Seller</p>
                       </div>
-                      <Link to={`/messages/u/${sid}`} className="p-2 bg-[#22c55e] rounded-lg shrink-0">
+                      {/* <Link to={`/messages/u/${sid}`} className="p-2 bg-[#22c55e] rounded-lg shrink-0">
                         <MessageCircle className="w-4 h-4 text-white" />
                       </Link>
                       {sPhone ? (
                         <a href={`tel:${sPhone.replace(/\s/g, "")}`} className="p-2 border border-gray-300 rounded-lg shrink-0">
                           <Phone className="w-4 h-4 text-gray-600" />
                         </a>
-                      ) : null}
+                      ) : null} */}
                     </div>
                   ) : null}
 
-                  {isMyLine && item.id ? (
-                    <SellerActionCenter item={item} orderId={order.id} onSync={() => void load()} />
+                  {isMyLine && item.id && !isBuyerView ? (
+                    <SellerActionCenter item={item} orderId={orderState.orderId} onSync={() => void load()} />
                   ) : null}
 
-                  {isBuyerView && isDelivered && pid && item.is_reviewed !== true ? (
-                    <div className="mt-3 flex flex-col gap-2">
-                      <button
-                        type="button"
-                        onClick={() => openReviewModal(item)}
-                        className="w-full py-2 border border-[#22c55e] bg-[#22c55e] text-white rounded-lg font-medium text-sm text-center flex items-center justify-center gap-2 hover:bg-[#15803d]"
-                      >
-                        <Star className="w-4 h-4" />
-                        Review this product
-                      </button>
-                      <Link
-                        to={`/reviews/${order.id}?productId=${encodeURIComponent(pid)}`}
-                        className="w-full py-2 border border-gray-300 text-gray-800 rounded-lg font-medium text-sm text-center flex items-center justify-center gap-2 hover:bg-gray-50"
-                      >
-                        <Star className="w-4 h-4" />
-                        Review seller
-                      </Link>
-                    </div>
-                  ) : null}
                 </div>
               );
             })}
@@ -861,16 +1022,16 @@ export default function OrderDetail() {
           </div>
         </div>
 
-        {deliveryRequest ? (
+        {orderState.orderId ? ( // Conditional render based on orderState existence
           <div className="rounded-xl border border-sky-200/90 bg-gradient-to-br from-sky-50/90 to-white p-4 shadow-sm">
             <div className="mb-2 flex items-center gap-2">
               <Truck className="h-5 w-5 text-sky-700 shrink-0" aria-hidden />
               <h2 className="font-semibold text-sky-950">Rider delivery</h2>
             </div>
             <p className="text-sm text-gray-800">
-              Status: <span className="font-medium capitalize">{String(deliveryRequest.status || "").replace(/_/g, " ") || "—"}</span>
-              {deliveryRequest.delivered_at ? (
-                <span className="text-xs text-gray-500"> · Completed {formatOrderEventTime(deliveryRequest.delivered_at)}</span>
+              Status: <span className="font-medium">{safeText(orderStatusLabel)}</span>
+              {orderState.estimatedArrivalTime ? (
+                <span className="text-xs text-gray-500"> · Arriving {orderState.estimatedArrivalTime}</span> // Use estimatedArrivalTime
               ) : null}
             </p>
             <ol className="mt-3 space-y-2 border-t border-sky-100 pt-3 text-sm text-gray-700">
@@ -885,73 +1046,37 @@ export default function OrderDetail() {
               ))}
             </ol>
             {isBuyerView &&
-            String(deliveryRequest.status || "").toLowerCase() === "picked_up" &&
-            deliveryRequest.delivery_pin ? (
+            ["EN_ROUTE_TO_PICKUP", "AT_PICKUP", "EN_ROUTE_TO_DROPOFF"].includes(orderState.status) &&
+            orderState.dropoffLocation.address ? ( // Use dropoffLocation.address
               <div className="mt-3 rounded-lg border border-sky-300/60 bg-white/90 px-3 py-2">
-                <p className="text-xs font-semibold uppercase tracking-wide text-sky-900/70">Give this PIN to your rider</p>
-                <p className="mt-1 font-mono text-2xl font-bold tracking-[0.2em] text-sky-950">{deliveryRequest.delivery_pin}</p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-sky-900/70">Delivery Address</p>
+                <p className="mt-1 font-mono text-xl font-bold tracking-[0.05em] text-sky-950">{orderState.dropoffLocation.address}</p>
               </div>
             ) : null}
-            {isBuyerView && ["assigned", "picked_up"].includes(String(deliveryRequest.status || "").toLowerCase()) ? (
+            {isBuyerView && ["ACCEPTED", "EN_ROUTE_TO_PICKUP", "AT_PICKUP", "EN_ROUTE_TO_DROPOFF"].includes(orderState.status) ? (
               <div className="mt-4">
                 <p className="mb-2 text-xs font-medium text-gray-600">Live map (rider position updates about every 10s)</p>
-                <DeliveryTrackingMap
-                  riderLat={latestTracking?.latitude ?? null}
-                  riderLng={latestTracking?.longitude ?? null}
-                  pickupLat={hasGuaranteedItems ? DEFAULT_HUB_LAT : null}
-                  pickupLng={hasGuaranteedItems ? DEFAULT_HUB_LNG : null}
-                  dropoffLat={dropCoords?.lat ?? null}
-                  dropoffLng={dropCoords?.lng ?? null}
-                />
+                <div className="relative">
+                  <Suspense fallback={<MapSkeleton />}>
+                    <DeliveryTrackingMap
+                      riderLocation={liveRiderLocation}
+                      pickupLocation={hasGuaranteedItems ? { lat: DEFAULT_HUB_LAT, lng: DEFAULT_HUB_LNG } : orderState.pickupLocation}
+                      dropoffLocation={orderState.dropoffLocation}
+                    />
+                  </Suspense>
+                  <DeliveryMapBottomPanel
+                    visible={Boolean(liveRiderLocation)}
+                    riderName={deliveryPanelRiderName}
+                    vehicleType="bike"
+                    etaText={orderState.estimatedArrivalTime ? `Arriving ${orderState.estimatedArrivalTime}` : "—"}
+                    status={deliveryPanelStatus}
+                  />
+                </div>
               </div>
             ) : null}
           </div>
         ) : null}
 
-        {deliveryJob ? (
-          <div className="rounded-xl border border-emerald-200/80 bg-gradient-to-br from-emerald-50/90 to-white p-4 shadow-sm">
-            <div className="mb-2 flex items-center gap-2">
-              <Truck className="h-5 w-5 text-emerald-700 shrink-0" aria-hidden />
-              <h2 className="font-semibold text-emerald-950">GreenHub rider delivery</h2>
-            </div>
-            <p className="text-sm text-gray-800">
-              {isBuyerView ? buyerDeliverySummary(deliveryJob.status) : sellerDeliverySummary(deliveryJob.status)}
-            </p>
-            <p className="mt-1 text-xs text-gray-600">
-              Logistics status: <span className="font-medium">{deliveryJobStatusLabel(deliveryJob.status)}</span>
-              {deliveryJob.quoted_fee != null ? (
-                <>
-                  {" "}
-                  · Quoted delivery {formatPrice(Number(deliveryJob.quoted_fee))}
-                </>
-              ) : null}
-            </p>
-            {isBuyerView &&
-            deliveryJob.buyer_pin &&
-            !["delivered", "cancelled", "failed"].includes(String(deliveryJob.status || "").toLowerCase()) ? (
-              <div className="mt-3 rounded-lg border border-emerald-300/60 bg-white/90 px-3 py-2">
-                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-900/70">Handoff PIN (give to rider)</p>
-                <p className="mt-1 font-mono text-2xl font-bold tracking-[0.2em] text-emerald-950">{deliveryJob.buyer_pin}</p>
-              </div>
-            ) : null}
-            {deliveryEvents.length > 0 ? (
-              <details className="mt-3 text-xs text-gray-600">
-                <summary className="cursor-pointer font-medium text-emerald-800">Rider event log</summary>
-                <ul className="mt-2 space-y-1 border-t border-emerald-200/50 pt-2">
-                  {deliveryEvents.map((ev) => (
-                    <li key={ev.id}>
-                      {formatOrderEventTime(ev.created_at)} — {ev.event_type}
-                    </li>
-                  ))}
-                </ul>
-              </details>
-            ) : null}
-            <p className="mt-3 text-[11px] leading-relaxed text-gray-500">
-              Seller-arranged shipping (waybill, pickup meetups) still works as before. This card is only for GreenHub-managed
-              last-mile jobs tied to this order.
-            </p>
-          </div>
-        ) : null}
 
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
           <div className="flex items-center justify-between gap-3 mb-5">
@@ -994,12 +1119,12 @@ export default function OrderDetail() {
             <div className="space-y-2 mb-4">
               <div className="flex items-center justify-between text-sm">
                 <span className="text-gray-600">Payment Method</span>
-                <span className="font-medium text-gray-800">{paymentMethodLabel(order.payment_method)}</span>
+                <span className="font-medium text-gray-800">{paymentMethodLabel(orderMeta.paymentMethod)}</span>
               </div>
               <div className="flex items-center justify-between text-sm">
                 <span className="text-gray-600">Reference</span>
                 <span className="font-medium text-gray-800 truncate max-w-[60%] font-mono text-xs">
-                  {order.payment_reference || "—"}
+                  {safeText(orderMeta.paymentReference)}
                 </span>
               </div>
             </div>
@@ -1011,7 +1136,7 @@ export default function OrderDetail() {
               <div className="flex items-center justify-between text-sm">
                 <span className="text-gray-600">Delivery Fee</span>
                 <span className="font-medium text-gray-800">
-                  {formatPrice(order.delivery_fee != null ? Number(order.delivery_fee) : deliverySum)}
+                  {formatPrice(orderMeta.deliveryFee != null ? orderMeta.deliveryFee : deliverySum)}
                 </span>
               </div>
               <div className="flex items-center justify-between text-sm">
@@ -1030,14 +1155,28 @@ export default function OrderDetail() {
           </p>
         )}
 
-        {isBuyerView && isDelivered ? (
-          <div className="flex gap-3">
-            <Link to="/products" className="flex-1 py-3 bg-[#22c55e] text-white rounded-lg font-semibold text-center">
-              Shop again
-            </Link>
-            <Link to="/messages" className="flex-1 py-3 border border-gray-300 text-gray-700 rounded-lg font-semibold text-center">
-              Messages
-            </Link>
+        <OrderActionBar 
+          orderUiState={orderUiState} 
+          isBuyerView={isBuyerView} 
+          riderInfo={orderState.riderInfo} 
+          orderId={orderState.orderId} 
+          hasReviewableItems={hasReviewableItems} 
+          onAction={handleOrderAction} 
+        />
+
+        {resolvedActions.secondary.length > 0 ? (
+          <div className="mt-4 flex flex-wrap justify-center gap-2">
+            {resolvedActions.secondary.map((action) => (
+              <button
+                key={action.actionType}
+                type="button"
+                onClick={() => handleOrderAction(action.actionType, action.payload)}
+                disabled={action.disabled}
+                className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 disabled:opacity-60"
+              >
+                {action.label}
+              </button>
+            ))}
           </div>
         ) : null}
       </div>
@@ -1059,7 +1198,7 @@ export default function OrderDetail() {
                     <button
                       key={n}
                       type="button"
-                      onClick={() => setReviewRating(n)}
+                      onClick={() => setReviewRating(n)} // Still local state for star selection
                       className="rounded p-1"
                       aria-label={`Rate ${n} star${n > 1 ? "s" : ""}`}
                     >
@@ -1094,7 +1233,7 @@ export default function OrderDetail() {
             <div className="mt-4 flex items-center justify-end gap-2">
               <button
                 type="button"
-                onClick={closeReviewModal}
+                onClick={() => handleOrderAction("CANCEL_REVIEW_RATING")}
                 disabled={reviewSubmitting}
                 className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700"
               >
@@ -1102,7 +1241,7 @@ export default function OrderDetail() {
               </button>
               <button
                 type="button"
-                onClick={() => void submitReview()}
+                onClick={() => void handleOrderAction("SUBMIT_RATING")}
                 disabled={reviewSubmitting}
                 className="inline-flex items-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
               >

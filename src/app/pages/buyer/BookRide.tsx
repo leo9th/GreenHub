@@ -1,8 +1,13 @@
-import { FormEvent, Suspense, lazy, memo, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, Suspense, lazy, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
+import { useLocation } from "react-router-dom";
 import { ArrowUpDown, CalendarDays, Clock3, Loader2, MapPin, Navigation, ShieldCheck, X } from "lucide-react";
 import { toast } from "sonner";
-const DeliveryTrackingMap = lazy(() => import("../../components/DeliveryTrackingMap"));
+const DeliveryTrackingMapPreview = lazy(() => import("../../components/maps/DeliveryTrackingMap"));
+const DeliveryTrackingMapEditor = lazy(() => import("../../components/maps/DeliveryTrackingMapEditor"));
+const DeliveryTrackingMapEditorMapLibre = lazy(() => import("../../components/maps/DeliveryTrackingMapEditor"));
+
+const USE_MAPLIBRE_EDITOR = true;
 
 type PackageType = "small" | "medium" | "large" | "xlarge";
 
@@ -133,7 +138,11 @@ const MemoRideOptionCard = memo(RideOptionCard);
 
 function BookRide() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const rideType = location.state?.rideType ?? null;
+  const mapModalContainerRef = useRef<HTMLDivElement | null>(null);
   const [isMapExpanded, setIsMapExpanded] = useState(false);
+  const [mapSessionId, setMapSessionId] = useState(0);
   const [mapInteractionMode, setMapInteractionMode] = useState<"fixedPin" | "markers">("fixedPin");
   const [activeField, setActiveField] = useState<"pickup" | "dropoff">("pickup");
   const [pickupAddress, setPickupAddress] = useState("");
@@ -286,6 +295,7 @@ function BookRide() {
     setActiveField(field);
     setDraftPickup({ lat: pickupLat, lng: pickupLng });
     setDraftDropoff({ lat: dropoffLat, lng: dropoffLng });
+    setMapSessionId((prev) => prev + 1);
     setIsMapExpanded(true);
   }, [pickupLat, pickupLng, dropoffLat, dropoffLng]);
 
@@ -317,8 +327,31 @@ function BookRide() {
   const expandedDropoffLat = draftDropoff.lat ?? dropoffLat;
   const expandedDropoffLng = draftDropoff.lng ?? dropoffLng;
 
+  useEffect(() => {
+    if (!isMapExpanded || !mapModalContainerRef.current) return undefined;
+
+    const triggerMapResize = () => {
+      const mapCanvas = mapModalContainerRef.current?.querySelector(".maplibregl-map") as HTMLElement | null;
+      if (!mapCanvas) return;
+      window.dispatchEvent(new Event("resize"));
+    };
+
+    const delayedResize = window.setTimeout(triggerMapResize, 140);
+    const rafResize = window.requestAnimationFrame(triggerMapResize);
+
+    return () => {
+      window.clearTimeout(delayedResize);
+      window.cancelAnimationFrame(rafResize);
+    };
+  }, [isMapExpanded]);
+
   return (
     <div className="mx-auto w-full max-w-4xl px-3 py-4 md:px-4 md:py-6">
+      {rideType && (
+        <div className="px-4 py-2 text-sm text-gray-600">
+          Ride type: <span className="font-medium capitalize">{rideType}</span>
+        </div>
+      )}
       <div className="overflow-hidden rounded-3xl border border-emerald-100 bg-white shadow-sm">
         <div className="bg-gradient-to-r from-emerald-700 to-emerald-600 px-4 py-5 text-white md:px-6">
           <h1 className="text-xl font-bold tracking-tight">Book GreenGo</h1>
@@ -449,13 +482,10 @@ function BookRide() {
 
           <div className="relative overflow-hidden rounded-2xl border border-gray-200">
             <Suspense fallback={<div className="h-[340px] w-full animate-pulse rounded-xl bg-gradient-to-br from-gray-100 to-gray-200" />}>
-              <DeliveryTrackingMap
-                pickupLat={pickupLat}
-                pickupLng={pickupLng}
-                dropoffLat={dropoffLat}
-                dropoffLng={dropoffLng}
+              <DeliveryTrackingMapPreview
+                pickupLocation={pickupLat != null && pickupLng != null ? { lat: pickupLat, lng: pickupLng } : null}
+                dropoffLocation={dropoffLat != null && dropoffLng != null ? { lat: dropoffLat, lng: dropoffLng } : null}
                 className="h-[340px] w-full rounded-xl shadow-sm"
-                showRoute
               />
             </Suspense>
             <div className="pointer-events-none absolute left-3 top-3 rounded-full bg-white/95 px-3 py-1.5 text-xs font-semibold text-gray-700 shadow">
@@ -594,82 +624,101 @@ function BookRide() {
         </form>
       </div>
       {isMapExpanded ? (
-        <div className="fixed inset-0 z-50 bg-white">
-          <div className="flex h-16 items-center justify-between border-b border-gray-200 bg-white/95 px-3 backdrop-blur sm:px-4">
-            <button
-              type="button"
-              onClick={() => setIsMapExpanded(false)}
-              className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 shadow-sm hover:bg-gray-50"
-              aria-label="Close map"
-            >
-              <X className="h-5 w-5" />
-            </button>
-            <div className="flex items-center gap-1 rounded-xl bg-gray-100 p-1">
+        <div className="fixed inset-0 z-50 overflow-auto bg-black/45 p-3 sm:p-5">
+          <div ref={mapModalContainerRef} className="mx-auto flex h-[85vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="flex h-16 items-center justify-between border-b border-gray-200 bg-white/95 px-3 backdrop-blur sm:px-4">
               <button
                 type="button"
-                onClick={() => {
-                  setMapInteractionMode("fixedPin");
-                  if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") navigator.vibrate(12);
-                }}
-                className={`min-h-11 rounded-lg px-3 py-2 text-xs font-semibold ${
-                  mapInteractionMode === "fixedPin" ? "bg-white text-gray-900 shadow-sm" : "bg-gray-100 text-gray-600"
-                }`}
+                onClick={() => setIsMapExpanded(false)}
+                className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 shadow-sm hover:bg-gray-50"
+                aria-label="Close map"
               >
-                Fixed Pin
+                <X className="h-5 w-5" />
               </button>
+              <div className="flex items-center gap-1 rounded-xl bg-gray-100 p-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMapInteractionMode("fixedPin");
+                    if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") navigator.vibrate(12);
+                  }}
+                  className={`min-h-11 rounded-lg px-3 py-2 text-xs font-semibold ${
+                    mapInteractionMode === "fixedPin" ? "bg-white text-gray-900 shadow-sm" : "bg-gray-100 text-gray-600"
+                  }`}
+                >
+                  Fixed Pin
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMapInteractionMode("markers");
+                    if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") navigator.vibrate(12);
+                  }}
+                  className={`min-h-11 rounded-lg px-3 py-2 text-xs font-semibold ${
+                    mapInteractionMode === "markers" ? "bg-white text-gray-900 shadow-sm" : "bg-gray-100 text-gray-600"
+                  }`}
+                >
+                  Markers
+                </button>
+              </div>
               <button
                 type="button"
-                onClick={() => {
-                  setMapInteractionMode("markers");
-                  if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") navigator.vibrate(12);
-                }}
-                className={`min-h-11 rounded-lg px-3 py-2 text-xs font-semibold ${
-                  mapInteractionMode === "markers" ? "bg-white text-gray-900 shadow-sm" : "bg-gray-100 text-gray-600"
-                }`}
+                onClick={() => setActiveField((prev) => (prev === "pickup" ? "dropoff" : "pickup"))}
+                className="min-h-11 rounded-lg bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-700"
               >
-                Markers
+                Switch
               </button>
             </div>
-            <button
-              type="button"
-              onClick={() => setActiveField((prev) => (prev === "pickup" ? "dropoff" : "pickup"))}
-              className="min-h-11 rounded-lg bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-700"
-            >
-              Switch
-            </button>
-          </div>
-          <div className="h-[calc(100vh-64px)] p-2 sm:p-3">
-            <div className="relative h-full w-full">
+            <div className="relative flex-1 min-h-[400px] w-full overflow-hidden p-0">
+              <div className="relative h-full w-full">
               <Suspense fallback={<div className="h-full w-full animate-pulse rounded-xl bg-gradient-to-br from-gray-100 to-gray-200" />}>
-                <DeliveryTrackingMap
-                  pickupLat={expandedPickupLat}
-                  pickupLng={expandedPickupLng}
-                  dropoffLat={expandedDropoffLat}
-                  dropoffLng={expandedDropoffLng}
-                  className="h-full w-full rounded-xl shadow-sm"
-                  interactive
-                  interactionMode={mapInteractionMode}
-                  activeField={activeField}
-                  showRoute
-                  followPosition={false}
-                  onMapCenterChange={(lat, lng) => {
-                    if (activeField === "pickup") {
-                      setDraftPickup({ lat, lng });
-                    } else {
-                      setDraftDropoff({ lat, lng });
-                    }
-                  }}
-                  onPickupChange={(lat, lng) => setDraftPickup({ lat, lng })}
-                  onDropoffChange={(lat, lng) => setDraftDropoff({ lat, lng })}
-                />
+                {USE_MAPLIBRE_EDITOR ? (
+                  <DeliveryTrackingMapEditorMapLibre
+                    key={`maplibre-editor-${mapSessionId}`}
+                    pickupLat={expandedPickupLat}
+                    pickupLng={expandedPickupLng}
+                    dropoffLat={expandedDropoffLat}
+                    dropoffLng={expandedDropoffLng}
+                    className="h-full w-full rounded-xl shadow-sm"
+                    interactive
+                    interactionMode={mapInteractionMode}
+                    activeField={activeField}
+                    showRoute
+                    followPosition={false}
+                    onMapCenterChange={(lat: number, lng: number) => {
+                      if (activeField === "pickup") {
+                        setDraftPickup({ lat, lng });
+                      } else {
+                        setDraftDropoff({ lat, lng });
+                      }
+                    }}
+                    onPickupChange={(lat: number, lng: number) => setDraftPickup({ lat, lng })}
+                    onDropoffChange={(lat: number, lng: number) => setDraftDropoff({ lat, lng })}
+                  />
+                ) : (
+                  <DeliveryTrackingMapEditor
+                    pickupLat={expandedPickupLat}
+                    pickupLng={expandedPickupLng}
+                    dropoffLat={expandedDropoffLat}
+                    dropoffLng={expandedDropoffLng}
+                    className="h-full w-full rounded-xl shadow-sm"
+                    interactive
+                    interactionMode={mapInteractionMode}
+                    activeField={activeField}
+                    showRoute
+                    followPosition={false}
+                    onMapCenterChange={(lat, lng) => {
+                      if (activeField === "pickup") {
+                        setDraftPickup({ lat, lng });
+                      } else {
+                        setDraftDropoff({ lat, lng });
+                      }
+                    }}
+                    onPickupChange={(lat, lng) => setDraftPickup({ lat, lng })}
+                    onDropoffChange={(lat, lng) => setDraftDropoff({ lat, lng })}
+                  />
+                )}
               </Suspense>
-              <div className="pointer-events-none absolute left-3 top-3 z-[600] rounded-full bg-white/95 px-3 py-2 text-xs font-semibold text-gray-800 shadow">
-                <span className={`mr-2 inline-block h-2.5 w-2.5 rounded-full ${activeField === "pickup" ? "bg-emerald-500" : "bg-violet-600"}`} />
-                Editing {activeField === "pickup" ? "Pickup" : "Dropoff"}
-              </div>
-              <div className="pointer-events-none absolute bottom-16 left-1/2 z-[600] w-[90%] -translate-x-1/2 rounded-lg bg-black/45 px-3 py-2 text-center text-xs text-white">
-                {mapInteractionMode === "fixedPin" ? "Drag map to position the pin" : "Drag markers to adjust locations"}
-              </div>
               <button
                 type="button"
                 disabled={isResolvingAddress}
@@ -683,6 +732,7 @@ function BookRide() {
                 {isResolvingAddress ? "Finding address..." : "Done"}
               </button>
             </div>
+          </div>
           </div>
         </div>
       ) : null}

@@ -16,6 +16,13 @@ export default function Root() {
   const { user, session } = useAuth();
 
   useEffect(() => {
+    console.log("[Root] route changed", {
+      pathname: location.pathname,
+      search: location.search,
+    });
+  }, [location.pathname, location.search]);
+
+  useEffect(() => {
     if (!user?.id) return;
     pingLastActiveThrottled(supabase);
   }, [location.pathname, user?.id]);
@@ -35,7 +42,7 @@ export default function Root() {
   const hideNavOnPaths = [
     "/login",
     "/register",
-    "/verify",
+    "/auth/callback",
     "/verify-otp",
     "/check-email",
     "/complete-profile",

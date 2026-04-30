@@ -129,7 +129,10 @@ export default function SimpleProductGrid({
 
   return (
     <div className="space-y-8">
-      <div className={`-mx-4 sm:mx-0 ${GRID_CLASS}`}>
+      <div
+        className={`-mx-4 sm:mx-0 ${GRID_CLASS} ${isLoading && products.length === 0 ? "min-h-[280px]" : ""}`}
+        aria-busy={isLoading}
+      >
         {products.map((product, index) => (
           <ProductCardFromProduct key={String(product.id)} product={product} index={index} />
         ))}

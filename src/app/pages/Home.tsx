@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
 import { ProductCard } from "../components/cards/ProductCard";
 import SimpleProductGrid from "../components/SimpleProductGrid";
@@ -12,6 +13,8 @@ import type { ProductWithSeller } from "../types/productWithSeller";
 import { SortBar } from "../components/SortBar";
 import CollapsibleFilters from "../components/CollapsibleFilters";
 import FloatingFiltersButton from "../components/FloatingFiltersButton";
+import ServiceSwitch from "../components/home/ServiceSwitch";
+import FeaturedBannerStrip from "../components/home/FeaturedBannerStrip";
 import { useFallbackProducts } from "../hooks/useFallbackProducts";
 import {
   applyBrowseProductQueryFilters,
@@ -44,8 +47,8 @@ import {
  */
 /** Number of products shown in the main home grid. */
 const HOME_PAGE_SIZE = 20;
-/** Pool size for shuffle before slicing to `HOME_PAGE_SIZE` (keep query ≤ ~30 rows for mobile). */
-const FEATURED_FETCH_LIMIT = 30;
+/** Pool size for featured query (capped at 20 per home grid contract). */
+const FEATURED_FETCH_LIMIT = 20;
 
 /** Products per horizontal “page” for each category row. */
 const ROW_PAGE_SIZE = 10;
@@ -66,7 +69,22 @@ async function fetchFeaturedProducts(
   priceRange: string = "all",
   more: BrowseMoreFiltersState = defaultBrowseMoreFilters(),
 ): Promise<{ rows: ProductWithSeller[]; error: string | null }> {
+  console.log("[Home] fetchFeaturedProducts called", {
+    conditionFilter,
+    globalSearchTerm,
+    sortBy,
+    priceRange,
+    more,
+    status: "active",
+    limit: FEATURED_FETCH_LIMIT,
+  });
+
   const fetchBaselineActiveProducts = async (): Promise<{ rows: ProductWithSeller[]; error: string | null }> => {
+    console.log("[Home] baseline active products query starting", {
+      status: "active",
+      limit: HOME_PAGE_SIZE,
+    });
+
     const { data, error } = await supabase
       .from("products")
       .select(productsSelectWithSellerEmbed())
@@ -74,8 +92,19 @@ async function fetchFeaturedProducts(
       .order("created_at", { ascending: false })
       .limit(HOME_PAGE_SIZE);
 
-    if (error) return { rows: [], error: error.message };
-    return { rows: ((data as ProductWithSeller[]) ?? []).filter(Boolean), error: null };
+    console.log("[Home] baseline active products query returned", {
+      count: data?.length ?? 0,
+      error: error?.message ?? null,
+      firstProduct: data?.[0] ?? null,
+    });
+
+    if (error) {
+      console.warn("[Home] baseline active products error:", error.message);
+      return { rows: [], error: error.message };
+    }
+    const baselineRows = ((data as ProductWithSeller[]) ?? []).filter(Boolean);
+    console.log("Products fetched (baseline):", baselineRows.length);
+    return { rows: baselineRows, error: null };
   };
 
   const searchT = normalizedGlobalSearchTerm(globalSearchTerm);
@@ -97,12 +126,31 @@ async function fetchFeaturedProducts(
 
   query = query.limit(FEATURED_FETCH_LIMIT);
 
+  console.log("[Home] featured products query starting", {
+    conditionFilter,
+    globalSearchTerm,
+    sortBy,
+    priceRange,
+    more,
+    sellerIds,
+    status: "active",
+    limit: FEATURED_FETCH_LIMIT,
+  });
+
   const { data, error } = await query;
 
+  console.log("[Home] featured products query returned", {
+    count: data?.length ?? 0,
+    error: error?.message ?? null,
+    firstProduct: data?.[0] ?? null,
+  });
+
   if (error) {
+    console.warn("[Home] featured query error, using baseline:", error.message);
     return fetchBaselineActiveProducts();
   }
   const pool = ((data as ProductWithSeller[]) ?? []).filter(Boolean);
+  console.log("Products fetched:", pool.length);
   if (pool.length === 0) {
     return fetchBaselineActiveProducts();
   }
@@ -324,6 +372,10 @@ function CategoryRow({ slug, title, row, onLoadMore }: CategoryRowProps) {
 }
 
 export default function Home() {
+  const navigate = useNavigate();
+  const [service, setService] = useState<"shop" | "ride" | "send">("shop");
+  const [rideType, setRideType] = useState<"bike" | "car" | null>(null);
+  const [sendStarted, setSendStarted] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<CategoryFilterSelection>("All");
   const [selectedCondition, setSelectedCondition] = useState("all");
   const [globalSearchTerm, setGlobalSearchTerm] = useState("");
@@ -333,12 +385,26 @@ export default function Home() {
   const [rowBySlug, setRowBySlug] = useState<Record<string, CategoryRowState>>({});
   const [priceRange, setPriceRange] = useState("all");
   const [listingSort, setListingSort] = useState<ListingSort>("recent");
-  const [moreFilters, setMoreFilters] = useState<BrowseMoreFiltersState>(defaultBrowseMoreFilters);
+  const [moreFilters, setMoreFilters] = useState<BrowseMoreFiltersState>(() => defaultBrowseMoreFilters());
   const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
   const moreFiltersSectionRef = useRef<HTMLDivElement>(null);
   const openMoreFilters = useCallback(() => {
     setMoreFiltersOpen(true);
   }, []);
+
+  useEffect(() => {
+    console.log("[Home] mounted", {
+      pathname: window.location.pathname,
+      search: window.location.search,
+    });
+    return () => {
+      console.log("[Home] unmounted", {
+        pathname: window.location.pathname,
+        search: window.location.search,
+      });
+    };
+  }, []);
+
   const {
     fallbackProducts: recommendedFallback,
     fallbackLoading: recommendedFallbackLoading,
@@ -355,6 +421,15 @@ export default function Home() {
   );
 
   useEffect(() => {
+    console.log("[Home] SimpleProductGrid props", {
+      productsLength: featuredProducts.length,
+      isLoading: featuredLoading,
+      error: featuredError,
+      productIds: featuredProducts.slice(0, 5).map((product) => String(product.id)),
+    });
+  }, [featuredProducts, featuredLoading, featuredError]);
+
+  useEffect(() => {
     const opts = getConditionFilterDropdownOptions(categorySlugForFilter);
     setSelectedCondition((prev) => {
       if (prev === "all") return prev;
@@ -365,25 +440,53 @@ export default function Home() {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      setFeaturedLoading(true);
-      setFeaturedError(null);
-      const { rows, error } = await fetchFeaturedProducts(
+      console.log("[Home] featured products effect start", {
         selectedCondition,
         globalSearchTerm,
         listingSort,
         priceRange,
         moreFilters,
-      );
-      if (cancelled) return;
-      if (error) {
-        setFeaturedError(error);
-        setFeaturedProducts([]);
-      } else {
-        setFeaturedProducts(rows);
+      });
+      setFeaturedLoading(true);
+      setFeaturedError(null);
+      try {
+        const { rows, error } = await fetchFeaturedProducts(
+          selectedCondition,
+          globalSearchTerm,
+          listingSort,
+          priceRange,
+          moreFilters,
+        );
+        console.log("[Home] featured products effect result", {
+          cancelled,
+          rowsLength: rows.length,
+          error,
+          firstProduct: rows[0] ?? null,
+        });
+        if (cancelled) return;
+        if (error) {
+          setFeaturedError(error);
+          setFeaturedProducts([]);
+        } else {
+          setFeaturedProducts(rows);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          console.error("[Home] featured products fetch failed:", e);
+          setFeaturedError(e instanceof Error ? e.message : "Could not load products");
+          setFeaturedProducts([]);
+        }
+      } finally {
+        if (!cancelled) {
+          console.log("[Home] featuredLoading -> false");
+          setFeaturedLoading(false);
+        } else {
+          console.log("[Home] featured products effect cancelled before loading false");
+        }
       }
-      setFeaturedLoading(false);
     })();
     return () => {
+      console.log("[Home] featured products effect cleanup");
       cancelled = true;
     };
   }, [selectedCondition, globalSearchTerm, listingSort, priceRange, moreFilters]);
@@ -485,6 +588,86 @@ export default function Home() {
           </Link>
         </div>
 
+        <ServiceSwitch value={service} onChange={setService} />
+        <FeaturedBannerStrip selectedService={service} />
+
+        {service === "ride" ? (
+          <section className="mt-6 flex flex-col items-center text-center">
+            <h2 className="text-xl font-semibold text-gray-900">Book a Ride</h2>
+            <p className="mt-1 text-sm text-gray-600">Choose bike or car to get started</p>
+            <div className="mt-4 flex w-full max-w-md gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setRideType("bike");
+                  console.log("bike");
+                }}
+                className={`flex-1 rounded-xl border px-4 py-4 text-sm font-semibold shadow-sm transition ${
+                  rideType === "bike"
+                    ? "border-[#22c55e] bg-[#22c55e]/10 text-[#15803d]"
+                    : "border-gray-200 bg-white text-gray-800 hover:bg-gray-50"
+                }`}
+              >
+                Bike
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setRideType("car");
+                  console.log("car");
+                }}
+                className={`flex-1 rounded-xl border px-4 py-4 text-sm font-semibold shadow-sm transition ${
+                  rideType === "car"
+                    ? "border-[#22c55e] bg-[#22c55e]/10 text-[#15803d]"
+                    : "border-gray-200 bg-white text-gray-800 hover:bg-gray-50"
+                }`}
+              >
+                Car
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-gray-500">Map opens in the next step</p>
+            {rideType ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!rideType) return;
+                    navigate("/book-ride", {
+                      state: {
+                        rideType,
+                      },
+                    });
+                  }}
+                  className="mt-4 rounded-xl bg-[#22c55e] px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#16a34a]"
+                >
+                  Continue
+                </button>
+                <p className="mt-2 text-xs text-gray-500">Feature is being finalized</p>
+              </>
+            ) : null}
+          </section>
+        ) : null}
+
+        {service === "send" ? (
+          <section className="mt-6 flex flex-col items-center text-center">
+            <h2 className="text-xl font-semibold text-gray-900">Send a Package</h2>
+            <p className="mt-1 text-sm text-gray-600">Fast delivery with nearby riders</p>
+            <button
+              type="button"
+              onClick={() => {
+                setSendStarted(true);
+                console.log("start delivery");
+              }}
+              className="mt-4 rounded-xl bg-[#22c55e] px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#16a34a]"
+            >
+              Start Delivery
+            </button>
+            <p className="mt-2 text-xs text-gray-500">
+              {sendStarted ? "Delivery flow continues in next step" : "Next step will open map"}
+            </p>
+          </section>
+        ) : null}
+
         <CategoryFilter
           key={selectedCategory}
           selectedCategory={selectedCategory}
@@ -503,142 +686,146 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="mb-1 flex flex-wrap items-center justify-end gap-2">
-          <SortBar id="home-listing-sort" value={listingSort} onChange={setListingSort} />
-        </div>
+        {service === "shop" ? (
+          <>
+            <div className="mb-1 flex flex-wrap items-center justify-end gap-2">
+              <SortBar id="home-listing-sort" value={listingSort} onChange={setListingSort} />
+            </div>
 
-        <CollapsibleFilters
-          idPrefix="home-collapsible-filters"
-          sectionId="more-filters-section"
-          interactionRootRef={moreFiltersSectionRef}
-          isOpen={moreFiltersOpen}
-          onOpenChange={setMoreFiltersOpen}
-          className="mt-2 mb-4"
-        >
-          <ConditionFilter
-            id="home-condition-filter"
-            categorySlug={categorySlugForFilter}
-            value={selectedCondition}
-            onChange={setSelectedCondition}
-          />
-          <div>
-            <label htmlFor="home-price-range" className="mb-1 block text-sm font-medium text-gray-700">
-              Price range
-            </label>
-            <select
-              id="home-price-range"
-              value={priceRange}
-              onChange={(e) => setPriceRange(e.target.value)}
-              className="w-full max-w-md rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-[#22c55e] focus:outline-none focus:ring-2 focus:ring-[#22c55e]/20"
+            <CollapsibleFilters
+              idPrefix="home-collapsible-filters"
+              sectionId="more-filters-section"
+              interactionRootRef={moreFiltersSectionRef}
+              isOpen={moreFiltersOpen}
+              onOpenChange={setMoreFiltersOpen}
+              className="mt-2 mb-4"
             >
-              {BROWSE_PRICE_RANGE_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label htmlFor="home-more-location" className="block text-sm font-medium text-gray-700">
-              Location (city / area)
-            </label>
-            <p className="mb-1 text-xs text-gray-500">Matches text in the listing location field.</p>
-            <input
-              id="home-more-location"
-              type="text"
-              value={moreFilters.locationContains}
-              onChange={(e) => setMoreFilters({ ...moreFilters, locationContains: e.target.value })}
-              placeholder="e.g. Lagos, Ikeja"
-              className="w-full max-w-md rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-[#22c55e] focus:outline-none focus:ring-2 focus:ring-[#22c55e]/20"
-              autoComplete="off"
-            />
-          </div>
-          <div>
-            <label htmlFor="home-more-brand" className="block text-sm font-medium text-gray-700">
-              Brand
-            </label>
-            <p className="mb-1 text-xs text-gray-500">Partial match on vehicle brand when listed.</p>
-            <input
-              id="home-more-brand"
-              type="text"
-              value={moreFilters.brandContains}
-              onChange={(e) => setMoreFilters({ ...moreFilters, brandContains: e.target.value })}
-              placeholder="e.g. Toyota"
-              className="w-full max-w-md rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-[#22c55e] focus:outline-none focus:ring-2 focus:ring-[#22c55e]/20"
-              autoComplete="off"
-            />
-          </div>
-          <div>
-            <label htmlFor="home-more-delivery" className="block text-sm font-medium text-gray-700">
-              Delivery
-            </label>
-            <select
-              id="home-more-delivery"
-              value={moreFilters.deliveryMode}
-              onChange={(e) =>
-                setMoreFilters({
-                  ...moreFilters,
-                  deliveryMode: e.target.value === "has_options" ? "has_options" : "all",
-                })
-              }
-              className="w-full max-w-md rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-[#22c55e] focus:outline-none focus:ring-2 focus:ring-[#22c55e]/20"
-            >
-              <option value="all">Any</option>
-              <option value="has_options">Has delivery options listed</option>
-            </select>
-          </div>
-          <div className="pt-1">
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedCondition("all");
-                setPriceRange("all");
-                setMoreFilters(defaultBrowseMoreFilters());
-              }}
-              className="text-sm font-medium text-[#16a34a] underline hover:no-underline"
-            >
-              Reset secondary filters
-            </button>
-          </div>
-        </CollapsibleFilters>
-
-        {featuredError ? <p className="mb-4 text-sm text-amber-700">{featuredError}</p> : null}
-
-        <div className="mb-10">
-          <SimpleProductGrid
-            products={featuredProducts}
-            isLoading={featuredLoading}
-            hasMore={false}
-            loadingMore={false}
-            onLoadMore={() => {}}
-            emptyFallbackTitle="You might also like"
-            emptyFallbackProducts={recommendedFallback}
-            emptyFallbackLoading={recommendedFallbackLoading}
-            emptyFallbackExhaustedHint={showFallbackExhaustedHint}
-          />
-        </div>
-
-        <h2 className="mb-3 text-base font-semibold text-gray-900 sm:text-lg">Browse by category</h2>
-
-        <div className="space-y-2">
-          {slugsToShow.map((slug) => {
-            const meta = categories.find((c) => c.id === slug);
-            const rowTitle = meta?.name ?? slug;
-            const row = rowBySlug[slug] ?? emptyRow();
-            return (
-              <CategoryRow
-                key={slug}
-                slug={slug}
-                title={rowTitle}
-                row={row}
-                onLoadMore={handleLoadMoreRow}
+              <ConditionFilter
+                id="home-condition-filter"
+                categorySlug={categorySlugForFilter}
+                value={selectedCondition}
+                onChange={setSelectedCondition}
               />
-            );
-          })}
-        </div>
+              <div>
+                <label htmlFor="home-price-range" className="mb-1 block text-sm font-medium text-gray-700">
+                  Price range
+                </label>
+                <select
+                  id="home-price-range"
+                  value={priceRange}
+                  onChange={(e) => setPriceRange(e.target.value)}
+                  className="w-full max-w-md rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-[#22c55e] focus:outline-none focus:ring-2 focus:ring-[#22c55e]/20"
+                >
+                  {BROWSE_PRICE_RANGE_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="home-more-location" className="block text-sm font-medium text-gray-700">
+                  Location (city / area)
+                </label>
+                <p className="mb-1 text-xs text-gray-500">Matches text in the listing location field.</p>
+                <input
+                  id="home-more-location"
+                  type="text"
+                  value={moreFilters.locationContains}
+                  onChange={(e) => setMoreFilters({ ...moreFilters, locationContains: e.target.value })}
+                  placeholder="e.g. Lagos, Ikeja"
+                  className="w-full max-w-md rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-[#22c55e] focus:outline-none focus:ring-2 focus:ring-[#22c55e]/20"
+                  autoComplete="off"
+                />
+              </div>
+              <div>
+                <label htmlFor="home-more-brand" className="block text-sm font-medium text-gray-700">
+                  Brand
+                </label>
+                <p className="mb-1 text-xs text-gray-500">Partial match on vehicle brand when listed.</p>
+                <input
+                  id="home-more-brand"
+                  type="text"
+                  value={moreFilters.brandContains}
+                  onChange={(e) => setMoreFilters({ ...moreFilters, brandContains: e.target.value })}
+                  placeholder="e.g. Toyota"
+                  className="w-full max-w-md rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-[#22c55e] focus:outline-none focus:ring-2 focus:ring-[#22c55e]/20"
+                  autoComplete="off"
+                />
+              </div>
+              <div>
+                <label htmlFor="home-more-delivery" className="block text-sm font-medium text-gray-700">
+                  Delivery
+                </label>
+                <select
+                  id="home-more-delivery"
+                  value={moreFilters.deliveryMode}
+                  onChange={(e) =>
+                    setMoreFilters({
+                      ...moreFilters,
+                      deliveryMode: e.target.value === "has_options" ? "has_options" : "all",
+                    })
+                  }
+                  className="w-full max-w-md rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-[#22c55e] focus:outline-none focus:ring-2 focus:ring-[#22c55e]/20"
+                >
+                  <option value="all">Any</option>
+                  <option value="has_options">Has delivery options listed</option>
+                </select>
+              </div>
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedCondition("all");
+                    setPriceRange("all");
+                    setMoreFilters(defaultBrowseMoreFilters());
+                  }}
+                  className="text-sm font-medium text-[#16a34a] underline hover:no-underline"
+                >
+                  Reset secondary filters
+                </button>
+              </div>
+            </CollapsibleFilters>
+
+            {featuredError ? <p className="mb-4 text-sm text-amber-700">{featuredError}</p> : null}
+
+            <div className="mb-10">
+              <SimpleProductGrid
+                products={featuredProducts}
+                isLoading={featuredLoading}
+                hasMore={false}
+                loadingMore={false}
+                onLoadMore={() => {}}
+                emptyFallbackTitle="You might also like"
+                emptyFallbackProducts={recommendedFallback}
+                emptyFallbackLoading={recommendedFallbackLoading}
+                emptyFallbackExhaustedHint={showFallbackExhaustedHint}
+              />
+            </div>
+
+            <h2 className="mb-3 text-base font-semibold text-gray-900 sm:text-lg">Browse by category</h2>
+
+            <div className="space-y-2">
+              {slugsToShow.map((slug) => {
+                const meta = categories.find((c) => c.id === slug);
+                const rowTitle = meta?.name ?? slug;
+                const row = rowBySlug[slug] ?? emptyRow();
+                return (
+                  <CategoryRow
+                    key={slug}
+                    slug={slug}
+                    title={rowTitle}
+                    row={row}
+                    onLoadMore={handleLoadMoreRow}
+                  />
+                );
+              })}
+            </div>
+          </>
+        ) : null}
       </div>
 
-      <FloatingFiltersButton visible={!moreFiltersOpen} onOpen={openMoreFilters} />
+      <FloatingFiltersButton visible={service === "shop" && !moreFiltersOpen} onOpen={openMoreFilters} />
     </div>
   );
 }

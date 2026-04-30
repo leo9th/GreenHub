@@ -26,28 +26,31 @@ grant execute on function public.fn_is_admin_user() to authenticated;
 
 -- -----------------------------------------------------------------------------
 -- 1) rider_presence
--- Required shape:
--- id, rider_id (unique -> riders.id), is_online, latitude, longitude,
--- last_seen_at, created_at
+-- Supports both rider_user_id (auth.users; RPCs from 20260702170000) and
+-- rider_id (public.riders). RLS allows either link so RPC rows are readable.
 -- -----------------------------------------------------------------------------
 create table if not exists public.rider_presence (
   id uuid primary key default gen_random_uuid(),
   rider_id uuid unique references public.riders(id) on delete cascade,
+  rider_user_id uuid null references auth.users (id) on delete cascade,
   is_online boolean not null default false,
   latitude double precision null,
   longitude double precision null,
   last_seen_at timestamptz not null default now(),
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
 
 alter table public.rider_presence
   add column if not exists id uuid default gen_random_uuid(),
   add column if not exists rider_id uuid null,
+  add column if not exists rider_user_id uuid null references auth.users (id) on delete cascade,
   add column if not exists is_online boolean not null default false,
   add column if not exists latitude double precision null,
   add column if not exists longitude double precision null,
   add column if not exists last_seen_at timestamptz not null default now(),
-  add column if not exists created_at timestamptz not null default now();
+  add column if not exists created_at timestamptz not null default now(),
+  add column if not exists updated_at timestamptz not null default now();
 
 do $$
 begin
@@ -98,7 +101,26 @@ create index if not exists idx_rider_presence_rider_id
 create index if not exists idx_rider_presence_is_online
   on public.rider_presence (is_online);
 
+create index if not exists idx_rider_presence_rider_user_id
+  on public.rider_presence (rider_user_id);
+
+-- Keep rider_id and rider_user_id in sync for RLS + admin_find_nearby_riders.
+update public.rider_presence rp
+set rider_user_id = r.user_id
+from public.riders r
+where rp.rider_id = r.id
+  and rp.rider_user_id is null;
+
+update public.rider_presence rp
+set rider_id = r.id
+from public.riders r
+where r.user_id = rp.rider_user_id
+  and rp.rider_id is null;
+
 alter table public.rider_presence enable row level security;
+
+drop policy if exists rider_presence_upsert_own on public.rider_presence;
+drop policy if exists rider_presence_update_own on public.rider_presence;
 
 drop policy if exists rider_presence_select_own_or_admin on public.rider_presence;
 create policy rider_presence_select_own_or_admin
@@ -107,6 +129,7 @@ for select
 to authenticated
 using (
   public.fn_is_admin_user()
+  or rider_user_id = auth.uid()
   or exists (
     select 1
     from public.riders r
@@ -121,7 +144,8 @@ on public.rider_presence
 for insert
 to authenticated
 with check (
-  exists (
+  rider_user_id = auth.uid()
+  or exists (
     select 1
     from public.riders r
     where r.id = rider_presence.rider_id
@@ -136,6 +160,7 @@ for update
 to authenticated
 using (
   public.fn_is_admin_user()
+  or rider_user_id = auth.uid()
   or exists (
     select 1
     from public.riders r
@@ -145,6 +170,7 @@ using (
 )
 with check (
   public.fn_is_admin_user()
+  or rider_user_id = auth.uid()
   or exists (
     select 1
     from public.riders r

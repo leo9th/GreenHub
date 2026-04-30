@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "motion/react";
-import { useNavigate } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 import { Bike, MapPin, ShoppingBag, X } from "lucide-react";
 import { toast } from "sonner";
 import { useRiderPresence } from "../../hooks/useRiderPresence";
@@ -33,6 +33,7 @@ function clampPos(pos: Pos): Pos {
 
 export default function RiderPresenceFab() {
   const navigate = useNavigate();
+  const location = useLocation();
   const {
     hasUser,
     currentUserId,
@@ -137,7 +138,7 @@ export default function RiderPresenceFab() {
     };
   }, [pos.x, pos.y]);
 
-  if (!hasUser) return null;
+  if (!hasUser || location.pathname === "/") return null;
 
   return (
     <motion.div

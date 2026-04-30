@@ -9,6 +9,7 @@ import { AuthSocialButtons } from "../../components/auth/AuthSocialButtons";
 import { toE164Ng } from "../../utils/phoneE164";
 import { authRedirectTo } from "../../utils/authSiteUrl";
 import { safeInternalPath } from "../../utils/authSignupValidation";
+import { AuthFloatingIcons } from "../../components/auth/AuthFloatingIcons";
 
 function stripOAuthCodeFromUrl() {
   if (window.location.pathname !== "/login") return;
@@ -156,8 +157,9 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#ecfdf5] via-white to-gray-50 flex flex-col items-center justify-center p-4 py-12">
-      <div className="w-full max-w-[460px] overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-xl shadow-gray-200/50">
+    <div className="relative min-h-screen bg-gradient-to-b from-[#ecfdf5] via-white to-gray-50 flex flex-col items-center justify-center p-4 py-12 overflow-x-hidden">
+      <AuthFloatingIcons />
+      <div className="relative z-10 w-full max-w-[460px] overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-xl shadow-gray-200/50">
         <div className="border-b border-gray-100 bg-[#15803d] px-6 py-6 text-center">
           <Link to="/" className="inline-flex items-center gap-2 text-xl font-bold tracking-tight text-white">
             <span className="text-2xl" aria-hidden>

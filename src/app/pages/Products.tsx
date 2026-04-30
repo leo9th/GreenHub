@@ -41,7 +41,7 @@ export default function Products() {
   const [error, setError] = useState<string | null>(null);
   const [priceRange, setPriceRange] = useState("all");
   const [listingSort, setListingSort] = useState<ListingSort>("recent");
-  const [moreFilters, setMoreFilters] = useState<BrowseMoreFiltersState>(defaultBrowseMoreFilters);
+  const [moreFilters, setMoreFilters] = useState<BrowseMoreFiltersState>(() => defaultBrowseMoreFilters());
   const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
   const moreFiltersSectionRef = useRef<HTMLDivElement>(null);
   const openMoreFilters = useCallback(() => {

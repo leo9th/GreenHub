@@ -23,7 +23,7 @@ export default function CheckEmail() {
         type: "signup",
         email: emailParam.toLowerCase(),
         options: {
-          emailRedirectTo: authRedirectTo("/login"),
+          emailRedirectTo: authRedirectTo("/auth/callback?next=/welcome"),
         },
       });
       if (error) {

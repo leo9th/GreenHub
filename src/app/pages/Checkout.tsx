@@ -53,24 +53,6 @@ export default function Checkout() {
     : "c2c";
 
   useEffect(() => {
-    // #region agent log
-    void fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "35665f" },
-      body: JSON.stringify({
-        sessionId: "35665f",
-        runId: "run5",
-        hypothesisId: "H4",
-        location: "Checkout.tsx:mount",
-        message: "Checkout page mounted",
-        data: { itemCount: items.length },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
-  }, [items.length]);
-
-  useEffect(() => {
     const isPaystackPath = step === "payment" && paymentMethod !== "pod";
     if (!isPaystackPath || paystackPublicKey || paystackInitCapturedRef.current) return;
 
@@ -80,21 +62,6 @@ export default function Checkout() {
       paymentMethod,
       hasPaystackKey: false,
     });
-    // #region agent log
-    void fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "35665f" },
-      body: JSON.stringify({
-        sessionId: "35665f",
-        runId: "run1",
-        hypothesisId: "H3",
-        location: "Checkout.tsx:paystack-key-missing",
-        message: "Missing Paystack public key when entering payment step",
-        data: { step, paymentMethod },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
   }, [step, paymentMethod, paystackPublicKey]);
 
   const handleAddressSubmit = (e: React.FormEvent) => {
@@ -135,21 +102,6 @@ export default function Checkout() {
       paymentChannel: "paystack" | "pod";
     }): Promise<OrderRecord> => {
       if (!user) {
-        // #region agent log
-        void fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "35665f" },
-          body: JSON.stringify({
-            sessionId: "35665f",
-            runId: "run1",
-            hypothesisId: "H1",
-            location: "Checkout.tsx:createOrderWithLineItemsAndPlacedEvent:no-user",
-            message: "Order creation attempted without authenticated user",
-            data: { paymentChannel: params.paymentChannel },
-            timestamp: Date.now(),
-          }),
-        }).catch(() => {});
-        // #endregion
         throw new Error("You must be logged in to complete this order.");
       }
 
@@ -181,52 +133,7 @@ export default function Checkout() {
         p_payment_method: params.paymentChannel,
       });
 
-      // #region agent log
-      void fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "35665f" },
-        body: JSON.stringify({
-          sessionId: "35665f",
-          runId: "run1",
-          hypothesisId: "H1",
-          location: "Checkout.tsx:createOrderWithLineItemsAndPlacedEvent:rpc-call",
-          message: "create_checkout_order RPC completed",
-          data: {
-            paymentChannel: params.paymentChannel,
-            orderStatus: params.orderStatus,
-            hasItems: checkoutItems.length > 0,
-            itemCount: checkoutItems.length,
-            delivery,
-            platformFee,
-            total,
-            hasError: Boolean(error),
-          },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
-
       if (error) {
-        // #region agent log
-        void fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "35665f" },
-          body: JSON.stringify({
-            sessionId: "35665f",
-            runId: "run1",
-            hypothesisId: "H1",
-            location: "Checkout.tsx:createOrderWithLineItemsAndPlacedEvent:rpc-error",
-            message: "create_checkout_order RPC failed",
-            data: {
-              paymentChannel: params.paymentChannel,
-              orderStatus: params.orderStatus,
-              errorMessage: error.message,
-              code: (error as { code?: string }).code ?? null,
-            },
-            timestamp: Date.now(),
-          }),
-        }).catch(() => {});
-        // #endregion
         throw error;
       }
 
@@ -234,27 +141,6 @@ export default function Checkout() {
       if (!orderId) {
         throw new Error("Checkout completed without a valid order id.");
       }
-
-      // #region agent log
-      void fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "35665f" },
-        body: JSON.stringify({
-          sessionId: "35665f",
-          runId: "run1",
-          hypothesisId: "H1",
-          location: "Checkout.tsx:createOrderWithLineItemsAndPlacedEvent:rpc-success",
-          message: "create_checkout_order RPC succeeded",
-          data: {
-            paymentChannel: params.paymentChannel,
-            orderStatus: params.orderStatus,
-            orderId,
-            itemCount: checkoutItems.length,
-          },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
 
       return { id: orderId };
     },

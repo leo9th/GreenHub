@@ -12,41 +12,9 @@ import { AppErrorBoundary } from "./app/components/errors/AppErrorBoundary";
 import { initSentry } from "./lib/sentry";
 
 initSentry();
-// #region agent log
-console.warn("[APPDBG-6af1a9] main.tsx loaded");
-// #endregion
-// #region agent log
-void fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
-  method: "POST",
-  headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "35665f" },
-  body: JSON.stringify({
-    sessionId: "35665f",
-    runId: "run1",
-    hypothesisId: "H0",
-    location: "main.tsx:startup",
-    message: "App mounted (main.tsx entry)",
-    data: { env: import.meta.env.MODE },
-    timestamp: Date.now(),
-  }),
-}).catch(() => {});
-// #endregion
 
 function reportBootstrapError(kind: "error" | "unhandledrejection", errorText: string) {
-  // #region agent log
-  void fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "35665f" },
-    body: JSON.stringify({
-      sessionId: "35665f",
-      runId: "run3",
-      hypothesisId: "H4",
-      location: `main.tsx:${kind}`,
-      message: "Unhandled bootstrap/runtime error",
-      data: { errorText },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
+  console.error(`[bootstrap ${kind}]`, errorText);
 }
 
 window.addEventListener("error", (event) => {

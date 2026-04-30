@@ -38,6 +38,15 @@ export default function VerifyOTP() {
     }
   }, [navigate, target]);
 
+  /** Email sign-up uses confirmation links, not OTP. */
+  useEffect(() => {
+    if (!target || phone) return;
+    if (flow === "signup") {
+      toast.message("Check your email for a confirmation link to finish signing up.");
+      navigate("/login", { replace: true });
+    }
+  }, [flow, navigate, phone, target]);
+
   useEffect(() => {
     if (countdown <= 0) return;
     const t = setInterval(() => setCountdown((c) => (c > 0 ? c - 1 : 0)), 1000);
@@ -100,7 +109,9 @@ export default function VerifyOTP() {
     if (!target || countdown > 0 || resending) return;
     setResending(true);
     try {
-      await sendOtp(phone ? { phone, shouldCreateUser: flow === "signup" } : { email, shouldCreateUser: false });
+      await sendOtp(
+        phone ? { phone, shouldCreateUser: flow === "signup" } : { email, shouldCreateUser: flow === "signup" },
+      );
       toast.success(`New verification code sent to your ${channel === "sms" ? "phone" : "email"}.`);
       startCooldown();
       setOtp(Array(OTP_LEN).fill(""));

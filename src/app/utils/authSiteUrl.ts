@@ -1,7 +1,7 @@
 /**
  * Origin used in Supabase auth `redirectTo` / `emailRedirectTo`.
  * Must appear in Supabase Dashboard → Authentication → URL Configuration → Redirect URLs
- * (e.g. http://localhost:5173/reset-password and your production URL).
+ * (e.g. http://localhost:5173/reset-password, http://localhost:5173/auth/callback, and production URLs).
  *
  * Set `VITE_SITE_URL` when the canonical site URL differs from `window.location.origin`
  * (e.g. dev proxies, preview vs production Supabase settings).

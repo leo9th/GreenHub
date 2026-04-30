@@ -109,42 +109,12 @@ export default function RiderRequestDetail() {
   const accept = async () => {
     if (!rid) return;
     setBusy(true);
-    // #region agent log
-    fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "7ae02f" },
-      body: JSON.stringify({
-        sessionId: "7ae02f",
-        runId: "initial",
-        hypothesisId: "H3_DELIVERY_STATE_OR_ASSIGNMENT",
-        location: "RiderRequestDetail.tsx:113",
-        message: "Delivery accept RPC attempt",
-        data: { hasRequestId: Boolean(rid), statusBefore: String(row?.status || "").toLowerCase(), isMine: row?.assigned_rider_id === uid },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
     try {
       const { error } = await supabase.rpc("rider_accept_delivery_request", { p_request_id: rid });
       if (error) throw error;
       toast.success("Job accepted");
       await load();
     } catch (e: unknown) {
-      // #region agent log
-      fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "7ae02f" },
-        body: JSON.stringify({
-          sessionId: "7ae02f",
-          runId: "initial",
-          hypothesisId: "H3_DELIVERY_STATE_OR_ASSIGNMENT",
-          location: "RiderRequestDetail.tsx:129",
-          message: "Delivery accept RPC error",
-          data: { error: e instanceof Error ? e.message : String(e ?? "") },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
       toast.error(riderActionErrorMessage(e, "Could not accept"));
     } finally {
       setBusy(false);
@@ -208,24 +178,6 @@ export default function RiderRequestDetail() {
   const isMine = row.assigned_rider_id === uid;
   const canAccept = st === "pending" && !row.assigned_rider_id;
   const canDecline = isMine && st === "assigned";
-
-  useEffect(() => {
-    // #region agent log
-    fetch("http://127.0.0.1:7794/ingest/f13b5b2f-8e47-4c0e-b6dd-9881ab34f9db", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "7ae02f" },
-      body: JSON.stringify({
-        sessionId: "7ae02f",
-        runId: "initial",
-        hypothesisId: "H4_STALE_OR_MISMATCHED_VIEW_STATE",
-        location: "RiderRequestDetail.tsx:199",
-        message: "Delivery detail state evaluated",
-        data: { hasRequest: Boolean(row?.id), status: st, isMine, canAccept, canDecline, hasAssignedRider: Boolean(row?.assigned_rider_id) },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
-  }, [row?.id, st, isMine, canAccept, canDecline, row?.assigned_rider_id]);
 
   return (
     <div className="mx-auto max-w-lg px-4 py-6">

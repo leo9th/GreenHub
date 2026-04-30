@@ -60,7 +60,7 @@ import { EditProductModal } from "../components/EditProductModal";
 import { PriceNegotiation } from "../components/PriceNegotiation";
 import { MarketPricePrediction } from "../components/MarketPricePrediction";
 import { BuyNowActionIcon, CartActionIcon, RideActionIcon } from "../components/icons/ActionIcons";
-import DeliveryTrackingMap from "../components/DeliveryTrackingMap";
+import DeliveryTrackingMap from "../components/maps/DeliveryTrackingMap";
 
 type ParsedDeliveryOption = { name: string; fee: number; duration: string };
 type AddressSuggestion = { display_name: string; lat: number; lng: number };
@@ -2625,10 +2625,8 @@ export default function ProductDetail() {
                 <div className="space-y-3">
                   <div className="overflow-hidden rounded-xl border border-gray-200">
                     <DeliveryTrackingMap
-                      pickupLat={pickupLat}
-                      pickupLng={pickupLng}
-                      dropoffLat={dropoffLat}
-                      dropoffLng={dropoffLng}
+                      pickupLocation={pickupLat != null && pickupLng != null ? { lat: pickupLat, lng: pickupLng } : null}
+                      dropoffLocation={dropoffLat != null && dropoffLng != null ? { lat: dropoffLat, lng: dropoffLng } : null}
                       className="h-72 w-full"
                     />
                   </div>

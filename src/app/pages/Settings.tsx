@@ -114,6 +114,7 @@ export default function Settings() {
 
   const saveProfileDetails = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (!user) return;
     const fullName = profileForm.full_name.trim();
     if (!fullName) {
       toast.error("Full name is required.");
@@ -127,6 +128,7 @@ export default function Settings() {
         bio: profileForm.bio.trim() || null,
         avatar_url: profileForm.avatar_url.trim() || null,
       });
+      await refreshProfile();
       toast.success("Profile updated");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not update profile");
@@ -257,8 +259,8 @@ export default function Settings() {
             <div className="flex items-center gap-3">
               <User className="w-5 h-5 text-gray-600" />
               <div>
-                <h2 className="font-semibold text-gray-800">Public Profile</h2>
-                <p className="text-sm text-gray-600">Update the details buyers see on your profile.</p>
+                <h2 className="font-semibold text-gray-800">Personal information</h2>
+                <p className="text-sm text-gray-600">Full name, username, bio, and avatar URL shown on your public profile.</p>
               </div>
             </div>
             <Link to="/profile" className="text-sm font-semibold text-[#15803d] hover:underline">
@@ -266,7 +268,7 @@ export default function Settings() {
             </Link>
           </div>
 
-          <form className="grid gap-4 p-4 md:grid-cols-2" onSubmit={(event) => void saveProfileDetails(event)}>
+          <form className="grid gap-4 p-4 md:grid-cols-2" noValidate onSubmit={(event) => void saveProfileDetails(event)}>
             <div>
               <label htmlFor="settings-full-name" className="mb-1 block text-xs font-semibold text-gray-600">
                 Full name
@@ -298,7 +300,9 @@ export default function Settings() {
               </label>
               <input
                 id="settings-avatar-url"
-                type="url"
+                type="text"
+                inputMode="url"
+                autoComplete="photo"
                 value={profileForm.avatar_url}
                 onChange={(event) => setProfileForm((current) => ({ ...current, avatar_url: event.target.value }))}
                 className={fieldClass}

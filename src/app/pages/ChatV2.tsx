@@ -1,6 +1,6 @@
 import React from "react";
 import { Link } from "react-router";
-import { MessageCircle } from "lucide-react";
+import { MessageCircle } from "@/app/icons/emojiLucide";
 import ChatRoomV2 from "../components/chat/ChatRoomV2";
 
 function ChatErrorBoundary({ children }: { children: React.ReactNode }) {

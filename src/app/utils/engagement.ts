@@ -100,10 +100,8 @@ export async function toggleProductLike(
   userId: string,
   currentlyLiked: boolean,
 ): Promise<{ error: string | null }> {
-  console.debug("[toggleProductLike]", { productId, userId, currentlyLiked });
   if (currentlyLiked) {
     const { error } = await supabase.from("product_likes").delete().eq("product_id", productId).eq("user_id", userId);
-    if (error) console.debug("[toggleProductLike] delete error", error.message);
     return { error: error?.message ?? null };
   }
   const { error } = await supabase
@@ -112,7 +110,6 @@ export async function toggleProductLike(
   if (error?.code === "23505") {
     return { error: null };
   }
-  if (error) console.debug("[toggleProductLike] insert error", error.message, error);
   return { error: error?.message ?? null };
 }
 

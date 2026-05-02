@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Send, ThumbsDown, ThumbsUp, X } from "lucide-react";
 import {
   type TrainingDataRow,
   fetchAllApprovedTrainingForChat,
@@ -162,7 +161,7 @@ export default function FloatingChatbotWidget() {
                 className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white/95 hover:bg-white/15"
                 aria-label="Close chat"
               >
-                <X className="h-5 w-5" />
+                <span className="text-lg leading-none" aria-hidden>❌</span>
               </button>
             </header>
 
@@ -197,7 +196,7 @@ export default function FloatingChatbotWidget() {
                           } disabled:opacity-50`}
                           aria-label="Thumbs up"
                         >
-                          <ThumbsUp className="h-3.5 w-3.5" />
+                          <span className="text-sm leading-none" aria-hidden>👍</span>
                         </button>
                         <button
                           type="button"
@@ -210,7 +209,7 @@ export default function FloatingChatbotWidget() {
                           } disabled:opacity-50`}
                           aria-label="Thumbs down"
                         >
-                          <ThumbsDown className="h-3.5 w-3.5" />
+                          <span className="text-sm leading-none" aria-hidden>👎</span>
                         </button>
                       </div>
                     ) : null}
@@ -252,7 +251,7 @@ export default function FloatingChatbotWidget() {
                   className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#16a34a] text-white shadow-sm transition hover:bg-[#15803d] disabled:opacity-45"
                   aria-label="Send"
                 >
-                  <Send className="h-4 w-4" />
+                  <span>📨</span>
                 </button>
               </div>
             </form>
@@ -266,7 +265,7 @@ export default function FloatingChatbotWidget() {
           aria-label={open ? "Close assistant" : "Open assistant"}
           aria-expanded={open}
         >
-          {open ? <X className="h-6 w-6 text-white" aria-hidden /> : <span aria-hidden>💬</span>}
+          {open ? <span className="text-2xl leading-none text-white" aria-hidden>❌</span> : <span aria-hidden>💬</span>}
         </button>
       </div>
     </div>

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router";
-import { Search, SlidersHorizontal, Star, MapPin, X } from "lucide-react";
+import { Search, SlidersHorizontal, Star, MapPin, X } from "@/app/icons/emojiLucide";
 
 const products = [
   {

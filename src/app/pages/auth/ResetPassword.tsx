@@ -1,5 +1,5 @@
 import { Link, useNavigate, useSearchParams } from "react-router";
-import { Eye, EyeOff, Loader2 } from "lucide-react";
+import { Eye, EyeOff, Loader2 } from "@/app/icons/emojiLucide";
 import { useState, useEffect } from "react";
 import { supabase } from "../../../lib/supabase";
 import { toast } from "sonner";

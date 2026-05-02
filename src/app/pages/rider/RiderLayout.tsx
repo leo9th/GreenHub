@@ -1,5 +1,5 @@
 import { Link, Navigate, Outlet, useLocation } from "react-router";
-import { Loader2, Bike } from "lucide-react";
+import { Loader2, Bike } from "@/app/icons/emojiLucide";
 import { useAuth } from "../../context/AuthContext";
 
 export default function RiderLayout() {

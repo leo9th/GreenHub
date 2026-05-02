@@ -1,4 +1,4 @@
-import { Star, MessageSquare, PhoneCall, BadgeCheck } from "lucide-react";
+import { Star, MessageSquare, PhoneCall, BadgeCheck } from "@/app/icons/emojiLucide";
 import { Card, CardContent } from "../ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar";
 import { Button } from "../ui/button";

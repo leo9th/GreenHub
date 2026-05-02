@@ -1,5 +1,5 @@
 import { Link } from "react-router";
-import { ChevronLeft, MoreVertical } from "lucide-react";
+import { ChevronLeft, MoreVertical } from "@/app/icons/emojiLucide";
 import { Button } from "../ui/button";
 import {
   DropdownMenu,

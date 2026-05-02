@@ -1,5 +1,5 @@
 import { Link } from "react-router";
-import { ArrowLeft, MessageCircle, Search } from "lucide-react";
+import { ArrowLeft, MessageCircle, Search } from "@/app/icons/emojiLucide";
 import { getAvatarUrl } from "../../utils/getAvatar";
 import type { ConversationRow, ProfileLite } from "../../hooks/useInboxConversationList";
 import { formatListTime } from "../../hooks/useInboxConversationList";

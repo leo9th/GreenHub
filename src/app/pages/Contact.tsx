@@ -10,7 +10,7 @@ import {
   Phone,
   Send,
   Sparkles,
-} from "lucide-react";
+} from "@/app/icons/emojiLucide";
 import { toast } from "sonner";
 import { cn } from "../components/ui/utils";
 import { getActiveSocialLinks, socialLinkItems } from "../config/social";

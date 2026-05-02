@@ -6,7 +6,7 @@ import {
   Volume2,
   AlertCircle,
   Sparkles,
-} from "lucide-react";
+} from "./emojiLucide";
 import { fetchWord, type DictionaryEntry, type DictionaryMeaning } from "./api/dictionary";
 
 const SUGGEST_DEBOUNCE_MS = 180;

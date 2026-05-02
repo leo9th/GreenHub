@@ -1,4 +1,4 @@
-import { Users, Package, DollarSign, TrendingUp, AlertCircle, CheckCircle, XCircle } from "lucide-react";
+import { Users, Package, DollarSign, TrendingUp, AlertCircle, CheckCircle, XCircle } from "@/app/icons/emojiLucide";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 
 const platformData = [

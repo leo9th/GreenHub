@@ -5,7 +5,7 @@ import { OrderCard } from "../components/cards/OrderCard";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "../components/ui/tabs";
 import { Button } from "../components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "../components/ui/dialog";
-import { Home, Search, Camera, Heart, MessageSquare, ShoppingBag, MapPin, CheckCircle2, Truck, Clock, ShieldCheck, ChevronRight } from "lucide-react";
+import { Home, Search, Camera, Heart, MessageSquare, ShoppingBag, MapPin, CheckCircle2, Truck, Clock, ShieldCheck, ChevronRight } from "@/app/icons/emojiLucide";
 
 export default function DesignSystem() {
   return (

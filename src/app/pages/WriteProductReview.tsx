@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useParams } from "react-router";
-import { ArrowLeft, Star } from "lucide-react";
+import { ArrowLeft, Star } from "@/app/icons/emojiLucide";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../context/AuthContext";
 import { toast } from "sonner";
@@ -141,41 +141,21 @@ export default function WriteProductReview() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("[WriteProductReview] submit triggered", {
-      hasAuthUser: Boolean(authUser),
-      hasProduct: Boolean(product),
-      rating,
-      commentLength: comment.trim().length,
-      existingReviewId: existingReview?.id ?? null,
-      routeProductId: productIdParam ?? null,
-    });
     if (!authUser || !product) {
-      console.warn("[WriteProductReview] submit blocked: missing auth user or product", {
-        hasAuthUser: Boolean(authUser),
-        hasProduct: Boolean(product),
-      });
       return;
     }
     const pid = normalizeReviewProductId(product.id);
     if (pid == null) {
-      console.warn("[WriteProductReview] submit blocked: invalid normalized product ID", {
-        rawProductId: product.id,
-      });
       toast.error("Could not load this product.");
       return;
     }
     if (rating < 1 || rating > 5) {
-      console.warn("[WriteProductReview] submit blocked: invalid rating", { rating });
       toast.error("Choose a star rating from 1 to 5.");
       return;
     }
 
     const trimmed = comment.trim();
     if (!existingReview && trimmed.length < MIN_REVIEW_COMMENT_LENGTH) {
-      console.warn("[WriteProductReview] submit blocked: comment too short", {
-        commentLength: trimmed.length,
-        minLength: MIN_REVIEW_COMMENT_LENGTH,
-      });
       toast.error(`Please write at least ${MIN_REVIEW_COMMENT_LENGTH} characters about your experience.`);
       return;
     }
@@ -183,12 +163,6 @@ export default function WriteProductReview() {
     setSubmitting(true);
     try {
       if (existingReview) {
-        console.log("[WriteProductReview] updating review", {
-          reviewId: existingReview.id,
-          userId: authUser.id,
-          rating,
-          commentLength: trimmed.length,
-        });
         const { error } = await supabase
           .from("product_reviews")
           .update({ rating, comment: trimmed })
@@ -198,7 +172,6 @@ export default function WriteProductReview() {
           console.error("[WriteProductReview] update failed", error);
           throw error;
         }
-        console.log("[WriteProductReview] update succeeded", { reviewId: existingReview.id });
         toast.success("Your review was updated.");
       } else {
         const insertPayload = {
@@ -207,7 +180,6 @@ export default function WriteProductReview() {
           rating,
           comment: trimmed,
         };
-        console.log("[WriteProductReview] inserting review", insertPayload);
         const { error } = await supabase.from("product_reviews").insert(insertPayload);
         if (error) {
           console.error("[WriteProductReview] insert failed", error);
@@ -218,22 +190,12 @@ export default function WriteProductReview() {
           }
           throw error;
         }
-        console.log("[WriteProductReview] insert succeeded", {
-          productId: pid,
-          userId: authUser.id,
-        });
         toast.success("Thanks — your review was posted.");
       }
-      console.log("[WriteProductReview] navigating back to product", { productId: product.id });
       navigate(`/products/${product.id}`, { replace: true });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Could not submit review";
-      console.error("[WriteProductReview] submit failed", {
-        error: err,
-        message: msg,
-        productId: product.id,
-        userId: authUser.id,
-      });
+      console.error("[WriteProductReview] submit failed", err);
       toast.error(msg);
     } finally {
       setSubmitting(false);

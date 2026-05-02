@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
-import { Loader2, Search, Sparkles } from "lucide-react";
+import { Loader2, Search, Sparkles } from "@/app/icons/emojiLucide";
 import { toast } from "sonner";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../context/AuthContext";

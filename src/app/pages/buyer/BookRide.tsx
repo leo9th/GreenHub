@@ -1,7 +1,6 @@
 import { FormEvent, Suspense, lazy, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router";
 import { useLocation } from "react-router-dom";
-import { ArrowUpDown, CalendarDays, Clock3, Loader2, MapPin, Navigation, ShieldCheck, X } from "lucide-react";
+import { ArrowUpDown, CalendarDays, Clock3, Loader2, MapPin, Navigation, ShieldCheck, X } from "@/app/icons/emojiLucide";
 import { toast } from "sonner";
 const DeliveryTrackingMapPreview = lazy(() => import("../../components/maps/DeliveryTrackingMap"));
 const DeliveryTrackingMapEditor = lazy(() => import("../../components/maps/DeliveryTrackingMapEditor"));
@@ -11,11 +10,48 @@ const USE_MAPLIBRE_EDITOR = true;
 
 type PackageType = "small" | "medium" | "large" | "xlarge";
 
+type AssignedRiderInfo = {
+  name: string;
+  vehicle: string;
+  eta: string;
+};
+
+type RideStatus = "idle" | "searching" | "assigned" | "arriving" | "arrived" | "started" | "completed";
+
 type LocationSuggestion = {
+  /** Stable key when suggestions come from Mapbox */
+  id?: string;
   display_name: string;
   lat: number;
   lng: number;
 };
+
+function mapboxAccessToken(): string | undefined {
+  const t = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN as string | undefined;
+  const trimmed = t?.trim();
+  return trimmed || undefined;
+}
+
+async function searchMapboxPlacesNg(query: string): Promise<LocationSuggestion[]> {
+  const token = mapboxAccessToken();
+  if (!token) return [];
+  const q = query.trim();
+  if (q.length < 2) return [];
+  const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json?country=ng&limit=8&access_token=${encodeURIComponent(token)}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("Could not load address suggestions.");
+  const data = (await res.json()) as {
+    features?: Array<{ id: string; place_name: string; center: [number, number] }>;
+  };
+  return (data.features ?? [])
+    .map((f) => ({
+      id: f.id,
+      display_name: String(f.place_name || "").trim(),
+      lat: f.center[1],
+      lng: f.center[0],
+    }))
+    .filter((r) => r.display_name && Number.isFinite(r.lat) && Number.isFinite(r.lng));
+}
 
 const PACKAGE_MULTIPLIER: Record<PackageType, number> = {
   small: 1,
@@ -137,10 +173,21 @@ function RideOptionCard({
 const MemoRideOptionCard = memo(RideOptionCard);
 
 function BookRide() {
-  const navigate = useNavigate();
   const location = useLocation();
-  const rideType = location.state?.rideType ?? null;
+  const rideType =
+    location.state && typeof location.state === "object"
+      ? location.state.rideType ?? null
+      : null;
+
+  if (!rideType) {
+    console.warn("No rideType provided");
+  }
+  const sheetRef = useRef<HTMLDivElement | null>(null);
+  const continueBtnRef = useRef<HTMLButtonElement | null>(null);
+  const confirmBtnRef = useRef<HTMLButtonElement | null>(null);
   const mapModalContainerRef = useRef<HTMLDivElement | null>(null);
+  const hasToastedArrivalRef = useRef(false);
+  const assignTimerRef = useRef<number | null>(null);
   const [isMapExpanded, setIsMapExpanded] = useState(false);
   const [mapSessionId, setMapSessionId] = useState(0);
   const [mapInteractionMode, setMapInteractionMode] = useState<"fixedPin" | "markers">("fixedPin");
@@ -156,7 +203,11 @@ function BookRide() {
   const [dropoffSuggestions, setDropoffSuggestions] = useState<LocationSuggestion[]>([]);
   const [isSearchingPickup, setIsSearchingPickup] = useState(false);
   const [isSearchingDropoff, setIsSearchingDropoff] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
+  const [showConfirmSheet, setShowConfirmSheet] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+  const [assignedRider, setAssignedRider] = useState<AssignedRiderInfo | null>(null);
+  const [rideStatus, setRideStatus] = useState<RideStatus>("idle");
+  const [searchStep, setSearchStep] = useState(0);
   const [isResolvingAddress, setIsResolvingAddress] = useState(false);
   const [draftPickup, setDraftPickup] = useState<{ lat: number | null; lng: number | null }>({ lat: null, lng: null });
   const [draftDropoff, setDraftDropoff] = useState<{ lat: number | null; lng: number | null }>({ lat: null, lng: null });
@@ -195,13 +246,17 @@ function BookRide() {
   }, []);
 
   const runPickupSearch = useCallback(async (query: string) => {
-    if (query.trim().length < 3) {
+    const trimmed = query.trim();
+    const useMapbox = Boolean(mapboxAccessToken());
+    const minLen = useMapbox ? 2 : 3;
+    if (trimmed.length < minLen) {
       setPickupSuggestions([]);
       return;
     }
     setIsSearchingPickup(true);
     try {
-      setPickupSuggestions(await searchAddressSuggestions(query));
+      const rows = useMapbox ? await searchMapboxPlacesNg(trimmed) : await searchAddressSuggestions(trimmed);
+      setPickupSuggestions(rows);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Search failed");
       setPickupSuggestions([]);
@@ -211,13 +266,17 @@ function BookRide() {
   }, []);
 
   const runDropoffSearch = useCallback(async (query: string) => {
-    if (query.trim().length < 3) {
+    const trimmed = query.trim();
+    const useMapbox = Boolean(mapboxAccessToken());
+    const minLen = useMapbox ? 2 : 3;
+    if (trimmed.length < minLen) {
       setDropoffSuggestions([]);
       return;
     }
     setIsSearchingDropoff(true);
     try {
-      setDropoffSuggestions(await searchAddressSuggestions(query));
+      const rows = useMapbox ? await searchMapboxPlacesNg(trimmed) : await searchAddressSuggestions(trimmed);
+      setDropoffSuggestions(rows);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Search failed");
       setDropoffSuggestions([]);
@@ -268,28 +327,16 @@ function BookRide() {
       toast.error("Pickup and dropoff are required.");
       return;
     }
-    setSubmitting(true);
+    if (pickupLat == null || pickupLng == null || dropoffLat == null || dropoffLng == null) {
+      toast.error("Pick locations from suggestions or the map so we have coordinates.");
+      return;
+    }
     pushRecentLocation(pickupAddress);
     pushRecentLocation(dropoffAddress);
     setRecentLocations(readRecentLocations());
-
-    navigate("/checkout", {
-      state: {
-        rideBookingDraft: {
-          pickupAddress: pickupAddress.trim(),
-          pickupLat,
-          pickupLng,
-          dropoffAddress: dropoffAddress.trim(),
-          dropoffLat,
-          dropoffLng,
-          packageType,
-          distanceKm,
-          estimatedPrice,
-          source: "book_page",
-        },
-      },
-    });
-  }, [dropoffAddress, dropoffLat, dropoffLng, estimatedPrice, distanceKm, navigate, packageType, pickupAddress, pickupLat, pickupLng]);
+    /** Ride stays on-page — no checkout / Paystack (avoids payment-before-ride errors). */
+    setShowConfirmSheet(true);
+  }, [dropoffAddress, dropoffLat, dropoffLng, pickupAddress, pickupLat, pickupLng]);
 
   const openExpandedMap = useCallback((field: "pickup" | "dropoff") => {
     setActiveField(field);
@@ -298,6 +345,76 @@ function BookRide() {
     setMapSessionId((prev) => prev + 1);
     setIsMapExpanded(true);
   }, [pickupLat, pickupLng, dropoffLat, dropoffLng]);
+
+  const handleMapDemoArrival = useCallback(() => {
+    setRideStatus((prev) => {
+      if (prev === "arrived" || prev === "started" || prev === "completed") return prev;
+      if (!hasToastedArrivalRef.current) {
+        hasToastedArrivalRef.current = true;
+        toast.success("Rider reached your destination.");
+      }
+      return "arrived";
+    });
+  }, []);
+
+  const handleMockRiderAssigned = useCallback((stage?: "assigned" | "arriving") => {
+    if (stage === "arriving") {
+      setRideStatus((prev) => (prev === "assigned" ? "arriving" : prev));
+      return;
+    }
+
+    if (assignTimerRef.current != null) {
+      window.clearTimeout(assignTimerRef.current);
+      assignTimerRef.current = null;
+    }
+    setRideStatus((prev) => (prev === "searching" ? "assigned" : prev));
+    setIsSearching(false);
+    setAssignedRider((prev) =>
+      prev ?? {
+        name: "John Rider",
+        vehicle: rideType === "bike" ? "Bike" : "Car",
+        eta: "3 mins",
+      },
+    );
+  }, [rideType]);
+
+  useEffect(() => {
+    if (rideStatus === "searching") {
+      hasToastedArrivalRef.current = false;
+    }
+  }, [rideStatus]);
+
+  useEffect(() => {
+    if (rideStatus !== "arrived") return;
+
+    const t = window.setTimeout(() => {
+      setRideStatus((prev) => (prev === "arrived" ? "started" : prev));
+    }, 2000);
+
+    return () => window.clearTimeout(t);
+  }, [rideStatus]);
+
+  useEffect(() => {
+    if (rideStatus !== "started") return;
+
+    const t = window.setTimeout(() => {
+      setRideStatus((prev) => (prev === "started" ? "completed" : prev));
+    }, 8000);
+
+    return () => window.clearTimeout(t);
+  }, [rideStatus]);
+
+  useEffect(() => {
+    if (rideStatus !== "completed") return;
+
+    const t = window.setTimeout(() => {
+      setAssignedRider(null);
+      setRideStatus("idle");
+      setIsSearching(false);
+    }, 2000);
+
+    return () => window.clearTimeout(t);
+  }, [rideStatus]);
 
   const applyDraftToActiveField = useCallback(async () => {
     setIsResolvingAddress(true);
@@ -326,6 +443,114 @@ function BookRide() {
   const expandedPickupLng = draftPickup.lng ?? pickupLng;
   const expandedDropoffLat = draftDropoff.lat ?? dropoffLat;
   const expandedDropoffLng = draftDropoff.lng ?? dropoffLng;
+  const pickupLocation = pickupLat != null && pickupLng != null ? { lat: pickupLat, lng: pickupLng } : null;
+  const dropoffLocation = dropoffLat != null && dropoffLng != null ? { lat: dropoffLat, lng: dropoffLng } : null;
+  const canContinue = Boolean(pickupLocation && dropoffLocation);
+
+  useEffect(() => {
+    if (!showConfirmSheet) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setShowConfirmSheet(false);
+      }
+
+      if (e.key === "Tab" && sheetRef.current) {
+        const focusable = sheetRef.current.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+        );
+        if (focusable.length === 0) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [showConfirmSheet]);
+
+  useEffect(() => {
+    if (showConfirmSheet) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [showConfirmSheet]);
+
+  useEffect(() => {
+    if (!showConfirmSheet) return;
+    confirmBtnRef.current?.focus();
+  }, [showConfirmSheet]);
+
+  useEffect(() => {
+    if (showConfirmSheet) return;
+    continueBtnRef.current?.focus();
+  }, [showConfirmSheet]);
+
+  useEffect(() => {
+    if (!isSearching) return;
+
+    const steps = [
+      "Finding nearby riders...",
+      "Matching you with the best driver...",
+      "Almost there...",
+    ];
+
+    setSearchStep(0);
+
+    const timers = steps.map((_, i) => setTimeout(() => setSearchStep(i), i * 2000));
+
+    return () => timers.forEach(clearTimeout);
+  }, [isSearching]);
+
+  useEffect(() => {
+    if (!isSearching) {
+      if (assignTimerRef.current != null) {
+        window.clearTimeout(assignTimerRef.current);
+        assignTimerRef.current = null;
+      }
+      return;
+    }
+
+    if (assignTimerRef.current != null) {
+      window.clearTimeout(assignTimerRef.current);
+      assignTimerRef.current = null;
+    }
+
+    assignTimerRef.current = window.setTimeout(() => {
+      assignTimerRef.current = null;
+      setIsSearching(false);
+      setRideStatus((prev) => (prev === "searching" ? "assigned" : prev));
+      setAssignedRider((r) =>
+        r ?? {
+          name: "John Rider",
+          vehicle: rideType === "bike" ? "Bike" : "Car",
+          eta: "3 mins",
+        },
+      );
+    }, 6000);
+
+    return () => {
+      if (assignTimerRef.current != null) {
+        window.clearTimeout(assignTimerRef.current);
+        assignTimerRef.current = null;
+      }
+    };
+  }, [isSearching, rideType]);
 
   useEffect(() => {
     if (!isMapExpanded || !mapModalContainerRef.current) return undefined;
@@ -346,10 +571,17 @@ function BookRide() {
   }, [isMapExpanded]);
 
   return (
-    <div className="mx-auto w-full max-w-4xl px-3 py-4 md:px-4 md:py-6">
+    <div className="mx-auto w-full max-w-4xl px-3 py-4 pb-28 md:px-4 md:py-6 md:pb-32">
       {rideType && (
         <div className="px-4 py-2 text-sm text-gray-600">
-          Ride type: <span className="font-medium capitalize">{rideType}</span>
+          <span
+            className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium ${
+              rideType === "bike" ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700"
+            }`}
+          >
+            <span aria-hidden>{rideType === "bike" ? "🏍️" : "🚗"}</span>
+            <span className="capitalize">{rideType}</span>
+          </span>
         </div>
       )}
       <div className="overflow-hidden rounded-3xl border border-emerald-100 bg-white shadow-sm">
@@ -359,10 +591,10 @@ function BookRide() {
         </div>
 
         <form className="space-y-6 p-4 md:p-6" onSubmit={handleSubmit}>
-          <div className="rounded-2xl border border-gray-200 bg-white p-3 md:p-4">
-            <label className="text-sm font-medium text-gray-800">Route</label>
-            <div className="relative mt-2 rounded-xl border border-gray-200 p-3">
-              <p className="text-xs text-gray-500">Pickup</p>
+          <div className="rounded-2xl border border-gray-200 bg-white p-3 md:p-4 dark:border-gray-700 dark:bg-gray-900">
+            <label className="text-sm font-medium text-gray-800 dark:text-gray-100">Route</label>
+            <div className="relative mt-2 rounded-xl border border-gray-200 p-3 dark:border-gray-700 dark:bg-gray-950/60">
+              <p className="text-xs text-gray-500 dark:text-gray-400">Pickup</p>
               <div className="mt-1 flex gap-2">
                 <input
                   value={pickupAddress}
@@ -372,10 +604,14 @@ function BookRide() {
                     setActiveField("pickup");
                   }}
                   placeholder="Enter pickup address"
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none"
+                  className="w-full bg-white px-4 py-3 text-base font-medium text-gray-900 caret-gray-900 outline-none transition-all duration-150 ease-out placeholder:text-gray-400 rounded-lg border border-gray-200 shadow-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:placeholder:text-gray-500 dark:focus:border-emerald-400 dark:focus:ring-emerald-900/30"
                   required
                 />
-                  <button type="button" onClick={() => void runPickupSearch(pickupAddress)} className="rounded-lg border border-gray-300 px-3 text-xs font-semibold text-gray-700">
+                  <button
+                    type="button"
+                    onClick={() => void runPickupSearch(pickupAddress)}
+                    className="shrink-0 rounded-lg border border-gray-300 bg-white px-3 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+                  >
                   {isSearchingPickup ? "..." : "Find"}
                 </button>
               </div>
@@ -396,14 +632,14 @@ function BookRide() {
                   setDropoffLat(nextDropoffLat);
                   setDropoffLng(nextDropoffLng);
                 }}
-                className="absolute right-3 top-3 inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 hover:bg-gray-50"
+                className="absolute right-3 top-3 inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800"
                 aria-label="Swap pickup and dropoff"
               >
                 <ArrowUpDown className="h-4 w-4" />
               </button>
 
-              <div className="mt-3 border-t border-gray-100 pt-3">
-                <p className="text-xs text-gray-500">Drop-off</p>
+              <div className="mt-3 border-t border-gray-100 pt-3 dark:border-gray-700">
+                <p className="text-xs text-gray-500 dark:text-gray-400">Drop-off</p>
                 <div className="mt-1 flex gap-2">
                   <input
                     value={dropoffAddress}
@@ -413,10 +649,14 @@ function BookRide() {
                       setActiveField("dropoff");
                     }}
                     placeholder="Enter dropoff address"
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none"
+                    className="w-full bg-white px-4 py-3 text-base font-medium text-gray-900 caret-gray-900 outline-none transition-all duration-150 ease-out placeholder:text-gray-400 rounded-lg border border-gray-200 shadow-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:placeholder:text-gray-500 dark:focus:border-emerald-400 dark:focus:ring-emerald-900/30"
                     required
                   />
-                  <button type="button" onClick={() => void runDropoffSearch(dropoffAddress)} className="rounded-lg border border-gray-300 px-3 text-xs font-semibold text-gray-700">
+                  <button
+                    type="button"
+                    onClick={() => void runDropoffSearch(dropoffAddress)}
+                    className="shrink-0 rounded-lg border border-gray-300 bg-white px-3 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+                  >
                     {isSearchingDropoff ? "..." : "Find"}
                   </button>
                 </div>
@@ -441,10 +681,10 @@ function BookRide() {
             </div>
 
             {pickupSuggestions.length > 0 ? (
-              <div className="mt-2 max-h-28 overflow-y-auto rounded-md border border-gray-200">
+              <div className="mt-2 max-h-60 overflow-y-auto rounded-md border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
                 {pickupSuggestions.map((s, idx) => (
                   <button
-                    key={`${s.lat}-${s.lng}-${idx}`}
+                    key={s.id ?? `${s.lat}-${s.lng}-${idx}`}
                     type="button"
                     onClick={() => {
                       setPickupAddress(s.display_name);
@@ -452,7 +692,7 @@ function BookRide() {
                       setPickupLng(s.lng);
                       setPickupSuggestions([]);
                     }}
-                    className="block w-full border-b border-gray-100 px-2 py-1.5 text-left text-[11px] text-gray-700 last:border-0 hover:bg-gray-50"
+                    className="block w-full cursor-pointer border-b border-gray-100 px-3 py-3 text-left text-sm text-gray-800 last:border-0 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-800"
                   >
                     {s.display_name}
                   </button>
@@ -460,10 +700,10 @@ function BookRide() {
               </div>
             ) : null}
             {dropoffSuggestions.length > 0 ? (
-              <div className="mt-2 max-h-28 overflow-y-auto rounded-md border border-gray-200">
+              <div className="mt-2 max-h-60 overflow-y-auto rounded-md border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
                 {dropoffSuggestions.map((s, idx) => (
                   <button
-                    key={`${s.lat}-${s.lng}-${idx}`}
+                    key={s.id ?? `${s.lat}-${s.lng}-${idx}`}
                     type="button"
                     onClick={() => {
                       setDropoffAddress(s.display_name);
@@ -471,7 +711,7 @@ function BookRide() {
                       setDropoffLng(s.lng);
                       setDropoffSuggestions([]);
                     }}
-                    className="block w-full border-b border-gray-100 px-2 py-1.5 text-left text-[11px] text-gray-700 last:border-0 hover:bg-gray-50"
+                    className="block w-full cursor-pointer border-b border-gray-100 px-3 py-3 text-left text-sm text-gray-800 last:border-0 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-800"
                   >
                     {s.display_name}
                   </button>
@@ -481,11 +721,24 @@ function BookRide() {
           </div>
 
           <div className="relative overflow-hidden rounded-2xl border border-gray-200">
+            {rideType ? (
+              <div className="px-3 pt-3">
+                <p className="text-base font-semibold text-gray-900">
+                  {rideType === "bike" ? "Bike ride selected" : "Car ride selected"}
+                </p>
+              </div>
+            ) : null}
             <Suspense fallback={<div className="h-[340px] w-full animate-pulse rounded-xl bg-gradient-to-br from-gray-100 to-gray-200" />}>
               <DeliveryTrackingMapPreview
                 pickupLocation={pickupLat != null && pickupLng != null ? { lat: pickupLat, lng: pickupLng } : null}
                 dropoffLocation={dropoffLat != null && dropoffLng != null ? { lat: dropoffLat, lng: dropoffLng } : null}
                 className="h-[340px] w-full rounded-xl shadow-sm"
+                onArrival={rideStatus === "assigned" || rideStatus === "arriving" ? handleMapDemoArrival : undefined}
+                onMockRiderAssigned={
+                  rideStatus === "searching" || rideStatus === "assigned" || rideStatus === "arriving"
+                    ? handleMockRiderAssigned
+                    : undefined
+                }
               />
             </Suspense>
             <div className="pointer-events-none absolute left-3 top-3 rounded-full bg-white/95 px-3 py-1.5 text-xs font-semibold text-gray-700 shadow">
@@ -607,11 +860,9 @@ function BookRide() {
           <div className="sticky bottom-2 z-20 grid grid-cols-[1fr_auto] gap-2 rounded-2xl border border-gray-200 bg-white/95 p-2 backdrop-blur supports-[backdrop-filter]:bg-white/70">
             <button
               type="submit"
-              disabled={submitting}
-              className="inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 px-4 py-3 text-base font-extrabold text-white hover:from-emerald-700 hover:to-emerald-600 disabled:opacity-60"
+              className="inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 px-4 py-3 text-base font-extrabold text-white hover:from-emerald-700 hover:to-emerald-600"
             >
-              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              {submitting ? "Processing..." : `Book ${selectedRide.name}`}
+              {`Book ${selectedRide.name}`}
             </button>
             <button
               type="button"
@@ -736,6 +987,149 @@ function BookRide() {
           </div>
         </div>
       ) : null}
+      <div className="fixed inset-x-0 bottom-0 z-[75] border-t border-gray-200 bg-white px-4 py-3 shadow-md">
+        <div className="mx-auto flex w-full max-w-4xl items-center justify-between gap-3">
+          <div className="min-w-0">
+            {rideType ? (
+              <span
+                className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium ${
+                  rideType === "bike" ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700"
+                }`}
+              >
+                <span aria-hidden>{rideType === "bike" ? "🏍️" : "🚗"}</span>
+                <span className="capitalize">{rideType}</span>
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-2 rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-600">
+                <span>Select ride type</span>
+              </span>
+            )}
+            <p className="mt-1 text-xs text-gray-500">Set pickup and dropoff to continue</p>
+          </div>
+          <button
+            type="button"
+            disabled={!canContinue}
+            ref={continueBtnRef}
+            onClick={() => {
+              if (!pickupLocation || !dropoffLocation) return;
+              setShowConfirmSheet(true);
+            }}
+            className={`rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white ${
+              canContinue ? "opacity-100" : "opacity-60 cursor-not-allowed"
+            }`}
+          >
+            Continue
+          </button>
+        </div>
+      </div>
+      {showConfirmSheet && (
+        <div className="fixed inset-0 z-[90] flex items-end bg-black/40" onClick={() => setShowConfirmSheet(false)}>
+          <div ref={sheetRef} tabIndex={-1} className="w-full rounded-t-2xl bg-white p-4" onClick={(e) => e.stopPropagation()}>
+            <div className="mx-auto mb-4 h-1.5 w-10 rounded-full bg-gray-300" />
+            <h3 className="mb-2 text-base font-semibold">Confirm your ride</h3>
+            <div className="mb-3 text-sm text-gray-600">{rideType === "bike" ? "Bike ride" : "Car ride"}</div>
+            <div className="mb-4 text-sm text-gray-500">Pickup and destination selected</div>
+            <button
+              ref={confirmBtnRef}
+              className="w-full rounded-lg bg-green-600 py-3 text-white"
+              onClick={() => {
+                setShowConfirmSheet(false);
+                setAssignedRider(null);
+                setRideStatus("searching");
+                setIsSearching(true);
+              }}
+            >
+              Confirm Ride
+            </button>
+            <button className="mt-2 w-full text-gray-500" onClick={() => setShowConfirmSheet(false)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+      {isSearching && (
+        <div className="fixed inset-0 z-[95] flex items-center justify-center bg-black/40">
+          <div className="w-[85%] max-w-sm rounded-xl bg-white p-6 text-center">
+            <div className="mb-4 text-lg font-semibold">Searching for rider...</div>
+            <div className="mb-4 text-sm text-gray-500">
+              {[
+                "Finding nearby riders...",
+                "Matching you with the best driver...",
+                "Almost there...",
+              ][searchStep]}
+            </div>
+            <div className="mb-4 flex justify-center">
+              <div className="h-6 w-6 animate-spin rounded-full border-4 border-green-500 border-t-transparent" />
+            </div>
+            <button className="text-sm text-gray-500" onClick={() => {
+              setIsSearching(false);
+              setRideStatus("idle");
+            }}>
+              Cancel search
+            </button>
+          </div>
+        </div>
+      )}
+      {assignedRider && (
+        <div className="fixed inset-0 z-[95] flex items-center justify-center bg-black/40">
+          <div className="w-[85%] max-w-sm rounded-xl bg-white p-6">
+            <div className="mb-2 text-lg font-semibold">
+              {rideStatus === "completed"
+                ? "Thanks for riding"
+                : rideStatus === "started"
+                  ? "Ride in progress"
+                  : rideStatus === "arrived"
+                    ? "You've arrived"
+                    : rideStatus === "arriving"
+                      ? "Driver arriving…"
+                      : "Rider found 🎉"}
+            </div>
+            <div className="mb-4 text-sm text-gray-500">
+              {rideStatus === "completed"
+                ? "Your trip is complete."
+                : rideStatus === "started"
+                  ? "Enjoy the rest of your journey."
+                  : rideStatus === "arrived"
+                    ? "Your rider has reached the destination."
+                    : rideStatus === "arriving"
+                      ? "Your driver is almost at pickup."
+                      : "Your rider is on the way"}
+            </div>
+            {rideStatus === "started" ? (
+              <p className="mb-3 text-sm font-medium text-emerald-700">Ride in progress...</p>
+            ) : null}
+            {rideStatus === "completed" ? (
+              <p className="mb-3 text-sm font-medium text-emerald-700">Ride completed 🎉</p>
+            ) : null}
+            <div className="mb-4 rounded-lg bg-gray-100 p-3">
+              <div className="font-medium">{assignedRider.name}</div>
+              <div className="text-sm text-gray-500">
+                {assignedRider.vehicle} • {assignedRider.eta}
+              </div>
+            </div>
+            {rideStatus === "assigned" || rideStatus === "arriving" ? (
+              <button
+                className="w-full rounded-lg bg-green-600 py-3 text-white"
+                onClick={() => {
+                  setAssignedRider(null);
+                  setRideStatus("idle");
+                }}
+              >
+                Track Ride
+              </button>
+            ) : null}
+            {rideStatus === "arrived" ? (
+              <button
+                type="button"
+                className="w-full rounded-lg bg-emerald-600 py-3 text-sm font-semibold text-white"
+                onClick={() => setRideStatus((prev) => (prev === "arrived" ? "started" : prev))}
+              >
+                Start Ride
+              </button>
+            ) : null}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

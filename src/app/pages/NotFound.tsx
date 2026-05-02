@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "react-router";
-import { Home, Search, ArrowLeft } from "lucide-react";
+import { Home, Search, ArrowLeft } from "@/app/icons/emojiLucide";
 
 export default function NotFound() {
   const navigate = useNavigate();

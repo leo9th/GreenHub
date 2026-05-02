@@ -1,5 +1,4 @@
 import { Link } from "react-router";
-import { Apple, MessageCircle, Phone, Play } from "lucide-react";
 
 const SUPPORT_TEL_DISPLAY = "+234 812 522 1542";
 const SUPPORT_TEL_HREF = "tel:+2348125221542";
@@ -21,7 +20,7 @@ export default function Footer() {
                   title="Messages"
                   aria-label="Open messages"
                 >
-                  <MessageCircle className="h-5 w-5" aria-hidden />
+                  <span className="text-base leading-none" aria-hidden>💬</span>
                 </Link>
                 <a
                   href={SUPPORT_TEL_HREF}
@@ -29,7 +28,7 @@ export default function Footer() {
                   title={`Call ${SUPPORT_TEL_DISPLAY}`}
                   aria-label={`Call support ${SUPPORT_TEL_DISPLAY}`}
                 >
-                  <Phone className="h-5 w-5" aria-hidden />
+                  <span className="text-base leading-none" aria-hidden>📞</span>
                 </a>
               </span>
             </div>
@@ -64,14 +63,14 @@ export default function Footer() {
             <h3 className="font-bold text-lg mb-4">Our apps</h3>
             <div className="space-y-3">
               <a href="#" className="flex items-center gap-2 bg-black text-white px-3 py-2 rounded-lg hover:bg-gray-900 transition-colors w-max shadow-md">
-                <Apple className="w-6 h-6" />
+                <span className="w-6 h-6 inline-flex items-center justify-center" aria-hidden>🛒</span>
                 <div className="flex flex-col">
                   <span className="text-[10px] leading-tight">Download on the</span>
                   <span className="text-sm font-semibold leading-tight">App Store</span>
                 </div>
               </a>
               <a href="#" className="flex items-center gap-2 bg-black text-white px-3 py-2 rounded-lg hover:bg-gray-900 transition-colors w-max shadow-md">
-                <Play className="w-5 h-5 ml-1" />
+                <span className="w-5 h-5 ml-1 inline-flex items-center justify-center" aria-hidden>▶️</span>
                 <div className="flex flex-col ml-1">
                   <span className="text-[10px] leading-tight text-left">GET IT ON</span>
                   <span className="text-sm font-semibold leading-tight">Google Play</span>

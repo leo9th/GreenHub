@@ -1,5 +1,5 @@
 import { Link, useNavigate, useSearchParams } from "react-router";
-import { ArrowLeft, Loader2, Mail } from "lucide-react";
+import { ArrowLeft, Loader2, Mail } from "@/app/icons/emojiLucide";
 import { useState } from "react";
 import { supabase } from "../../../lib/supabase";
 import { toast } from "sonner";

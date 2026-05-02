@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router";
-import { Package, Clock, CheckCircle2, XCircle, MapPin, Truck } from "lucide-react";
+import { Package, Clock, CheckCircle2, XCircle, MapPin, Truck } from "@/app/icons/emojiLucide";
 
 const orders = [
   {

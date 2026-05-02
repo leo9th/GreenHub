@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { ArrowLeft, Search, Filter, CheckCircle, XCircle, Ban, MoreVertical } from "lucide-react";
+import { ArrowLeft, Search, Filter, CheckCircle, XCircle, Ban, MoreVertical } from "@/app/icons/emojiLucide";
 
 export default function AdminUsers() {
   const navigate = useNavigate();
@@ -82,21 +82,20 @@ export default function AdminUsers() {
     return true;
   });
 
-  const handleVerify = (userId: number) => {
-    console.log("Verify user:", userId);
+  const handleVerify = (_userId: number) => {
     setShowActions(null);
   };
 
-  const handleSuspend = (userId: number) => {
+  const handleSuspend = (_userId: number) => {
     if (confirm("Are you sure you want to suspend this user?")) {
-      console.log("Suspend user:", userId);
+      // Admin action wired when backend is ready
     }
     setShowActions(null);
   };
 
-  const handleDelete = (userId: number) => {
+  const handleDelete = (_userId: number) => {
     if (confirm("Are you sure you want to delete this user? This action cannot be undone.")) {
-      console.log("Delete user:", userId);
+      // Admin action wired when backend is ready
     }
     setShowActions(null);
   };

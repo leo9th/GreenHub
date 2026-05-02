@@ -1,5 +1,5 @@
 import React, { useCallback, useRef } from "react";
-import { CheckCheck } from "lucide-react";
+import { CheckCheck } from "@/app/icons/emojiLucide";
 import type { ChatReactionSummary } from "../../utils/chatMessages";
 import { MessageReceiptTicks, type ReceiptPhase } from "./MessageBubble";
 

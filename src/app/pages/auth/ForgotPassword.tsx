@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "react-router-dom";
-import { Loader2 } from "lucide-react";
+import { Loader2 } from "@/app/icons/emojiLucide";
 import { useEffect, useState } from "react";
 import type { AuthError } from "@supabase/supabase-js";
 import { toast } from "sonner";

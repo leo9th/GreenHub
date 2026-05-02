@@ -1,5 +1,5 @@
 import { Link } from "react-router";
-import { Plus, TrendingUp, Package, DollarSign, Eye, Edit, Trash2 } from "lucide-react";
+import { Plus, TrendingUp, Package, DollarSign, Eye, Edit, Trash2 } from "@/app/icons/emojiLucide";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
 const salesData = [

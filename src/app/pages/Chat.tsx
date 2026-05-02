@@ -1,6 +1,6 @@
 import React from "react";
 import { Link } from "react-router";
-import { MessageCircle } from "lucide-react";
+import { MessageCircle } from "@/app/icons/emojiLucide";
 import ChatWorkspace from "../components/chat/ChatWorkspace";
 
 /** Direct-message thread: WhatsApp-style layout, header, and bubbles in `components/chat/ChatWorkspace`. */

@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2 } from "@/app/icons/emojiLucide";
 import { toast } from "sonner";
 import { supabase } from "../../../lib/supabase";
 import { Button } from "../ui/button";

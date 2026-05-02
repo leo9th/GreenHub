@@ -5,6 +5,11 @@ export function isWarehouseShippingFulfillment(ft: string | null | undefined): b
   return typeof ft === "string" && ft.trim() === "warehouse_shipping";
 }
 
+/** Aligns with Checkout: all lines warehouse/guaranteed → store (b2c); otherwise marketplace (c2c). */
+export function deriveMarketModeFromLineItems(items: { fulfillment_type?: string | null }[]): "c2c" | "b2c" {
+  return items.every((item) => isWarehouseShippingFulfillment(item.fulfillment_type)) ? "b2c" : "c2c";
+}
+
 export function computeHybridDeliveryTotals(
   items: { fulfillment_type?: string | null; deliveryFee: number }[],
 ): { guaranteedFlat: number; marketplaceSellerFees: number; total: number } {

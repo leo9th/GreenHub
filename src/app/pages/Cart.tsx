@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "react-router";
-import { ArrowLeft, Trash2, Plus, Minus, ShoppingBag, BadgeCheck } from "lucide-react";
+import { ArrowLeft, Trash2, Plus, Minus, ShoppingBag, BadgeCheck } from "@/app/icons/emojiLucide";
 import { useCurrency } from "../hooks/useCurrency";
 import { useCart, type CartItem } from "../context/CartContext";
 import {

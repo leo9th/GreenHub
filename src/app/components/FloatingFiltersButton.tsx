@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { SlidersHorizontal } from "lucide-react";
+import { SlidersHorizontal } from "@/app/icons/emojiLucide";
 
 export const DEFAULT_MORE_FILTERS_SECTION_ID = "more-filters-section";
 

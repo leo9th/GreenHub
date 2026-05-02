@@ -1,4 +1,4 @@
-import { MessageCircle } from "lucide-react";
+import { MessageCircle } from "@/app/icons/emojiLucide";
 import { Link } from "react-router";
 
 /** Lightweight assistant entry — full bot lives in `FloatingChatbotWidget`. */

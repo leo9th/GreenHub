@@ -1,5 +1,5 @@
 import { useId, type RefObject } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown } from "@/app/icons/emojiLucide";
 import { cn } from "./ui/utils";
 
 export type CollapsibleFiltersProps = {

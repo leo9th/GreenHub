@@ -1,5 +1,5 @@
 import { Link, Navigate, Outlet, useLocation } from "react-router";
-import { Loader2 } from "lucide-react";
+import { Loader2 } from "@/app/icons/emojiLucide";
 import { useAuth } from "../../context/AuthContext";
 
 export default function AdminLayout() {

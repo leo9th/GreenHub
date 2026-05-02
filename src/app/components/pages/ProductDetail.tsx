@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { ChevronLeft, Heart, Share2, Star, MapPin, ShieldCheck, MessageCircle, Phone, Truck, Package, Store } from "lucide-react";
+import { ChevronLeft, Heart, Share2, Star, MapPin, ShieldCheck, MessageCircle, Phone, Truck, Package, Store } from "@/app/icons/emojiLucide";
 import { BuyNowActionIcon, CartActionIcon } from "../icons/ActionIcons";
 
 const productImages = [

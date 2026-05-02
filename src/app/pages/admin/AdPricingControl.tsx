@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowLeft, Save, RotateCcw } from "lucide-react";
+import { ArrowLeft, Save, RotateCcw } from "@/app/icons/emojiLucide";
 import { useNavigate } from "react-router";
 
 type PricingTier = {

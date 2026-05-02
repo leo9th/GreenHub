@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { ArrowLeft, Search, AlertCircle, CheckCircle, XCircle, MoreVertical } from "lucide-react";
+import { ArrowLeft, Search, AlertCircle, CheckCircle, XCircle, MoreVertical } from "@/app/icons/emojiLucide";
 import { useCurrency } from "../../hooks/useCurrency";
 
 export default function AdminProducts() {
@@ -82,21 +82,20 @@ export default function AdminProducts() {
     return true;
   });
 
-  const handleApprove = (productId: number) => {
-    console.log("Approve product:", productId);
+  const handleApprove = (_productId: number) => {
     setShowActions(null);
   };
 
-  const handleSuspend = (productId: number) => {
+  const handleSuspend = (_productId: number) => {
     if (confirm("Are you sure you want to suspend this product?")) {
-      console.log("Suspend product:", productId);
+      // Admin action wired when backend is ready
     }
     setShowActions(null);
   };
 
-  const handleDelete = (productId: number) => {
+  const handleDelete = (_productId: number) => {
     if (confirm("Are you sure you want to delete this product? This action cannot be undone.")) {
-      console.log("Delete product:", productId);
+      // Admin action wired when backend is ready
     }
     setShowActions(null);
   };

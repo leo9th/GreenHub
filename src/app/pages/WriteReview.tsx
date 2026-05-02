@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useSearchParams, useParams } from "react-router";
-import { ArrowLeft, Star } from "lucide-react";
+import { ArrowLeft, Star } from "@/app/icons/emojiLucide";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../context/AuthContext";
 import { toast } from "sonner";

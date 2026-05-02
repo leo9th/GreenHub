@@ -69,22 +69,7 @@ async function fetchFeaturedProducts(
   priceRange: string = "all",
   more: BrowseMoreFiltersState = defaultBrowseMoreFilters(),
 ): Promise<{ rows: ProductWithSeller[]; error: string | null }> {
-  console.log("[Home] fetchFeaturedProducts called", {
-    conditionFilter,
-    globalSearchTerm,
-    sortBy,
-    priceRange,
-    more,
-    status: "active",
-    limit: FEATURED_FETCH_LIMIT,
-  });
-
   const fetchBaselineActiveProducts = async (): Promise<{ rows: ProductWithSeller[]; error: string | null }> => {
-    console.log("[Home] baseline active products query starting", {
-      status: "active",
-      limit: HOME_PAGE_SIZE,
-    });
-
     const { data, error } = await supabase
       .from("products")
       .select(productsSelectWithSellerEmbed())
@@ -92,18 +77,11 @@ async function fetchFeaturedProducts(
       .order("created_at", { ascending: false })
       .limit(HOME_PAGE_SIZE);
 
-    console.log("[Home] baseline active products query returned", {
-      count: data?.length ?? 0,
-      error: error?.message ?? null,
-      firstProduct: data?.[0] ?? null,
-    });
-
     if (error) {
       console.warn("[Home] baseline active products error:", error.message);
       return { rows: [], error: error.message };
     }
     const baselineRows = ((data as ProductWithSeller[]) ?? []).filter(Boolean);
-    console.log("Products fetched (baseline):", baselineRows.length);
     return { rows: baselineRows, error: null };
   };
 
@@ -126,31 +104,13 @@ async function fetchFeaturedProducts(
 
   query = query.limit(FEATURED_FETCH_LIMIT);
 
-  console.log("[Home] featured products query starting", {
-    conditionFilter,
-    globalSearchTerm,
-    sortBy,
-    priceRange,
-    more,
-    sellerIds,
-    status: "active",
-    limit: FEATURED_FETCH_LIMIT,
-  });
-
   const { data, error } = await query;
-
-  console.log("[Home] featured products query returned", {
-    count: data?.length ?? 0,
-    error: error?.message ?? null,
-    firstProduct: data?.[0] ?? null,
-  });
 
   if (error) {
     console.warn("[Home] featured query error, using baseline:", error.message);
     return fetchBaselineActiveProducts();
   }
   const pool = ((data as ProductWithSeller[]) ?? []).filter(Boolean);
-  console.log("Products fetched:", pool.length);
   if (pool.length === 0) {
     return fetchBaselineActiveProducts();
   }
@@ -392,19 +352,6 @@ export default function Home() {
     setMoreFiltersOpen(true);
   }, []);
 
-  useEffect(() => {
-    console.log("[Home] mounted", {
-      pathname: window.location.pathname,
-      search: window.location.search,
-    });
-    return () => {
-      console.log("[Home] unmounted", {
-        pathname: window.location.pathname,
-        search: window.location.search,
-      });
-    };
-  }, []);
-
   const {
     fallbackProducts: recommendedFallback,
     fallbackLoading: recommendedFallbackLoading,
@@ -421,15 +368,6 @@ export default function Home() {
   );
 
   useEffect(() => {
-    console.log("[Home] SimpleProductGrid props", {
-      productsLength: featuredProducts.length,
-      isLoading: featuredLoading,
-      error: featuredError,
-      productIds: featuredProducts.slice(0, 5).map((product) => String(product.id)),
-    });
-  }, [featuredProducts, featuredLoading, featuredError]);
-
-  useEffect(() => {
     const opts = getConditionFilterDropdownOptions(categorySlugForFilter);
     setSelectedCondition((prev) => {
       if (prev === "all") return prev;
@@ -440,13 +378,6 @@ export default function Home() {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      console.log("[Home] featured products effect start", {
-        selectedCondition,
-        globalSearchTerm,
-        listingSort,
-        priceRange,
-        moreFilters,
-      });
       setFeaturedLoading(true);
       setFeaturedError(null);
       try {
@@ -457,12 +388,6 @@ export default function Home() {
           priceRange,
           moreFilters,
         );
-        console.log("[Home] featured products effect result", {
-          cancelled,
-          rowsLength: rows.length,
-          error,
-          firstProduct: rows[0] ?? null,
-        });
         if (cancelled) return;
         if (error) {
           setFeaturedError(error);
@@ -478,15 +403,11 @@ export default function Home() {
         }
       } finally {
         if (!cancelled) {
-          console.log("[Home] featuredLoading -> false");
           setFeaturedLoading(false);
-        } else {
-          console.log("[Home] featured products effect cancelled before loading false");
         }
       }
     })();
     return () => {
-      console.log("[Home] featured products effect cleanup");
       cancelled = true;
     };
   }, [selectedCondition, globalSearchTerm, listingSort, priceRange, moreFilters]);
@@ -600,7 +521,6 @@ export default function Home() {
                 type="button"
                 onClick={() => {
                   setRideType("bike");
-                  console.log("bike");
                 }}
                 className={`flex-1 rounded-xl border px-4 py-4 text-sm font-semibold shadow-sm transition ${
                   rideType === "bike"
@@ -614,7 +534,6 @@ export default function Home() {
                 type="button"
                 onClick={() => {
                   setRideType("car");
-                  console.log("car");
                 }}
                 className={`flex-1 rounded-xl border px-4 py-4 text-sm font-semibold shadow-sm transition ${
                   rideType === "car"
@@ -632,7 +551,7 @@ export default function Home() {
                   type="button"
                   onClick={() => {
                     if (!rideType) return;
-                    navigate("/book-ride", {
+                    navigate("/book", {
                       state: {
                         rideType,
                       },
@@ -656,7 +575,6 @@ export default function Home() {
               type="button"
               onClick={() => {
                 setSendStarted(true);
-                console.log("start delivery");
               }}
               className="mt-4 rounded-xl bg-[#22c55e] px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#16a34a]"
             >

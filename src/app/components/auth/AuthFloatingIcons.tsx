@@ -1,5 +1,5 @@
-import type { LucideIcon } from "lucide-react";
-import { Car, Leaf, Package, ShoppingCart, Sprout, Truck } from "lucide-react";
+import type { LucideIcon } from "@/app/icons/emojiLucide";
+import { Car, Leaf, Package, ShoppingCart, Sprout, Truck } from "@/app/icons/emojiLucide";
 
 type RainColumn = {
   Icon: LucideIcon | "leaf-emoji";

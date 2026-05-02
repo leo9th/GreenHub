@@ -9,7 +9,7 @@ import {
   ThumbsDown,
   ThumbsUp,
   Trash2,
-} from "lucide-react";
+} from "@/app/icons/emojiLucide";
 import { toast } from "sonner";
 import { supabase } from "../../../lib/supabase";
 import type { ChatbotLanguage } from "../../utils/chatbotApi";

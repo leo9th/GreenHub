@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, Smartphone } from "lucide-react";
+import { Loader2, Smartphone } from "@/app/icons/emojiLucide";
 import { toast } from "sonner";
 import { supabase } from "../../lib/supabase";
 import { toE164Ng, maskPhoneE164 } from "../utils/phoneE164";

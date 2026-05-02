@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router";
-import { ArrowLeft, ShieldCheck, Upload, Loader2, CheckCircle2, Clock, XCircle } from "lucide-react";
+import { ArrowLeft, ShieldCheck, Upload, Loader2, CheckCircle2, Clock, XCircle } from "@/app/icons/emojiLucide";
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../context/AuthContext";
 

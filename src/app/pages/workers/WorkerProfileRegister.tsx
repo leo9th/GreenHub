@@ -1,6 +1,6 @@
 import { type FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { Loader2 } from "lucide-react";
+import { Loader2 } from "@/app/icons/emojiLucide";
 import { supabase } from "../../../lib/supabase";
 import { toast } from "sonner";
 import WorkersSectionHeader from "../../components/workers/WorkersSectionHeader";

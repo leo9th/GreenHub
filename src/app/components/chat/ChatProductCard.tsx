@@ -1,5 +1,5 @@
 import { Link } from "react-router";
-import { ExternalLink, Send } from "lucide-react";
+import { ExternalLink, Send } from "@/app/icons/emojiLucide";
 import type { ReactNode } from "react";
 
 export interface ChatProductCardProps {

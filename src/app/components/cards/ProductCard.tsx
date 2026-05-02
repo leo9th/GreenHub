@@ -1,6 +1,6 @@
 import { Link } from "react-router";
 import { memo, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
-import { MapPin, Star } from "lucide-react";
+import { MapPin, Star } from "@/app/icons/emojiLucide";
 import { useCurrency } from "../../hooks/useCurrency";
 
 const PLACEHOLDER_IMG = "https://placehold.co/400x400/e5e7eb/9ca3af?text=No+Image";

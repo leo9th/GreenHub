@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { Loader2, Package, Store, DollarSign } from "lucide-react";
+import { Loader2, Package, Store, DollarSign } from "@/app/icons/emojiLucide";
 import { toast } from "sonner";
 import { useCurrency } from "../../hooks/useCurrency";
 import { supabase } from "../../../lib/supabase";

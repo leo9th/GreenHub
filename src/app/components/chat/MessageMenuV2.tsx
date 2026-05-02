@@ -1,4 +1,4 @@
-import type { LucideIcon } from "lucide-react";
+import type { LucideIcon } from "@/app/icons/emojiLucide";
 import { useEffect, useState } from "react";
 import {
   ChevronUp,
@@ -12,7 +12,7 @@ import {
   Star,
   Trash2,
   X,
-} from "lucide-react";
+} from "@/app/icons/emojiLucide";
 import { Button } from "../ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "../ui/sheet";
 import { cn } from "../ui/utils";

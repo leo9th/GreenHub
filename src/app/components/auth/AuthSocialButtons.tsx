@@ -1,4 +1,4 @@
-import { Loader2 } from "lucide-react";
+import { Loader2 } from "@/app/icons/emojiLucide";
 
 export function GoogleIcon({ className = "h-5 w-5" }: { className?: string }) {
   return (

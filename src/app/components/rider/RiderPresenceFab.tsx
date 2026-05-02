@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "motion/react";
 import { useLocation, useNavigate } from "react-router";
-import { Bike, MapPin, ShoppingBag, X } from "lucide-react";
 import { toast } from "sonner";
 import { useRiderPresence } from "../../hooks/useRiderPresence";
 import { normalizeRiderFabMode, resolveInitialRiderFabMode, type RiderFabMode, riderFabModeStorageKey } from "../../utils/riderFabMode";
@@ -210,7 +209,15 @@ export default function RiderPresenceFab() {
               : "bg-indigo-500/25 text-indigo-300"
           }`}
         >
-          {mode === "booking" ? <ShoppingBag className="h-4 w-4" aria-hidden /> : <Bike className="h-4 w-4" aria-hidden />}
+          {mode === "booking" ? (
+            <span className="text-base leading-none" aria-hidden>
+              🛒
+            </span>
+          ) : (
+            <span className="text-base leading-none" aria-hidden>
+              🏍️
+            </span>
+          )}
         </span>
         <span className="min-w-0 text-left">
           <span className="block text-[11px] font-semibold leading-tight">
@@ -227,7 +234,9 @@ export default function RiderPresenceFab() {
                   : "Rider approval required"
             ) : lastLocation ? (
               <>
-                <MapPin className="mr-1 inline h-3 w-3" aria-hidden />
+                <span className="mr-1 inline text-xs leading-none" aria-hidden>
+                  📍
+                </span>
                 {lastLocation.lat.toFixed(4)}, {lastLocation.lng.toFixed(4)}
               </>
             ) : onlineSince ? (
@@ -266,7 +275,9 @@ export default function RiderPresenceFab() {
               onClick={() => setIsPanelOpen(false)}
               className="rounded-md p-1 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
             >
-              <X className="h-3.5 w-3.5" />
+              <span className="text-sm leading-none" aria-hidden>
+                ❌
+              </span>
             </button>
           </div>
           <p>

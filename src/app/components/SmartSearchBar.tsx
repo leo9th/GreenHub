@@ -7,7 +7,7 @@ import {
   useState,
   type KeyboardEvent,
 } from "react";
-import { Clock, Search } from "lucide-react";
+import { Clock, Search } from "@/app/icons/emojiLucide";
 import { supabase } from "../../lib/supabase";
 import {
   fetchProductSearchDictionary,

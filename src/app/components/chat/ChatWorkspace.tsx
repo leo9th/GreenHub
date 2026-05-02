@@ -21,7 +21,7 @@ import {
   UserCheck,
   UserPlus,
   X,
-} from "lucide-react";
+} from "@/app/icons/emojiLucide";
 import { toast } from "sonner";
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../context/AuthContext";
@@ -549,21 +549,6 @@ export default function ChatWorkspace() {
     clearStoredListingProductId();
     attachListingToFirstSendRef.current = false;
   }, []);
-
-  useEffect(() => {
-    if (!import.meta.env.DEV) return;
-    console.log("🔍 [chat] Product ID from query (state):", productIdFromQuery);
-  }, [productIdFromQuery]);
-
-  useEffect(() => {
-    if (!import.meta.env.DEV) return;
-    console.log("📦 [chat] Strip product source ID:", stripProductSourceId);
-  }, [stripProductSourceId]);
-
-  useEffect(() => {
-    if (!import.meta.env.DEV) return;
-    console.log("🖼️ [chat] Pinned / strip product row:", stripProduct);
-  }, [stripProduct]);
 
   /** After `/messages/u` → `/messages/c`, re-key session storage so `readStoredListingProductId` matches the thread route. */
   useEffect(() => {

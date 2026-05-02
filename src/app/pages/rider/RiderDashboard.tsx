@@ -1,17 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { Loader2, Package, Smartphone } from "lucide-react";
+import { Loader2, Package, Smartphone } from "@/app/icons/emojiLucide";
 import { toast } from "sonner";
 import { useAuth } from "../../context/AuthContext";
 import { supabase } from "../../../lib/supabase";
 import { DeclineButton } from "../../components/rider/DeclineButton";
 
-type DeliveryRequestRow = {
+type DeliveryJobRow = {
   id: string;
   order_id: string;
   status: string | null;
   assigned_rider_id: string | null;
   created_at: string | null;
+  updated_at?: string | null;
 };
 
 type RiderTableRow = {
@@ -29,6 +30,12 @@ type ProductRideBookingRow = {
   created_at: string | null;
 };
 
+type AssignmentOfferRow = {
+  job_id: string;
+  status: string;
+  delivery_jobs: DeliveryJobRow | DeliveryJobRow[] | null;
+};
+
 function isMissingRelationError(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
   const e = error as { code?: string; message?: string };
@@ -39,12 +46,17 @@ function isMissingRelationError(error: unknown): boolean {
 function statusLabel(s: string | null | undefined): string {
   const x = String(s || "").toLowerCase();
   const m: Record<string, string> = {
-    pending: "Pending pickup",
-    assigned: "Assigned to you",
-    rejected: "Declined",
+    pending_dispatch: "Queued for dispatch",
+    assigned: "Assigned — accept to start",
+    accepted: "Accepted",
+    arrived_pickup: "At pickup",
     picked_up: "Picked up",
+    en_route: "On the way",
     delivered: "Delivered",
     cancelled: "Cancelled",
+    failed: "Failed",
+    pending: "Pending pickup",
+    rejected: "Declined",
   };
   return m[x] || x || "—";
 }
@@ -52,8 +64,8 @@ function statusLabel(s: string | null | undefined): string {
 export default function RiderDashboard() {
   const { user } = useAuth();
   const [riderRow, setRiderRow] = useState<RiderTableRow | null | undefined>(undefined);
-  const [available, setAvailable] = useState<DeliveryRequestRow[]>([]);
-  const [mine, setMine] = useState<DeliveryRequestRow[]>([]);
+  const [available, setAvailable] = useState<DeliveryJobRow[]>([]);
+  const [mine, setMine] = useState<DeliveryJobRow[]>([]);
   const [myProductRideBookings, setMyProductRideBookings] = useState<ProductRideBookingRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [missingProductRideBookingsTable, setMissingProductRideBookingsTable] = useState(false);
@@ -67,9 +79,9 @@ export default function RiderDashboard() {
       setRiderRow(undefined);
       return;
     }
-    const { data, error } = await supabase.from("riders").select("user_id, status, vehicle_type").eq("user_id", uid).maybeSingle();
+    const { data, error } = await supabase.from("greenhub_riders").select("user_id, status, vehicle_type").eq("user_id", uid).maybeSingle();
     if (error) {
-      console.warn("[RiderDashboard] riders", error);
+      console.warn("[RiderDashboard] greenhub_riders", error);
       setRiderRow(null);
       return;
     }
@@ -84,23 +96,27 @@ export default function RiderDashboard() {
     }
     setLoading(true);
     try {
-      const { data: open, error: e1 } = await supabase
-        .from("delivery_requests")
-        .select("id, order_id, status, assigned_rider_id, created_at")
-        .in("status", ["pending", "rejected"])
-        .is("assigned_rider_id", null)
-        .order("created_at", { ascending: false });
-      if (e1) throw e1;
-      setAvailable((open as DeliveryRequestRow[]) ?? []);
+      const { data: mineData, error: eMine } = await supabase.rpc("rider_list_my_delivery_jobs");
+      if (eMine) throw eMine;
+      const mineJobs = (mineData as DeliveryJobRow[]) ?? [];
+      const active = mineJobs.filter((j) => {
+        const s = String(j.status || "").toLowerCase();
+        return !["delivered", "cancelled", "failed"].includes(s);
+      });
+      setMine(active);
 
-      const { data: active, error: e2 } = await supabase
-        .from("delivery_requests")
-        .select("id, order_id, status, assigned_rider_id, created_at")
-        .eq("assigned_rider_id", uid)
-        .in("status", ["assigned", "picked_up"])
-        .order("updated_at", { ascending: false });
-      if (e2) throw e2;
-      setMine((active as DeliveryRequestRow[]) ?? []);
+      const { data: offeredData, error: eOffer } = await supabase
+        .from("delivery_assignments")
+        .select("job_id, status, delivery_jobs ( id, order_id, status, assigned_rider_id, created_at, updated_at )")
+        .eq("rider_user_id", uid)
+        .eq("status", "offered");
+      if (eOffer) throw eOffer;
+      const open: DeliveryJobRow[] = [];
+      for (const row of (offeredData as AssignmentOfferRow[]) ?? []) {
+        const dj = Array.isArray(row.delivery_jobs) ? row.delivery_jobs[0] : row.delivery_jobs;
+        if (dj?.id) open.push(dj);
+      }
+      setAvailable(open);
 
       const { data: productRideData, error: e3 } = await supabase
         .from("product_ride_bookings")
@@ -138,9 +154,16 @@ export default function RiderDashboard() {
     if (!uid) return;
     const deliveryChannel = supabase
       .channel(`rider-dashboard-delivery:${uid}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "delivery_requests" }, () => {
+      .on("postgres_changes", { event: "*", schema: "public", table: "delivery_jobs" }, () => {
         void loadJobs();
       })
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "delivery_assignments", filter: `rider_user_id=eq.${uid}` },
+        () => {
+          void loadJobs();
+        },
+      )
       .subscribe();
 
     const productRideChannel = supabase
@@ -160,7 +183,7 @@ export default function RiderDashboard() {
     if (!uid) return;
     setApplying(true);
     try {
-      const { error } = await supabase.rpc("rider_apply_rider_profile", { p_vehicle_type: vehicleType.trim() || null });
+      const { error } = await supabase.rpc("rider_apply_greenhub", { p_vehicle_type: vehicleType.trim() || null });
       if (error) throw error;
       toast.success("Application saved", { description: "An admin will approve your rider profile." });
       await loadRiderProfile();
@@ -171,9 +194,9 @@ export default function RiderDashboard() {
     }
   };
 
-  const acceptRequest = async (requestId: string) => {
+  const acceptRequest = async (jobId: string) => {
     try {
-      const { error } = await supabase.rpc("rider_accept_delivery_request", { p_request_id: requestId });
+      const { error } = await supabase.rpc("rider_accept_delivery_job", { p_job_id: jobId });
       if (error) throw error;
       toast.success("Job accepted");
       await loadJobs();
@@ -187,7 +210,7 @@ export default function RiderDashboard() {
   return (
     <div className="mx-auto max-w-lg px-4 py-6">
       <h1 className="text-xl font-bold text-white">Delivery dashboard</h1>
-      <p className="mt-1 text-sm text-slate-400">Open jobs and your active runs. GPS updates only on the request page.</p>
+      <p className="mt-1 text-sm text-slate-400">GreenHub delivery jobs assigned to you or offered by dispatch.</p>
 
       <section className="mt-5 rounded-2xl border border-slate-700/80 bg-slate-900/50 p-4">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">PWA</h2>
@@ -224,8 +247,8 @@ export default function RiderDashboard() {
         <p className="mt-6 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
           Your rider profile is <strong>pending</strong>. You can browse open jobs but cannot accept until an admin approves you.
         </p>
-      ) : rs === "blocked" ? (
-        <p className="mt-6 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-sm text-rose-100">Your rider account is blocked.</p>
+      ) : rs === "suspended" ? (
+        <p className="mt-6 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-sm text-rose-100">Your rider account is suspended.</p>
       ) : null}
 
       {loading ? (
@@ -305,7 +328,7 @@ export default function RiderDashboard() {
           <section className="mt-8">
             <h2 className="text-sm font-semibold text-slate-200">Available jobs</h2>
             {available.length === 0 ? (
-              <p className="mt-2 text-sm text-slate-500">No open requests right now.</p>
+              <p className="mt-2 text-sm text-slate-500">No jobs offered to you right now.</p>
             ) : (
               <ul className="mt-2 space-y-2">
                 {available.map((r) => (

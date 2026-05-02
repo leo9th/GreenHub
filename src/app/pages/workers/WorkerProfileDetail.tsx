@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
-import { ArrowLeft, Loader2, Mail, MapPin, Phone } from "lucide-react";
+import { ArrowLeft, Loader2, Mail, MapPin, Phone } from "@/app/icons/emojiLucide";
 import { supabase } from "../../../lib/supabase";
 import WorkersSectionHeader from "../../components/workers/WorkersSectionHeader";
 import type { WorkerProfileRow } from "../../types/workerProfile";

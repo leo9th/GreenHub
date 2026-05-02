@@ -24,7 +24,6 @@ export default function NewProductCard({
   const productImage = image?.trim() || firstImage || "";
   const resolvedLocation = (location?.trim() || city?.trim() || "").trim() || "—";
   const resolvedSellerName = sellerFullName?.trim() || "Seller";
-  console.log("ProductCard image prop:", image);
 
   return (
     <div

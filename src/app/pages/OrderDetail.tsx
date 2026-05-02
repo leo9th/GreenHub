@@ -3,26 +3,28 @@ import { Link, useParams, useNavigate } from "react-router";
 import {
   ArrowLeft,
   MapPin,
-  Phone,
-  MessageCircle,
   CheckCircle,
   Star,
   Package,
   Store,
   Loader2,
   Truck,
-} from "lucide-react";
+} from "@/app/icons/emojiLucide";
 import { toast } from "sonner";
 import { useCurrency } from "../hooks/useCurrency";
 import { getAvatarUrl } from "../utils/getAvatar";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../../lib/supabase";
-import { isWarehouseShippingFulfillment } from "../utils/fulfillment";
-import DeliveryMapBottomPanel from "../components/maps/DeliveryMapBottomPanel";
+import { deriveMarketModeFromLineItems, isWarehouseShippingFulfillment } from "../utils/fulfillment";
 import { initialOrderState, orderReducer } from "../state/OrderReducer";
-import { OrderState, OrderAction, OrderStatus as OrderStateType, OrderUiState, OrderActionType } from "../state/OrderState";
+import { OrderStatus as OrderStateType, OrderUiState, OrderActionType, OrderTrackingStage } from "../state/OrderState";
 import { OrderActionBar } from "../components/order/OrderActionBar";
+import { OrderStatusPanel, trackingStageHeadline } from "../components/order/OrderStatusPanel";
+import { OrderFooterActions } from "../components/order/OrderFooterActions";
+import { orderTrackBtnPrimary, orderTrackBtnSecondaryInline } from "../components/order/orderTrackingButtonClasses";
+import { cn } from "../components/ui/utils";
 import { getOrderActions } from "../state/OrderActionEngine";
+import { deliveryJobStatusLabel, resolveCourierUiStatusFromOrderAndJob } from "../utils/deliveryJobs";
 
 const DeliveryTrackingMap = lazy(() => import("../components/maps/DeliveryTrackingMap"));
 
@@ -59,21 +61,39 @@ type OrderEventRow = {
   metadata?: Record<string, unknown> | null;
 };
 
-type OrderUiState =
-  | "searching_rider"
-  | "rider_assigned"
-  | "rider_picking_up"
-  | "rider_on_the_way"
-  | "arriving"
-  | "delivered"
-  | "cancelled"
-  | "unknown";
-
 type OrderMeta = {
   paymentMethod: string | null;
   paymentReference: string | null;
   deliveryFee: number | null;
   totalAmount: number | null;
+};
+
+type DeliveryJobRow = {
+  id: string;
+  order_id: string;
+  status: string;
+  assigned_rider_id: string | null;
+  buyer_pin: string;
+  quoted_fee: number | null;
+  pickup_summary: Record<string, unknown> | null;
+  created_at: string;
+};
+
+type DeliveryAssignmentRow = {
+  id: string;
+  job_id: string;
+  rider_user_id: string;
+  status: string;
+  created_at: string;
+  responded_at: string | null;
+};
+
+type DeliveryEventRow = {
+  id: string;
+  job_id: string;
+  event_type: string;
+  payload: Record<string, unknown> | null;
+  created_at: string;
 };
 
 function safeText(value: unknown, fallback = "—"): string {
@@ -106,6 +126,26 @@ function orderUiStateFromOrderStatus(status: OrderStateType): OrderUiState {
       return "cancelled";
     default:
       return "unknown";
+  }
+}
+
+function baseTrackingStageFromOrderStatus(status: OrderStateType): OrderTrackingStage {
+  switch (status) {
+    case "PENDING":
+      return "searching";
+    case "ACCEPTED":
+    case "EN_ROUTE_TO_PICKUP":
+      return "assigned";
+    case "AT_PICKUP":
+    case "EN_ROUTE_TO_DROPOFF":
+      return "in_transit";
+    case "AT_DROPOFF":
+    case "DELIVERED":
+    case "COMPLETED":
+      return "delivered";
+    default:
+      if (String(status).startsWith("CANCELLED")) return "searching";
+      return "searching";
   }
 }
 
@@ -404,6 +444,8 @@ export default function OrderDetail() {
   const [sellers, setSellers] = useState<Map<string, SellerLite>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /** True when the last load failed with an exception (network / server) — show Retry. */
+  const [loadRetryable, setLoadRetryable] = useState(false);
   const [isBuyerView, setIsBuyerView] = useState(true);
   const [orderMeta, setOrderMeta] = useState<OrderMeta>({
     paymentMethod: null,
@@ -417,6 +459,11 @@ export default function OrderDetail() {
   const [reviewText, setReviewText] = useState("");
   const [reviewAnonymous, setReviewAnonymous] = useState(false);
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [deliveryJobEvents, setDeliveryJobEvents] = useState<DeliveryEventRow[]>([]);
+  const [deliveryAssignments, setDeliveryAssignments] = useState<DeliveryAssignmentRow[]>([]);
+  const [greenhubJobStatus, setGreenhubJobStatus] = useState<string | null>(null);
+  const [deliveryJobHasAssignedRider, setDeliveryJobHasAssignedRider] = useState(false);
+  const [buyerDeliveryPin, setBuyerDeliveryPin] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const userId = authUser?.id?.trim();
@@ -426,15 +473,20 @@ export default function OrderDetail() {
       setItems([]); // Items are separate for now
       setOrderEvents([]); // Events are separate for now
       setOrderMeta({ paymentMethod: null, paymentReference: null, deliveryFee: null, totalAmount: null });
+      setDeliveryJobEvents([]);
+      setDeliveryAssignments([]);
+      setGreenhubJobStatus(null);
+      setDeliveryJobHasAssignedRider(false);
+      setBuyerDeliveryPin(null);
       setLoading(false);
       return;
     }
 
     setLoading(true);
     setError(null);
+    setLoadRetryable(false);
     try {
       const { data: ord, error: oErr } = await supabase.from("orders").select("*").eq("id", orderId).maybeSingle();
-      console.log("DEBUG: Supabase Error", oErr);
 
       if (oErr) {
         console.error("[OrderDetail] orders select error", oErr);
@@ -445,6 +497,11 @@ export default function OrderDetail() {
         setItems([]);
         setOrderEvents([]);
         setOrderMeta({ paymentMethod: null, paymentReference: null, deliveryFee: null, totalAmount: null });
+        setDeliveryJobEvents([]);
+        setDeliveryAssignments([]);
+        setGreenhubJobStatus(null);
+        setDeliveryJobHasAssignedRider(false);
+        setBuyerDeliveryPin(null);
         setError("Order not found.");
         return;
       }
@@ -452,7 +509,6 @@ export default function OrderDetail() {
       const buyerId = String((ord as { buyer_id?: string }).buyer_id ?? "");
 
       const { data: its, error: iErr } = await supabase.from("order_items").select("*").eq("order_id", orderId);
-      console.log("DEBUG: Supabase Error", iErr);
 
       if (iErr) {
         console.error("[OrderDetail] order_items select error", iErr);
@@ -468,96 +524,134 @@ export default function OrderDetail() {
         setItems([]);
         setOrderEvents([]);
         setOrderMeta({ paymentMethod: null, paymentReference: null, deliveryFee: null, totalAmount: null });
+        setDeliveryJobEvents([]);
+        setDeliveryAssignments([]);
+        setGreenhubJobStatus(null);
+        setDeliveryJobHasAssignedRider(false);
+        setBuyerDeliveryPin(null);
         setError("Order not found.");
         return;
       }
 
+      const ordRec = ord as Record<string, unknown>;
       setIsBuyerView(isBuyer);
       setOrderMeta({
-        paymentMethod: ord.payment_method ?? null,
-        paymentReference: ord.payment_reference ?? null,
-        deliveryFee: Number.isFinite(Number(ord.delivery_fee)) ? Number(ord.delivery_fee) : null,
-        totalAmount: Number.isFinite(Number(ord.total_amount ?? ord.total_price ?? ord.amount))
-          ? Number(ord.total_amount ?? ord.total_price ?? ord.amount)
+        paymentMethod: (typeof ordRec.payment_method === "string" ? ordRec.payment_method : null) ?? null,
+        paymentReference: (typeof ordRec.payment_reference === "string" ? ordRec.payment_reference : null) ?? null,
+        deliveryFee: Number.isFinite(Number(ordRec.delivery_fee)) ? Number(ordRec.delivery_fee) : null,
+        totalAmount: Number.isFinite(Number(ordRec.total_amount ?? ordRec.total_price ?? ordRec.amount))
+          ? Number(ordRec.total_amount ?? ordRec.total_price ?? ordRec.amount)
           : null,
       });
-      // setOrder(ord as OrderRow); // Removed, now handled by reducer
+
+      const { data: djRaw, error: djErr } = await supabase
+        .from("delivery_jobs")
+        .select("id, order_id, status, assigned_rider_id, buyer_pin, quoted_fee, pickup_summary, created_at")
+        .eq("order_id", orderId)
+        .maybeSingle();
+
+      if (djErr) {
+        console.warn("[OrderDetail] delivery_jobs select", djErr);
+      }
+
+      const dj = (djRaw as DeliveryJobRow | null) ?? null;
+      let assignmentRows: DeliveryAssignmentRow[] = [];
+      let eventRows: DeliveryEventRow[] = [];
+
+      if (dj?.id) {
+        const [aRes, eRes] = await Promise.all([
+          supabase
+            .from("delivery_assignments")
+            .select("id, job_id, rider_user_id, status, created_at, responded_at")
+            .eq("job_id", dj.id)
+            .order("created_at", { ascending: false }),
+          supabase
+            .from("delivery_events")
+            .select("id, job_id, event_type, payload, created_at")
+            .eq("job_id", dj.id)
+            .order("created_at", { ascending: true }),
+        ]);
+        if (aRes.error) console.warn("[OrderDetail] delivery_assignments select", aRes.error);
+        else assignmentRows = (aRes.data as DeliveryAssignmentRow[]) ?? [];
+        if (eRes.error) console.warn("[OrderDetail] delivery_events select", eRes.error);
+        else eventRows = (eRes.data as DeliveryEventRow[]) ?? [];
+      }
+
+      setDeliveryAssignments(assignmentRows);
+      setDeliveryJobEvents(eventRows);
+      setGreenhubJobStatus(dj?.status ?? null);
+      setDeliveryJobHasAssignedRider(Boolean(dj?.assigned_rider_id && String(dj.assigned_rider_id).trim()));
+      setBuyerDeliveryPin(isBuyer && dj?.buyer_pin ? String(dj.buyer_pin).trim() || null : null);
+
+      const resolvedStatus = resolveCourierUiStatusFromOrderAndJob(
+        String((ord as { status?: string }).status ?? ""),
+        dj,
+      );
+
+      const marketMode = deriveMarketModeFromLineItems(itemList);
+
+      const shipAddr = ordRec.shipping_address as Record<string, unknown> | null | undefined;
+      const parsedShip = parseLatLngFromAddress(shipAddr);
+      const shipLines = shippingLines(shipAddr ?? null);
+      const pickupDrop = parsedShip
+        ? { ...parsedShip, address: shipLines.address }
+        : initialOrderState.pickupLocation;
 
       dispatch({
         type: "SET_ORDER_DETAILS" as any,
         payload: {
-          orderId: ord.id,
-          status: ord.status as OrderStateType,
-          pickupLocation: parseLatLngFromAddress(ord.shipping_address) ? { ...parseLatLngFromAddress(ord.shipping_address), address: shippingLines(ord.shipping_address).address } : initialOrderState.pickupLocation,
-          dropoffLocation: parseLatLngFromAddress(ord.shipping_address) ? { ...parseLatLngFromAddress(ord.shipping_address), address: shippingLines(ord.shipping_address).address } : initialOrderState.dropoffLocation,
-          // Add other initial order details that directly map to OrderState
+          orderId: String(ordRec.id ?? orderId),
+          status: resolvedStatus,
+          marketMode,
+          pickupLocation: pickupDrop,
+          dropoffLocation: pickupDrop,
         },
       });
 
-      const { data: dr, error: drErr } = await supabase
-        .from("delivery_requests")
-        .select("id, order_id, status, assigned_rider_id, delivery_pin, delivered_at, created_at")
-        .eq("order_id", orderId)
-        .maybeSingle();
-      if (drErr) {
-        console.warn("[OrderDetail] delivery_requests select", drErr);
-        dispatch({ type: "UPDATE_RIDER_INFO", riderInfo: null });
-      } else {
-        if (dr?.assigned_rider_id) {
-          const { data: riderProfile, error: rErr } = await supabase
-            .from("profiles_public")
-            .select("id, full_name, avatar_url, gender, phone")
-            .eq("id", dr.assigned_rider_id)
-            .maybeSingle();
-          if (!rErr && riderProfile) {
-            dispatch({
-              type: "UPDATE_RIDER_INFO",
-              riderInfo: {
-                id: riderProfile.id,
-                name: riderProfile.full_name || "Rider",
-                vehicle: "Bike", // Placeholder, needs actual vehicle type from data
-                plateNumber: "ABC-123", // Placeholder
-                phone: riderProfile.phone || "",
-                photoUrl: getAvatarUrl(riderProfile.avatar_url, riderProfile.gender, riderProfile.full_name || "Rider"),
-              },
-            });
-          } else {
-            console.warn("[OrderDetail] rider profile select", rErr);
-            dispatch({ type: "UPDATE_RIDER_INFO", riderInfo: null });
-          }
+      if (dj?.assigned_rider_id) {
+        const riderId = dj.assigned_rider_id;
+        const [{ data: riderProfile, error: rErr }, { data: ghRider, error: ghErr }] = await Promise.all([
+          supabase.from("profiles_public").select("id, full_name, avatar_url, gender, phone").eq("id", riderId).maybeSingle(),
+          supabase.from("greenhub_riders").select("user_id, vehicle_type").eq("user_id", riderId).maybeSingle(),
+        ]);
+        if (!rErr && riderProfile) {
+          type RiderPublicProfile = {
+            id: string;
+            full_name: string | null;
+            avatar_url: string | null;
+            gender: string | null;
+            phone: string | null;
+          };
+          const p = riderProfile as RiderPublicProfile;
+          const vehicle = !ghErr && ghRider?.vehicle_type ? String(ghRider.vehicle_type) : "Bike";
+          dispatch({
+            type: "UPDATE_RIDER_INFO",
+            riderInfo: {
+              id: p.id,
+              name: p.full_name || "Rider",
+              vehicle: vehicle,
+              plateNumber: "—",
+              phone: p.phone || "",
+              photoUrl: getAvatarUrl(p.avatar_url, p.gender, p.full_name || "Rider"),
+            },
+          });
         } else {
+          console.warn("[OrderDetail] rider profile select", rErr);
           dispatch({ type: "UPDATE_RIDER_INFO", riderInfo: null });
         }
-        dispatch({ type: "UPDATE_ORDER_STATUS", status: (dr?.status as OrderStateType) || "PENDING" });
-        // Dispatch action for estimated arrival time if available
-        // dispatch({ type: "UPDATE_ESTIMATED_ARRIVAL_TIME", time: dr?.delivered_at ? formatOrderEventTime(dr.delivered_at) : null });
+      } else {
+        dispatch({ type: "UPDATE_RIDER_INFO", riderInfo: null });
       }
 
-      // Remove fetching delivery_jobs as its data will be managed by OrderState
-      // const { data: dj, error: djErr } = await supabase.from("delivery_jobs").select("*").eq("order_id", orderId).maybeSingle();
-      // if (djErr) {
-      //   console.warn("[OrderDetail] delivery_jobs select", djErr);
-      // } else if (dj) {
-      //   const job = dj as DeliveryJobRow;
-      //   const { data: deRows, error: deErr } = await supabase
-      //     .from("delivery_events")
-      //     .select("id, event_type, created_at")
-      //     .eq("job_id", job.id)
-      //     .order("created_at", { ascending: true });
-      //   if (deErr) {
-      //     console.warn("[OrderDetail] delivery_events select", deErr);
-      //   } else {
-      //     setDeliveryEvents((deRows ?? []) as DeliveryEventRow[]);
-      //   }
-      // }
-
-
+      /*
+       * LEGACY_ISOLATED: `delivery_requests` + `trg_orders_delivery_request` are no longer used for new orders.
+       * Order detail reads only `delivery_jobs`, `delivery_assignments`, and `delivery_events` (GreenHub pipeline).
+       */
       const { data: evRows, error: evErr } = await supabase
         .from("order_events")
         .select("id, order_id, event_label, created_at, metadata")
         .eq("order_id", orderId)
         .order("created_at", { ascending: true });
-      console.log("DEBUG: Supabase Error", evErr);
 
       if (evErr) {
         console.error(
@@ -591,31 +685,21 @@ export default function OrderDetail() {
       }
     } catch (e: unknown) {
       console.error("[OrderDetail] load failed", e);
-      setError(e instanceof Error ? e.message : "Could not load order");
+      setLoadRetryable(true);
+      setError("We couldn’t load this order. Check your connection and try again.");
       dispatch({ type: "RESET_ORDER" as any }); // Placeholder action for reset
       setItems([]);
       setOrderEvents([]);
       setOrderMeta({ paymentMethod: null, paymentReference: null, deliveryFee: null, totalAmount: null });
+      setDeliveryJobEvents([]);
+      setDeliveryAssignments([]);
+      setGreenhubJobStatus(null);
+      setDeliveryJobHasAssignedRider(false);
+      setBuyerDeliveryPin(null);
     } finally {
       setLoading(false);
     }
   }, [authUser?.id, id]);
-
-  useEffect(() => {
-    if (!orderState.orderId || !isBuyerView) {
-      return;
-    }
-    let cancelled = false;
-    const poll = async () => {
-      if (cancelled) return;
-    };
-    void poll();
-    const t = window.setInterval(() => void poll(), 10000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(t);
-    };
-  }, [orderState.orderId, orderState.status, isBuyerView, dispatch]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -626,18 +710,31 @@ export default function OrderDetail() {
     void load();
   }, [authLoading, authUser, navigate, load]);
 
+  const orderIdParam = id?.trim() ?? "";
+  useEffect(() => {
+    if (!orderIdParam || !authUser?.id) return;
+    const channel = supabase
+      .channel(`order-detail-job:${orderIdParam}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "delivery_jobs", filter: `order_id=eq.${orderIdParam}` },
+        () => {
+          void load();
+        },
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [orderIdParam, authUser?.id, load]);
+
   const addr = useMemo(() => shippingLines(orderState.pickupLocation.address ? { address: orderState.pickupLocation.address } : null), [orderState.pickupLocation.address]); // Assuming pickupLocation.address is a string
 
-  const dropCoords = useMemo(
-    () => orderState.dropoffLocation,
-    [orderState.dropoffLocation],
-  );
-
   const deliveryRequestTimeline = useMemo(() => {
-    // Simplified timeline based on OrderState status
     const st = orderState.status;
+    const queuedLabel = greenhubJobStatus != null ? "GreenHub delivery job queued" : "Delivery queued";
     const steps: { key: string; label: string; done: boolean }[] = [
-      { key: "pending", label: "Delivery request created", done: true },
+      { key: "pending", label: queuedLabel, done: true },
       { key: "assigned", label: "Rider assigned", done: ["ACCEPTED", "EN_ROUTE_TO_PICKUP", "AT_PICKUP", "EN_ROUTE_TO_DROPOFF", "AT_DROPOFF", "DELIVERED", "COMPLETED"].includes(st) },
       { key: "picked_up", label: "Picked up — on the way", done: ["AT_PICKUP", "EN_ROUTE_TO_DROPOFF", "AT_DROPOFF", "DELIVERED", "COMPLETED"].includes(st) },
       { key: "delivered", label: "Delivered", done: ["AT_DROPOFF", "DELIVERED", "COMPLETED"].includes(st) },
@@ -646,7 +743,7 @@ export default function OrderDetail() {
       return [{ key: "cancelled", label: "Delivery cancelled", done: true }];
     }
     return steps;
-  }, [orderState.status]);
+  }, [orderState.status, greenhubJobStatus]);
   const liveRiderLocation = useMemo(
     () =>
       orderState.currentRiderLocation != null
@@ -659,31 +756,111 @@ export default function OrderDetail() {
         : null,
     [orderState.currentRiderLocation],
   );
-  const deliveryPanelStatus = useMemo<"rider_on_the_way" | "picked_up_item" | "arriving_soon">(() => {
-    // Map OrderState status to delivery panel status
-    switch (orderState.status) {
-      case "EN_ROUTE_TO_PICKUP":
-      case "AT_PICKUP":
-        return "rider_on_the_way";
-      case "EN_ROUTE_TO_DROPOFF":
-        return "picked_up_item";
-      case "AT_DROPOFF":
-      case "DELIVERED":
-      case "COMPLETED":
-        return "arriving_soon";
-      default:
-        return "rider_on_the_way";
-    }
+
+  const [mapStageSignal, setMapStageSignal] = useState<null | "assigned" | "arriving">(null);
+  const [mockRouteDelivered, setMockRouteDelivered] = useState(false);
+
+  useEffect(() => {
+    setMapStageSignal(null);
+    setMockRouteDelivered(false);
   }, [orderState.status]);
-  const deliveryPanelRiderName = useMemo(() => {
-    if (!orderState.riderInfo) return "Rider";
-    return `Rider ${orderState.riderInfo.name}`; // Or slice(0,8) if needed
-  }, [orderState.riderInfo]);
+
+  const trackingStage = useMemo<OrderTrackingStage>(() => {
+    if (mockRouteDelivered) return "delivered";
+    const base = baseTrackingStageFromOrderStatus(orderState.status);
+    if (base !== "searching" && base !== "assigned") return base;
+    if (mapStageSignal === "arriving") return "arriving";
+    if (mapStageSignal === "assigned") return "assigned";
+    return base;
+  }, [orderState.status, mapStageSignal, mockRouteDelivered]);
+
+  const orderUiState = useMemo(() => orderUiStateFromOrderStatus(orderState.status), [orderState.status]);
+  const orderStatusLabel = useMemo(() => orderUiStatusLabel(orderUiState), [orderUiState]);
+
+  const activeMapStatuses: OrderStateType[] = ["ACCEPTED", "EN_ROUTE_TO_PICKUP", "AT_PICKUP", "EN_ROUTE_TO_DROPOFF"];
+
+  const showBuyerTrackingStack = useMemo(() => {
+    if (!isBuyerView) return false;
+    const st = orderState.status;
+    const inActiveRiderTracking = activeMapStatuses.includes(st);
+    if (orderState.marketMode === "b2c") {
+      return inActiveRiderTracking || st === "PENDING";
+    }
+    const c2cRiderAssigned = Boolean(greenhubJobStatus) && deliveryJobHasAssignedRider;
+    return c2cRiderAssigned && (inActiveRiderTracking || st === "PENDING");
+  }, [isBuyerView, orderState.status, orderState.marketMode, greenhubJobStatus, deliveryJobHasAssignedRider]);
+
+  const showC2cTrackingPlaceholderPanel = useMemo(
+    () =>
+      isBuyerView &&
+      orderState.marketMode === "c2c" &&
+      !showBuyerTrackingStack &&
+      (!greenhubJobStatus || !deliveryJobHasAssignedRider) &&
+      !orderState.status.startsWith("CANCELLED") &&
+      !["DELIVERED", "COMPLETED"].includes(orderState.status),
+    [
+      isBuyerView,
+      orderState.marketMode,
+      showBuyerTrackingStack,
+      greenhubJobStatus,
+      deliveryJobHasAssignedRider,
+      orderState.status,
+    ],
+  );
+
+  const buyerRiderCardStatusLabel = useMemo(() => {
+    if (!isBuyerView) return orderStatusLabel;
+    if (
+      orderState.marketMode === "c2c" &&
+      (!greenhubJobStatus || !deliveryJobHasAssignedRider) &&
+      !orderState.status.startsWith("CANCELLED") &&
+      !["DELIVERED", "COMPLETED"].includes(orderState.status)
+    ) {
+      return "Waiting for seller to prepare order";
+    }
+    return orderStatusLabel;
+  }, [
+    isBuyerView,
+    orderState.marketMode,
+    orderState.status,
+    greenhubJobStatus,
+    deliveryJobHasAssignedRider,
+    orderStatusLabel,
+  ]);
+
+  const handleMockRiderAssigned = useCallback((stage: "assigned" | "arriving") => {
+    if (stage === "arriving") setMapStageSignal("arriving");
+    else setMapStageSignal("assigned");
+  }, []);
+
+  const handleMapRouteDemoArrival = useCallback(() => {
+    setMockRouteDelivered(true);
+  }, []);
 
   const hasGuaranteedItems = useMemo(
     () => items.some((it) => isWarehouseShippingFulfillment(it.fulfillment_type)),
     [items],
   );
+
+  const safeEstimatedArrival = useMemo(() => {
+    const t = orderState.estimatedArrivalTime;
+    if (t == null) return null;
+    const s = typeof t === "string" ? t.trim() : String(t).trim();
+    return s.length > 0 ? s : null;
+  }, [orderState.estimatedArrivalTime]);
+
+  const mapPickupLocation = useMemo(() => {
+    if (hasGuaranteedItems) return { lat: DEFAULT_HUB_LAT, lng: DEFAULT_HUB_LNG };
+    const p = orderState.pickupLocation;
+    if (p && Number.isFinite(p.lat) && Number.isFinite(p.lng)) return { lat: p.lat, lng: p.lng };
+    return { lat: DEFAULT_HUB_LAT, lng: DEFAULT_HUB_LNG };
+  }, [hasGuaranteedItems, orderState.pickupLocation]);
+
+  const mapDropoffLocation = useMemo(() => {
+    const p = orderState.dropoffLocation;
+    if (p && Number.isFinite(p.lat) && Number.isFinite(p.lng)) return { lat: p.lat, lng: p.lng };
+    return mapPickupLocation;
+  }, [orderState.dropoffLocation, mapPickupLocation]);
 
   const timelineSteps = useMemo(() => {
     if (orderEvents.length > 0) {
@@ -714,17 +891,11 @@ export default function OrderDetail() {
   const platformFee = 0; // Placeholder, fetch from orderState when available
   const dbTotal = orderMeta.totalAmount ?? 0;
   const total = dbTotal > 0 ? dbTotal : paymentSubtotal + deliverySum + platformFee;
-  const orderUiState = useMemo(() => orderUiStateFromOrderStatus(orderState.status), [orderState.status]);
-  const orderStatusLabel = useMemo(() => orderUiStatusLabel(orderUiState), [orderUiState]);
-
-  const hasReviewableItems = useMemo(() => items.some(item => !item.is_reviewed), [items]);
-  const resolvedActions = useMemo(() => getOrderActions(orderUiState, isBuyerView, orderState.riderInfo, orderState.orderId, hasReviewableItems), [
-    orderUiState,
-    isBuyerView,
-    orderState.riderInfo,
-    orderState.orderId,
-    hasReviewableItems,
-  ]);
+  const hasReviewableItems = useMemo(() => items.some((item) => !item.is_reviewed), [items]);
+  const resolvedActions = useMemo(
+    () => getOrderActions(orderUiState, isBuyerView, orderState.riderInfo, orderState.orderId, hasReviewableItems),
+    [orderUiState, isBuyerView, orderState.riderInfo, orderState.orderId, hasReviewableItems],
+  );
 
   const statusLower = orderState.status.toLowerCase();
   const isDelivered = ["delivered", "completed", "at_dropoff"].includes(statusLower);
@@ -742,12 +913,6 @@ export default function OrderDetail() {
     setReviewAnonymous(false);
   };
 
-  const closeReviewModal = () => {
-    if (reviewSubmitting) return;
-    dispatch({ type: "CANCEL_REVIEW" });
-    setReviewItem(null);
-  };
-
   const handleOrderAction = useCallback(async (actionType: OrderActionType, payload?: any) => {
     if (!authUser?.id || !orderState.orderId) {
       toast.error("User not authenticated or order not loaded.");
@@ -762,16 +927,21 @@ export default function OrderDetail() {
           toast.info("Order cancellation initiated (mock).", { description: "This will be a real cancellation soon." });
           dispatch({ type: "UPDATE_ORDER_STATUS", status: "CANCELLED_BY_BUYER" });
           break;
-        case "MESSAGE_RIDER":
-          navigate(`/messages/u/${payload?.riderId}`);
+        case "MESSAGE_RIDER": {
+          const rid = typeof payload?.riderId === "string" ? payload.riderId.trim() : "";
+          if (rid) navigate(`/messages/u/${rid}`);
+          else toast.error("Rider is not available to message yet.");
           break;
-        case "CALL_RIDER":
-          if (payload?.riderPhone) {
-            window.location.href = `tel:${payload.riderPhone.replace(/\s/g, "")}`;
+        }
+        case "CALL_RIDER": {
+          const phone = typeof payload?.riderPhone === "string" ? payload.riderPhone.trim() : "";
+          if (phone) {
+            window.location.href = `tel:${phone.replace(/\s/g, "")}`;
           } else {
             toast.error("Rider phone number not available.");
           }
           break;
+        }
         case "SHOP_AGAIN":
           navigate("/products");
           break;
@@ -792,7 +962,7 @@ export default function OrderDetail() {
           navigate("/");
           break;
         case "GO_BACK":
-          navigate(payload?.steps ?? -1);
+          navigate(-1);
           break;
         case "REFRESH":
           window.location.reload();
@@ -863,25 +1033,36 @@ export default function OrderDetail() {
 
     return (
       <div className="min-h-screen bg-gray-50 px-4 py-12 text-center">
-        <p className="text-gray-800 mb-4">{error || "Order not found."}</p>
-        {goBackAction ? (
+        <p className="mx-auto mb-2 max-w-md text-gray-800">{error || "Order not found."}</p>
+        {loadRetryable ? (
           <button
             type="button"
-            onClick={() => handleOrderAction(goBackAction.actionType, goBackAction.payload)}
-            className="px-4 py-2 bg-[#22c55e] text-white rounded-lg text-sm font-medium"
+            onClick={() => void load()}
+            className={`${orderTrackBtnPrimary} mb-4`}
           >
-            {goBackAction.label}
+            Retry
           </button>
         ) : null}
-        {getHelpAction ? (
-          <button
-            type="button"
-            onClick={() => handleOrderAction(getHelpAction.actionType, getHelpAction.payload)}
-            className="ml-2 px-4 py-2 bg-gray-200 text-gray-800 rounded-lg text-sm font-medium"
-          >
-            {getHelpAction.label}
-          </button>
-        ) : null}
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          {goBackAction ? (
+            <button
+              type="button"
+              onClick={() => handleOrderAction(goBackAction.actionType, goBackAction.payload)}
+              className={orderTrackBtnPrimary}
+            >
+              {goBackAction.label}
+            </button>
+          ) : null}
+          {getHelpAction ? (
+            <button
+              type="button"
+              onClick={() => handleOrderAction(getHelpAction.actionType, getHelpAction.payload)}
+              className={orderTrackBtnSecondaryInline}
+            >
+              {getHelpAction.label}
+            </button>
+          ) : null}
+        </div>
       </div>
     );
   }
@@ -890,9 +1071,14 @@ export default function OrderDetail() {
     <div className="min-h-screen bg-gray-50 pb-6">
       <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
         <div className="px-4 py-3 max-w-7xl mx-auto flex items-center gap-3">
-          {resolvedActions.passive?.find(a => a.actionType === "GO_BACK") ? (
-            <button type="button" onClick={() => handleOrderAction("GO_BACK")} className="p-2 -ml-2">
-              <ArrowLeft className="w-5 h-5 text-gray-700" />
+          {resolvedActions.passive?.find((a) => a.actionType === "GO_BACK") ? (
+            <button
+              type="button"
+              onClick={() => handleOrderAction("GO_BACK")}
+              className="rounded-lg p-2 -ml-2 text-gray-700 transition hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 focus-visible:ring-offset-2"
+              aria-label="Back to previous page"
+            >
+              <ArrowLeft className="h-5 w-5" aria-hidden />
             </button>
           ) : null}
           <div className="flex-1 min-w-0">
@@ -900,6 +1086,17 @@ export default function OrderDetail() {
               {isBuyerView ? "Order Details" : "Fulfillment · Order"}
             </h1>
             <p className="text-sm text-gray-600 font-mono truncate">{orderState.orderId}</p>
+            <p className="mt-1.5">
+              <span
+                className={`inline-block rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${
+                  orderState.marketMode === "b2c"
+                    ? "bg-violet-100 text-violet-800 ring-1 ring-violet-200/80"
+                    : "bg-slate-100 text-slate-700 ring-1 ring-slate-200/80"
+                }`}
+              >
+                {orderState.marketMode === "b2c" ? "Store delivery" : "Marketplace delivery"}
+              </span>
+            </p>
           </div>
         </div>
       </header>
@@ -930,7 +1127,6 @@ export default function OrderDetail() {
               const sp = sid ? sellers.get(sid) : undefined;
               const sName = sp?.full_name?.trim() || "Seller";
               const sAvatar = getAvatarUrl(sp?.avatar_url ?? null, sp?.gender ?? null, sName);
-              const sPhone = sp?.phone?.trim() || "";
               const pid = item.product_id != null ? String(item.product_id) : null;
               const isMyLine = Boolean(authUser?.id && sid && sid === authUser.id);
               const lineStatus = normalizeLineStatus(item.status);
@@ -1023,17 +1219,25 @@ export default function OrderDetail() {
         </div>
 
         {orderState.orderId ? ( // Conditional render based on orderState existence
-          <div className="rounded-xl border border-sky-200/90 bg-gradient-to-br from-sky-50/90 to-white p-4 shadow-sm">
-            <div className="mb-2 flex items-center gap-2">
-              <Truck className="h-5 w-5 text-sky-700 shrink-0" aria-hidden />
+          <div className="w-full rounded-xl border border-sky-200/90 bg-gradient-to-br from-sky-50/90 to-white p-4 shadow-sm md:mx-auto md:max-w-3xl md:p-5 lg:mx-0 lg:max-w-none">
+            <div className="mb-3 flex items-center gap-2">
+              <Truck className="h-5 w-5 shrink-0 text-sky-700" aria-hidden />
               <h2 className="font-semibold text-sky-950">Rider delivery</h2>
             </div>
-            <p className="text-sm text-gray-800">
-              Status: <span className="font-medium">{safeText(orderStatusLabel)}</span>
-              {orderState.estimatedArrivalTime ? (
-                <span className="text-xs text-gray-500"> · Arriving {orderState.estimatedArrivalTime}</span> // Use estimatedArrivalTime
+            <p className="text-sm leading-relaxed text-gray-800">
+              Status:{" "}
+              <span className="font-medium text-gray-900">
+                {showBuyerTrackingStack ? safeText(trackingStageHeadline(trackingStage)) : safeText(buyerRiderCardStatusLabel)}
+              </span>
+              {orderState.estimatedArrivalTime && !showBuyerTrackingStack ? (
+                <span className="text-sm font-normal text-gray-500"> · Arriving {orderState.estimatedArrivalTime}</span>
               ) : null}
             </p>
+            {greenhubJobStatus ? (
+              <p className="mt-1 text-xs text-gray-600">
+                GreenHub job: <span className="font-medium text-gray-800">{deliveryJobStatusLabel(greenhubJobStatus)}</span>
+              </p>
+            ) : null}
             <ol className="mt-3 space-y-2 border-t border-sky-100 pt-3 text-sm text-gray-700">
               {deliveryRequestTimeline.map((step) => (
                 <li key={step.key} className={`flex items-center gap-2 ${step.done ? "text-gray-900" : "text-gray-400"}`}>
@@ -1045,33 +1249,102 @@ export default function OrderDetail() {
                 </li>
               ))}
             </ol>
+            {buyerDeliveryPin && ["ACCEPTED", "EN_ROUTE_TO_PICKUP", "AT_PICKUP", "EN_ROUTE_TO_DROPOFF", "AT_DROPOFF"].includes(orderState.status) ? (
+              <div className="mt-3 rounded-lg border border-amber-200/80 bg-amber-50/90 px-3 py-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-amber-900/80">Handoff PIN</p>
+                <p className="mt-1 font-mono text-lg font-bold tracking-[0.08em] text-amber-950">{buyerDeliveryPin}</p>
+                <p className="mt-1 text-[11px] text-amber-900/70">Share only with your rider at the door.</p>
+              </div>
+            ) : null}
+            {deliveryJobEvents.length > 0 ? (
+              <div className="mt-3 border-t border-sky-100 pt-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-sky-900/70">Dispatch activity</p>
+                <ul className="mt-2 max-h-40 space-y-1.5 overflow-y-auto text-xs text-gray-600" aria-label="Delivery job events">
+                  {deliveryJobEvents.map((ev) => (
+                    <li key={ev.id} className="flex flex-wrap gap-x-2 border-b border-sky-50/80 pb-1.5 last:border-0">
+                      <span className="font-medium text-gray-800">{String(ev.event_type || "").replace(/_/g, " ")}</span>
+                      <span className="tabular-nums text-gray-500">{formatOrderEventTime(ev.created_at)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            <p className="sr-only">Loaded {deliveryAssignments.length} assignment record(s) for this delivery job.</p>
             {isBuyerView &&
             ["EN_ROUTE_TO_PICKUP", "AT_PICKUP", "EN_ROUTE_TO_DROPOFF"].includes(orderState.status) &&
-            orderState.dropoffLocation.address ? ( // Use dropoffLocation.address
+            orderState.dropoffLocation.address ? (
               <div className="mt-3 rounded-lg border border-sky-300/60 bg-white/90 px-3 py-2">
                 <p className="text-xs font-semibold uppercase tracking-wide text-sky-900/70">Delivery Address</p>
                 <p className="mt-1 font-mono text-xl font-bold tracking-[0.05em] text-sky-950">{orderState.dropoffLocation.address}</p>
               </div>
             ) : null}
-            {isBuyerView && ["ACCEPTED", "EN_ROUTE_TO_PICKUP", "AT_PICKUP", "EN_ROUTE_TO_DROPOFF"].includes(orderState.status) ? (
-              <div className="mt-4">
-                <p className="mb-2 text-xs font-medium text-gray-600">Live map (rider position updates about every 10s)</p>
-                <div className="relative">
-                  <Suspense fallback={<MapSkeleton />}>
-                    <DeliveryTrackingMap
-                      riderLocation={liveRiderLocation}
-                      pickupLocation={hasGuaranteedItems ? { lat: DEFAULT_HUB_LAT, lng: DEFAULT_HUB_LNG } : orderState.pickupLocation}
-                      dropoffLocation={orderState.dropoffLocation}
+            {showBuyerTrackingStack ? (
+              <div
+                className={cn(
+                  "mt-4 flex min-w-0 flex-col overflow-hidden rounded-xl border border-sky-200/80 bg-white shadow-inner",
+                  "min-h-[420px] transition-[box-shadow] duration-200",
+                  "md:mt-5 md:min-h-[460px] md:rounded-2xl md:shadow-md",
+                  "lg:mx-0 lg:mt-5 lg:max-h-[min(72vh,640px)] lg:min-h-[min(72vh,640px)] lg:flex-row lg:items-stretch lg:rounded-xl lg:shadow-inner",
+                )}
+              >
+                <section
+                  aria-label="Live delivery map"
+                  className="flex min-h-0 min-w-0 flex-shrink-0 flex-col bg-slate-50/30 lg:h-full lg:basis-[68%] lg:max-w-[68%]"
+                >
+                  <p className="shrink-0 border-b border-sky-100 bg-sky-50/80 px-4 py-2 text-xs font-medium leading-snug text-slate-600 md:px-5 md:py-2.5 md:text-[13px]">
+                    Live map {liveRiderLocation ? "(rider position updates about every 10s)" : "(preview route)"}
+                  </p>
+                  <div
+                    className={cn(
+                      "relative isolate w-full min-w-0 flex-1 overflow-hidden bg-gray-100",
+                      "min-h-[220px] h-[min(40vh,360px)]",
+                      "md:min-h-[260px] md:h-[min(44vh,440px)]",
+                      "lg:h-full lg:min-h-0 lg:flex-1 lg:self-stretch",
+                    )}
+                  >
+                    <Suspense fallback={<MapSkeleton />}>
+                      <DeliveryTrackingMap
+                        className="absolute inset-0 box-border h-full min-h-[220px] min-w-0 w-full max-w-full rounded-none border-0"
+                        riderLocation={liveRiderLocation}
+                        pickupLocation={mapPickupLocation}
+                        dropoffLocation={mapDropoffLocation}
+                        onArrival={liveRiderLocation ? undefined : handleMapRouteDemoArrival}
+                        onMockRiderAssigned={liveRiderLocation ? undefined : handleMockRiderAssigned}
+                      />
+                    </Suspense>
+                  </div>
+                </section>
+
+                <section
+                  aria-label="Delivery status and actions"
+                  className={cn(
+                    "flex min-h-0 min-w-0 flex-col border-t border-sky-100 bg-white",
+                    "lg:h-full lg:max-h-none lg:basis-[32%] lg:max-w-[32%] lg:min-w-0 lg:flex-shrink-0 lg:border-l lg:border-t-0",
+                  )}
+                >
+                  <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain">
+                    <OrderStatusPanel
+                      stage={trackingStage}
+                      rider={orderState.riderInfo}
+                      estimatedArrivalTime={safeEstimatedArrival}
                     />
-                  </Suspense>
-                  <DeliveryMapBottomPanel
-                    visible={Boolean(liveRiderLocation)}
-                    riderName={deliveryPanelRiderName}
-                    vehicleType="bike"
-                    etaText={orderState.estimatedArrivalTime ? `Arriving ${orderState.estimatedArrivalTime}` : "—"}
-                    status={deliveryPanelStatus}
+                  </div>
+                  <OrderActionBar
+                    className="shrink-0 lg:border-t lg:border-slate-200/90"
+                    stage={trackingStage}
+                    rider={orderState.riderInfo}
+                    orderId={orderState.orderId}
+                    onAction={handleOrderAction}
                   />
-                </div>
+                </section>
+              </div>
+            ) : showC2cTrackingPlaceholderPanel ? (
+              <div className="mt-4 flex min-h-[280px] min-w-0 flex-col items-center justify-center rounded-xl border border-sky-200/80 bg-gradient-to-b from-sky-50/90 to-white px-4 py-10 text-center shadow-inner md:mx-auto md:min-h-[320px] md:max-w-3xl md:rounded-2xl md:px-6 md:py-12 lg:mx-0 lg:max-w-none">
+                <Truck className="mb-3 h-10 w-10 text-sky-600/80" aria-hidden />
+                <p className="text-sm font-semibold text-slate-900">Waiting for seller to prepare order</p>
+                <p className="mt-2 max-w-sm text-xs leading-relaxed text-slate-600">
+                  Live map tracking will appear here once a rider is assigned to your delivery.
+                </p>
               </div>
             ) : null}
           </div>
@@ -1155,34 +1428,20 @@ export default function OrderDetail() {
           </p>
         )}
 
-        <OrderActionBar 
-          orderUiState={orderUiState} 
-          isBuyerView={isBuyerView} 
-          riderInfo={orderState.riderInfo} 
-          orderId={orderState.orderId} 
-          hasReviewableItems={hasReviewableItems} 
-          onAction={handleOrderAction} 
-        />
-
-        {resolvedActions.secondary.length > 0 ? (
-          <div className="mt-4 flex flex-wrap justify-center gap-2">
-            {resolvedActions.secondary.map((action) => (
-              <button
-                key={action.actionType}
-                type="button"
-                onClick={() => handleOrderAction(action.actionType, action.payload)}
-                disabled={action.disabled}
-                className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 disabled:opacity-60"
-              >
-                {action.label}
-              </button>
-            ))}
-          </div>
+        {!showBuyerTrackingStack ? (
+          <OrderFooterActions
+            orderUiState={orderUiState}
+            isBuyerView={isBuyerView}
+            riderInfo={orderState.riderInfo}
+            orderId={orderState.orderId}
+            hasReviewableItems={hasReviewableItems}
+            onAction={handleOrderAction}
+          />
         ) : null}
       </div>
       {reviewItem ? (
         <div className="fixed inset-0 z-[120] flex items-end sm:items-center justify-center bg-black/40 p-3">
-          <div className="w-full max-w-lg rounded-xl bg-white p-4 shadow-xl">
+          <div className="w-full max-w-lg rounded-xl bg-white p-4 shadow-xl sm:p-5">
             <h3 className="text-base font-semibold text-gray-900">Write a verified review</h3>
             <p className="mt-1 text-sm text-gray-600">
               {reviewItem.product_title || "Product"} · Delivered order feedback
@@ -1230,12 +1489,12 @@ export default function OrderDetail() {
               Post Anonymously
             </label>
 
-            <div className="mt-4 flex items-center justify-end gap-2">
+            <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
               <button
                 type="button"
                 onClick={() => handleOrderAction("CANCEL_REVIEW_RATING")}
                 disabled={reviewSubmitting}
-                className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700"
+                className={orderTrackBtnSecondaryInline}
               >
                 Cancel
               </button>
@@ -1243,7 +1502,7 @@ export default function OrderDetail() {
                 type="button"
                 onClick={() => void handleOrderAction("SUBMIT_RATING")}
                 disabled={reviewSubmitting}
-                className="inline-flex items-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+                className={orderTrackBtnPrimary}
               >
                 {reviewSubmitting ? "Submitting..." : "Submit Review"}
               </button>

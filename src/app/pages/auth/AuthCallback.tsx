@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
-import { Loader2 } from "lucide-react";
+import { Loader2 } from "@/app/icons/emojiLucide";
 import { toast } from "sonner";
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../context/AuthContext";

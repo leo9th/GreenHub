@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { MessageSquare, X, Send, Bot, Maximize2, Minimize2 } from "lucide-react";
+import { MessageSquare, X, Send, Bot, Maximize2, Minimize2 } from "@/app/icons/emojiLucide";
 
 type Message = {
   id: string;

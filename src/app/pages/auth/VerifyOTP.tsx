@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2 } from "@/app/icons/emojiLucide";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { maskPhoneE164 } from "../../utils/phoneE164";
 import { useAuth } from "../../context/AuthContext";

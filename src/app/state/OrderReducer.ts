@@ -3,6 +3,7 @@ import { OrderState, OrderAction, OrderStatus } from "./OrderState";
 export const initialOrderState: OrderState = {
   orderId: "",
   status: "PENDING",
+  marketMode: "c2c",
   pickupLocation: { lat: 0, lng: 0, address: "" },
   dropoffLocation: { lat: 0, lng: 0, address: "" },
   riderInfo: null,

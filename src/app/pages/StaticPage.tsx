@@ -1,5 +1,5 @@
 import { useParams, Link } from "react-router";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft } from "@/app/icons/emojiLucide";
 
 export const pageContent: Record<string, { title: string; content: React.ReactNode }> = {
   about: {

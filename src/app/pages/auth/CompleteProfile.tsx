@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2 } from "@/app/icons/emojiLucide";
 import { useEffect, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { toast } from "sonner";

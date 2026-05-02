@@ -12,7 +12,7 @@ import {
   Shield,
   ShieldAlert,
   Clock,
-} from "lucide-react";
+} from "@/app/icons/emojiLucide";
 import { toast } from "sonner";
 import { useAuth, type UserProfile } from "../context/AuthContext";
 import { getAvatarUrl } from "../utils/getAvatar";

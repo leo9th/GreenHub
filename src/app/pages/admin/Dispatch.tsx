@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
-import { ChevronRight, Loader2, MapPin, Truck, Users } from "lucide-react";
+import { ChevronRight, Loader2, MapPin, Truck, Users } from "@/app/icons/emojiLucide";
 import { toast } from "sonner";
 import { supabase } from "../../../lib/supabase";
 
-type RequestRow = {
+type DeliveryJobRow = {
   id: string;
   order_id: string;
   status: string | null;
   assigned_rider_id: string | null;
   created_at: string | null;
+  updated_at?: string | null;
 };
 
 type ProductRideBookingRow = {
@@ -32,12 +33,11 @@ type RiderRow = {
   last_location_at?: string | null;
 };
 
-type TrackingRow = {
+type JobEventRow = {
   id: string;
-  latitude: number;
-  longitude: number;
-  recorded_at: string;
-  rider_user_id: string;
+  event_type: string;
+  created_at: string;
+  payload: Record<string, unknown> | null;
 };
 
 type NearbyRiderRow = {
@@ -104,7 +104,7 @@ function getPresenceFreshness(
 
 export default function AdminDispatch() {
   const [tab, setTab] = useState<"jobs" | "riders" | "history">("jobs");
-  const [jobs, setJobs] = useState<RequestRow[]>([]);
+  const [jobs, setJobs] = useState<DeliveryJobRow[]>([]);
   const [riders, setRiders] = useState<RiderRow[]>([]);
   const [productRideBookings, setProductRideBookings] = useState<ProductRideBookingRow[]>([]);
   const [pending, setPending] = useState<RiderRow[]>([]);
@@ -112,7 +112,7 @@ export default function AdminDispatch() {
   const [assignRiderByJob, setAssignRiderByJob] = useState<Record<string, string>>({});
   const [assigningId, setAssigningId] = useState<string | null>(null);
   const [historyRequestId, setHistoryRequestId] = useState<string | null>(null);
-  const [historyRows, setHistoryRows] = useState<TrackingRow[]>([]);
+  const [historyRows, setHistoryRows] = useState<JobEventRow[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [findingNearbyId, setFindingNearbyId] = useState<string | null>(null);
   const [autoAssigningId, setAutoAssigningId] = useState<string | null>(null);
@@ -150,8 +150,8 @@ export default function AdminDispatch() {
     setLoading(true);
     try {
       const [jRes, rRes, prbRes] = await Promise.all([
-        supabase.from("delivery_requests").select("id, order_id, status, assigned_rider_id, created_at").order("created_at", { ascending: false }),
-        supabase.from("riders").select("user_id, status, vehicle_type").order("created_at", { ascending: false }),
+        supabase.rpc("admin_list_delivery_jobs"),
+        supabase.rpc("admin_list_greenhub_riders"),
         supabase
           .from("product_ride_bookings")
           .select("id, product_id, status, assigned_rider_id, created_at, user_id, assigned_at, accepted_at, en_route_at, delivered_at")
@@ -161,7 +161,7 @@ export default function AdminDispatch() {
       if (jRes.error) throw jRes.error;
       if (rRes.error) throw rRes.error;
       if (prbRes.error && !isMissingRelationError(prbRes.error)) throw prbRes.error;
-      setJobs((jRes.data as RequestRow[]) ?? []);
+      setJobs((jRes.data as DeliveryJobRow[]) ?? []);
       const allR = (rRes.data as RiderRow[]) ?? [];
       setRiders(allR);
       setMissingProductRideBookingsTable(Boolean(prbRes.error && isMissingRelationError(prbRes.error)));
@@ -182,20 +182,15 @@ export default function AdminDispatch() {
     void load();
   }, [load]);
 
-  const loadHistory = async (requestId: string) => {
-    setHistoryRequestId(requestId);
+  const loadHistory = async (jobId: string) => {
+    setHistoryRequestId(jobId);
     setHistoryLoading(true);
     try {
-      const { data, error } = await supabase
-        .from("delivery_tracking")
-        .select("id, latitude, longitude, recorded_at, rider_user_id")
-        .eq("delivery_request_id", requestId)
-        .order("recorded_at", { ascending: false })
-        .limit(200);
+      const { data, error } = await supabase.rpc("admin_list_delivery_events", { p_job_id: jobId });
       if (error) throw error;
-      setHistoryRows((data as TrackingRow[]) ?? []);
+      setHistoryRows((data as JobEventRow[]) ?? []);
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Could not load tracking");
+      toast.error(e instanceof Error ? e.message : "Could not load job events");
       setHistoryRows([]);
     } finally {
       setHistoryLoading(false);
@@ -210,8 +205,8 @@ export default function AdminDispatch() {
     }
     setAssigningId(jobId);
     try {
-      const { error } = await supabase.rpc("admin_assign_delivery_request", {
-        p_request_id: jobId,
+      const { error } = await supabase.rpc("admin_assign_delivery_job", {
+        p_job_id: jobId,
         p_rider_user_id: riderId,
       });
       if (error) throw error;
@@ -318,7 +313,7 @@ export default function AdminDispatch() {
 
   const approveRider = async (userId: string) => {
     try {
-      const { error } = await supabase.rpc("admin_set_rider_table_status", {
+      const { error } = await supabase.rpc("admin_set_greenhub_rider_status", {
         p_user_id: userId,
         p_status: "approved",
       });
@@ -332,12 +327,12 @@ export default function AdminDispatch() {
 
   const blockRider = async (userId: string) => {
     try {
-      const { error } = await supabase.rpc("admin_set_rider_table_status", {
+      const { error } = await supabase.rpc("admin_set_greenhub_rider_status", {
         p_user_id: userId,
-        p_status: "blocked",
+        p_status: "suspended",
       });
       if (error) throw error;
-      toast.success("Rider blocked");
+      toast.success("Rider suspended");
       await load();
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Could not update");
@@ -358,7 +353,7 @@ export default function AdminDispatch() {
         <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-emerald-300 sm:text-3xl">Rider delivery</h1>
-            <p className="mt-1 text-sm text-emerald-100/60">Requests, riders, and GPS history.</p>
+            <p className="mt-1 text-sm text-emerald-100/60">GreenHub delivery jobs, riders, and job event history.</p>
           </div>
           <Link to="/admin/dashboard" className="text-sm text-emerald-200/80 hover:text-emerald-300">
             ← Dashboard
@@ -389,7 +384,7 @@ export default function AdminDispatch() {
             [
               ["jobs", "Delivery jobs", Truck],
               ["riders", "Riders", Users],
-              ["history", "Location history", MapPin],
+              ["history", "Job events", MapPin],
             ] as const
           ).map(([key, label, Icon]) => (
             <button
@@ -435,7 +430,7 @@ export default function AdminDispatch() {
                         onClick={() => void blockRider(p.user_id)}
                         className="rounded-lg border border-slate-600 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800"
                       >
-                        Block
+                        Suspend
                       </button>
                     </div>
                   </li>
@@ -451,9 +446,9 @@ export default function AdminDispatch() {
                   <span className="text-slate-400">{r.status}</span>
                   {String(r.status).toLowerCase() === "approved" ? (
                     <button type="button" onClick={() => void blockRider(r.user_id)} className="text-xs text-rose-300 hover:underline">
-                      Block
+                      Suspend
                     </button>
-                  ) : String(r.status).toLowerCase() === "blocked" ? (
+                  ) : String(r.status).toLowerCase() === "suspended" ? (
                     <button type="button" onClick={() => void approveRider(r.user_id)} className="text-xs text-emerald-300 hover:underline">
                       Approve
                     </button>
@@ -468,10 +463,10 @@ export default function AdminDispatch() {
           <section className="space-y-6 rounded-2xl border border-emerald-500/20 bg-[#0d1629]/80 p-4 sm:p-6">
             <div className="mb-4 flex items-center gap-2">
               <Truck className="h-5 w-5 text-emerald-400" aria-hidden />
-              <h2 className="text-lg font-semibold text-white">Delivery requests</h2>
+              <h2 className="text-lg font-semibold text-white">GreenHub delivery jobs</h2>
             </div>
             {jobs.length === 0 ? (
-              <p className="text-sm text-slate-400">No requests. Paid orders create a row automatically.</p>
+              <p className="text-sm text-slate-400">No jobs. Paid orders create a delivery_jobs row automatically.</p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[720px] text-left text-sm">
@@ -480,7 +475,7 @@ export default function AdminDispatch() {
                       <th className="pb-2 pr-4">Order</th>
                       <th className="pb-2 pr-4">Status</th>
                       <th className="pb-2 pr-4">Assign rider</th>
-                      <th className="pb-2">Tracking</th>
+                      <th className="pb-2">Events</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800">
@@ -490,8 +485,9 @@ export default function AdminDispatch() {
                           <td className="py-3 pr-4 font-mono text-xs text-slate-300">{j.order_id}</td>
                           <td className="py-3 pr-4 text-slate-200">{j.status}</td>
                           <td className="py-3 pr-4">
-                            {String(j.status || "").toLowerCase() === "pending" ||
-                            String(j.status || "").toLowerCase() === "assigned" ? (
+                            {(() => {
+                              const st = String(j.status || "").toLowerCase();
+                              return st === "pending_dispatch" || st === "assigned" ? (
                               <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                                 <select
                                   value={assignRiderByJob[j.id] ?? ""}
@@ -516,7 +512,8 @@ export default function AdminDispatch() {
                               </div>
                             ) : (
                               <span className="text-xs text-slate-500">{j.assigned_rider_id ? j.assigned_rider_id.slice(0, 8) + "…" : "—"}</span>
-                            )}
+                            );
+                            })()}
                           </td>
                           <td className="py-3">
                             <button
@@ -528,7 +525,7 @@ export default function AdminDispatch() {
                               className="inline-flex items-center gap-1 text-xs text-emerald-300 hover:text-emerald-200"
                             >
                               <ChevronRight className="h-4 w-4" />
-                              History
+                              Events
                             </button>
                           </td>
                         </tr>
@@ -645,8 +642,8 @@ export default function AdminDispatch() {
 
         {tab === "history" ? (
           <section className="rounded-2xl border border-emerald-500/20 bg-[#0d1629]/80 p-4 sm:p-6">
-            <h2 className="text-lg font-semibold text-white">Rider GPS history</h2>
-            <p className="mt-1 text-sm text-slate-400">Pick a job from the Jobs tab, or enter a request id below.</p>
+            <h2 className="text-lg font-semibold text-white">Job event log</h2>
+            <p className="mt-1 text-sm text-slate-400">Pick a job from the Jobs tab, or choose a job id below.</p>
             <div className="mt-4 flex flex-wrap gap-2">
               {jobs.slice(0, 8).map((j) => (
                 <button
@@ -666,13 +663,12 @@ export default function AdminDispatch() {
                 <Loader2 className="h-8 w-8 animate-spin text-emerald-400" />
               </div>
             ) : historyRows.length === 0 ? (
-              <p className="mt-4 text-sm text-slate-500">No points loaded.</p>
+              <p className="mt-4 text-sm text-slate-500">No events loaded.</p>
             ) : (
               <ul className="mt-4 max-h-80 overflow-auto rounded-lg border border-slate-700 bg-[#0b1220] p-2 text-xs text-slate-400">
                 {historyRows.map((h) => (
                   <li key={h.id} className="border-b border-slate-800/80 py-1 font-mono last:border-0">
-                    {new Date(h.recorded_at).toISOString()} · {h.latitude.toFixed(5)}, {h.longitude.toFixed(5)} · rider{" "}
-                    {h.rider_user_id.slice(0, 8)}…
+                    {new Date(h.created_at).toISOString()} · {String(h.event_type || "").replace(/_/g, " ")}
                   </li>
                 ))}
               </ul>

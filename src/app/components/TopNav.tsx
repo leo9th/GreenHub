@@ -12,7 +12,7 @@ import {
   LayoutDashboard,
   Menu,
   X,
-} from "lucide-react";
+} from "@/app/icons/emojiLucide";
 import { useCart } from "../context/CartContext";
 import { useAuth } from "../context/AuthContext";
 import { useInboxNotifications } from "../context/InboxNotificationsContext";
@@ -96,14 +96,19 @@ export default function TopNav() {
       const data = n.data && typeof n.data === "object" ? (n.data as Record<string, unknown>) : {};
       const cid = typeof data.conversation_id === "string" ? data.conversation_id : null;
       const orderId = typeof data.order_id === "string" ? data.order_id : null;
-      const deliveryRequestId =
+      const deliveryJobId =
+        typeof data.delivery_job_id === "string"
+          ? data.delivery_job_id
+          : typeof data.job_id === "string"
+            ? data.job_id
+            : null;
+      const legacyDeliveryRequestId =
         typeof data.delivery_request_id === "string"
           ? data.delivery_request_id
           : typeof data.delivery_id === "string"
             ? data.delivery_id
-            : typeof data.job_id === "string"
-              ? data.job_id
-              : null;
+            : null;
+      const riderJobNavId = deliveryJobId ?? legacyDeliveryRequestId;
 
       if (n.type === "message" && cid) {
         navigate(`/messages/c/${cid}`);
@@ -113,8 +118,8 @@ export default function TopNav() {
         navigate(`/orders/${orderId}`);
         return;
       }
-      if (n.type === "delivery_job_assigned" && deliveryRequestId) {
-        navigate(`/rider/job/${deliveryRequestId}`);
+      if (n.type === "delivery_job_assigned" && riderJobNavId) {
+        navigate(`/rider/job/${riderJobNavId}`);
         return;
       }
       if (n.type === "delivery_status_changed" && orderId) {

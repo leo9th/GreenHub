@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
-import { Package, Loader2, ShoppingBag, Eye, BarChart3, Vault, CircleDollarSign } from "lucide-react";
+import { Package, Loader2, ShoppingBag, Eye, BarChart3, Vault, CircleDollarSign } from "@/app/icons/emojiLucide";
 import { toast } from "sonner";
 import { useCurrency } from "../../hooks/useCurrency";
 import { useAuth } from "../../context/AuthContext";

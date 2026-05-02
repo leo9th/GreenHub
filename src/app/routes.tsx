@@ -110,6 +110,7 @@ function LegacySellerProductEditRedirect() {
 function LegacyRiderJobRedirect() {
   const { id } = useParams();
   if (!id?.trim()) return <Navigate to="/rider" replace />;
+  /** `id` is a `delivery_jobs.id` (legacy path name); notifications may still send `delivery_request_id`. */
   return <Navigate to={`/rider/requests/${encodeURIComponent(id.trim())}`} replace />;
 }
 

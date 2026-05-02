@@ -1,4 +1,4 @@
-import { Check } from "lucide-react";
+import { Check } from "@/app/icons/emojiLucide";
 import { cn } from "./ui/utils";
 
 type VerifiedBadgeProps = {

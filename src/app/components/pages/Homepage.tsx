@@ -1,5 +1,5 @@
 import { Link } from "react-router";
-import { Search, Smartphone, Laptop, Watch, Shirt, Sofa, Book, Star, MapPin } from "lucide-react";
+import { Search, Smartphone, Laptop, Watch, Shirt, Sofa, Book, Star, MapPin } from "@/app/icons/emojiLucide";
 
 const categories = [
   { name: "Electronics", icon: Smartphone, color: "bg-blue-100", iconColor: "text-blue-600" },

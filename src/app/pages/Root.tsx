@@ -1,6 +1,6 @@
 import { useLocation, Link } from "react-router";
 import { ScrollRestoration } from "react-router-dom";
-import { Briefcase, Wallet, ShoppingBag, TrendingUp, Package } from "lucide-react";
+import { Briefcase, Wallet, ShoppingBag, TrendingUp, Package } from "@/app/icons/emojiLucide";
 import { useEffect } from "react";
 import AnimatedOutlet from "../components/AnimatedOutlet";
 import Footer from "../components/Footer";
@@ -14,13 +14,6 @@ import { pingLastActiveThrottled } from "../utils/lastActiveHeartbeat";
 export default function Root() {
   const location = useLocation();
   const { user, session } = useAuth();
-
-  useEffect(() => {
-    console.log("[Root] route changed", {
-      pathname: location.pathname,
-      search: location.search,
-    });
-  }, [location.pathname, location.search]);
 
   useEffect(() => {
     if (!user?.id) return;

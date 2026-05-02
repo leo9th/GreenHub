@@ -1,5 +1,5 @@
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { Eye, EyeOff, Loader2, Smartphone } from "lucide-react";
+import { Eye, EyeOff, Loader2, Smartphone } from "@/app/icons/emojiLucide";
 import { useState, useEffect } from "react";
 import { motion } from "motion/react";
 import type { AuthError } from "@supabase/supabase-js";

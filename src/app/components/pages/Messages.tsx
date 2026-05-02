@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Search, Send, ArrowLeft } from "lucide-react";
+import { Search, Send, ArrowLeft } from "@/app/icons/emojiLucide";
 import { getAvatarUrl } from "../../../utils/getAvatar";
 
 const conversations = [

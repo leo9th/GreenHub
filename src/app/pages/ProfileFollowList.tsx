@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2 } from "@/app/icons/emojiLucide";
 import { useAuth } from "../context/AuthContext";
 import { getAvatarUrl } from "../utils/getAvatar";
 import { supabase } from "../../lib/supabase";

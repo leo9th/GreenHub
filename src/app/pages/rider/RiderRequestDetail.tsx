@@ -1,133 +1,79 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
-import { ArrowLeft, Loader2, MapPin } from "lucide-react";
+import { ArrowLeft, Loader2 } from "@/app/icons/emojiLucide";
 import { toast } from "sonner";
 import { useAuth } from "../../context/AuthContext";
 import { supabase } from "../../../lib/supabase";
 import { DeclineButton } from "../../components/rider/DeclineButton";
 import { riderActionErrorMessage } from "../../utils/riderActionErrors";
 
-type RequestRow = {
+type DeliveryJobRow = {
   id: string;
   order_id: string;
-  status: string | null;
+  status: string;
   assigned_rider_id: string | null;
-  delivery_pin: string | null;
+  buyer_pin: string;
 };
-
-const ACTIVE_FOR_GPS = new Set(["assigned", "picked_up"]);
 
 export default function RiderRequestDetail() {
   const { requestId } = useParams();
   const { user } = useAuth();
-  const [row, setRow] = useState<RequestRow | null>(null);
+  const [row, setRow] = useState<DeliveryJobRow | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [pin, setPin] = useState("");
-  const [geoHint, setGeoHint] = useState<string | null>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const uid = user?.id?.trim() ?? "";
-  const rid = requestId?.trim() ?? "";
+  const jobId = requestId?.trim() ?? "";
 
   const load = useCallback(async () => {
-    if (!rid) {
+    if (!jobId) {
       setRow(null);
+      setLoadError(null);
       setLoading(false);
       return;
     }
     setLoading(true);
+    setLoadError(null);
     try {
-      const { data, error } = await supabase.from("delivery_requests").select("id, order_id, status, assigned_rider_id, delivery_pin").eq("id", rid).maybeSingle();
+      const { data, error } = await supabase
+        .from("delivery_jobs")
+        .select("id, order_id, status, assigned_rider_id, buyer_pin")
+        .eq("id", jobId)
+        .maybeSingle();
       if (error) throw error;
-      setRow((data as RequestRow) ?? null);
+      const r = (data as DeliveryJobRow) ?? null;
+      setRow(r);
+      if (!r) setLoadError("Job not found.");
     } catch (e: unknown) {
-      console.error(e);
+      console.error("[RiderRequestDetail] load", e);
       setRow(null);
+      setLoadError(e instanceof Error ? e.message : "Could not load this job");
     } finally {
       setLoading(false);
     }
-  }, [rid]);
+  }, [jobId]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const sendLocation = useCallback(
-    async (lat: number, lng: number) => {
-      if (!rid) return;
-      try {
-        const { error } = await supabase.rpc("rider_record_delivery_tracking", {
-          p_request_id: rid,
-          p_latitude: lat,
-          p_longitude: lng,
-        });
-        if (error) throw error;
-      } catch (e: unknown) {
-        console.warn("[RiderRequestDetail] tracking", e);
-      }
-    },
-    [rid],
-  );
-
-  useEffect(() => {
-    if (!row || !uid) return;
-    const st = String(row.status || "").toLowerCase();
-    const isMine = row.assigned_rider_id === uid;
-    if (!isMine || !ACTIVE_FOR_GPS.has(st)) {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-      return;
-    }
-
-    if (typeof navigator.geolocation === "undefined") {
-      setGeoHint("Geolocation is not available in this browser.");
-      return;
-    }
-
-    const tick = () => {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          void sendLocation(pos.coords.latitude, pos.coords.longitude);
-        },
-        (err) => setGeoHint(err.message || "Location error"),
-        { enableHighAccuracy: true, maximumAge: 8000, timeout: 15000 },
-      );
-    };
-
-    void tick();
-    intervalRef.current = setInterval(tick, 15000);
-
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    };
-  }, [row, uid, sendLocation]);
-
-  const accept = async () => {
-    if (!rid) return;
+  const advance = async (next: "arrived_pickup" | "picked_up" | "en_route" | "delivered") => {
+    if (!jobId) return;
     setBusy(true);
     try {
-      const { error } = await supabase.rpc("rider_accept_delivery_request", { p_request_id: rid });
+      const args: { p_job_id: string; p_next_status: string; p_buyer_pin?: string } = {
+        p_job_id: jobId,
+        p_next_status: next,
+      };
+      if (next === "delivered") {
+        args.p_buyer_pin = pin.trim();
+      }
+      const { error } = await supabase.rpc("rider_advance_delivery_job", args);
       if (error) throw error;
-      toast.success("Job accepted");
-      await load();
-    } catch (e: unknown) {
-      toast.error(riderActionErrorMessage(e, "Could not accept"));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const pickedUp = async () => {
-    if (!rid) return;
-    setBusy(true);
-    try {
-      const { error } = await supabase.rpc("rider_mark_delivery_picked_up", { p_request_id: rid });
-      if (error) throw error;
-      toast.success("Marked picked up");
+      toast.success("Updated");
+      if (next === "delivered") setPin("");
       await load();
     } catch (e: unknown) {
       toast.error(riderActionErrorMessage(e, "Could not update"));
@@ -136,20 +82,16 @@ export default function RiderRequestDetail() {
     }
   };
 
-  const delivered = async () => {
-    if (!rid) return;
+  const accept = async () => {
+    if (!jobId) return;
     setBusy(true);
     try {
-      const { error } = await supabase.rpc("rider_mark_delivery_delivered", {
-        p_request_id: rid,
-        p_pin: pin.trim(),
-      });
+      const { error } = await supabase.rpc("rider_accept_delivery_job", { p_job_id: jobId });
       if (error) throw error;
-      toast.success("Delivered");
-      setPin("");
+      toast.success("Job accepted");
       await load();
     } catch (e: unknown) {
-      toast.error(riderActionErrorMessage(e, "Could not complete"));
+      toast.error(riderActionErrorMessage(e, "Could not accept"));
     } finally {
       setBusy(false);
     }
@@ -166,18 +108,27 @@ export default function RiderRequestDetail() {
   if (!row) {
     return (
       <div className="mx-auto max-w-lg px-4 py-8 text-center text-slate-400">
-        <p>Request not found.</p>
-        <Link to="/rider" className="mt-4 inline-block text-emerald-400 hover:underline">
-          Back
-        </Link>
+        <p>{loadError ?? "Delivery job not found."}</p>
+        <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+          <button
+            type="button"
+            onClick={() => void load()}
+            className="rounded-lg border border-slate-600 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+          >
+            Retry
+          </button>
+          <Link to="/rider" className="inline-block text-emerald-400 hover:underline">
+            Back to dashboard
+          </Link>
+        </div>
       </div>
     );
   }
 
   const st = String(row.status || "").toLowerCase();
   const isMine = row.assigned_rider_id === uid;
-  const canAccept = st === "pending" && !row.assigned_rider_id;
-  const canDecline = isMine && st === "assigned";
+  const canAccept = st === "assigned" && isMine;
+  const canDecline = canAccept;
 
   return (
     <div className="mx-auto max-w-lg px-4 py-6">
@@ -190,7 +141,7 @@ export default function RiderRequestDetail() {
           <ArrowLeft className="h-5 w-5" />
         </Link>
         <div className="min-w-0">
-          <h1 className="truncate text-lg font-bold text-white">Delivery request</h1>
+          <h1 className="truncate text-lg font-bold text-white">GreenHub delivery</h1>
           <p className="truncate font-mono text-xs text-slate-500">{row.id}</p>
         </div>
       </div>
@@ -201,13 +152,9 @@ export default function RiderRequestDetail() {
         <p className="mt-1 text-xs text-slate-500">Order {row.order_id}</p>
       </div>
 
-      {geoHint ? <p className="mt-3 text-xs text-amber-200/90">{geoHint}</p> : null}
-      {isMine && ACTIVE_FOR_GPS.has(st) ? (
-        <p className="mt-2 flex items-center gap-2 text-xs text-slate-400">
-          <MapPin className="h-3.5 w-3.5 shrink-0" aria-hidden />
-          Sending location about every 15s while this page is open.
-        </p>
-      ) : null}
+      <p className="mt-3 text-xs text-slate-500">
+        Rider GPS pings are not wired to GreenHub jobs yet; keep this page open for job actions only.
+      </p>
 
       <div className="mt-6 space-y-3">
         {canAccept ? (
@@ -225,14 +172,14 @@ export default function RiderRequestDetail() {
 
         {canDecline ? (
           <DeclineButton
-            type="delivery_request"
-            id={rid}
+            type="delivery_job"
+            id={jobId}
             onDeclined={() =>
               setRow((prev) =>
                 prev
                   ? {
                       ...prev,
-                      status: "rejected",
+                      status: "pending_dispatch",
                       assigned_rider_id: null,
                     }
                   : prev,
@@ -241,18 +188,40 @@ export default function RiderRequestDetail() {
           />
         ) : null}
 
-        {isMine && st === "assigned" ? (
+        {isMine && st === "accepted" ? (
           <button
             type="button"
             disabled={busy}
-            onClick={() => void pickedUp()}
+            onClick={() => void advance("arrived_pickup")}
             className="w-full rounded-xl border border-slate-600 bg-slate-800 py-3 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-60"
           >
-            Mark picked up
+            Arrived at pickup
+          </button>
+        ) : null}
+
+        {isMine && st === "arrived_pickup" ? (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void advance("picked_up")}
+            className="w-full rounded-xl border border-slate-600 bg-slate-800 py-3 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-60"
+          >
+            Confirm picked up
           </button>
         ) : null}
 
         {isMine && st === "picked_up" ? (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void advance("en_route")}
+            className="w-full rounded-xl border border-slate-600 bg-slate-800 py-3 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-60"
+          >
+            Start delivery (en route)
+          </button>
+        ) : null}
+
+        {isMine && st === "en_route" ? (
           <div className="space-y-2">
             <label className="text-xs font-medium text-slate-400" htmlFor="pin-del">
               Buyer PIN (from their order page)
@@ -269,7 +238,7 @@ export default function RiderRequestDetail() {
             <button
               type="button"
               disabled={busy || pin.length !== 6}
-              onClick={() => void delivered()}
+              onClick={() => void advance("delivered")}
               className="w-full rounded-xl bg-emerald-600 py-3 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
             >
               Mark delivered

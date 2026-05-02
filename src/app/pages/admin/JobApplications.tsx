@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
-import { ArrowLeft, ExternalLink, Loader2 } from "lucide-react";
+import { ArrowLeft, ExternalLink, Loader2 } from "@/app/icons/emojiLucide";
 import { supabase } from "../../../lib/supabase";
 import { toast } from "sonner";
 

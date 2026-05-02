@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, CheckCircle2, Loader2, TrendingUp } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Loader2, TrendingUp } from "@/app/icons/emojiLucide";
 import { useNavigate, useSearchParams } from "react-router";
 import { PaystackButton } from "react-paystack";
 import { toast } from "sonner";

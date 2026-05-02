@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
-import { ArrowLeft, Loader2, RefreshCw } from "lucide-react";
+import { ArrowLeft, Loader2, RefreshCw } from "@/app/icons/emojiLucide";
 import { supabase } from "../../../lib/supabase";
 import { useCurrency } from "../../hooks/useCurrency";
 import type { BoostTier } from "../../utils/boost";
@@ -67,7 +67,7 @@ export default function AdminBoosts() {
     }
     setBusyId("grant");
     try {
-      const { data, error } = await supabase.rpc("admin_grant_product_boost", {
+      const { error } = await supabase.rpc("admin_grant_product_boost", {
         p_product_id: pid,
         p_tier: grantTier,
         p_duration_days: days,
@@ -78,7 +78,6 @@ export default function AdminBoosts() {
       setGrantProductId("");
       setGrantNotes("");
       void load();
-      console.log(data);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Grant failed (admin JWT required)");
     } finally {

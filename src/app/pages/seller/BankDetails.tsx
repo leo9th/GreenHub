@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
-import { ArrowLeft, CheckCircle, AlertCircle } from "lucide-react";
+import { ArrowLeft, CheckCircle, AlertCircle } from "@/app/icons/emojiLucide";
 import { nigerianBanks } from "../../data/catalogConstants";
 import { useCurrency } from "../../hooks/useCurrency";
 
@@ -28,7 +28,6 @@ export default function BankDetails() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     // Submit bank details
-    console.log({ bankName, accountNumber, accountName });
     navigate("/seller/dashboard");
   };
 

@@ -1,3 +1,5 @@
+import type { OrderStatus } from "../state/OrderState";
+
 /**
  * GreenHub-managed rider delivery (Option A) — canonical rules and UI labels.
  *
@@ -78,4 +80,45 @@ export function sellerDeliverySummary(status: string | null | undefined): string
   if (s === "cancelled" || s === "failed") return "GreenHub rider delivery was cancelled or failed.";
   if (!s || s === "pending_dispatch") return "GreenHub is preparing rider dispatch for this order.";
   return `Rider status: ${deliveryJobStatusLabel(s)}`;
+}
+
+/** Maps `delivery_jobs.status` to buyer/seller courier UI state (OrderDetail map + panels). */
+export function mapDeliveryJobStatusToOrderStatus(jobStatus: string | null | undefined): OrderStatus {
+  const s = String(jobStatus || "").toLowerCase();
+  switch (s) {
+    case "pending_dispatch":
+    case "assigned":
+      return "PENDING";
+    case "accepted":
+      return "ACCEPTED";
+    case "arrived_pickup":
+      return "EN_ROUTE_TO_PICKUP";
+    case "picked_up":
+      return "AT_PICKUP";
+    case "en_route":
+      return "EN_ROUTE_TO_DROPOFF";
+    case "delivered":
+      return "DELIVERED";
+    case "failed":
+      return "CANCELLED_BY_RIDER";
+    case "cancelled":
+      return "CANCELLED_BY_BUYER";
+    default:
+      return "PENDING";
+  }
+}
+
+/**
+ * Single source for OrderDetail rider strip: prefer terminal order row, else live job, else paid → searching.
+ */
+export function resolveCourierUiStatusFromOrderAndJob(
+  orderStatusRaw: string | null | undefined,
+  job: { status: string } | null,
+): OrderStatus {
+  const o = String(orderStatusRaw || "").toLowerCase();
+  if (o === "delivered" || o === "completed") return "DELIVERED";
+  if (o === "cancelled" || o === "refunded" || o === "failed") return "CANCELLED_BY_BUYER";
+  if (job) return mapDeliveryJobStatusToOrderStatus(job.status);
+  if (o === "paid" || o === "pending" || o === "pending_payment" || o === "processing") return "PENDING";
+  return "PENDING";
 }

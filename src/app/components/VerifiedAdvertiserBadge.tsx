@@ -1,4 +1,4 @@
-import { Megaphone } from "lucide-react";
+import { Megaphone } from "@/app/icons/emojiLucide";
 import { cn } from "./ui/utils";
 
 type Props = {

@@ -1,4 +1,4 @@
-import { MessageCircle, Send } from "lucide-react";
+import { MessageCircle, Send } from "@/app/icons/emojiLucide";
 
 export interface CommunicationButtonProps {
   /** Full WhatsApp URL when already built (takes precedence). */

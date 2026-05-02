@@ -27,7 +27,7 @@ import {
   Bell,
   Truck,
   X,
-} from "lucide-react";
+} from "@/app/icons/emojiLucide";
 import { useCurrency } from "../hooks/useCurrency";
 import { useCart, type CartItem } from "../context/CartContext";
 import { useAuth } from "../context/AuthContext";
@@ -1196,7 +1196,6 @@ export default function ProductDetail() {
     );
   }
 
-  console.log('isOwner:', isOwner, 'sellerId:', sellerPeerId, 'currentUserId:', authUser?.id);
   const canMessageSeller = Boolean(sellerPeerId);
 
   const handleImageDoubleLike = async () => {

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { Loader2, MapPin, Phone, Search } from "lucide-react";
+import { Loader2, MapPin, Phone, Search } from "@/app/icons/emojiLucide";
 import { supabase } from "../../../lib/supabase";
 import { toast } from "sonner";
 import WorkersSectionHeader from "../../components/workers/WorkersSectionHeader";

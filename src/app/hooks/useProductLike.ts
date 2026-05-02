@@ -97,13 +97,6 @@ export function useProductLike({
     const previousCount = likeCount;
     const nextLiked = !previousLiked;
 
-    console.debug("[useProductLike] toggle start", {
-      productId: pid,
-      userId,
-      previousLiked,
-      nextLiked,
-    });
-
     setLikeBusy(true);
     setLiked(nextLiked);
     setLikeCount((count) => Math.max(0, count + (nextLiked ? 1 : -1)));
@@ -113,10 +106,8 @@ export function useProductLike({
       if (result.error) throw new Error(result.error);
       const syncedCount = await fetchProductLikeCount(supabase, pid);
       setLikeCount(Math.max(0, syncedCount));
-      console.debug("[useProductLike] toggle ok", { productId: pid, syncedCount });
       return true;
     } catch (error: unknown) {
-      console.debug("[useProductLike] toggle error", error);
       setLiked(previousLiked);
       setLikeCount(previousCount);
       onError?.(toErrorMessage(error, "Could not update like"));

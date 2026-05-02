@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Upload, X, ChevronUp, ChevronDown } from "lucide-react";
+import { Upload, X, ChevronUp, ChevronDown } from "@/app/icons/emojiLucide";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../context/AuthContext";
 import { categories } from "../data/catalogConstants";

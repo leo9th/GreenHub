@@ -1,6 +1,6 @@
 import React, { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router";
-import { Ban, Eraser, Flag, Loader2, Pencil, Pin, Trash2, User, UserCheck, UserPlus } from "lucide-react";
+import { Ban, Eraser, Flag, Loader2, Pencil, Pin, Trash2, User, UserCheck, UserPlus } from "@/app/icons/emojiLucide";
 import { toast } from "sonner";
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../context/AuthContext";

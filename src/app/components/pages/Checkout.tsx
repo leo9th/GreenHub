@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router";
-import { ChevronLeft, MapPin, CreditCard, CheckCircle2 } from "lucide-react";
+import { ChevronLeft, MapPin, CreditCard, CheckCircle2 } from "@/app/icons/emojiLucide";
 
 const nigerianStates = [
   "Lagos", "Abuja", "Kano", "Rivers", "Kaduna", "Oyo", "Edo", "Delta",

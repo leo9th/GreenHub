@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2 } from "@/app/icons/emojiLucide";
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../context/AuthContext";
 import { buildApprovalTransition, buildRejectionTransition } from "../../utils/orderReviewTransition";

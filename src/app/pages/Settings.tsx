@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { ArrowLeft, Bell, HelpCircle, Loader2, Lock, Save, Shield, Trash2, User } from "lucide-react";
+import { ArrowLeft, Bell, HelpCircle, Loader2, Lock, Save, Shield, Trash2, User } from "@/app/icons/emojiLucide";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../context/AuthContext";
 import { setNotificationSoundEnabled } from "../utils/soundNotifications";

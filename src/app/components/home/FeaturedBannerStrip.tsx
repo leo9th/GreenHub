@@ -52,8 +52,9 @@ export default function FeaturedBannerStrip({ selectedService }: FeaturedBannerS
         <button
           key={banner.id}
           type="button"
-          onClick={() => console.log("banner clicked")}
-          className="relative h-40 w-[85%] shrink-0 snap-start overflow-hidden rounded-2xl text-left"
+          onClick={() => {}}
+          aria-label={banner.title}
+          className="relative h-40 w-[85%] shrink-0 snap-start overflow-hidden rounded-2xl text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50 focus-visible:ring-offset-2"
         >
           <img src={banner.image} alt={banner.title} className="h-full w-full object-cover" />
           <div className="absolute inset-0 bg-gradient-to-t from-black/55 to-black/10" />

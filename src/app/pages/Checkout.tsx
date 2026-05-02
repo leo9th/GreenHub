@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { ArrowLeft, Check, CreditCard, Building2, Smartphone, Home } from "lucide-react";
+import { ArrowLeft, Check, CreditCard, Building2, Smartphone, Home } from "@/app/icons/emojiLucide";
 import { nigerianStates } from "../data/catalogConstants";
 import { getLGAsForState } from "../data/mockData";
 import { useCurrency } from "../hooks/useCurrency";
@@ -12,6 +12,7 @@ import { supabase } from "../../lib/supabase";
 import { BuyNowActionIcon, CartActionIcon, RideActionIcon } from "../components/icons/ActionIcons";
 import {
   computeHybridDeliveryTotals,
+  deriveMarketModeFromLineItems,
   isWarehouseShippingFulfillment,
 } from "../utils/fulfillment";
 import { createPaystackSuccessHandler } from "../utils/paystackCheckout";
@@ -48,9 +49,7 @@ export default function Checkout() {
   const platformFee = Math.round(subtotal * 0.1);
   const total = subtotal + delivery + platformFee;
   const paystackPublicKey = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY;
-  const marketMode = items.every((item) => isWarehouseShippingFulfillment(item.fulfillment_type))
-    ? "b2c"
-    : "c2c";
+  const marketMode = deriveMarketModeFromLineItems(items);
 
   useEffect(() => {
     const isPaystackPath = step === "payment" && paymentMethod !== "pod";

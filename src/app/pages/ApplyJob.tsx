@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Link } from "react-router";
-import { ArrowLeft, ArrowRight, CheckCircle2, Loader2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, CheckCircle2, Loader2 } from "@/app/icons/emojiLucide";
 import { supabase } from "../../lib/supabase";
 import { toast } from "sonner";
 

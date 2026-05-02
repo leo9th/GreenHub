@@ -1,6 +1,6 @@
 import React, { useEffect } from "react";
 import { useNavigate } from "react-router";
-import { MessageCircle } from "lucide-react";
+import { MessageCircle } from "@/app/icons/emojiLucide";
 import { useAuth } from "../context/AuthContext";
 import { useInboxConversationList } from "../hooks/useInboxConversationList";
 import { InboxSplitLayout } from "../components/messaging/InboxSplitLayout";

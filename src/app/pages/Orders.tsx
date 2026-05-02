@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { ArrowLeft, Package, Clock, Truck, CheckCircle } from "lucide-react";
+import { ArrowLeft, Package, Clock, Truck, CheckCircle } from "@/app/icons/emojiLucide";
 import { useCurrency } from "../hooks/useCurrency";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../../lib/supabase";
@@ -99,7 +99,6 @@ export default function Orders() {
         .select("*")
         .eq("buyer_id", userId)
         .order("created_at", { ascending: false });
-      console.log("DEBUG: Supabase Error", oErr);
 
       if (oErr) {
         console.error("[Orders] orders select error", oErr);
@@ -117,7 +116,6 @@ export default function Orders() {
       }
 
       const { data: itemRows, error: iErr } = await supabase.from("order_items").select("*").in("order_id", ids);
-      console.log("DEBUG: Supabase Error", iErr);
 
       if (iErr) {
         console.error("[Orders] order_items select error", iErr);
@@ -137,7 +135,6 @@ export default function Orders() {
         .select("id, order_id, event_label, created_at")
         .in("order_id", ids)
         .order("created_at", { ascending: true });
-      console.log("DEBUG: Supabase Error", evErr);
 
       if (evErr) {
         console.error("[Orders] order_events select error (expect columns: id, order_id, event_label, created_at)", evErr);

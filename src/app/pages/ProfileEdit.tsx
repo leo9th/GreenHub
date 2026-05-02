@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft } from "@/app/icons/emojiLucide";
 import { useNavigate } from "react-router";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../../lib/supabase";

@@ -1,5 +1,5 @@
 import { Link } from "react-router";
-import { X } from "lucide-react";
+import { X } from "@/app/icons/emojiLucide";
 
 export type ComposerAttachedListingProps = {
   productId: string | number;

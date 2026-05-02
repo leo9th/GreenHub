@@ -1,3 +1,5 @@
+export type MarketMode = "c2c" | "b2c";
+
 export type OrderStatus =
   | "PENDING"
   | "ACCEPTED"
@@ -17,11 +19,15 @@ export interface RiderInfo {
   plateNumber: string;
   phone: string;
   photoUrl: string;
+  /** Shown in tracking UI when set (e.g. future profile aggregate). */
+  rating?: number | null;
 }
 
 export interface OrderState {
   orderId: string;
   status: OrderStatus;
+  /** Marketplace (c2c) vs store / guaranteed warehouse (b2c); same rule as Checkout. */
+  marketMode: MarketMode;
   pickupLocation: { lat: number; lng: number; address: string };
   dropoffLocation: { lat: number; lng: number; address: string };
   riderInfo: RiderInfo | null;
@@ -51,6 +57,20 @@ export type BookingUiState =
   | "arriving"
   | "in_delivery"
   | "delivered";
+
+/** High-level order lifecycle for action engine + headers (not the same as live map tracking stage). */
+export type OrderUiState =
+  | "searching_rider"
+  | "rider_assigned"
+  | "rider_picking_up"
+  | "rider_on_the_way"
+  | "arriving"
+  | "delivered"
+  | "cancelled"
+  | "unknown";
+
+/** Buyer live tracking strip — single source in OrderDetail, updated by server status + map mock signals. */
+export type OrderTrackingStage = "searching" | "assigned" | "arriving" | "in_transit" | "delivered";
 
 export type OrderActionType =
   | "CANCEL_ORDER"

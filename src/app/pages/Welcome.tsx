@@ -1,7 +1,7 @@
 import { Link, useNavigate } from "react-router";
 import { useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
-import { Package, UserPen } from "lucide-react";
+import { Package, UserPen } from "@/app/icons/emojiLucide";
 import { cn } from "../components/ui/utils";
 
 function profileCompletionPercent(profile: {

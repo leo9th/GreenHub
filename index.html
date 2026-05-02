@@ -1,52 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <!DOCTYPE html>
-  <html lang="en">
-    <head>
-      <meta charset="UTF-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-      <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-      <link rel="manifest" href="/site.webmanifest" />
-      <meta name="theme-color" content="#022c22" />
-      <title>GreenHub - Buy & Sell in Nigeria</title>
-      
-      <!-- Primary Meta Tags -->
-      <meta name="title" content="GreenHub - Buy & Sell in Nigeria" />
-      <meta name="description" content="GreenHub is Nigeria's premier C2C marketplace to buy and sell electronics, fashion, and goods securely." />
-      <meta name="keywords" content="GreenHub, marketplace, buy and sell, Nigeria, e-commerce, shopping app, electronics, fashion, C2C" />
-      <meta name="author" content="GreenHub" />
+    <!-- Title (Improved SEO) -->
+    <title>GreenHub Marketplace | Buy & Sell Electronics, Fashion & More in Nigeria</title>
 
-      <!-- Open Graph / Facebook -->
-      <meta property="og:type" content="website" />
-      <meta property="og:url" content="https://greenhub.com.ng/" />
-      <meta property="og:title" content="GreenHub - Buy & Sell in Nigeria" />
-      <meta property="og:description" content="GreenHub is Nigeria's premier C2C marketplace to buy and sell electronics, fashion, and goods securely." />
-      <meta property="og:image" content="/favicon.svg" />
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 
-      <!-- Twitter -->
-      <meta property="twitter:card" content="summary_large_image" />
-      <meta property="twitter:url" content="https://greenhub.com.ng/" />
-      <meta property="twitter:title" content="GreenHub - Buy & Sell in Nigeria" />
-      <meta property="twitter:description" content="GreenHub is Nigeria's premier C2C marketplace to buy and sell electronics, fashion, and goods securely." />
-      <meta property="twitter:image" content="/favicon.svg" />
+    <!-- PWA -->
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta name="theme-color" content="#022c22" />
 
-      <script>
-        (function () {
-          try {
-            var k = "greenhub-theme";
-            var s = localStorage.getItem(k);
-            var dark;
-            if (s === "dark") dark = true;
-            else if (s === "light") dark = false;
-            else dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-            document.documentElement.classList.toggle("dark", dark);
-          } catch (e) {}
-        })();
-      </script>
-    </head>
+    <!-- SEO Meta -->
+    <meta name="description" content="GreenHub is Nigeria's trusted marketplace to buy and sell electronics, fashion, and everyday goods securely and fast." />
+    <meta name="robots" content="index, follow" />
+    <link rel="canonical" href="https://greenhub.com.ng/" />
 
-    <body>
-      <div id="root"></div>
-      <script type="module" src="/src/main.tsx"></script>
-    </body>
-  </html>
-  
+    <!-- Open Graph (Facebook, WhatsApp, LinkedIn) -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://greenhub.com.ng/" />
+    <meta property="og:title" content="GreenHub Marketplace | Buy & Sell in Nigeria" />
+    <meta property="og:description" content="Buy and sell electronics, fashion, and more on GreenHub — Nigeria's fast-growing marketplace." />
+    <meta property="og:image" content="/og-banner.png" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:url" content="https://greenhub.com.ng/" />
+    <meta name="twitter:title" content="GreenHub Marketplace | Buy & Sell in Nigeria" />
+    <meta name="twitter:description" content="Shop smart, sell fast on GreenHub." />
+    <meta name="twitter:image" content="/og-banner.png" />
+
+    <!-- Performance -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
+    <!-- Theme Initialization (UNCHANGED - DO NOT TOUCH) -->
+    <script>
+      (function () {
+        try {
+          var k = "greenhub-theme";
+          var s = localStorage.getItem(k);
+          var dark;
+          if (s === "dark") dark = true;
+          else if (s === "light") dark = false;
+          else dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+          document.documentElement.classList.toggle("dark", dark);
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+
+  <body>
+    <!-- App Root (DO NOT REMOVE) -->
+    <div id="root">
+      <noscript>You need to enable JavaScript to run GreenHub.</noscript>
+    </div>
+
+    <!-- React Entry (DO NOT TOUCH) -->
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

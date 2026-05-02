@@ -1,5 +1,5 @@
 import { Link } from "react-router";
-import { User, Settings, ShoppingBag, Heart, MapPin, Bell, HelpCircle, LogOut, ChevronRight, Shield, CreditCard } from "lucide-react";
+import { User, Settings, ShoppingBag, Heart, MapPin, Bell, HelpCircle, LogOut, ChevronRight, Shield, CreditCard } from "@/app/icons/emojiLucide";
 
 export function Profile() {
   return (

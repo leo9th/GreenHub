@@ -4,7 +4,7 @@ import { supabase } from "../../../lib/supabase";
 import { riderActionErrorMessage } from "../../utils/riderActionErrors";
 
 interface DeclineButtonProps {
-  type: "delivery_request" | "product_ride_booking";
+  type: "delivery_request" | "delivery_job" | "product_ride_booking";
   id: string;
   onDeclined?: () => void;
   variant?: "button" | "icon";
@@ -25,6 +25,11 @@ export function DeclineButton({
       if (type === "delivery_request") {
         const { error } = await supabase.rpc("rider_decline_delivery_request", {
           p_request_id: id,
+        });
+        if (error) throw error;
+      } else if (type === "delivery_job") {
+        const { error } = await supabase.rpc("rider_decline_delivery_job", {
+          p_job_id: id,
         });
         if (error) throw error;
       } else {

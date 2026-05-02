@@ -1,5 +1,5 @@
 import React, { useCallback, useRef } from "react";
-import { Check, CheckCheck, Clock } from "lucide-react";
+import { Check, CheckCheck, Clock } from "@/app/icons/emojiLucide";
 import type { ChatReactionSummary } from "../../utils/chatMessages";
 
 const ACTIONS_LONG_PRESS_MS = 480;

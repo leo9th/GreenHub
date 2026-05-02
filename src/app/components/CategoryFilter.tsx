@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { LucideIcon } from "lucide-react";
+import type { LucideIcon } from "@/app/icons/emojiLucide";
 import {
   Building,
   Car,
@@ -10,7 +10,7 @@ import {
   Sparkles,
   Trophy,
   Tv,
-} from "lucide-react";
+} from "@/app/icons/emojiLucide";
 
 export const CATEGORY_FILTER_LABELS = [
   "All",

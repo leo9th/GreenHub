@@ -1,4 +1,4 @@
-import { Package, Truck, CheckCircle2, Clock } from "lucide-react";
+import { Package, Truck, CheckCircle2, Clock } from "@/app/icons/emojiLucide";
 import { Card, CardContent } from "../ui/card";
 import { Button } from "../ui/button";
 

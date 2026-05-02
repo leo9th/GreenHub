@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from "react";
-import { ImagePlus, Loader2, Mic, Paperclip, Send, Smile } from "lucide-react";
+import { ImagePlus, Loader2, Mic, Paperclip, Send, Smile } from "@/app/icons/emojiLucide";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import { cn } from "../ui/utils";
 

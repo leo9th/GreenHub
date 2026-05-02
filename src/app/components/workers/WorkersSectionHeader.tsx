@@ -1,5 +1,5 @@
 import { Link } from "react-router";
-import { Briefcase, UserPlus, Users } from "lucide-react";
+import { Briefcase, UserPlus, Users } from "@/app/icons/emojiLucide";
 
 export default function WorkersSectionHeader() {
   return (

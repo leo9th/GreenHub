@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowLeft, Bike, Check, Eye, EyeOff, Loader2, Lock, ShoppingBag, Store, Users, X } from "lucide-react";
+import { ArrowLeft, Bike, Check, Eye, EyeOff, Loader2, Lock, ShoppingBag, Store, Users, X } from "@/app/icons/emojiLucide";
 import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { toast } from "sonner";

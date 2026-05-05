@@ -192,39 +192,43 @@ export default function Products() {
           onCategoryChange={setSelectedCategory}
         />
 
-        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-end sm:gap-2">
-          <AdvancedSearch
-            className="w-full sm:w-[200px] md:w-[280px] sm:shrink-0"
-            placeholder="Search products and categories..."
-            value={globalSearchTerm}
-            showTopRatedToggle
-            onQueryChange={(next) => {
-              setGlobalSearchTerm(next);
-              const nextParams = new URLSearchParams(searchParams);
-              if (next.trim()) nextParams.set("search", next.trim());
-              else nextParams.delete("search");
-              if (topRatedOnly) nextParams.set("topRated", "1");
-              else nextParams.delete("topRated");
-              setSearchParams(nextParams, { replace: true });
-            }}
-            onSelectCategory={(category) => {
-              setGlobalSearchTerm(category);
-              const nextParams = new URLSearchParams(searchParams);
-              nextParams.set("search", category);
-              if (topRatedOnly) nextParams.set("topRated", "1");
-              else nextParams.delete("topRated");
-              setSearchParams(nextParams, { replace: true });
-            }}
-            topRatedOnly={topRatedOnly}
-            onTopRatedOnlyChange={(next) => {
-              setTopRatedOnly(next);
-              const nextParams = new URLSearchParams(searchParams);
-              if (next) nextParams.set("topRated", "1");
-              else nextParams.delete("topRated");
-              setSearchParams(nextParams, { replace: true });
-            }}
-          />
-          <SortBar id="shop-listing-sort" value={listingSort} onChange={setListingSort} className="shrink-0" />
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <div className="flex-1 min-w-0">
+            <AdvancedSearch
+              className="w-full"
+              placeholder="Search products and categories..."
+              value={globalSearchTerm}
+              showTopRatedToggle
+              onQueryChange={(next) => {
+                setGlobalSearchTerm(next);
+                const nextParams = new URLSearchParams(searchParams);
+                if (next.trim()) nextParams.set("search", next.trim());
+                else nextParams.delete("search");
+                if (topRatedOnly) nextParams.set("topRated", "1");
+                else nextParams.delete("topRated");
+                setSearchParams(nextParams, { replace: true });
+              }}
+              onSelectCategory={(category) => {
+                setGlobalSearchTerm(category);
+                const nextParams = new URLSearchParams(searchParams);
+                nextParams.set("search", category);
+                if (topRatedOnly) nextParams.set("topRated", "1");
+                else nextParams.delete("topRated");
+                setSearchParams(nextParams, { replace: true });
+              }}
+              topRatedOnly={topRatedOnly}
+              onTopRatedOnlyChange={(next) => {
+                setTopRatedOnly(next);
+                const nextParams = new URLSearchParams(searchParams);
+                if (next) nextParams.set("topRated", "1");
+                else nextParams.delete("topRated");
+                setSearchParams(nextParams, { replace: true });
+              }}
+            />
+          </div>
+          <div className="shrink-0">
+            <SortBar id="shop-listing-sort" value={listingSort} onChange={setListingSort} />
+          </div>
         </div>
 
         <CollapsibleFilters

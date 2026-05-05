@@ -593,16 +593,20 @@ export default function Home() {
         />
 
         <div className="mb-6 flex justify-center">
-          <div className="flex w-full max-w-3xl flex-col gap-2 sm:flex-row sm:items-start sm:justify-end sm:gap-2">
-            <AdvancedSearch
-              className={`w-full ${service === "shop" ? "sm:w-[200px] md:w-[280px] sm:shrink-0 sm:max-w-xl" : ""}`}
-              placeholder="Find anything on GreenHub..."
-              value={globalSearchTerm}
-              onQueryChange={setGlobalSearchTerm}
-              onSelectCategory={(category) => setGlobalSearchTerm(category)}
-            />
+          <div className="flex w-full max-w-3xl flex-wrap items-center gap-2">
+            <div className="flex-1 min-w-0">
+              <AdvancedSearch
+                className="w-full"
+                placeholder="Find anything on GreenHub..."
+                value={globalSearchTerm}
+                onQueryChange={setGlobalSearchTerm}
+                onSelectCategory={(category) => setGlobalSearchTerm(category)}
+              />
+            </div>
             {service === "shop" ? (
-              <SortBar id="home-listing-sort" value={listingSort} onChange={setListingSort} className="shrink-0" />
+              <div className="shrink-0">
+                <SortBar id="home-listing-sort" value={listingSort} onChange={setListingSort} />
+              </div>
             ) : null}
           </div>
         </div>

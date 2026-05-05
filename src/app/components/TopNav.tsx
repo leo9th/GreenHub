@@ -172,8 +172,8 @@ export default function TopNav() {
   const totalUnread = (notificationUnreadCount || 0) + (messageUnread || 0);
 
   return (
-    <div className={`${bgClass} sticky top-0 z-[45] transition-colors duration-200`}>
-      <div className="h-16 px-2 sm:px-4 max-w-7xl mx-auto flex flex-nowrap items-center justify-between gap-1 md:gap-2 min-w-0 overflow-x-hidden overflow-y-visible">
+    <div className={`${bgClass} sticky top-0 z-[90] transition-colors duration-200`}>
+      <div className="relative isolate h-16 px-2 sm:px-4 max-w-7xl mx-auto flex flex-nowrap items-center justify-between gap-1 md:gap-2 min-w-0 overflow-x-hidden overflow-y-visible">
         <div className="flex min-w-0 flex-1 items-center gap-2 md:gap-2">
           <Link
             to="/"
@@ -189,10 +189,10 @@ export default function TopNav() {
           >
             Shop
           </Link>
-          <div className="hidden md:flex min-w-0 flex-1 justify-end pr-1">
+          <div className="pointer-events-none hidden min-w-0 flex-1 justify-end pr-1 md:flex">
             <AdvancedSearch
               compact
-              className="w-[200px] md:w-[260px] xl:w-[280px] shrink-0"
+              className="pointer-events-auto w-[200px] md:w-[260px] xl:w-[280px] shrink-0"
               placeholder="Search GreenHub..."
               onSelectCategory={(category) => navigate(`/products?search=${encodeURIComponent(category)}`)}
             />
@@ -318,7 +318,7 @@ export default function TopNav() {
             ) : null}
           </div>
         </div>
-        <div className="relative z-[50] flex items-center gap-1 md:gap-2 shrink-0">
+        <div className="relative z-[1] flex shrink-0 items-center gap-1 md:gap-2 pointer-events-auto">
           <button
             type="button"
             onClick={() => toggleTheme()}
@@ -340,16 +340,13 @@ export default function TopNav() {
                 setShowDropdown(false);
                 setMobileMenuOpen(false);
               }}
-              className={`relative flex h-10 shrink-0 items-center justify-center gap-1 rounded-lg px-1 py-0.5 sm:h-11 sm:px-1.5 outline-none transition-colors ${contrastIconClass} ${themeBtnHover}`}
+              className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg sm:h-11 sm:w-11 sm:px-1.5 outline-none transition-colors ${contrastIconClass} ${themeBtnHover}`}
               aria-haspopup="menu"
               aria-expanded={showBookGo}
-              aria-label="bookGo menu"
-              title="bookGo"
+              aria-label="Ride and delivery menu"
+              title="Ride & delivery"
             >
-              <Bike className={`hidden sm:block ${navIconClass}`} />
-              <span className="sm:hidden text-lg leading-none" aria-hidden>
-                🚲
-              </span>
+              <Bike className={navIconClass} />
             </button>
             {showBookGo ? (
               <div className="absolute top-full right-0 z-50 mt-2 w-56 rounded-lg border border-gray-200 bg-white py-2 shadow-xl dark:border-border dark:bg-card">

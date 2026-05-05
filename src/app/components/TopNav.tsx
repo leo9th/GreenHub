@@ -48,30 +48,33 @@ export default function TopNav() {
   const mobileMenuRef = useRef<HTMLDivElement>(null);
   const bookGoRef = useRef<HTMLDivElement>(null);
 
+  /** Close menus on outside click only while one is open; defer attach so the opening click cannot fire close. */
   useEffect(() => {
-    function handleOutside(event: MouseEvent | TouchEvent) {
+    const anyOpen = showDropdown || showNotifications || showBookGo || mobileMenuOpen;
+    if (!anyOpen) return;
+
+    function handleDocumentClick(event: MouseEvent) {
       const target = event.target as Node | null;
       if (!target) return;
-      if (dropdownRef.current && !dropdownRef.current.contains(target)) {
-        setShowDropdown(false);
-      }
-      if (notifRef.current && !notifRef.current.contains(target)) {
-        setShowNotifications(false);
-      }
-      if (mobileMenuRef.current && !mobileMenuRef.current.contains(target)) {
-        setMobileMenuOpen(false);
-      }
-      if (bookGoRef.current && !bookGoRef.current.contains(target)) {
-        setShowBookGo(false);
-      }
+      if (dropdownRef.current?.contains(target)) return;
+      if (notifRef.current?.contains(target)) return;
+      if (mobileMenuRef.current?.contains(target)) return;
+      if (bookGoRef.current?.contains(target)) return;
+      setShowDropdown(false);
+      setShowNotifications(false);
+      setMobileMenuOpen(false);
+      setShowBookGo(false);
     }
-    document.addEventListener("mousedown", handleOutside);
-    document.addEventListener("touchstart", handleOutside, { passive: true });
+
+    const timerId = window.setTimeout(() => {
+      document.addEventListener("click", handleDocumentClick);
+    }, 0);
+
     return () => {
-      document.removeEventListener("mousedown", handleOutside);
-      document.removeEventListener("touchstart", handleOutside);
+      window.clearTimeout(timerId);
+      document.removeEventListener("click", handleDocumentClick);
     };
-  }, []);
+  }, [showDropdown, showNotifications, showBookGo, mobileMenuOpen]);
 
   const handleSignOut = async () => {
     await signOut();

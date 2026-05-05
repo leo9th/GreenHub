@@ -1,7 +1,7 @@
 {
   "name": "GreenHub",
   "short_name": "GreenHub",
-  "description": "Buy and sell in Nigeria — including GreenHub rider delivery.",
+  "description": "GreenHub — Nigeria's marketplace for shoppers, sellers, and stores. Shop. Sell. Grow on GreenHub.",
   "start_url": "/rider",
   "display": "standalone",
   "background_color": "#020617",

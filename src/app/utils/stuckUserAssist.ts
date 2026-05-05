@@ -36,7 +36,7 @@ export function getStuckUserAssist(reason: CheckoutBlockedReason): StuckUserAssi
     case "c2c_high_value_review":
       return {
         blockedReason: reason,
-        userMessage: "This C2C order needs a quick trust review before payment.",
+        userMessage: "This order needs a quick trust review before payment.",
         nextBestAction: "Submit order for review",
         fallbackAction: `Reach support via ${primarySupportChannel} to speed up approval.`,
       };

@@ -2,7 +2,7 @@
 
 ## Overview
 
-The GreenHub Marketplace application is a React-based frontend styled with Tailwind CSS v4. It implements the entire mobile-first and desktop-responsive design specification provided for the Nigerian C2C marketplace context.
+The GreenHub Marketplace application is a React-based frontend styled with Tailwind CSS v4. It implements mobile-first and desktop-responsive patterns for Nigeria's hybrid marketplace (people and businesses selling—peer-to-peer and from shops).
 
 What was discovered during the development phase is that **the repository provided already contains the complete implementation for all required screens and components.**
 

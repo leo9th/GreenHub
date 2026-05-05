@@ -1,6 +1,6 @@
 # GreenHub Marketplace - Pages Created
 
-All 20 requested pages have been successfully created with proper Nigerian marketplace functionality.
+All 20 requested pages have been successfully created with Nigerian marketplace functionality for hybrid selling (people and businesses—peer-to-peer and shops).
 
 ## Main Pages (8)
 

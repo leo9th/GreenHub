@@ -6,7 +6,7 @@ export const pageContent: Record<string, { title: string; content: React.ReactNo
     title: "About GreenHub",
     content: (
       <div className="space-y-4 text-gray-700">
-        <p>GreenHub is your premier global marketplace for buying and selling goods directly with people in your community and around the world.</p>
+        <p>GreenHub is Nigeria&apos;s hybrid marketplace where people and businesses buy and sell electronics, fashion, and everyday goods—peer-to-peer and from shops—in one trusted place.</p>
         <p>Our mission is to provide a safe, secure, and fast platform where anyone can turn their unused items into cash, or find amazing deals on electronics, vehicles, fashion, and real estate.</p>
         <p>Founded on the principles of trust and simplicity, GreenHub is designed to be deeply integrated with local communities.</p>
       </div>

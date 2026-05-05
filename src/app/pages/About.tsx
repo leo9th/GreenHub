@@ -6,7 +6,7 @@ export default function About() {
       <h1 className="text-3xl md:text-5xl font-bold text-gray-900 mb-6">About GreenHub</h1>
       <div className="prose prose-lg text-gray-700 space-y-6">
         <p>
-          Welcome to GreenHub, Nigeria's most trusted C2C (Consumer-to-Consumer) marketplace. We are dedicated to providing a safe, fast, and seamless platform for buyers and sellers across the nation.
+          GreenHub is Nigeria&apos;s hybrid marketplace where people and businesses buy and sell electronics, fashion, and everyday goods—peer-to-peer and from shops—in one trusted place.
         </p>
         <p>
           Our mission is to empower individuals and small businesses by creating a robust digital economy where anyone can trade with confidence. Whether you are looking for the latest electronics, trendy fashion items, a reliable vehicle, or prime real estate, GreenHub connects you natively to quality offerings.

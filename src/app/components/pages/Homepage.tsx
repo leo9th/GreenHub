@@ -65,7 +65,7 @@ export function Homepage() {
         <div className="bg-gradient-to-r from-[#22c55e] to-[#16a34a] rounded-xl p-6 text-white">
           <h2 className="text-xl mb-2">Shop Trusted Sellers</h2>
           <p className="text-sm opacity-90 mb-4">
-            Buy and sell with confidence on Nigeria's green marketplace
+            GreenHub — Nigeria&apos;s marketplace for shoppers, sellers, and stores.
           </p>
           <Link
             to="/products"

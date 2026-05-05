@@ -4,7 +4,7 @@
 **Target Audience:** Future AI Assitants (Chatbot) and Developers
 
 ## Context
-This project features a C2C marketplace where sellers can buy subscription plans (Boosts, Banners, Packages) to advertise their listing. This document explains the routing, component interactions, and simulated payment implementation for the **Ad Boost Payment Flow**.
+GreenHub is a hybrid marketplace (people and businesses selling—peer-to-peer and from shops) where sellers can buy subscription plans (Boosts, Banners, Packages) to advertise their listing. This document explains the routing, component interactions, and simulated payment implementation for the **Ad Boost Payment Flow**.
 
 ## Flow Overview
 1. **Initiation (`src/app/pages/seller/Products.tsx`)**

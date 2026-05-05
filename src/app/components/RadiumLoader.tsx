@@ -35,7 +35,7 @@ export function RadiumLoader({ open = true }: Props) {
         <div className="radium-core" />
       </div>
       <p className="radium-text">{message}</p>
-      <p className="radium-subtext">GreenHub · Intelligent marketplace</p>
+      <p className="radium-subtext">GreenHub — Nigeria&apos;s marketplace for shoppers, sellers, and stores.</p>
     </div>
   );
 }

@@ -1,6 +1,8 @@
-# GreenHub Marketplace
+# GreenHub
 
-GreenHub - Nigeria's C2C marketplace for buying and selling items.
+GreenHub is Nigeria's hybrid marketplace where people and businesses buy and sell electronics, fashion, and everyday goods—peer-to-peer and from shops—in one trusted place.
+
+*Shop. Sell. Grow on GreenHub.*
 
 ## Running the code
 

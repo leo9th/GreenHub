@@ -1,6 +1,6 @@
-# GreenHub - Nigerian C2C Marketplace
+# GreenHub — Nigerian hybrid marketplace (B2C + C2C)
 
-A comprehensive Nigerian consumer-to-consumer marketplace application built with React, TypeScript, React Router, and Tailwind CSS.
+GreenHub is Nigeria's hybrid marketplace where people and businesses buy and sell electronics, fashion, and everyday goods—peer-to-peer and from shops—in one trusted place. Built with React, TypeScript, React Router, and Tailwind CSS.
 
 ## 🌿 Features
 

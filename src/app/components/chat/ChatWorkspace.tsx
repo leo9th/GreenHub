@@ -306,7 +306,7 @@ type StripProduct = {
   image: string | null;
   like_count: number;
   condition: string | null;
-  /** B2C warehouse-fulfilled vs C2C — drives context bar styling when `warehouse_shipping`. */
+  /** Warehouse-fulfilled vs seller-fulfilled — drives context bar styling when `warehouse_shipping`. */
   fulfillment_type: string | null;
 };
 
@@ -534,7 +534,7 @@ export default function ChatWorkspace() {
     [stripProductSourceId],
   );
 
-  /** B2C (warehouse) vs C2C — only known after `stripProduct` loads; loading uses marketplace (glass) styling. */
+  /** Warehouse vs seller fulfillment — only known after `stripProduct` loads; loading uses marketplace (glass) styling. */
   const productContextBarSurfaceClass = useMemo(() => {
     if (stripProduct && isWarehouseShippingFulfillment(stripProduct.fulfillment_type)) {
       return "border-b border-emerald-200/45 bg-emerald-50/80 backdrop-blur-md dark:border-emerald-800/50 dark:bg-emerald-950/45";

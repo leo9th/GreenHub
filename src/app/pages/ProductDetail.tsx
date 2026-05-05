@@ -123,9 +123,9 @@ function formatFollowerShort(n: number): string {
   return `${s}K`;
 }
 
-const DEFAULT_DOCUMENT_TITLE = "GreenHub - Buy & Sell in Nigeria";
+const DEFAULT_DOCUMENT_TITLE = "GreenHub — Nigeria's marketplace for shoppers, sellers, and stores.";
 const DEFAULT_META_DESCRIPTION =
-  "GreenHub is Nigeria's premier C2C marketplace to buy and sell electronics, fashion, and goods securely.";
+  "GreenHub is Nigeria's hybrid marketplace where people and businesses buy and sell electronics, fashion, and everyday goods—peer-to-peer and from shops—in one trusted place.";
 
 function upsertHeadMeta(attr: "property" | "name", key: string, content: string) {
   const selector = attr === "property" ? `meta[property="${key}"]` : `meta[name="${key}"]`;

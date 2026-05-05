@@ -109,7 +109,8 @@ export default function OrderReviews() {
       <header className="mb-4">
         <h1 className="text-2xl font-semibold text-emerald-200">Order Review Queue</h1>
         <p className="mt-1 text-sm text-emerald-100/75">
-          Review C2C high-value orders before payment is finalized. Pending: {pendingCount}
+          Review high-value marketplace orders (peer and shop sellers) before payment is finalized. Pending:{" "}
+          {pendingCount}
         </p>
       </header>
 

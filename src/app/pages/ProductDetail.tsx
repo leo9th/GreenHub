@@ -40,6 +40,7 @@ import { getAvatarUrl } from "../utils/getAvatar";
 import { getProductPrice } from "../utils/getProductPrice";
 import { activeProductsQuery, mapProductRow } from "../utils/productSearch";
 import { getProductThumbnailUrl, parseProductImagesFromRow } from "../utils/productImages";
+import { isProductRowPurchasableForCart, isActiveListing } from "../utils/cartReconcile";
 import { recordProductView } from "../utils/recentlyViewedProducts";
 import { toast } from "sonner";
 import { BoostDetailBadge } from "../components/BoostBadge";
@@ -980,6 +981,9 @@ export default function ProductDetail() {
       : null;
   const isSoldOut = stockQuantity === 0;
   const isLowStock = stockQuantity != null && stockQuantity > 0 && stockQuantity < 5;
+  /** Same rules as `reconcileCartLines` / `isProductRowPurchasableForCart`. */
+  const isPurchasable = Boolean(foundProduct) && isProductRowPurchasableForCart(foundProduct as Record<string, unknown>);
+  const isListingActive = isActiveListing(foundProduct?.status);
 
   const buildCartLineItem = (): CartItem | null => {
     if (!foundProduct) return null;
@@ -1005,6 +1009,12 @@ export default function ProductDetail() {
   };
 
   const handleAddToCart = useCallback(() => {
+    if (!isPurchasable) {
+      toast.error(
+        isListingActive ? "This item is out of stock." : "This listing isn’t available for purchase.",
+      );
+      return;
+    }
     const cartLineItem = buildCartLineItem();
     if (!cartLineItem) return;
 
@@ -1014,9 +1024,15 @@ export default function ProductDetail() {
       icon: <CheckCircle2 className="h-4 w-4 text-emerald-600" />,
       className: "bg-emerald-50 text-emerald-950 border border-emerald-200/80",
     });
-  }, [addToCart, buildCartLineItem]);
+  }, [addToCart, buildCartLineItem, isListingActive, isPurchasable]);
 
   const buyNow = useCallback(() => {
+    if (!isPurchasable) {
+      toast.error(
+        isListingActive ? "This item is out of stock." : "This listing isn’t available for purchase.",
+      );
+      return;
+    }
     const cartLineItem = buildCartLineItem();
     if (!cartLineItem) {
       return;
@@ -1028,14 +1044,7 @@ export default function ProductDetail() {
       className: "bg-emerald-50 text-emerald-950 border border-emerald-200/80",
     });
     navigate("/checkout");
-  }, [addToCart, buildCartLineItem, navigate]);
-
-  const handleBuyNowFromSoldOut = useCallback(() => {
-    buyNow();
-  }, [buyNow, foundProduct?.id, isOwner, isSoldOut]);
-
-  useEffect(() => {
-  }, [foundProduct?.id, isOwner, isSoldOut]);
+  }, [addToCart, buildCartLineItem, navigate, isListingActive, isPurchasable]);
 
   const runPickupSearch = useCallback(async () => {
     const q = pickupQuery.trim();
@@ -1502,10 +1511,10 @@ export default function ProductDetail() {
                               onDoubleClick={onMainImageDoubleClick}
                             />
                           </div>
-                          {isSoldOut ? (
+                          {isOwner ? null : !isPurchasable ? (
                             <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex items-center justify-center bg-white/20 py-2 backdrop-blur-md">
                               <span className="rounded-full bg-[#15803d]/95 px-3 py-1 text-sm font-bold tracking-wide text-white shadow-sm">
-                                SOLD OUT
+                                {!isListingActive ? "UNAVAILABLE" : "SOLD OUT"}
                               </span>
                             </div>
                           ) : null}
@@ -1864,9 +1873,9 @@ export default function ProductDetail() {
                 {product.title}
               </h1>
               <p className="text-2xl md:text-3xl font-bold text-[#15803d] mt-3 tabular-nums">{priceDisplay}</p>
-              {isSoldOut && !isOwner ? (
+              {!isOwner && !isPurchasable ? (
                 <div className="mt-3 inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
-                  Sold
+                  {!isListingActive ? "Unavailable" : "Sold out"}
                 </div>
               ) : (
                 <PriceNegotiation
@@ -2415,7 +2424,7 @@ export default function ProductDetail() {
                     <RideActionIcon className="h-4 w-4 shrink-0 text-emerald-700" />
                     <span className="min-w-0 truncate leading-tight">bookGo delivery</span>
                   </button>
-                  {!isSoldOut ? (
+                  {isPurchasable ? (
                     <>
                       <button
                         type="button"
@@ -2436,33 +2445,31 @@ export default function ProductDetail() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => void handleBuyNowFromSoldOut()}
+                        onClick={() => void buyNow()}
                         className="flex min-h-[44px] w-full min-w-0 items-center justify-center gap-2 rounded-xl border border-emerald-500 bg-emerald-600 py-2.5 px-3 text-sm font-bold text-white transition-colors hover:bg-emerald-700 md:flex-1"
                       >
                         <BuyNowActionIcon className="h-5 w-5 shrink-0 text-white" />
                         <span className="min-w-0 truncate leading-tight">Buy now</span>
                       </button>
                     </>
-                  ) : (
+                  ) : !isOwner ? (
                     <>
-                      <button
-                        type="button"
-                        onClick={buyNow}
-                        className="flex min-h-[44px] w-full min-w-0 items-center justify-center gap-2 rounded-xl border border-emerald-500 bg-emerald-600 py-2.5 px-3 text-sm font-bold text-white transition-colors hover:bg-emerald-700 md:flex-1"
-                      >
-                        <BuyNowActionIcon className="h-5 w-5 shrink-0 text-white" />
-                        <span className="min-w-0 truncate leading-tight">Buy now</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void notifyMeForRestock()}
-                        className="flex min-h-[44px] w-full min-w-0 items-center justify-center gap-2 rounded-xl border border-emerald-600 bg-transparent py-2.5 px-3 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-50 md:flex-1"
-                      >
-                        <Bell className="h-4 w-4 shrink-0" aria-hidden />
-                        <span className="min-w-0 truncate leading-tight">Notify Me</span>
-                      </button>
+                      {!isListingActive ? (
+                        <p className="col-span-2 w-full py-2 text-center text-xs font-medium leading-snug text-gray-600 md:col-span-auto md:flex-1 md:text-sm">
+                          This listing isn&apos;t available for purchase.
+                        </p>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => void notifyMeForRestock()}
+                          className="col-span-2 flex min-h-[44px] w-full min-w-0 items-center justify-center gap-2 rounded-xl border border-emerald-600 bg-transparent py-2.5 px-3 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-50 md:col-span-auto md:flex-1"
+                        >
+                          <Bell className="h-4 w-4 shrink-0" aria-hidden />
+                          <span className="min-w-0 truncate leading-tight">Notify Me</span>
+                        </button>
+                      )}
                     </>
-                  )}
+                  ) : null}
                 </div>
               </div>
             </div>,

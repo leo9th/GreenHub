@@ -35,13 +35,32 @@ function productRowToLine(row: Record<string, unknown>): Omit<CartReconcileLine,
   };
 }
 
-function isActiveListing(status: unknown): boolean {
+/** Same rule as cart reconciliation & listing browse (`status === "active"`). */
+export function isActiveListing(status: unknown): boolean {
   const s = String(status ?? "").trim().toLowerCase();
   return s === "active";
 }
 
+/** Parses `stock_quantity` the same way as `reconcileCartLines`. */
+export function parseProductStockQuantity(row: Record<string, unknown>): number | null {
+  const stockRaw = (row as { stock_quantity?: unknown }).stock_quantity;
+  return stockRaw != null && Number.isFinite(Number(stockRaw)) ? Math.max(0, Math.floor(Number(stockRaw))) : null;
+}
+
 /**
- * Rebuild cart lines from fresh `products` rows. Removes missing or non-active listings,
+ * True iff at least one unit can be sold from this row (matches reconcile removal rules for qty ≥ 1).
+ * Unknown stock (`stock_quantity` null / non-finite) is treated as purchasable, same as reconcile.
+ */
+export function isProductRowPurchasableForCart(row: Record<string, unknown> | null | undefined): boolean {
+  if (!row) return false;
+  if (!isActiveListing(row.status)) return false;
+  const stock = parseProductStockQuantity(row);
+  if (stock != null && stock === 0) return false;
+  return true;
+}
+
+/**
+ * Rebuild cart lines from fresh `products` rows. Removes missing or unpurchasable listings,
  * clamps quantity to stock, and counts metadata vs quantity adjustments separately.
  */
 export function reconcileCartLines(
@@ -61,24 +80,18 @@ export function reconcileCartLines(
 
   for (const line of cart) {
     const row = byId.get(line.id);
-    if (!row || !isActiveListing(row.status)) {
+    if (!row || !isProductRowPurchasableForCart(row)) {
       removedCount += 1;
       continue;
     }
 
     const patch = productRowToLine(row);
-    const stockRaw = (row as { stock_quantity?: unknown }).stock_quantity;
-    const stock =
-      stockRaw != null && Number.isFinite(Number(stockRaw)) ? Math.max(0, Math.floor(Number(stockRaw))) : null;
+    const stock = parseProductStockQuantity(row);
 
     let qty = line.quantity;
     if (stock != null && qty > stock) {
       qty = stock;
       adjustedCount += 1;
-    }
-    if (stock != null && stock === 0) {
-      removedCount += 1;
-      continue;
     }
     if (qty <= 0) {
       removedCount += 1;

@@ -30,6 +30,21 @@ function normalizeCartItem(raw: Record<string, unknown>): CartItem {
   };
 }
 
+export type RefreshCartResult = {
+  changed: boolean;
+  removedCount: number;
+  adjustedCount: number;
+  updatedCount: number;
+  /** True when the server fetch failed; cart state was not updated. */
+  refreshFailed: boolean;
+  /** True when the cart had lines before reconcile and none after (e.g. all unavailable). */
+  cartBecameEmpty: boolean;
+  /** Line count after a successful reconcile; on failure, count before refresh attempt. */
+  itemCountAfter: number;
+  /** Cart lines after reconcile when refresh succeeded; empty array if snapshot was empty. */
+  itemsAfterRefresh: CartItem[];
+};
+
 interface CartContextType {
   items: CartItem[];
   addToCart: (item: CartItem) => void;
@@ -38,12 +53,7 @@ interface CartContextType {
   clearCart: () => void;
   cartCount: number;
   cartTotal: number;
-  refreshCart: () => Promise<{
-    changed: boolean;
-    removedCount: number;
-    adjustedCount: number;
-    updatedCount: number;
-  }>;
+  refreshCart: () => Promise<RefreshCartResult>;
 }
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
@@ -110,10 +120,19 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const clearCart = () => setItems([]);
 
-  const refreshCart = useCallback(async () => {
+  const refreshCart = useCallback(async (): Promise<RefreshCartResult> => {
     const snapshot = itemsRef.current;
     if (snapshot.length === 0) {
-      return { changed: false, removedCount: 0, adjustedCount: 0, updatedCount: 0 };
+      return {
+        changed: false,
+        removedCount: 0,
+        adjustedCount: 0,
+        updatedCount: 0,
+        refreshFailed: false,
+        cartBecameEmpty: false,
+        itemCountAfter: 0,
+        itemsAfterRefresh: [],
+      };
     }
     const ids = [...new Set(snapshot.map((i) => i.id))];
     try {
@@ -126,13 +145,33 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       if (error) throw error;
       const rows = (data ?? []) as Record<string, unknown>[];
       const { next, removedCount, adjustedCount, updatedCount } = reconcileCartLines(snapshot, rows);
+      const nextItems = next.map((row) => normalizeCartItem(row as Record<string, unknown>));
       const changed = removedCount > 0 || adjustedCount > 0 || updatedCount > 0 || next.length !== snapshot.length;
       if (changed) {
-        setItems(next.map((row) => normalizeCartItem(row as Record<string, unknown>)));
+        setItems(nextItems);
+        itemsRef.current = nextItems;
       }
-      return { changed, removedCount, adjustedCount, updatedCount };
+      return {
+        changed,
+        removedCount,
+        adjustedCount,
+        updatedCount,
+        refreshFailed: false,
+        cartBecameEmpty: snapshot.length > 0 && next.length === 0,
+        itemCountAfter: next.length,
+        itemsAfterRefresh: nextItems,
+      };
     } catch {
-      return { changed: false, removedCount: 0, adjustedCount: 0, updatedCount: 0 };
+      return {
+        changed: false,
+        removedCount: 0,
+        adjustedCount: 0,
+        updatedCount: 0,
+        refreshFailed: true,
+        cartBecameEmpty: false,
+        itemCountAfter: snapshot.length,
+        itemsAfterRefresh: snapshot,
+      };
     }
   }, []);
 

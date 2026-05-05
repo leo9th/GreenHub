@@ -4,7 +4,7 @@ import { ArrowLeft, Check, CreditCard, Building2, Smartphone, Home } from "@/app
 import { nigerianStates } from "../data/catalogConstants";
 import { getLGAsForState } from "../data/mockData";
 import { useCurrency } from "../hooks/useCurrency";
-import { useCart } from "../context/CartContext";
+import { useCart, type CartItem } from "../context/CartContext";
 import { useAuth } from "../context/AuthContext";
 import { PaystackButton } from "react-paystack";
 import { toast } from "sonner";
@@ -28,6 +28,14 @@ import { getStuckUserAssist, type StuckUserAssist } from "../utils/stuckUserAssi
 
 type OrderRecord = { id: string };
 
+function checkoutTotalsFromLineItems(lineItems: CartItem[]) {
+  const subtotal = lineItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const { total: delivery } = computeHybridDeliveryTotals(lineItems);
+  const platformFee = Math.round(subtotal * 0.1);
+  const total = subtotal + delivery + platformFee;
+  return { subtotal, delivery, platformFee, total };
+}
+
 export default function Checkout() {
   const formatPrice = useCurrency();
   const navigate = useNavigate();
@@ -49,6 +57,7 @@ export default function Checkout() {
   const [podSubmitting, setPodSubmitting] = useState(false);
   const paystackInitCapturedRef = useRef(false);
   const [stuckAssist, setStuckAssist] = useState<StuckUserAssist | null>(null);
+  const [emptiedByReconcile, setEmptiedByReconcile] = useState(false);
 
   const subtotal = cartTotal;
   const { guaranteedFlat, marketplaceSellerFees, total: delivery } = computeHybridDeliveryTotals(items);
@@ -63,11 +72,18 @@ export default function Checkout() {
     void (async () => {
       const r = await refreshCart();
       if (cancelled) return;
+      if (r.refreshFailed) {
+        toast.error("We couldn't verify your cart. Check your connection and try again.");
+        return;
+      }
       if (r.removedCount > 0) {
         toast.message("Some unavailable items were removed from your cart.");
       }
       if (r.updatedCount > 0 || r.adjustedCount > 0) {
         toast.message("Your cart was refreshed with current product details.");
+      }
+      if (r.cartBecameEmpty) {
+        setEmptiedByReconcile(true);
       }
     })();
     return () => {
@@ -91,7 +107,7 @@ export default function Checkout() {
     e.preventDefault();
     setStuckAssist(null);
     if (items.length === 0) {
-      toast.error("Your cart is empty!");
+      toast.error("Your cart is empty. Add items before continuing.");
       return;
     }
     const decision = evaluateCheckoutRisk({
@@ -118,17 +134,22 @@ export default function Checkout() {
   };
 
   const createOrderWithLineItemsAndPlacedEvent = useCallback(
-    async (params: {
-      orderStatus: "paid" | "pending_payment" | "needs_review";
-      paymentReference: string | null;
-      /** Stored on `orders.payment_method`: Paystack checkout vs pay on delivery */
-      paymentChannel: "paystack" | "pod";
-    }): Promise<OrderRecord> => {
+    async (
+      params: {
+        orderStatus: "paid" | "pending_payment" | "needs_review";
+        paymentReference: string | null;
+        /** Stored on `orders.payment_method`: Paystack checkout vs pay on delivery */
+        paymentChannel: "paystack" | "pod";
+      },
+      lineItems: CartItem[],
+    ): Promise<OrderRecord> => {
       if (!user) {
         throw new Error("You must be logged in to complete this order.");
       }
 
-      const checkoutItems = items.map((item) => ({
+      const { total: orderTotal, delivery: deliveryTotal, platformFee: pf } = checkoutTotalsFromLineItems(lineItems);
+
+      const checkoutItems = lineItems.map((item) => ({
         id: String(item.id),
         title: item.title,
         image: item.image,
@@ -148,9 +169,9 @@ export default function Checkout() {
           landmark,
         },
         p_items: checkoutItems,
-        p_total_amount: total,
-        p_delivery_fee: delivery,
-        p_platform_fee: platformFee,
+        p_total_amount: orderTotal,
+        p_delivery_fee: deliveryTotal,
+        p_platform_fee: pf,
         p_order_status: params.orderStatus,
         p_payment_reference: params.paymentReference,
         p_payment_method: params.paymentChannel,
@@ -167,7 +188,7 @@ export default function Checkout() {
 
       return { id: orderId };
     },
-    [user, items, total, delivery, platformFee, fullName, phone, state, lga, address, landmark],
+    [user, fullName, phone, state, lga, address, landmark],
   );
 
   const finalizePaidPaystackOrder = useCallback(
@@ -234,11 +255,24 @@ export default function Checkout() {
     setStuckAssist(null);
     setPodSubmitting(true);
     try {
-      const orderData = await createOrderWithLineItemsAndPlacedEvent({
-        orderStatus: "pending_payment",
-        paymentReference: null,
-        paymentChannel: "pod",
-      });
+      const r = await refreshCart();
+      if (r.refreshFailed) {
+        toast.error("We couldn't verify your cart. Check your connection and try again.");
+        return;
+      }
+      if (r.itemCountAfter === 0) {
+        toast.error("Your cart no longer has any items available for purchase.");
+        return;
+      }
+
+      const orderData = await createOrderWithLineItemsAndPlacedEvent(
+        {
+          orderStatus: "pending_payment",
+          paymentReference: null,
+          paymentChannel: "pod",
+        },
+        r.itemsAfterRefresh,
+      );
       toast.success("Order placed! Pay on delivery when your order arrives.");
       clearCart();
       navigate(`/orders/${orderData.id}`);
@@ -257,11 +291,24 @@ export default function Checkout() {
 
   const submitOrderForReview = async (paymentChannel: "paystack" | "pod") => {
     try {
-      const orderData = await createOrderWithLineItemsAndPlacedEvent({
-        orderStatus: "needs_review",
-        paymentReference: null,
-        paymentChannel,
-      });
+      const r = await refreshCart();
+      if (r.refreshFailed) {
+        toast.error("We couldn't verify your cart. Check your connection and try again.");
+        return;
+      }
+      if (r.itemCountAfter === 0) {
+        toast.error("Your cart no longer has any items available for purchase.");
+        return;
+      }
+
+      const orderData = await createOrderWithLineItemsAndPlacedEvent(
+        {
+          orderStatus: "needs_review",
+          paymentReference: null,
+          paymentChannel,
+        },
+        r.itemsAfterRefresh,
+      );
       toast.message("Order submitted for review.", {
         description: "We will notify you as soon as this order is approved or rejected.",
       });
@@ -340,7 +387,11 @@ export default function Checkout() {
           <CartActionIcon className="h-10 w-10 text-emerald-600" />
         </div>
         <h2 className="text-xl font-bold mb-3">Your cart is empty</h2>
-        <p className="text-gray-500 mb-8 max-w-sm text-center">Add some products to your cart before proceeding to checkout.</p>
+        <p className="text-gray-500 mb-8 max-w-sm text-center">
+          {emptiedByReconcile
+            ? "Items were removed because they’re no longer available for purchase. Browse products to add something else."
+            : "Add some products to your cart before proceeding to checkout."}
+        </p>
         <button onClick={() => navigate("/products")} className="px-8 py-3 bg-[#22c55e] text-white font-bold rounded-xl hover:bg-[#16a34a] transition-colors shadow-sm">
           Go Shopping
         </button>
@@ -595,26 +646,50 @@ export default function Checkout() {
                     </span>
                   </button>
                 )
+              ) : paystackRisk.decision === "block" ? (
+                <div className="w-full space-y-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-4 dark:border-amber-900/50 dark:bg-amber-950/40">
+                  {paystackRisk.reason ? (
+                    <>
+                      <p className="text-center text-sm font-semibold text-amber-950 dark:text-amber-100">
+                        {getStuckUserAssist(paystackRisk.reason).userMessage}
+                      </p>
+                      <p className="text-center text-xs text-amber-900/85 dark:text-amber-200/90">
+                        {getStuckUserAssist(paystackRisk.reason).nextBestAction}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-center text-sm font-semibold text-amber-950 dark:text-amber-100">
+                      Online payment isn&apos;t available right now.
+                    </p>
+                  )}
+                  {podRisk.decision !== "block" ? (
+                    <button
+                      type="button"
+                      className="w-full rounded-xl border border-emerald-600 bg-white py-3 text-sm font-semibold text-emerald-800 transition-colors hover:bg-emerald-50 dark:border-emerald-500 dark:bg-zinc-900 dark:text-emerald-200 dark:hover:bg-zinc-800"
+                      onClick={() => setPaymentMethod("pod")}
+                    >
+                      Switch to Pay on Delivery
+                    </button>
+                  ) : null}
+                </div>
+              ) : paystackRisk.decision === "review" ? (
+                <button
+                  type="button"
+                  onClick={() => void submitOrderForReview("paystack")}
+                  className="block w-full min-h-[52px] rounded-xl bg-amber-600 py-4 text-center text-lg font-bold text-white shadow-lg shadow-amber-600/25 transition-all outline-none hover:bg-amber-500"
+                >
+                  Submit Order For Review
+                </button>
               ) : (
-                paystackRisk.decision === "review" ? (
-                  <button
-                    type="button"
-                    onClick={() => void submitOrderForReview("paystack")}
-                    className="block w-full min-h-[52px] rounded-xl bg-amber-600 py-4 text-center text-lg font-bold text-white shadow-lg shadow-amber-600/25 transition-all outline-none hover:bg-amber-500"
-                  >
-                    Submit Order For Review
-                  </button>
-                ) : (
-                  <div className="relative">
-                    <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2">
-                      <BuyNowActionIcon className="h-5 w-5 text-white/95" />
-                    </span>
-                    <PaystackButton
-                      {...paystackProps}
-                      className="block w-full min-h-[52px] rounded-xl bg-[#092b23] py-4 text-center text-lg font-bold text-white shadow-lg shadow-[#092b23]/25 transition-all outline-none hover:bg-[#061d18]"
-                    />
-                  </div>
-                )
+                <div className="relative">
+                  <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2">
+                    <BuyNowActionIcon className="h-5 w-5 text-white/95" />
+                  </span>
+                  <PaystackButton
+                    {...paystackProps}
+                    className="block w-full min-h-[52px] rounded-xl bg-[#092b23] py-4 text-center text-lg font-bold text-white shadow-lg shadow-[#092b23]/25 transition-all outline-none hover:bg-[#061d18]"
+                  />
+                </div>
               )}
             </div>
           </div>

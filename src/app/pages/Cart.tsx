@@ -117,6 +117,10 @@ export default function Cart() {
     void (async () => {
       const r = await refreshCart();
       if (cancelled) return;
+      if (r.refreshFailed) {
+        toast.error("We couldn't verify your cart. Check your connection and try again.");
+        return;
+      }
       if (r.removedCount > 0) {
         toast.message("Some unavailable items were removed from your cart.");
       }

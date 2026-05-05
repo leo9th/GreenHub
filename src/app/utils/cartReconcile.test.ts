@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { reconcileCartLines, type CartReconcileLine } from "./cartReconcile";
+import {
+  isProductRowPurchasableForCart,
+  reconcileCartLines,
+  type CartReconcileLine,
+} from "./cartReconcile";
 
 const baseLine = (over: Partial<CartReconcileLine> = {}): CartReconcileLine => ({
   id: "p1",
@@ -11,6 +15,56 @@ const baseLine = (over: Partial<CartReconcileLine> = {}): CartReconcileLine => (
   deliveryFee: 500,
   fulfillment_type: "seller_pickup",
   ...over,
+});
+
+describe("isProductRowPurchasableForCart", () => {
+  it("returns false for missing row", () => {
+    expect(isProductRowPurchasableForCart(undefined)).toBe(false);
+    expect(isProductRowPurchasableForCart(null)).toBe(false);
+  });
+
+  it("requires active status", () => {
+    expect(
+      isProductRowPurchasableForCart({
+        id: "p1",
+        status: "active",
+        stock_quantity: 3,
+      } as Record<string, unknown>),
+    ).toBe(true);
+    expect(
+      isProductRowPurchasableForCart({
+        id: "p1",
+        status: "sold",
+        stock_quantity: 3,
+      } as Record<string, unknown>),
+    ).toBe(false);
+  });
+
+  it("rejects known zero stock", () => {
+    expect(
+      isProductRowPurchasableForCart({
+        id: "p1",
+        status: "active",
+        stock_quantity: 0,
+      } as Record<string, unknown>),
+    ).toBe(false);
+  });
+
+  it("allows unknown stock for active listings", () => {
+    expect(
+      isProductRowPurchasableForCart({
+        id: "p1",
+        status: "active",
+      } as Record<string, unknown>),
+    ).toBe(true);
+    expect(
+      isProductRowPurchasableForCart({
+        id: "p1",
+        status: "active",
+        stock_quantity: null,
+      } as Record<string, unknown>),
+    ).toBe(true);
+  });
 });
 
 describe("reconcileCartLines", () => {
@@ -39,7 +93,7 @@ describe("reconcileCartLines", () => {
     expect(next[0]?.quantity).toBe(2);
   });
 
-  it("removes missing or non-active products", () => {
+  it("removes missing or unpurchasable products", () => {
     const { next, removedCount } = reconcileCartLines([baseLine()], []);
     expect(removedCount).toBe(1);
     expect(next).toHaveLength(0);

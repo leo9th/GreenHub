@@ -25,6 +25,7 @@ import { orderTrackBtnPrimary, orderTrackBtnSecondaryInline } from "../component
 import { cn } from "../components/ui/utils";
 import { getOrderActions } from "../state/OrderActionEngine";
 import { deliveryJobStatusLabel, resolveCourierUiStatusFromOrderAndJob } from "../utils/deliveryJobs";
+import { formatBuyerCancelOrderError } from "../utils/buyerCancelOrderError";
 
 /** Buyer live GPS polling while tracking stack is visible (no realtime on rider_presence). */
 const RIDER_PRESENCE_POLL_MS = 15_000;
@@ -1017,11 +1018,26 @@ export default function OrderDetail() {
     setReviewSubmitting(true);
     try {
       switch (actionType) {
-        case "CANCEL_ORDER":
-          // TODO: Implement actual cancellation API call
-          toast.info("Order cancellation initiated (mock).", { description: "This will be a real cancellation soon." });
-          dispatch({ type: "UPDATE_ORDER_STATUS", status: "CANCELLED_BY_BUYER" });
+        case "CANCEL_ORDER": {
+          /**
+           * Buyer cancel button is only offered in `searching_rider` UI (OrderActionEngine).
+           * Server RPC `buyer_cancel_order` additionally blocks shipped lines and rider jobs past
+           * queued/assigned — see migration 20260712130000_buyer_cancel_order_rpc.sql.
+           */
+          const oid = orderState.orderId?.trim();
+          if (!oid) {
+            toast.error("Order not loaded.");
+            break;
+          }
+          const { error: cancelErr } = await supabase.rpc("buyer_cancel_order", { p_order_id: oid });
+          if (cancelErr) {
+            toast.error(formatBuyerCancelOrderError(cancelErr));
+            break;
+          }
+          toast.success("Your order was cancelled.");
+          await load();
           break;
+        }
         case "MESSAGE_RIDER": {
           const rid = typeof payload?.riderId === "string" ? payload.riderId.trim() : "";
           if (rid) navigate(`/messages/u/${rid}`);
@@ -1113,7 +1129,7 @@ export default function OrderDetail() {
     } finally {
       setReviewSubmitting(false);
     }
-  }, [authUser?.id, orderState.orderId, reviewItem, reviewRating, reviewText, reviewAnonymous, navigate, items, dispatch]);
+  }, [authUser?.id, orderState.orderId, reviewItem, reviewRating, reviewText, reviewAnonymous, navigate, items, dispatch, load]);
 
 
   if (authLoading || loading) {

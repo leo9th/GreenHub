@@ -124,6 +124,28 @@ export async function fetchProductLikeCount(
   return typeof n === "number" && Number.isFinite(n) ? n : Number(n) || 0;
 }
 
+/** Row count on `product_likes` (accurate without triggers on `products.like_count`). */
+export async function fetchProductLikeCountFromLikesTable(
+  supabase: SupabaseClient,
+  productId: ProductPk,
+): Promise<number> {
+  const { count, error } = await supabase
+    .from("product_likes")
+    .select("*", { count: "exact", head: true })
+    .eq("product_id", productId);
+  if (error) return 0;
+  return typeof count === "number" && Number.isFinite(count) ? Math.max(0, count) : 0;
+}
+
+/** Prefer max(likes table, products column) so UI stays correct with or without triggers. */
+export async function resolveProductLikeCount(supabase: SupabaseClient, productId: ProductPk): Promise<number> {
+  const [fromLikes, fromProduct] = await Promise.all([
+    fetchProductLikeCountFromLikesTable(supabase, productId),
+    fetchProductLikeCount(supabase, productId),
+  ]);
+  return Math.max(0, Math.max(fromLikes, fromProduct));
+}
+
 export async function fetchUserLikesProduct(
   supabase: SupabaseClient,
   productId: ProductPk,

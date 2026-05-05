@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router";
-import { useNavigate } from "react-router-dom";
+import { Link, useSearchParams } from "react-router";
 import { supabase } from "../../lib/supabase";
 import { ProductCard } from "../components/cards/ProductCard";
 import SimpleProductGrid from "../components/SimpleProductGrid";
@@ -15,6 +14,8 @@ import CollapsibleFilters from "../components/CollapsibleFilters";
 import FloatingFiltersButton from "../components/FloatingFiltersButton";
 import ServiceSwitch from "../components/home/ServiceSwitch";
 import FeaturedBannerStrip from "../components/home/FeaturedBannerStrip";
+import RideBookingForm from "../components/booking/RideBookingForm";
+import PackageBookingForm from "../components/booking/PackageBookingForm";
 import { useFallbackProducts } from "../hooks/useFallbackProducts";
 import {
   applyBrowseProductQueryFilters,
@@ -332,10 +333,8 @@ function CategoryRow({ slug, title, row, onLoadMore }: CategoryRowProps) {
 }
 
 export default function Home() {
-  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [service, setService] = useState<"shop" | "ride" | "send">("shop");
-  const [rideType, setRideType] = useState<"bike" | "car" | null>(null);
-  const [sendStarted, setSendStarted] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<CategoryFilterSelection>("All");
   const [selectedCondition, setSelectedCondition] = useState("all");
   const [globalSearchTerm, setGlobalSearchTerm] = useState("");
@@ -351,6 +350,28 @@ export default function Home() {
   const openMoreFilters = useCallback(() => {
     setMoreFiltersOpen(true);
   }, []);
+
+  useEffect(() => {
+    const raw = searchParams.get("service");
+    if (raw === "ride" || raw === "send" || raw === "shop") {
+      setService(raw);
+    }
+  }, [searchParams]);
+
+  const handleServiceChange = useCallback(
+    (next: "shop" | "ride" | "send") => {
+      setService(next);
+      setSearchParams(
+        (prev) => {
+          const p = new URLSearchParams(prev);
+          p.set("service", next);
+          return p;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
 
   const {
     fallbackProducts: recommendedFallback,
@@ -376,6 +397,10 @@ export default function Home() {
   }, [categorySlugForFilter]);
 
   useEffect(() => {
+    if (service !== "shop") {
+      setFeaturedLoading(false);
+      return;
+    }
     let cancelled = false;
     void (async () => {
       setFeaturedLoading(true);
@@ -388,12 +413,42 @@ export default function Home() {
           priceRange,
           moreFilters,
         );
+        console.debug("[Home] featured fetch", {
+          rowCount: rows.length,
+          error,
+          selectedCondition,
+          listingSort,
+          priceRange,
+        });
         if (cancelled) return;
         if (error) {
           setFeaturedError(error);
           setFeaturedProducts([]);
-        } else {
+        } else if (rows.length > 0) {
           setFeaturedProducts(rows);
+        } else {
+          const { data: boot, error: bootErr } = await supabase
+            .from("products")
+            .select(productsSelectWithSellerEmbed())
+            .eq("status", "active")
+            .limit(20);
+          console.debug("[Home] bootstrap active products (limit 20)", {
+            rowCount: boot?.length ?? 0,
+            error: bootErr,
+          });
+          if (cancelled) return;
+          if (bootErr) {
+            setFeaturedError(bootErr.message);
+            setFeaturedProducts([]);
+          } else if (boot && boot.length > 0) {
+            setFeaturedProducts(boot as ProductWithSeller[]);
+            setFeaturedError(null);
+          } else {
+            setFeaturedProducts([]);
+            setFeaturedError(
+              "No active listings found. If products exist in the database, run as admin: UPDATE products SET status = 'active' WHERE status IS NULL OR status <> 'active';",
+            );
+          }
         }
       } catch (e) {
         if (!cancelled) {
@@ -410,7 +465,7 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, [selectedCondition, globalSearchTerm, listingSort, priceRange, moreFilters]);
+  }, [service, selectedCondition, globalSearchTerm, listingSort, priceRange, moreFilters]);
 
   const slugsToShow = useMemo(() => {
     if (selectedCategory === "All") {
@@ -509,82 +564,12 @@ export default function Home() {
           </Link>
         </div>
 
-        <ServiceSwitch value={service} onChange={setService} />
+        <ServiceSwitch value={service} onChange={handleServiceChange} />
         <FeaturedBannerStrip selectedService={service} />
 
-        {service === "ride" ? (
-          <section className="mt-6 flex flex-col items-center text-center">
-            <h2 className="text-xl font-semibold text-gray-900">Book a Ride</h2>
-            <p className="mt-1 text-sm text-gray-600">Choose bike or car to get started</p>
-            <div className="mt-4 flex w-full max-w-md gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setRideType("bike");
-                }}
-                className={`flex-1 rounded-xl border px-4 py-4 text-sm font-semibold shadow-sm transition ${
-                  rideType === "bike"
-                    ? "border-[#22c55e] bg-[#22c55e]/10 text-[#15803d]"
-                    : "border-gray-200 bg-white text-gray-800 hover:bg-gray-50"
-                }`}
-              >
-                Bike
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setRideType("car");
-                }}
-                className={`flex-1 rounded-xl border px-4 py-4 text-sm font-semibold shadow-sm transition ${
-                  rideType === "car"
-                    ? "border-[#22c55e] bg-[#22c55e]/10 text-[#15803d]"
-                    : "border-gray-200 bg-white text-gray-800 hover:bg-gray-50"
-                }`}
-              >
-                Car
-              </button>
-            </div>
-            <p className="mt-2 text-xs text-gray-500">Map opens in the next step</p>
-            {rideType ? (
-              <>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!rideType) return;
-                    navigate("/book", {
-                      state: {
-                        rideType,
-                      },
-                    });
-                  }}
-                  className="mt-4 rounded-xl bg-[#22c55e] px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#16a34a]"
-                >
-                  Continue
-                </button>
-                <p className="mt-2 text-xs text-gray-500">Feature is being finalized</p>
-              </>
-            ) : null}
-          </section>
-        ) : null}
+        {service === "ride" ? <RideBookingForm /> : null}
 
-        {service === "send" ? (
-          <section className="mt-6 flex flex-col items-center text-center">
-            <h2 className="text-xl font-semibold text-gray-900">Send a Package</h2>
-            <p className="mt-1 text-sm text-gray-600">Fast delivery with nearby riders</p>
-            <button
-              type="button"
-              onClick={() => {
-                setSendStarted(true);
-              }}
-              className="mt-4 rounded-xl bg-[#22c55e] px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#16a34a]"
-            >
-              Start Delivery
-            </button>
-            <p className="mt-2 text-xs text-gray-500">
-              {sendStarted ? "Delivery flow continues in next step" : "Next step will open map"}
-            </p>
-          </section>
-        ) : null}
+        {service === "send" ? <PackageBookingForm /> : null}
 
         <CategoryFilter
           key={selectedCategory}

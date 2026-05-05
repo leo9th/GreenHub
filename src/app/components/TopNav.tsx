@@ -42,14 +42,14 @@ export default function TopNav() {
   const [showDropdown, setShowDropdown] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [showBookGoMenu, setShowBookGoMenu] = useState(false);
+  const [showBookGo, setShowBookGo] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
   const bookGoRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
+    function handleOutside(event: MouseEvent | TouchEvent) {
       const target = event.target as Node | null;
       if (!target) return;
       if (dropdownRef.current && !dropdownRef.current.contains(target)) {
@@ -62,19 +62,21 @@ export default function TopNav() {
         setMobileMenuOpen(false);
       }
       if (bookGoRef.current && !bookGoRef.current.contains(target)) {
-        setShowBookGoMenu(false);
+        setShowBookGo(false);
       }
     }
-    document.addEventListener("click", handleClickOutside);
+    document.addEventListener("mousedown", handleOutside);
+    document.addEventListener("touchstart", handleOutside, { passive: true });
     return () => {
-      document.removeEventListener("click", handleClickOutside);
+      document.removeEventListener("mousedown", handleOutside);
+      document.removeEventListener("touchstart", handleOutside);
     };
   }, []);
 
   const handleSignOut = async () => {
     await signOut();
     setShowDropdown(false);
-    setShowBookGoMenu(false);
+    setShowBookGo(false);
     navigate("/login");
   };
 
@@ -131,7 +133,7 @@ export default function TopNav() {
 
   useEffect(() => {
     setMobileMenuOpen(false);
-    setShowBookGoMenu(false);
+    setShowBookGo(false);
   }, [location.pathname]);
 
   if (isHidden) return null;
@@ -202,7 +204,7 @@ export default function TopNav() {
                 setMobileMenuOpen((o) => !o);
                 setShowDropdown(false);
                 setShowNotifications(false);
-                setShowBookGoMenu(false);
+                setShowBookGo(false);
               }}
               className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg p-1 sm:h-11 sm:w-11 sm:p-1.5 outline-none transition-colors ${contrastIconClass} ${themeBtnHover}`}
               aria-expanded={mobileMenuOpen}
@@ -316,7 +318,7 @@ export default function TopNav() {
             ) : null}
           </div>
         </div>
-        <div className="relative z-10 flex items-center gap-1 md:gap-2 shrink-0">
+        <div className="relative z-[50] flex items-center gap-1 md:gap-2 shrink-0">
           <button
             type="button"
             onClick={() => toggleTheme()}
@@ -333,31 +335,54 @@ export default function TopNav() {
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                setShowBookGoMenu((v) => !v);
+                setShowBookGo((v) => !v);
                 setShowNotifications(false);
                 setShowDropdown(false);
                 setMobileMenuOpen(false);
               }}
               className={`relative flex h-10 shrink-0 items-center justify-center gap-1 rounded-lg px-1 py-0.5 sm:h-11 sm:px-1.5 outline-none transition-colors ${contrastIconClass} ${themeBtnHover}`}
               aria-haspopup="menu"
-              aria-expanded={showBookGoMenu}
+              aria-expanded={showBookGo}
               aria-label="bookGo menu"
               title="bookGo"
             >
               <Bike className={`hidden sm:block ${navIconClass}`} />
+              <span className="sm:hidden text-lg leading-none" aria-hidden>
+                🚲
+              </span>
             </button>
-            {showBookGoMenu ? (
-              <div className="absolute top-full right-0 z-50 mt-2 w-44 rounded-lg border border-gray-200 bg-white py-2 shadow-xl dark:border-border dark:bg-card">
+            {showBookGo ? (
+              <div className="absolute top-full right-0 z-50 mt-2 w-56 rounded-lg border border-gray-200 bg-white py-2 shadow-xl dark:border-border dark:bg-card">
+                <Link
+                  to="/home?service=ride"
+                  onClick={() => setShowBookGo(false)}
+                  className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-medium text-gray-800 transition-colors hover:bg-gray-50 dark:text-foreground dark:hover:bg-muted"
+                >
+                  <span className="text-base" aria-hidden>
+                    🛵
+                  </span>
+                  <span>Book a Ride</span>
+                </Link>
+                <Link
+                  to="/home?service=send"
+                  onClick={() => setShowBookGo(false)}
+                  className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-medium text-gray-800 transition-colors hover:bg-gray-50 dark:text-foreground dark:hover:bg-muted"
+                >
+                  <span className="text-base" aria-hidden>
+                    📦
+                  </span>
+                  <span>Send a Package</span>
+                </Link>
                 <button
                   type="button"
                   onClick={() => {
-                    setShowBookGoMenu(false);
+                    setShowBookGo(false);
                     navigate("/rider");
                   }}
                   className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-medium text-gray-800 transition-colors hover:bg-gray-50 dark:text-foreground dark:hover:bg-muted"
                 >
                   <Bike className="h-[18px] w-[18px] text-gray-500 dark:text-muted-foreground" />
-                  <span>Book dashboard</span>
+                  <span>Rider dashboard</span>
                 </button>
               </div>
             ) : null}
@@ -376,7 +401,7 @@ export default function TopNav() {
                   setShowNotifications(willOpen);
                   setShowDropdown(false);
                   setMobileMenuOpen(false);
-                  setShowBookGoMenu(false);
+                  setShowBookGo(false);
                 }}
                 className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg p-1 sm:h-11 sm:w-11 sm:p-1.5 outline-none transition-colors ${contrastIconClass} ${themeBtnHover}`}
                 aria-label="Notifications"
@@ -475,7 +500,7 @@ export default function TopNav() {
                     setShowDropdown((prev) => !prev);
                     setShowNotifications(false);
                     setMobileMenuOpen(false);
-                    setShowBookGoMenu(false);
+                    setShowBookGo(false);
                   }}
                   className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg p-1 sm:h-11 sm:w-11 sm:p-1.5 outline-none transition-colors ${contrastIconClass} ${themeBtnHover}`}
                   aria-haspopup="menu"

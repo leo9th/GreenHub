@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import {
-  fetchProductLikeCount,
   fetchUserLikesProduct,
   normalizeProductPk,
+  resolveProductLikeCount,
   subscribeToProductLikes,
   toggleProductLike,
   type ProductPk,
@@ -51,7 +51,7 @@ export function useProductLike({
     const pid = normalizedProductId;
     if (!pid) return;
     let cancelled = false;
-    void fetchProductLikeCount(supabase, pid).then((count) => {
+    void resolveProductLikeCount(supabase, pid).then((count) => {
       if (!cancelled) setLikeCount(Math.max(0, count));
     });
     return () => {
@@ -77,8 +77,8 @@ export function useProductLike({
   useEffect(() => {
     const pid = normalizedProductId;
     if (!pid) return;
-    const channel = subscribeToProductLikes(supabase, pid, (count) => {
-      setLikeCount(Math.max(0, count));
+    const channel = subscribeToProductLikes(supabase, pid, () => {
+      void resolveProductLikeCount(supabase, pid).then((c) => setLikeCount(Math.max(0, c)));
     });
     return () => {
       void supabase.removeChannel(channel);
@@ -97,14 +97,14 @@ export function useProductLike({
     const previousCount = likeCount;
     const nextLiked = !previousLiked;
 
-    setLikeBusy(true);
     setLiked(nextLiked);
     setLikeCount((count) => Math.max(0, count + (nextLiked ? 1 : -1)));
+    setLikeBusy(true);
 
     try {
       const result = await toggleProductLike(supabase, pid, userId, previousLiked);
       if (result.error) throw new Error(result.error);
-      const syncedCount = await fetchProductLikeCount(supabase, pid);
+      const syncedCount = await resolveProductLikeCount(supabase, pid);
       setLikeCount(Math.max(0, syncedCount));
       return true;
     } catch (error: unknown) {

@@ -59,7 +59,9 @@ export default function Root() {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-background flex flex-col transition-colors duration-200">
-      <main className={`flex-1 flex flex-col ${showBottomNav ? "pb-28 md:pb-0" : ""}`}>
+      <main
+        className={`flex-1 flex flex-col ${showBottomNav ? "pb-[calc(7rem+env(safe-area-inset-bottom,0px))] md:pb-0" : ""}`}
+      >
         {!isAdminShell ? <TopNav /> : null}
         <AnimatedOutlet />
         {showBottomNav ? <Footer /> : null}

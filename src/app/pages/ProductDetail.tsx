@@ -1,12 +1,14 @@
 import {
   useState,
   useEffect,
+  useLayoutEffect,
   useCallback,
   useMemo,
   useRef,
   type TouchEvent as ReactTouchEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
+import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "motion/react";
 import useEmblaCarousel from "embla-carousel-react";
 import { Link, useParams, useNavigate } from "react-router";
@@ -398,12 +400,14 @@ export default function ProductDetail() {
   const [rideNote, setRideNote] = useState("");
   const [rideSubmitting, setRideSubmitting] = useState(false);
   const [updatingAvailability, setUpdatingAvailability] = useState(false);
+  const [pdpActionHostReady, setPdpActionHostReady] = useState(false);
   const thumbnailClickDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const deliveryOptionsRef = useRef<HTMLElement | null>(null);
   const routeProductId = useMemo(() => normalizeRouteProductId(id), [id]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     window.scrollTo(0, 0);
+    setPdpActionHostReady(true);
   }, []);
 
   useEffect(() => {
@@ -1436,7 +1440,7 @@ export default function ProductDetail() {
   const productIdForReviewLink = routeProductId ?? String(foundProduct?.id ?? "");
 
   return (
-    <div className="min-h-screen bg-gray-100 text-gray-900 pb-28 md:pb-8">
+    <div className="min-h-screen bg-gray-100 text-gray-900 pb-[calc(11rem+env(safe-area-inset-bottom,0px))] md:pb-12">
       <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-sm border-b border-gray-100">
         <div className="mx-auto flex h-12 max-w-6xl items-center justify-between px-3 sm:px-4">
           <button
@@ -2374,88 +2378,97 @@ export default function ProductDetail() {
         </div>
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 z-[70] border-t border-gray-100 bg-white/95 pb-[env(safe-area-inset-bottom,0px)] backdrop-blur-sm">
-        <div className="mx-auto w-full max-w-6xl px-3 py-2.5 sm:px-4">
-          <div className="grid grid-cols-2 gap-2 md:flex md:flex-row md:items-stretch md:gap-3">
-              {isOwner ? (
-                <button
-                  type="button"
-                  onClick={() => setEditModalOpen(true)}
-                  className="flex min-h-[44px] w-full min-w-0 items-center justify-center gap-2 rounded-xl bg-gray-900 py-2.5 px-3 text-sm font-semibold text-white transition-colors hover:bg-gray-800 md:flex-1"
-                >
-                  Edit listing
-                </button>
-              ) : null}
-              {!isOwner && canMessageSeller ? (
-                <Link
-                  to={`/messages/u/${sellerPeerId}?product=${encodeURIComponent(String(foundProduct.id))}`}
-                  className="flex min-h-[44px] w-full min-w-0 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white py-2.5 px-3 text-sm font-semibold text-gray-800 transition-colors hover:bg-gray-50 md:flex-1"
-                >
-                  <MessageCircle className="h-4 w-4 shrink-0 text-gray-600" strokeWidth={2} aria-hidden />
-                  <span className="min-w-0 truncate leading-tight">Message seller</span>
-                </Link>
-              ) : null}
-              <button
-                type="button"
-                onClick={() => setOpenRideBooking(true)}
-                className={`flex min-h-[44px] w-full min-w-0 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 py-2.5 px-3 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 md:flex-1 ${
-                  !canMessageSeller ? "col-span-2 md:col-span-auto" : ""
-                }`}
-              >
-                <RideActionIcon className="h-4 w-4 shrink-0 text-emerald-700" />
-                <span className="min-w-0 truncate leading-tight">bookGo delivery</span>
-              </button>
-              {!isSoldOut ? (
-                <>
+      {pdpActionHostReady
+        ? createPortal(
+            <div
+              className="fixed bottom-16 left-0 right-0 z-[100] border-t border-gray-100 bg-white/95 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] backdrop-blur-sm dark:border-zinc-800 dark:bg-zinc-950/95"
+              role="navigation"
+              aria-label="Product actions"
+            >
+              <div className="mx-auto w-full max-w-6xl px-3 py-2.5 sm:px-4">
+                <div className="grid grid-cols-2 gap-2 md:flex md:flex-row md:items-stretch md:gap-3">
+                  {isOwner ? (
+                    <button
+                      type="button"
+                      onClick={() => setEditModalOpen(true)}
+                      className="flex min-h-[44px] w-full min-w-0 items-center justify-center gap-2 rounded-xl bg-gray-900 py-2.5 px-3 text-sm font-semibold text-white transition-colors hover:bg-gray-800 md:flex-1"
+                    >
+                      Edit listing
+                    </button>
+                  ) : null}
+                  {!isOwner && canMessageSeller ? (
+                    <Link
+                      to={`/messages/u/${sellerPeerId}?product=${encodeURIComponent(String(foundProduct.id))}`}
+                      className="flex min-h-[44px] w-full min-w-0 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white py-2.5 px-3 text-sm font-semibold text-gray-800 transition-colors hover:bg-gray-50 md:flex-1 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                    >
+                      <MessageCircle className="h-4 w-4 shrink-0 text-gray-600" strokeWidth={2} aria-hidden />
+                      <span className="min-w-0 truncate leading-tight">Message seller</span>
+                    </Link>
+                  ) : null}
                   <button
                     type="button"
-                    onClick={handleAddToCart}
-                    className="flex min-h-[44px] w-full min-w-0 items-center justify-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 py-2.5 px-3 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 md:flex-1"
+                    onClick={() => setOpenRideBooking(true)}
+                    className={`flex min-h-[44px] w-full min-w-0 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 py-2.5 px-3 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 md:flex-1 ${
+                      !canMessageSeller ? "col-span-2 md:col-span-auto" : ""
+                    }`}
                   >
-                    {cartJustAdded ? (
-                      <>
-                        <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" aria-hidden />
-                        <span className="min-w-0 truncate leading-tight">Added! ✓</span>
-                      </>
-                    ) : (
-                      <>
-                        <CartActionIcon className="h-4 w-4 shrink-0 text-emerald-700" />
-                        <span className="min-w-0 truncate leading-tight">Add to cart</span>
-                      </>
-                    )}
+                    <RideActionIcon className="h-4 w-4 shrink-0 text-emerald-700" />
+                    <span className="min-w-0 truncate leading-tight">bookGo delivery</span>
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleBuyNowFromSoldOut()}
-                    className="flex min-h-[44px] w-full min-w-0 items-center justify-center gap-2 rounded-xl border border-emerald-500 bg-emerald-600 py-2.5 px-3 text-sm font-bold text-white transition-colors hover:bg-emerald-700 md:flex-1"
-                  >
-                    <BuyNowActionIcon className="h-5 w-5 shrink-0 text-white" />
-                    <span className="min-w-0 truncate leading-tight">Buy now</span>
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    onClick={buyNow}
-                    className="flex min-h-[44px] w-full min-w-0 items-center justify-center gap-2 rounded-xl border border-emerald-500 bg-emerald-600 py-2.5 px-3 text-sm font-bold text-white transition-colors hover:bg-emerald-700 md:flex-1"
-                  >
-                    <BuyNowActionIcon className="h-5 w-5 shrink-0 text-white" />
-                    <span className="min-w-0 truncate leading-tight">Buy now</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void notifyMeForRestock()}
-                    className="flex min-h-[44px] w-full min-w-0 items-center justify-center gap-2 rounded-xl border border-emerald-600 bg-transparent py-2.5 px-3 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-50 md:flex-1"
-                  >
-                    <Bell className="h-4 w-4 shrink-0" aria-hidden />
-                    <span className="min-w-0 truncate leading-tight">Notify Me</span>
-                  </button>
-                </>
-              )}
-            </div>
-        </div>
-      </div>
+                  {!isSoldOut ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={handleAddToCart}
+                        className="flex min-h-[44px] w-full min-w-0 items-center justify-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 py-2.5 px-3 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 md:flex-1"
+                      >
+                        {cartJustAdded ? (
+                          <>
+                            <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" aria-hidden />
+                            <span className="min-w-0 truncate leading-tight">Added! ✓</span>
+                          </>
+                        ) : (
+                          <>
+                            <CartActionIcon className="h-4 w-4 shrink-0 text-emerald-700" />
+                            <span className="min-w-0 truncate leading-tight">Add to cart</span>
+                          </>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleBuyNowFromSoldOut()}
+                        className="flex min-h-[44px] w-full min-w-0 items-center justify-center gap-2 rounded-xl border border-emerald-500 bg-emerald-600 py-2.5 px-3 text-sm font-bold text-white transition-colors hover:bg-emerald-700 md:flex-1"
+                      >
+                        <BuyNowActionIcon className="h-5 w-5 shrink-0 text-white" />
+                        <span className="min-w-0 truncate leading-tight">Buy now</span>
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={buyNow}
+                        className="flex min-h-[44px] w-full min-w-0 items-center justify-center gap-2 rounded-xl border border-emerald-500 bg-emerald-600 py-2.5 px-3 text-sm font-bold text-white transition-colors hover:bg-emerald-700 md:flex-1"
+                      >
+                        <BuyNowActionIcon className="h-5 w-5 shrink-0 text-white" />
+                        <span className="min-w-0 truncate leading-tight">Buy now</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void notifyMeForRestock()}
+                        className="flex min-h-[44px] w-full min-w-0 items-center justify-center gap-2 rounded-xl border border-emerald-600 bg-transparent py-2.5 px-3 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-50 md:flex-1"
+                      >
+                        <Bell className="h-4 w-4 shrink-0" aria-hidden />
+                        <span className="min-w-0 truncate leading-tight">Notify Me</span>
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
 
       <AnimatePresence>
         {openRideBooking ? (

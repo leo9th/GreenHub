@@ -397,7 +397,10 @@ export default function Checkout() {
               <span className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-sm">📍</span>
               Delivery Details
             </h2>
-            <form onSubmit={handleAddressSubmit} className="space-y-5">
+            <form
+              onSubmit={handleAddressSubmit}
+              className="space-y-5 pb-24 md:pb-0"
+            >
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1.5">Full Name</label>
                 <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} required 
@@ -563,9 +566,9 @@ export default function Checkout() {
         </div>
       </div>
 
-      {/* Bottom Action Footer */}
+      {/* Bottom Action Footer — sits above Root’s fixed bottom nav (h-16), not under it */}
       {step === "payment" && (
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-[0_-10px_15px_-3px_rgba(0,0,0,0.05)] px-4 py-4 z-50 md:static md:mt-8 md:border-none md:p-0 md:bg-transparent md:shadow-none">
+        <div className="fixed bottom-16 left-0 right-0 z-40 border-t border-gray-200 bg-white px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4 shadow-[0_-10px_15px_-3px_rgba(0,0,0,0.05)] md:static md:bottom-auto md:z-auto md:mt-8 md:border-none md:bg-transparent md:p-0 md:pb-0 md:shadow-none">
           <div className="max-w-7xl mx-auto flex items-center justify-end">
             <div className="w-full md:w-auto md:min-w-[300px]">
               {paymentMethod === "pod" ? (

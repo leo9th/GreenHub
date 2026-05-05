@@ -26,6 +26,9 @@ import { cn } from "../components/ui/utils";
 import { getOrderActions } from "../state/OrderActionEngine";
 import { deliveryJobStatusLabel, resolveCourierUiStatusFromOrderAndJob } from "../utils/deliveryJobs";
 
+/** Buyer live GPS polling while tracking stack is visible (no realtime on rider_presence). */
+const RIDER_PRESENCE_POLL_MS = 15_000;
+
 const DeliveryTrackingMap = lazy(() => import("../components/maps/DeliveryTrackingMap"));
 
 
@@ -462,8 +465,12 @@ export default function OrderDetail() {
   const [deliveryJobEvents, setDeliveryJobEvents] = useState<DeliveryEventRow[]>([]);
   const [deliveryAssignments, setDeliveryAssignments] = useState<DeliveryAssignmentRow[]>([]);
   const [greenhubJobStatus, setGreenhubJobStatus] = useState<string | null>(null);
-  const [deliveryJobHasAssignedRider, setDeliveryJobHasAssignedRider] = useState(false);
+  /** `delivery_jobs.assigned_rider_id` (auth user id), when set. */
+  const [deliveryAssignedRiderId, setDeliveryAssignedRiderId] = useState<string | null>(null);
   const [buyerDeliveryPin, setBuyerDeliveryPin] = useState<string | null>(null);
+  /** Lowercase `orders.status` from DB (for POD seller actions). */
+  const [orderDbStatus, setOrderDbStatus] = useState<string | null>(null);
+  const [markPaidSubmitting, setMarkPaidSubmitting] = useState(false);
 
   const load = useCallback(async () => {
     const userId = authUser?.id?.trim();
@@ -476,8 +483,9 @@ export default function OrderDetail() {
       setDeliveryJobEvents([]);
       setDeliveryAssignments([]);
       setGreenhubJobStatus(null);
-      setDeliveryJobHasAssignedRider(false);
+      setDeliveryAssignedRiderId(null);
       setBuyerDeliveryPin(null);
+      setOrderDbStatus(null);
       setLoading(false);
       return;
     }
@@ -500,8 +508,9 @@ export default function OrderDetail() {
         setDeliveryJobEvents([]);
         setDeliveryAssignments([]);
         setGreenhubJobStatus(null);
-        setDeliveryJobHasAssignedRider(false);
+        setDeliveryAssignedRiderId(null);
         setBuyerDeliveryPin(null);
+        setOrderDbStatus(null);
         setError("Order not found.");
         return;
       }
@@ -527,14 +536,16 @@ export default function OrderDetail() {
         setDeliveryJobEvents([]);
         setDeliveryAssignments([]);
         setGreenhubJobStatus(null);
-        setDeliveryJobHasAssignedRider(false);
+        setDeliveryAssignedRiderId(null);
         setBuyerDeliveryPin(null);
+        setOrderDbStatus(null);
         setError("Order not found.");
         return;
       }
 
       const ordRec = ord as Record<string, unknown>;
       setIsBuyerView(isBuyer);
+      setOrderDbStatus(String((ordRec.status as string | undefined) ?? "").toLowerCase());
       setOrderMeta({
         paymentMethod: (typeof ordRec.payment_method === "string" ? ordRec.payment_method : null) ?? null,
         paymentReference: (typeof ordRec.payment_reference === "string" ? ordRec.payment_reference : null) ?? null,
@@ -580,7 +591,7 @@ export default function OrderDetail() {
       setDeliveryAssignments(assignmentRows);
       setDeliveryJobEvents(eventRows);
       setGreenhubJobStatus(dj?.status ?? null);
-      setDeliveryJobHasAssignedRider(Boolean(dj?.assigned_rider_id && String(dj.assigned_rider_id).trim()));
+      setDeliveryAssignedRiderId(dj?.assigned_rider_id?.trim() ? String(dj.assigned_rider_id).trim() : null);
       setBuyerDeliveryPin(isBuyer && dj?.buyer_pin ? String(dj.buyer_pin).trim() || null : null);
 
       const resolvedStatus = resolveCourierUiStatusFromOrderAndJob(
@@ -694,8 +705,9 @@ export default function OrderDetail() {
       setDeliveryJobEvents([]);
       setDeliveryAssignments([]);
       setGreenhubJobStatus(null);
-      setDeliveryJobHasAssignedRider(false);
+      setDeliveryAssignedRiderId(null);
       setBuyerDeliveryPin(null);
+      setOrderDbStatus(null);
     } finally {
       setLoading(false);
     }
@@ -712,6 +724,10 @@ export default function OrderDetail() {
 
   const orderIdParam = id?.trim() ?? "";
   useEffect(() => {
+    dispatch({ type: "CLEAR_RIDER_LOCATION" });
+  }, [orderIdParam]);
+
+  useEffect(() => {
     if (!orderIdParam || !authUser?.id) return;
     const channel = supabase
       .channel(`order-detail-job:${orderIdParam}`)
@@ -727,6 +743,38 @@ export default function OrderDetail() {
       void supabase.removeChannel(channel);
     };
   }, [orderIdParam, authUser?.id, load]);
+
+  const sellerHasLineOnOrder = useMemo(
+    () => items.some((it) => String(it.seller_id ?? "") === authUser?.id?.trim()),
+    [items, authUser?.id],
+  );
+
+  const showSellerMarkPaid = useMemo(
+    () =>
+      !loading &&
+      !error &&
+      !isBuyerView &&
+      sellerHasLineOnOrder &&
+      orderDbStatus === "pending_payment" &&
+      (orderMeta.paymentMethod ?? "").toLowerCase() === "pod",
+    [loading, error, isBuyerView, sellerHasLineOnOrder, orderDbStatus, orderMeta.paymentMethod],
+  );
+
+  const handleConfirmOrderPaid = useCallback(async () => {
+    const oid = orderState.orderId?.trim();
+    if (!oid) return;
+    setMarkPaidSubmitting(true);
+    try {
+      const { error: rpcErr } = await supabase.rpc("confirm_order_paid", { p_order_id: oid } as never);
+      if (rpcErr) throw rpcErr;
+      toast.success("Order marked paid. GreenHub dispatch can assign a rider.");
+      await load();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Could not mark order paid.");
+    } finally {
+      setMarkPaidSubmitting(false);
+    }
+  }, [orderState.orderId, load]);
 
   const addr = useMemo(() => shippingLines(orderState.pickupLocation.address ? { address: orderState.pickupLocation.address } : null), [orderState.pickupLocation.address]); // Assuming pickupLocation.address is a string
 
@@ -751,28 +799,32 @@ export default function OrderDetail() {
             lat: orderState.currentRiderLocation.lat,
             lng: orderState.currentRiderLocation.lng,
             bearing: orderState.currentRiderLocation.bearing,
-            lastSeenAt: new Date().toISOString(), // Placeholder, needs actual timestamp from tracking data
+            lastSeenAt:
+              orderState.currentRiderLocation.lastSeenAt != null &&
+              String(orderState.currentRiderLocation.lastSeenAt).trim() !== ""
+                ? orderState.currentRiderLocation.lastSeenAt
+                : null,
           }
         : null,
     [orderState.currentRiderLocation],
   );
 
-  const [mapStageSignal, setMapStageSignal] = useState<null | "assigned" | "arriving">(null);
-  const [mockRouteDelivered, setMockRouteDelivered] = useState(false);
+  /** Buyer tracking map header — production wording (no “preview route”). */
+  const buyerLiveMapStatusLine = useMemo(() => {
+    if (liveRiderLocation) {
+      return "Live rider location — updates about every 10s";
+    }
+    const riderAssigned = Boolean(deliveryAssignedRiderId?.trim()) || Boolean(orderState.riderInfo?.id?.trim());
+    if (riderAssigned) {
+      return "Waiting for rider location";
+    }
+    return "Waiting for rider assignment";
+  }, [liveRiderLocation, deliveryAssignedRiderId, orderState.riderInfo?.id]);
 
-  useEffect(() => {
-    setMapStageSignal(null);
-    setMockRouteDelivered(false);
-  }, [orderState.status]);
-
-  const trackingStage = useMemo<OrderTrackingStage>(() => {
-    if (mockRouteDelivered) return "delivered";
-    const base = baseTrackingStageFromOrderStatus(orderState.status);
-    if (base !== "searching" && base !== "assigned") return base;
-    if (mapStageSignal === "arriving") return "arriving";
-    if (mapStageSignal === "assigned") return "assigned";
-    return base;
-  }, [orderState.status, mapStageSignal, mockRouteDelivered]);
+  const trackingStage = useMemo<OrderTrackingStage>(
+    () => baseTrackingStageFromOrderStatus(orderState.status),
+    [orderState.status],
+  );
 
   const orderUiState = useMemo(() => orderUiStateFromOrderStatus(orderState.status), [orderState.status]);
   const orderStatusLabel = useMemo(() => orderUiStatusLabel(orderUiState), [orderUiState]);
@@ -786,16 +838,68 @@ export default function OrderDetail() {
     if (orderState.marketMode === "b2c") {
       return inActiveRiderTracking || st === "PENDING";
     }
-    const c2cRiderAssigned = Boolean(greenhubJobStatus) && deliveryJobHasAssignedRider;
+    const c2cRiderAssigned = Boolean(greenhubJobStatus) && Boolean(deliveryAssignedRiderId);
     return c2cRiderAssigned && (inActiveRiderTracking || st === "PENDING");
-  }, [isBuyerView, orderState.status, orderState.marketMode, greenhubJobStatus, deliveryJobHasAssignedRider]);
+  }, [isBuyerView, orderState.status, orderState.marketMode, greenhubJobStatus, deliveryAssignedRiderId]);
+
+  useEffect(() => {
+    if (!showBuyerTrackingStack || !orderIdParam || !deliveryAssignedRiderId || !authUser?.id) {
+      dispatch({ type: "CLEAR_RIDER_LOCATION" });
+      return;
+    }
+
+    let cancelled = false;
+
+    const tick = async () => {
+      const { data, error } = await supabase.rpc("get_order_assigned_rider_presence", {
+        p_order_id: orderIdParam,
+      } as never);
+      if (cancelled) return;
+      if (error) {
+        console.warn("[OrderDetail] get_order_assigned_rider_presence", error);
+        return;
+      }
+      const rows = (data ?? []) as {
+        rider_user_id: string;
+        latitude: number | null;
+        longitude: number | null;
+        last_seen_at: string | null;
+        is_online: boolean;
+      }[];
+      const row = rows[0];
+      if (!row) {
+        dispatch({ type: "CLEAR_RIDER_LOCATION" });
+        return;
+      }
+      const lat = row.latitude;
+      const lng = row.longitude;
+      if (!row.is_online || lat == null || lng == null || !Number.isFinite(Number(lat)) || !Number.isFinite(Number(lng))) {
+        dispatch({ type: "CLEAR_RIDER_LOCATION" });
+        return;
+      }
+      dispatch({
+        type: "UPDATE_RIDER_LOCATION",
+        lat: Number(lat),
+        lng: Number(lng),
+        bearing: null,
+        lastSeenAt: row.last_seen_at ?? null,
+      });
+    };
+
+    void tick();
+    const intervalId = window.setInterval(() => void tick(), RIDER_PRESENCE_POLL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [showBuyerTrackingStack, orderIdParam, deliveryAssignedRiderId, authUser?.id]);
 
   const showC2cTrackingPlaceholderPanel = useMemo(
     () =>
       isBuyerView &&
       orderState.marketMode === "c2c" &&
       !showBuyerTrackingStack &&
-      (!greenhubJobStatus || !deliveryJobHasAssignedRider) &&
+      (!greenhubJobStatus || !deliveryAssignedRiderId) &&
       !orderState.status.startsWith("CANCELLED") &&
       !["DELIVERED", "COMPLETED"].includes(orderState.status),
     [
@@ -803,7 +907,7 @@ export default function OrderDetail() {
       orderState.marketMode,
       showBuyerTrackingStack,
       greenhubJobStatus,
-      deliveryJobHasAssignedRider,
+      deliveryAssignedRiderId,
       orderState.status,
     ],
   );
@@ -812,7 +916,7 @@ export default function OrderDetail() {
     if (!isBuyerView) return orderStatusLabel;
     if (
       orderState.marketMode === "c2c" &&
-      (!greenhubJobStatus || !deliveryJobHasAssignedRider) &&
+      (!greenhubJobStatus || !deliveryAssignedRiderId) &&
       !orderState.status.startsWith("CANCELLED") &&
       !["DELIVERED", "COMPLETED"].includes(orderState.status)
     ) {
@@ -824,18 +928,9 @@ export default function OrderDetail() {
     orderState.marketMode,
     orderState.status,
     greenhubJobStatus,
-    deliveryJobHasAssignedRider,
+    deliveryAssignedRiderId,
     orderStatusLabel,
   ]);
-
-  const handleMockRiderAssigned = useCallback((stage: "assigned" | "arriving") => {
-    if (stage === "arriving") setMapStageSignal("arriving");
-    else setMapStageSignal("assigned");
-  }, []);
-
-  const handleMapRouteDemoArrival = useCallback(() => {
-    setMockRouteDelivered(true);
-  }, []);
 
   const hasGuaranteedItems = useMemo(
     () => items.some((it) => isWarehouseShippingFulfillment(it.fulfillment_type)),
@@ -1119,6 +1214,24 @@ export default function OrderDetail() {
           </div>
         </div>
 
+        {showSellerMarkPaid ? (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+            <p className="text-sm font-medium text-amber-950">Pay on delivery — confirm payment received</p>
+            <p className="mt-1 text-xs text-amber-900/85">
+              Marks this order as paid so GreenHub can create a delivery job. Only use after you have received payment from the buyer.
+            </p>
+            <button
+              type="button"
+              disabled={markPaidSubmitting}
+              onClick={() => void handleConfirmOrderPaid()}
+              className="mt-3 inline-flex items-center justify-center rounded-lg bg-amber-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-amber-800 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {markPaidSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden /> : null}
+              Mark order paid
+            </button>
+          </div>
+        ) : null}
+
         <div className="bg-white rounded-lg p-4">
           <h2 className="font-semibold text-gray-800 mb-4">Items Ordered</h2>
           <div className="space-y-4">
@@ -1292,7 +1405,7 @@ export default function OrderDetail() {
                   className="flex min-h-0 min-w-0 flex-shrink-0 flex-col bg-slate-50/30 lg:h-full lg:basis-[68%] lg:max-w-[68%]"
                 >
                   <p className="shrink-0 border-b border-sky-100 bg-sky-50/80 px-4 py-2 text-xs font-medium leading-snug text-slate-600 md:px-5 md:py-2.5 md:text-[13px]">
-                    Live map {liveRiderLocation ? "(rider position updates about every 10s)" : "(preview route)"}
+                    {buyerLiveMapStatusLine}
                   </p>
                   <div
                     className={cn(
@@ -1308,8 +1421,7 @@ export default function OrderDetail() {
                         riderLocation={liveRiderLocation}
                         pickupLocation={mapPickupLocation}
                         dropoffLocation={mapDropoffLocation}
-                        onArrival={liveRiderLocation ? undefined : handleMapRouteDemoArrival}
-                        onMockRiderAssigned={liveRiderLocation ? undefined : handleMockRiderAssigned}
+                        enableDemoRiderMovement={false}
                       />
                     </Suspense>
                   </div>

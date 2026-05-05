@@ -62,44 +62,13 @@ import { MarketPricePrediction } from "../components/MarketPricePrediction";
 import { BuyNowActionIcon, CartActionIcon, RideActionIcon } from "../components/icons/ActionIcons";
 import DeliveryTrackingMap from "../components/maps/DeliveryTrackingMap";
 
-type ParsedDeliveryOption = { name: string; fee: number; duration: string };
-type AddressSuggestion = { display_name: string; lat: number; lng: number };
+import { parseDeliveryOptionsFromDb } from "../utils/deliveryOptionsFromDb";
 
-function parseDeliveryOptionsFromDb(raw: unknown): ParsedDeliveryOption[] {
-  if (raw == null) return [];
-  let arr: unknown[] = [];
-  if (Array.isArray(raw)) arr = raw;
-  else if (typeof raw === "string") {
-    const t = raw.trim();
-    if (!t) return [];
-    try {
-      const p = JSON.parse(t);
-      if (Array.isArray(p)) arr = p;
-    } catch {
-      return [];
-    }
-  } else {
-    return [];
-  }
-  const out: ParsedDeliveryOption[] = [];
-  for (const item of arr) {
-    if (typeof item === "string") {
-      const name = item.trim();
-      if (name) out.push({ name, fee: 0, duration: "" });
-    } else if (item && typeof item === "object") {
-      const o = item as Record<string, unknown>;
-      const name = typeof o.name === "string" ? o.name.trim() : String(o.name ?? "").trim();
-      if (!name) continue;
-      const feeRaw = o.fee;
-      const feeNum = typeof feeRaw === "number" && Number.isFinite(feeRaw) ? feeRaw : Number(feeRaw);
-      out.push({
-        name,
-        fee: Number.isFinite(feeNum) ? feeNum : 0,
-        duration: typeof o.duration === "string" ? o.duration : String(o.duration ?? ""),
-      });
-    }
-  }
-  return out;
+type AddressSuggestion = { display_name: string; lat: number; lng: number };
+type RideRouteSource = "none" | "suggestion" | "gps";
+
+function normRideRouteText(s: string): string {
+  return s.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
 async function searchAddressSuggestions(query: string): Promise<AddressSuggestion[]> {
@@ -418,6 +387,9 @@ export default function ProductDetail() {
   const [pickupLng, setPickupLng] = useState<number | null>(null);
   const [dropoffLat, setDropoffLat] = useState<number | null>(null);
   const [dropoffLng, setDropoffLng] = useState<number | null>(null);
+  const [pickupRouteSource, setPickupRouteSource] = useState<RideRouteSource>("none");
+  const [pickupAnchorText, setPickupAnchorText] = useState("");
+  const [dropoffAnchorText, setDropoffAnchorText] = useState("");
   const [pickupSuggestions, setPickupSuggestions] = useState<AddressSuggestion[]>([]);
   const [dropoffSuggestions, setDropoffSuggestions] = useState<AddressSuggestion[]>([]);
   const [searchingPickup, setSearchingPickup] = useState(false);
@@ -1016,7 +988,7 @@ export default function ProductDetail() {
     return {
       id: String(foundProduct.id),
       title: String(foundProduct.title ?? ""),
-      price: foundProduct.price,
+      price: getProductPrice(foundProduct as { price?: unknown; price_local?: unknown }),
       image: galleryImages[0] ?? "",
       quantity: 1,
       sellerId: sellerPeerId || "unknown",
@@ -1101,7 +1073,10 @@ export default function ProductDetail() {
         setPickupLat(lat);
         setPickupLng(lng);
         const label = await reverseGeocode(lat, lng);
-        if (label) setPickupQuery(label);
+        const resolved = label?.trim() || `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+        setPickupQuery(resolved);
+        setPickupRouteSource("gps");
+        setPickupAnchorText(resolved);
         toast.success("Pickup location set from your GPS.");
       },
       (err) => {
@@ -1122,7 +1097,7 @@ export default function ProductDetail() {
       return;
     }
     if (pickupLat == null || pickupLng == null || dropoffLat == null || dropoffLng == null) {
-      toast.error("Please choose pickup and dropoff from suggestions or GPS.");
+      toast.error("Select pickup and dropoff from suggestions or use GPS so we can locate you accurately");
       return;
     }
     if (!rideContactPhone.trim()) {
@@ -1131,8 +1106,9 @@ export default function ProductDetail() {
     }
     setRideSubmitting(true);
     try {
-      const payload = {
+      const payload: Record<string, unknown> = {
         user_id: authUser.id,
+        buyer_user_id: authUser.id,
         product_id: String(foundProduct?.id ?? ""),
         seller_user_id: sellerPeerId ?? null,
         pickup_address: pickupQuery.trim(),
@@ -1146,11 +1122,28 @@ export default function ProductDetail() {
         source: "product_detail",
         status: "pending",
       };
-      const { error } = await supabase.from("product_ride_bookings").insert(payload);
+      const { data: inserted, error } = await supabase.from("product_ride_bookings").insert(payload).select("id").maybeSingle();
       if (error) throw error;
-      toast.success("Ride request submitted. GreenHub dispatch will assign a rider soon.");
+      const newId = inserted && typeof (inserted as { id?: unknown }).id === "string" ? (inserted as { id: string }).id.trim() : "";
+      const refShort = newId ? `${newId.slice(0, 8)}…` : "";
+      toast.success("Ride request submitted. GreenHub dispatch will assign a rider soon.", {
+        description: newId ? `Reference: ${refShort}` : undefined,
+        action: {
+          label: "View my ride requests",
+          onClick: () => navigate("/product-rides"),
+        },
+      });
       setOpenRideBooking(false);
       setRideNote("");
+      setPickupQuery("");
+      setDropoffQuery("");
+      setPickupLat(null);
+      setPickupLng(null);
+      setDropoffLat(null);
+      setDropoffLng(null);
+      setPickupRouteSource("none");
+      setPickupAnchorText("");
+      setDropoffAnchorText("");
       setPickupSuggestions([]);
       setDropoffSuggestions([]);
     } finally {
@@ -2513,9 +2506,23 @@ export default function ProductDetail() {
                     <div className="flex gap-2">
                       <input
                         value={pickupQuery}
-                        onChange={(e) => setPickupQuery(e.target.value)}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setPickupQuery(v);
+                          if (
+                            pickupLat != null &&
+                            pickupLng != null &&
+                            pickupAnchorText &&
+                            normRideRouteText(v) !== normRideRouteText(pickupAnchorText)
+                          ) {
+                            setPickupLat(null);
+                            setPickupLng(null);
+                            setPickupRouteSource("none");
+                            setPickupAnchorText("");
+                          }
+                        }}
                         placeholder="Search pickup address"
-                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none"
+                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
                       />
                       <button
                         type="button"
@@ -2525,6 +2532,19 @@ export default function ProductDetail() {
                         {searchingPickup ? "..." : "Find"}
                       </button>
                     </div>
+                    {pickupQuery.trim().length >= 3 && (pickupLat == null || pickupLng == null) ? (
+                      <p className="mt-1.5 text-xs text-amber-700 dark:text-amber-400">Please select a location from the list</p>
+                    ) : null}
+                    {pickupLat != null && pickupLng != null ? (
+                      pickupRouteSource === "gps" ? (
+                        <p className="mt-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-400">Using current location</p>
+                      ) : (
+                        <p className="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+                          <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-600" aria-hidden />
+                          Location confirmed
+                        </p>
+                      )
+                    ) : null}
                     <div className="mt-2 flex gap-2">
                       <button
                         type="button"
@@ -2544,6 +2564,8 @@ export default function ProductDetail() {
                               setPickupQuery(s.display_name);
                               setPickupLat(s.lat);
                               setPickupLng(s.lng);
+                              setPickupRouteSource("suggestion");
+                              setPickupAnchorText(s.display_name);
                               setPickupSuggestions([]);
                             }}
                             className="block w-full border-b border-gray-100 px-2 py-1.5 text-left text-[11px] text-gray-700 last:border-0 hover:bg-gray-50"
@@ -2562,9 +2584,22 @@ export default function ProductDetail() {
                     <div className="flex gap-2">
                       <input
                         value={dropoffQuery}
-                        onChange={(e) => setDropoffQuery(e.target.value)}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setDropoffQuery(v);
+                          if (
+                            dropoffLat != null &&
+                            dropoffLng != null &&
+                            dropoffAnchorText &&
+                            normRideRouteText(v) !== normRideRouteText(dropoffAnchorText)
+                          ) {
+                            setDropoffLat(null);
+                            setDropoffLng(null);
+                            setDropoffAnchorText("");
+                          }
+                        }}
                         placeholder="Search dropoff address"
-                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none"
+                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
                       />
                       <button
                         type="button"
@@ -2574,6 +2609,15 @@ export default function ProductDetail() {
                         {searchingDropoff ? "..." : "Find"}
                       </button>
                     </div>
+                    {dropoffQuery.trim().length >= 3 && (dropoffLat == null || dropoffLng == null) ? (
+                      <p className="mt-1.5 text-xs text-amber-700 dark:text-amber-400">Please select a location from the list</p>
+                    ) : null}
+                    {dropoffLat != null && dropoffLng != null ? (
+                      <p className="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+                        <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-600" aria-hidden />
+                        Location confirmed
+                      </p>
+                    ) : null}
                     {dropoffSuggestions.length > 0 ? (
                       <div className="mt-2 max-h-28 overflow-y-auto rounded-md border border-gray-200">
                         {dropoffSuggestions.map((s, idx) => (
@@ -2584,6 +2628,7 @@ export default function ProductDetail() {
                               setDropoffQuery(s.display_name);
                               setDropoffLat(s.lat);
                               setDropoffLng(s.lng);
+                              setDropoffAnchorText(s.display_name);
                               setDropoffSuggestions([]);
                             }}
                             className="block w-full border-b border-gray-100 px-2 py-1.5 text-left text-[11px] text-gray-700 last:border-0 hover:bg-gray-50"
@@ -2646,8 +2691,14 @@ export default function ProductDetail() {
                 <button
                   type="button"
                   onClick={() => void submitRideBooking()}
-                  disabled={rideSubmitting}
-                  className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-60"
+                  disabled={
+                    rideSubmitting ||
+                    pickupLat == null ||
+                    pickupLng == null ||
+                    dropoffLat == null ||
+                    dropoffLng == null
+                  }
+                  className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-700 disabled:pointer-events-none disabled:opacity-50"
                 >
                   {rideSubmitting ? "Submitting..." : "Submit Ride Request"}
                 </button>

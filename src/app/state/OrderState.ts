@@ -32,7 +32,7 @@ export interface OrderState {
   dropoffLocation: { lat: number; lng: number; address: string };
   riderInfo: RiderInfo | null;
   estimatedArrivalTime: string | null; // ISO string or human-readable
-  currentRiderLocation: { lat: number; lng: number; bearing: number } | null;
+  currentRiderLocation: { lat: number; lng: number; bearing: number; lastSeenAt?: string | null } | null;
   // Add other relevant order details as needed
 }
 
@@ -42,7 +42,8 @@ export type OrderAction =
   | { type: "UPDATE_ORDER_STATUS"; status: OrderStatus }
   | { type: "UPDATE_RIDER_INFO"; riderInfo: RiderInfo | null }
   | { type: "UPDATE_ESTIMATED_ARRIVAL_TIME"; time: string | null; } // ISO string or human-readable
-  | { type: "UPDATE_RIDER_LOCATION"; lat: number; lng: number; bearing: number | null }
+  | { type: "UPDATE_RIDER_LOCATION"; lat: number; lng: number; bearing: number | null; lastSeenAt?: string | null }
+  | { type: "CLEAR_RIDER_LOCATION" }
   | { type: "INITIATE_REVIEW"; itemId: string; productId: string; orderId: string }
   | { type: "SUBMIT_REVIEW"; rating: number; text: string; isAnonymous: boolean }
   | { type: "CANCEL_REVIEW" }

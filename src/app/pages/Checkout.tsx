@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router";
+import { useNavigate } from "react-router";
 import { ArrowLeft, Check, CreditCard, Building2, Smartphone, Home } from "@/app/icons/emojiLucide";
 import { nigerianStates } from "../data/catalogConstants";
 import { getLGAsForState } from "../data/mockData";
@@ -16,6 +16,12 @@ import {
   isWarehouseShippingFulfillment,
 } from "../utils/fulfillment";
 import { createPaystackSuccessHandler } from "../utils/paystackCheckout";
+import {
+  CHECKOUT_TOTAL_MISMATCH_HINT,
+  CHECKOUT_TOTAL_MISMATCH_USER_MESSAGE,
+  formatCheckoutOrderCreationError,
+} from "../utils/checkoutOrderError";
+import { verifyCheckoutPayment } from "../utils/verifyCheckoutPayment";
 import { captureCheckoutException } from "../../lib/sentry";
 import { evaluateCheckoutRisk } from "../utils/checkoutRisk";
 import { getStuckUserAssist, type StuckUserAssist } from "../utils/stuckUserAssist";
@@ -25,7 +31,7 @@ type OrderRecord = { id: string };
 export default function Checkout() {
   const formatPrice = useCurrency();
   const navigate = useNavigate();
-  const { items, cartTotal, clearCart } = useCart();
+  const { items, cartTotal, clearCart, refreshCart } = useCart();
   const { user } = useAuth();
   
   const [step, setStep] = useState<"address" | "payment">("address");
@@ -50,6 +56,24 @@ export default function Checkout() {
   const total = subtotal + delivery + platformFee;
   const paystackPublicKey = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY;
   const marketMode = deriveMarketModeFromLineItems(items);
+
+  useEffect(() => {
+    if (items.length === 0) return;
+    let cancelled = false;
+    void (async () => {
+      const r = await refreshCart();
+      if (cancelled) return;
+      if (r.removedCount > 0) {
+        toast.message("Some unavailable items were removed from your cart.");
+      }
+      if (r.updatedCount > 0 || r.adjustedCount > 0) {
+        toast.message("Your cart was refreshed with current product details.");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshCart]);
 
   useEffect(() => {
     const isPaystackPath = step === "payment" && paymentMethod !== "pod";
@@ -146,6 +170,46 @@ export default function Checkout() {
     [user, items, total, delivery, platformFee, fullName, phone, state, lga, address, landmark],
   );
 
+  const finalizePaidPaystackOrder = useCallback(
+    async (paymentReference: string): Promise<OrderRecord> => {
+      if (!user) {
+        throw new Error("You must be logged in to complete this order.");
+      }
+      const checkoutItems = items.map((item) => ({
+        id: String(item.id),
+        title: item.title,
+        image: item.image,
+        quantity: item.quantity,
+        price: item.price,
+        deliveryFee: item.deliveryFee ?? null,
+        fulfillment_type: item.fulfillment_type?.trim() || "seller_pickup",
+      }));
+      const out = await verifyCheckoutPayment({
+        payment_reference: paymentReference,
+        shipping_address: {
+          fullName,
+          phone,
+          state,
+          lga,
+          address,
+          landmark,
+        },
+        items: checkoutItems,
+        p_total_amount: total,
+        p_delivery_fee: delivery,
+        p_platform_fee: platformFee,
+      });
+      if (out.error) {
+        throw new Error(out.error);
+      }
+      if (!out.order_id) {
+        throw new Error("Checkout completed without a valid order id.");
+      }
+      return { id: out.order_id };
+    },
+    [user, items, total, delivery, platformFee, fullName, phone, state, lga, address, landmark],
+  );
+
   const handlePODSubmit = async () => {
     const decision = evaluateCheckoutRisk({
       marketMode,
@@ -183,7 +247,9 @@ export default function Checkout() {
         hasUser: Boolean(user),
       });
       console.error("POD order creation:", err);
-      toast.error(err instanceof Error ? err.message : "Could not place your order.");
+      const msg = formatCheckoutOrderCreationError(err, "Could not place your order.");
+      const desc = msg === CHECKOUT_TOTAL_MISMATCH_USER_MESSAGE ? CHECKOUT_TOTAL_MISMATCH_HINT : undefined;
+      toast.error(msg, desc ? { description: desc } : undefined);
     } finally {
       setPodSubmitting(false);
     }
@@ -206,17 +272,20 @@ export default function Checkout() {
         payment_channel: paymentChannel,
         checkout_decision: "review",
       });
-      toast.error(err instanceof Error ? err.message : "Could not submit this order for review.");
+      const msg = formatCheckoutOrderCreationError(err, "Could not submit this order for review.");
+      const desc = msg === CHECKOUT_TOTAL_MISMATCH_USER_MESSAGE ? CHECKOUT_TOTAL_MISMATCH_HINT : undefined;
+      toast.error(msg, desc ? { description: desc } : undefined);
     }
   };
 
   const handlePaystackSuccess = createPaystackSuccessHandler({
     user: user ? { id: user.id } : null,
-    createOrderWithLineItemsAndPlacedEvent,
+    finalizePaidPaystackOrder,
     clearCart,
     navigate,
     notifySuccess: (message: string) => toast.success(message),
-    notifyError: (message: string) => toast.error(message),
+    notifyError: (message: string, options?: { description?: string }) =>
+      toast.error(message, options?.description ? { description: options.description } : undefined),
     logError: (error: unknown) => {
       console.error("Order Creation Error:", error);
     },

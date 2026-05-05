@@ -22,6 +22,7 @@ export function initSentry() {
 
 export type CheckoutFailureStep =
   | "Paystack Initialization"
+  | "Paystack Server Verification"
   | "Paystack Order Creation"
   | "Deliveries Table Insert"
   | "Pay On Delivery Order Creation"

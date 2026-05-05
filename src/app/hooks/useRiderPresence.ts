@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../context/AuthContext";
 
+import { messageForGeolocationFailure } from "../utils/geolocationErrorMessage";
+
 type PresenceRow = {
   rider_user_id: string;
   is_online: boolean;
@@ -49,14 +51,32 @@ export function useRiderPresence() {
       setRiderStatus("none");
       return;
     }
-    const { data, error: e } = await supabase.from("riders").select("status").eq("user_id", uid).maybeSingle();
+    const { data, error: e } = await supabase
+      .from("greenhub_riders")
+      .select("status")
+      .eq("user_id", uid)
+      .maybeSingle();
     if (e) {
       setRiderStatus("none");
       return;
     }
-    const status = String((data as { status?: string } | null)?.status ?? "").toLowerCase();
-    if (status === "pending" || status === "approved" || status === "blocked") {
-      setRiderStatus(status);
+    if (data == null) {
+      setRiderStatus("none");
+      return;
+    }
+    const raw = String((data as { status?: string }).status ?? "")
+      .toLowerCase()
+      .trim();
+    if (raw === "approved") {
+      setRiderStatus("approved");
+      return;
+    }
+    if (raw === "pending") {
+      setRiderStatus("pending");
+      return;
+    }
+    if (raw === "suspended" || raw === "rejected") {
+      setRiderStatus("blocked");
       return;
     }
     setRiderStatus("none");
@@ -99,7 +119,7 @@ export function useRiderPresence() {
         }));
       },
       (geoError) => {
-        setError(geoError.message || "Could not access location.");
+        setError(messageForGeolocationFailure(geoError as GeolocationPositionError));
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
     );

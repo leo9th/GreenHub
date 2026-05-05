@@ -1,4 +1,6 @@
 import { Link, useNavigate } from "react-router";
+import { useEffect } from "react";
+import { toast } from "sonner";
 import { ArrowLeft, Trash2, Plus, Minus, ShoppingBag, BadgeCheck } from "@/app/icons/emojiLucide";
 import { useCurrency } from "../hooks/useCurrency";
 import { useCart, type CartItem } from "../context/CartContext";
@@ -107,7 +109,25 @@ export default function Cart() {
   const formatPrice = useCurrency();
   const navigate = useNavigate();
 
-  const { items: cartItems, updateQuantity, removeFromCart } = useCart();
+  const { items: cartItems, updateQuantity, removeFromCart, refreshCart } = useCart();
+
+  useEffect(() => {
+    if (cartItems.length === 0) return;
+    let cancelled = false;
+    void (async () => {
+      const r = await refreshCart();
+      if (cancelled) return;
+      if (r.removedCount > 0) {
+        toast.message("Some unavailable items were removed from your cart.");
+      }
+      if (r.updatedCount > 0 || r.adjustedCount > 0) {
+        toast.message("Your cart was refreshed with current product details.");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshCart]);
 
   const guaranteedItems = cartItems.filter((i) => isWarehouseShippingFulfillment(i.fulfillment_type));
   const marketplaceItems = cartItems.filter((i) => !isWarehouseShippingFulfillment(i.fulfillment_type));

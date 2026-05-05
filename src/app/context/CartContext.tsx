@@ -1,4 +1,6 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import { supabase } from "../../lib/supabase";
+import { reconcileCartLines } from "../utils/cartReconcile";
 
 export interface CartItem {
   id: string;
@@ -36,6 +38,12 @@ interface CartContextType {
   clearCart: () => void;
   cartCount: number;
   cartTotal: number;
+  refreshCart: () => Promise<{
+    changed: boolean;
+    removedCount: number;
+    adjustedCount: number;
+    updatedCount: number;
+  }>;
 }
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
@@ -53,6 +61,11 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     }
   });
 
+  const itemsRef = useRef(items);
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
+
   useEffect(() => {
     localStorage.setItem('greenhub-cart', JSON.stringify(items));
   }, [items]);
@@ -61,13 +74,18 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     setItems((current) => {
       const existing = current.find((item) => item.id === newItem.id);
       if (existing) {
+        const normalized = normalizeCartItem({ ...newItem } as Record<string, unknown>);
         return current.map((item) =>
           item.id === newItem.id
             ? {
                 ...item,
-                quantity: item.quantity + newItem.quantity,
-                fulfillment_type: newItem.fulfillment_type ?? item.fulfillment_type,
-                deliveryFee: newItem.deliveryFee,
+                quantity: item.quantity + normalized.quantity,
+                title: normalized.title,
+                price: normalized.price,
+                image: normalized.image,
+                sellerId: normalized.sellerId,
+                deliveryFee: normalized.deliveryFee,
+                fulfillment_type: normalized.fulfillment_type ?? item.fulfillment_type,
               }
             : item,
         );
@@ -92,11 +110,39 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const clearCart = () => setItems([]);
 
+  const refreshCart = useCallback(async () => {
+    const snapshot = itemsRef.current;
+    if (snapshot.length === 0) {
+      return { changed: false, removedCount: 0, adjustedCount: 0, updatedCount: 0 };
+    }
+    const ids = [...new Set(snapshot.map((i) => i.id))];
+    try {
+      const { data, error } = await supabase
+        .from("products")
+        .select(
+          "id, title, price, price_local, image, images, seller_id, fulfillment_type, delivery_options, stock_quantity, status",
+        )
+        .in("id", ids);
+      if (error) throw error;
+      const rows = (data ?? []) as Record<string, unknown>[];
+      const { next, removedCount, adjustedCount, updatedCount } = reconcileCartLines(snapshot, rows);
+      const changed = removedCount > 0 || adjustedCount > 0 || updatedCount > 0 || next.length !== snapshot.length;
+      if (changed) {
+        setItems(next.map((row) => normalizeCartItem(row as Record<string, unknown>)));
+      }
+      return { changed, removedCount, adjustedCount, updatedCount };
+    } catch {
+      return { changed: false, removedCount: 0, adjustedCount: 0, updatedCount: 0 };
+    }
+  }, []);
+
   const cartCount = items.reduce((total, item) => total + item.quantity, 0);
   const cartTotal = items.reduce((total, item) => total + (item.price * item.quantity), 0);
 
   return (
-    <CartContext.Provider value={{ items, addToCart, removeFromCart, updateQuantity, clearCart, cartCount, cartTotal }}>
+    <CartContext.Provider
+      value={{ items, addToCart, removeFromCart, updateQuantity, clearCart, cartCount, cartTotal, refreshCart }}
+    >
       {children}
     </CartContext.Provider>
   );

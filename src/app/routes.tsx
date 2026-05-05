@@ -171,6 +171,7 @@ export const router = createBrowserRouter([
       { path: "rider/job/:id", Component: LegacyRiderJobRedirect },
       { path: "orders", Component: Orders },
       { path: "orders/:id", lazy: lazyPage(() => import("./pages/OrderDetail")) },
+      { path: "product-rides", lazy: lazyPage(() => import("./pages/ProductRideBookings")) },
       { path: "messages", lazy: lazyPage(() => import("./pages/Messages")) },
       /* c = thread by conversation id; u = DM by other user’s auth id. Do not use one path for both UUID types. */
       { path: "messages/c/:conversationId", lazy: lazyPage(() => import("./pages/Chat")) },

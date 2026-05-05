@@ -9,7 +9,7 @@
     "dev": "vite",
     "gen:supabase-types": "npx supabase gen types typescript --local > src/types/supabase.ts",
     "test": "vitest run",
-    "test:stable": "vitest run --pool=threads --maxWorkers=1",
+    "test:stable": "vitest run --maxWorkers=1",
     "test:watch": "vitest"
   },
   "dependencies": {

@@ -1,6 +1,16 @@
 import { FormEvent, Suspense, lazy, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { ArrowUpDown, CalendarDays, Clock3, Loader2, MapPin, Navigation, ShieldCheck, X } from "@/app/icons/emojiLucide";
+import {
+  ArrowUpDown,
+  CalendarDays,
+  CheckCircle,
+  Clock3,
+  Loader2,
+  MapPin,
+  Navigation,
+  ShieldCheck,
+  X,
+} from "@/app/icons/emojiLucide";
 import { toast } from "sonner";
 const DeliveryTrackingMapPreview = lazy(() => import("../../components/maps/DeliveryTrackingMap"));
 const DeliveryTrackingMapEditor = lazy(() => import("../../components/maps/DeliveryTrackingMapEditor"));
@@ -25,6 +35,12 @@ type LocationSuggestion = {
   lat: number;
   lng: number;
 };
+
+type RoutePointSource = "none" | "suggestion" | "gps" | "map";
+
+function normRouteAddr(s: string): string {
+  return s.trim().replace(/\s+/g, " ").toLowerCase();
+}
 
 function mapboxAccessToken(): string | undefined {
   const t = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN as string | undefined;
@@ -198,6 +214,10 @@ function BookRide() {
   const [pickupLng, setPickupLng] = useState<number | null>(null);
   const [dropoffLat, setDropoffLat] = useState<number | null>(null);
   const [dropoffLng, setDropoffLng] = useState<number | null>(null);
+  const [pickupSource, setPickupSource] = useState<RoutePointSource>("none");
+  const [dropoffSource, setDropoffSource] = useState<RoutePointSource>("none");
+  const [pickupAnchorText, setPickupAnchorText] = useState("");
+  const [dropoffAnchorText, setDropoffAnchorText] = useState("");
   const [packageType, setPackageType] = useState<PackageType>("small");
   const [pickupSuggestions, setPickupSuggestions] = useState<LocationSuggestion[]>([]);
   const [dropoffSuggestions, setDropoffSuggestions] = useState<LocationSuggestion[]>([]);
@@ -226,6 +246,7 @@ function BookRide() {
     return Math.round((base + distanceCost) * PACKAGE_MULTIPLIER[packageType]);
   }, [distanceKm, packageType]);
   const selectedRide = useMemo(() => RIDE_OPTIONS.find((r) => r.type === packageType) ?? RIDE_OPTIONS[0], [packageType]);
+  const suggestMinLen = useMemo(() => (mapboxAccessToken() ? 2 : 3), []);
 
   useEffect(() => {
     if (typeof navigator === "undefined" || !navigator.geolocation) return undefined;
@@ -237,7 +258,10 @@ function BookRide() {
         setPickupLng(lng);
         setDraftPickup({ lat, lng });
         const label = await reverseGeocode(lat, lng);
-        if (label) setPickupAddress(label);
+        const resolved = label?.trim() || `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+        setPickupAddress(resolved);
+        setPickupSource("gps");
+        setPickupAnchorText(resolved);
       },
       () => {},
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 },
@@ -311,7 +335,10 @@ function BookRide() {
         setPickupLat(lat);
         setPickupLng(lng);
         const label = await reverseGeocode(lat, lng);
-        if (label) setPickupAddress(label);
+        const resolved = label?.trim() || `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+        setPickupAddress(resolved);
+        setPickupSource("gps");
+        setPickupAnchorText(resolved);
         toast.success("Pickup set from current location.");
       },
       (err) => {
@@ -328,7 +355,7 @@ function BookRide() {
       return;
     }
     if (pickupLat == null || pickupLng == null || dropoffLat == null || dropoffLng == null) {
-      toast.error("Pick locations from suggestions or the map so we have coordinates.");
+      toast.error("Select pickup and dropoff from suggestions or use GPS so we can locate you accurately");
       return;
     }
     pushRecentLocation(pickupAddress);
@@ -423,7 +450,10 @@ function BookRide() {
       setPickupLng(draftPickup.lng);
       if (draftPickup.lat != null && draftPickup.lng != null) {
         const label = await reverseGeocode(draftPickup.lat, draftPickup.lng);
-        if (label) setPickupAddress(label);
+        const resolved = label?.trim() || `${draftPickup.lat.toFixed(5)}, ${draftPickup.lng.toFixed(5)}`;
+        setPickupAddress(resolved);
+        setPickupSource("map");
+        setPickupAnchorText(resolved);
         toast.success("Pickup location saved");
       }
       setIsResolvingAddress(false);
@@ -433,7 +463,10 @@ function BookRide() {
     setDropoffLng(draftDropoff.lng);
     if (draftDropoff.lat != null && draftDropoff.lng != null) {
       const label = await reverseGeocode(draftDropoff.lat, draftDropoff.lng);
-      if (label) setDropoffAddress(label);
+      const resolved = label?.trim() || `${draftDropoff.lat.toFixed(5)}, ${draftDropoff.lng.toFixed(5)}`;
+      setDropoffAddress(resolved);
+      setDropoffSource("map");
+      setDropoffAnchorText(resolved);
       toast.success("Dropoff location saved");
     }
     setIsResolvingAddress(false);
@@ -600,8 +633,20 @@ function BookRide() {
                   value={pickupAddress}
                   onFocus={() => setActiveField("pickup")}
                   onChange={(e) => {
-                    setPickupAddress(e.target.value);
+                    const v = e.target.value;
+                    setPickupAddress(v);
                     setActiveField("pickup");
+                    if (
+                      pickupLat != null &&
+                      pickupLng != null &&
+                      pickupAnchorText &&
+                      normRouteAddr(v) !== normRouteAddr(pickupAnchorText)
+                    ) {
+                      setPickupLat(null);
+                      setPickupLng(null);
+                      setPickupSource("none");
+                      setPickupAnchorText("");
+                    }
                   }}
                   placeholder="Enter pickup address"
                   className="w-full bg-white px-4 py-3 text-base font-medium text-gray-900 caret-gray-900 outline-none transition-all duration-150 ease-out placeholder:text-gray-400 rounded-lg border border-gray-200 shadow-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:placeholder:text-gray-500 dark:focus:border-emerald-400 dark:focus:ring-emerald-900/30"
@@ -615,6 +660,19 @@ function BookRide() {
                   {isSearchingPickup ? "..." : "Find"}
                 </button>
               </div>
+              {pickupAddress.trim().length >= suggestMinLen && (pickupLat == null || pickupLng == null) ? (
+                <p className="mt-1.5 text-xs text-amber-700 dark:text-amber-400">Please select a location from the list</p>
+              ) : null}
+              {pickupLat != null && pickupLng != null ? (
+                pickupSource === "gps" ? (
+                  <p className="mt-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-400">Using current location</p>
+                ) : (
+                  <p className="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+                    <CheckCircle className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                    Location confirmed
+                  </p>
+                )
+              ) : null}
 
               <button
                 type="button"
@@ -625,12 +683,20 @@ function BookRide() {
                   const nextPickupLng = dropoffLng;
                   const nextDropoffLat = pickupLat;
                   const nextDropoffLng = pickupLng;
+                  const nextPickupSource = dropoffSource;
+                  const nextDropoffSource = pickupSource;
+                  const nextPickupAnchor = dropoffAnchorText;
+                  const nextDropoffAnchor = pickupAnchorText;
                   setPickupAddress(nextPickupAddress);
                   setDropoffAddress(nextDropoffAddress);
                   setPickupLat(nextPickupLat);
                   setPickupLng(nextPickupLng);
                   setDropoffLat(nextDropoffLat);
                   setDropoffLng(nextDropoffLng);
+                  setPickupSource(nextPickupSource);
+                  setDropoffSource(nextDropoffSource);
+                  setPickupAnchorText(nextPickupAnchor);
+                  setDropoffAnchorText(nextDropoffAnchor);
                 }}
                 className="absolute right-3 top-3 inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800"
                 aria-label="Swap pickup and dropoff"
@@ -645,8 +711,20 @@ function BookRide() {
                     value={dropoffAddress}
                     onFocus={() => setActiveField("dropoff")}
                     onChange={(e) => {
-                      setDropoffAddress(e.target.value);
+                      const v = e.target.value;
+                      setDropoffAddress(v);
                       setActiveField("dropoff");
+                      if (
+                        dropoffLat != null &&
+                        dropoffLng != null &&
+                        dropoffAnchorText &&
+                        normRouteAddr(v) !== normRouteAddr(dropoffAnchorText)
+                      ) {
+                        setDropoffLat(null);
+                        setDropoffLng(null);
+                        setDropoffSource("none");
+                        setDropoffAnchorText("");
+                      }
                     }}
                     placeholder="Enter dropoff address"
                     className="w-full bg-white px-4 py-3 text-base font-medium text-gray-900 caret-gray-900 outline-none transition-all duration-150 ease-out placeholder:text-gray-400 rounded-lg border border-gray-200 shadow-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:placeholder:text-gray-500 dark:focus:border-emerald-400 dark:focus:ring-emerald-900/30"
@@ -660,6 +738,15 @@ function BookRide() {
                     {isSearchingDropoff ? "..." : "Find"}
                   </button>
                 </div>
+                {dropoffAddress.trim().length >= suggestMinLen && (dropoffLat == null || dropoffLng == null) ? (
+                  <p className="mt-1.5 text-xs text-amber-700 dark:text-amber-400">Please select a location from the list</p>
+                ) : null}
+                {dropoffLat != null && dropoffLng != null ? (
+                  <p className="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+                    <CheckCircle className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                    Location confirmed
+                  </p>
+                ) : null}
               </div>
             </div>
 
@@ -690,6 +777,8 @@ function BookRide() {
                       setPickupAddress(s.display_name);
                       setPickupLat(s.lat);
                       setPickupLng(s.lng);
+                      setPickupSource("suggestion");
+                      setPickupAnchorText(s.display_name);
                       setPickupSuggestions([]);
                     }}
                     className="block w-full cursor-pointer border-b border-gray-100 px-3 py-3 text-left text-sm text-gray-800 last:border-0 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-800"
@@ -709,6 +798,8 @@ function BookRide() {
                       setDropoffAddress(s.display_name);
                       setDropoffLat(s.lat);
                       setDropoffLng(s.lng);
+                      setDropoffSource("suggestion");
+                      setDropoffAnchorText(s.display_name);
                       setDropoffSuggestions([]);
                     }}
                     className="block w-full cursor-pointer border-b border-gray-100 px-3 py-3 text-left text-sm text-gray-800 last:border-0 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-800"
@@ -843,8 +934,16 @@ function BookRide() {
                     onClick={() => {
                       if (!pickupAddress.trim()) {
                         setPickupAddress(loc);
+                        setPickupLat(null);
+                        setPickupLng(null);
+                        setPickupSource("none");
+                        setPickupAnchorText("");
                       } else {
                         setDropoffAddress(loc);
+                        setDropoffLat(null);
+                        setDropoffLng(null);
+                        setDropoffSource("none");
+                        setDropoffAnchorText("");
                       }
                     }}
                     className="flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left text-xs text-gray-700 hover:bg-gray-50"
@@ -860,7 +959,8 @@ function BookRide() {
           <div className="sticky bottom-2 z-20 grid grid-cols-[1fr_auto] gap-2 rounded-2xl border border-gray-200 bg-white/95 p-2 backdrop-blur supports-[backdrop-filter]:bg-white/70">
             <button
               type="submit"
-              className="inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 px-4 py-3 text-base font-extrabold text-white hover:from-emerald-700 hover:to-emerald-600"
+              disabled={!canContinue}
+              className="inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 px-4 py-3 text-base font-extrabold text-white hover:from-emerald-700 hover:to-emerald-600 disabled:pointer-events-none disabled:opacity-50"
             >
               {`Book ${selectedRide.name}`}
             </button>

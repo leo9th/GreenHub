@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  isRiderFabEligible,
   normalizeRiderFabMode,
   resolveInitialRiderFabMode,
   riderFabModeStorageKey,
@@ -30,5 +31,17 @@ describe("riderFabMode helpers", () => {
 
   it("defaults rider-capable users to rider when unset", () => {
     expect(resolveInitialRiderFabMode({ isRiderCapable: true, savedMode: null })).toBe("rider");
+  });
+
+  describe("isRiderFabEligible (RiderPresenceFab visibility)", () => {
+    it("is false for typical buyer: not rider role and no GreenHub row", () => {
+      expect(isRiderFabEligible(false, "none")).toBe(false);
+    });
+    it("is true when profile role is rider (even if no greenhub_riders row yet)", () => {
+      expect(isRiderFabEligible(true, "none")).toBe(true);
+    });
+    it("is true when any GreenHub status exists (e.g. pending)", () => {
+      expect(isRiderFabEligible(false, "pending")).toBe(true);
+    });
   });
 });

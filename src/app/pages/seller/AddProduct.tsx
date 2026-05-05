@@ -15,6 +15,11 @@ import {
 import { CAR_BRAND_SELECT_OTHER, NIGERIA_CAR_BRAND_OPTIONS } from "../../data/carBrands";
 import { supabaseErrorMessage } from "../../utils/supabaseErrorMessage";
 import { MAX_PRODUCT_IMAGES, parseProductImagesFromRow } from "../../utils/productImages";
+import {
+  decodeDomesticDeliveryFromRow,
+  encodeDomesticDeliveryOptionsForDb,
+  type DomesticDeliveryMode,
+} from "../../utils/sellerDomesticDeliveryOptions";
 import { getConditionOptionsForCategorySlug } from "../../data/productConditions";
 
 const STORAGE_BUCKET = "products";
@@ -45,6 +50,8 @@ export default function AddProduct() {
   const [carBrandOther, setCarBrandOther] = useState("");
   /** Keys = preset ids (usa, uk, …); values = fee + ETA for international shipping. */
   const [intlShippingById, setIntlShippingById] = useState<Record<string, InternationalShippingFeeRow>>({});
+  const [domesticMode, setDomesticMode] = useState<DomesticDeliveryMode>("pickup");
+  const [domesticFeeNgn, setDomesticFeeNgn] = useState("");
   const prefillTitle = (searchParams.get("item") ?? "").trim();
 
   useEffect(() => {
@@ -134,6 +141,10 @@ export default function AddProduct() {
         }
       }
       setIntlShippingById(nextIntl);
+
+      const dom = decodeDomesticDeliveryFromRow((data as { delivery_options?: unknown }).delivery_options);
+      setDomesticMode(dom.mode);
+      setDomesticFeeNgn(dom.mode === "delivery" && dom.feeNgn > 0 ? String(dom.feeNgn) : "");
     })();
 
     return () => {
@@ -281,6 +292,14 @@ export default function AddProduct() {
       return;
     }
 
+    if (domesticMode === "delivery") {
+      const enc = encodeDomesticDeliveryOptionsForDb(domesticMode, domesticFeeNgn);
+      if (enc == null) {
+        alert("Enter a valid delivery fee in ₦, or choose seller pickup.");
+        return;
+      }
+    }
+
     let carBrandValue: string | null = null;
     if (category === "vehicles") {
       if (carBrandSelect === CAR_BRAND_SELECT_OTHER) {
@@ -307,6 +326,7 @@ export default function AddProduct() {
       const intlKeys = Object.keys(intlShippingById);
       const shippingDestPayload = intlKeys.length ? intlKeys : null;
       const intlFeesPayload = intlKeys.length ? intlShippingById : null;
+      const deliveryOptionsPayload = encodeDomesticDeliveryOptionsForDb(domesticMode, domesticFeeNgn);
 
       const uploadedUrls = await uploadNewImages((pct) => setUploadProgress(pct));
       const imageUrls = [...existingImageUrls, ...uploadedUrls].slice(0, MAX_PRODUCT_IMAGES);
@@ -321,6 +341,7 @@ export default function AddProduct() {
         title: title.trim(),
           description: description.trim(),
         price_local: priceLocalNum,
+        price: priceLocalNum,
         image: mainImage,
           images: imageUrls,
           category: category.trim(),
@@ -329,6 +350,7 @@ export default function AddProduct() {
           car_brand: carBrandValue,
           shipping_destinations: shippingDestPayload,
           international_shipping_fees: intlFeesPayload,
+          delivery_options: deliveryOptionsPayload,
           stock_quantity: stockQtyNum,
           updated_at: new Date().toISOString(),
         };
@@ -351,6 +373,7 @@ export default function AddProduct() {
         title: title.trim(),
         description: description.trim(),
         price_local: priceLocalNum,
+        price: priceLocalNum,
         image: mainImage,
         images: imageUrls,
         category: category.trim(),
@@ -359,6 +382,7 @@ export default function AddProduct() {
         car_brand: carBrandValue,
         shipping_destinations: shippingDestPayload,
         international_shipping_fees: intlFeesPayload,
+        delivery_options: deliveryOptionsPayload,
         stock_quantity: stockQtyNum,
         status: "active" as const,
         created_at: new Date().toISOString(),
@@ -635,6 +659,48 @@ export default function AddProduct() {
         </div>
 
         <div className="bg-white rounded-lg p-4 space-y-4">
+          <div className="rounded-lg border border-gray-200 bg-gray-50/90 p-3 space-y-3">
+            <p className="text-sm font-semibold text-gray-900">Nigeria — buyer delivery</p>
+            <p className="text-xs text-gray-600">Used at checkout for local delivery totals.</p>
+            <label className="flex cursor-pointer items-start gap-2.5 text-sm text-gray-800">
+              <input
+                type="radio"
+                name="domestic-delivery"
+                className="mt-0.5"
+                checked={domesticMode === "pickup"}
+                onChange={() => {
+                  setDomesticMode("pickup");
+                  setDomesticFeeNgn("");
+                }}
+              />
+              <span>Seller pickup (buyer collects)</span>
+            </label>
+            <label className="flex cursor-pointer items-start gap-2.5 text-sm text-gray-800">
+              <input
+                type="radio"
+                name="domestic-delivery"
+                className="mt-0.5"
+                checked={domesticMode === "delivery"}
+                onChange={() => setDomesticMode("delivery")}
+              />
+              <span>I can deliver locally (fee below)</span>
+            </label>
+            {domesticMode === "delivery" ? (
+              <div className="pt-1">
+                <label className="mb-1 block text-xs font-medium text-gray-600">Delivery fee (₦)</label>
+                <input
+                  type="number"
+                  min={0}
+                  step={100}
+                  value={domesticFeeNgn}
+                  onChange={(e) => setDomesticFeeNgn(e.target.value)}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#22c55e]"
+                  placeholder="e.g. 1500"
+                  inputMode="numeric"
+                />
+              </div>
+            ) : null}
+          </div>
           <div>
             <h2 className="font-semibold text-gray-800 mb-1">Delivery &amp; shipping</h2>
             <p className="text-xs text-gray-500 mb-3">
@@ -698,7 +764,9 @@ export default function AddProduct() {
               })}
             </ul>
           ) : (
-            <p className="text-xs text-gray-500">No international routes selected — buyers only see local / other options you add elsewhere.</p>
+            <p className="text-xs text-gray-500">
+              No international routes selected — domestic option above applies for Nigeria checkout.
+            </p>
           )}
         </div>
 

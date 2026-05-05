@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2 } from "@/app/icons/emojiLucide";
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../context/AuthContext";
-import { buildApprovalTransition, buildRejectionTransition } from "../../utils/orderReviewTransition";
+import { buildRejectionTransition, type ReviewTransition } from "../../utils/orderReviewTransition";
 
 type ReviewOrderRow = {
   id: string;
@@ -48,7 +48,7 @@ export default function OrderReviews() {
   const pendingCount = useMemo(() => orders.length, [orders]);
 
   const applyTransition = useCallback(
-    async (orderId: string, transition: ReturnType<typeof buildApprovalTransition>) => {
+    async (orderId: string, transition: ReviewTransition) => {
       setSavingOrderId(orderId);
       setError(null);
 
@@ -81,8 +81,17 @@ export default function OrderReviews() {
   );
 
   const handleApprove = async (orderId: string) => {
-    const transition = buildApprovalTransition(user?.id ?? null);
-    await applyTransition(orderId, transition);
+    setSavingOrderId(orderId);
+    setError(null);
+    try {
+      const { error: rpcError } = await supabase.rpc("confirm_order_paid", { p_order_id: orderId });
+      if (rpcError) throw rpcError;
+      await load();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Could not approve order.");
+    } finally {
+      setSavingOrderId(null);
+    }
   };
 
   const handleReject = async (orderId: string) => {

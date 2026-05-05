@@ -151,6 +151,7 @@ export function EditProductModal({ open, onOpenChange, product, onSaved }: Props
           description: description.trim(),
           category: category.trim(),
           price_local: priceNum,
+          price: priceNum,
           image: main,
           images: imageUrls,
           updated_at: new Date().toISOString(),

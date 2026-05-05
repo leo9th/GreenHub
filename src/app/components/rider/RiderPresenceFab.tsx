@@ -3,7 +3,13 @@ import { motion } from "motion/react";
 import { useLocation, useNavigate } from "react-router";
 import { toast } from "sonner";
 import { useRiderPresence } from "../../hooks/useRiderPresence";
-import { normalizeRiderFabMode, resolveInitialRiderFabMode, type RiderFabMode, riderFabModeStorageKey } from "../../utils/riderFabMode";
+import {
+  isRiderFabEligible,
+  normalizeRiderFabMode,
+  resolveInitialRiderFabMode,
+  type RiderFabMode,
+  riderFabModeStorageKey,
+} from "../../utils/riderFabMode";
 
 type Pos = { x: number; y: number };
 type SavedFabPos = { x: number; y: number };
@@ -36,7 +42,6 @@ export default function RiderPresenceFab() {
   const {
     hasUser,
     currentUserId,
-    role,
     riderStatus,
     isRider,
     isOnline,
@@ -48,7 +53,8 @@ export default function RiderPresenceFab() {
     isBusy,
   } =
     useRiderPresence();
-  const isRiderCapable = isRider || riderStatus !== "none";
+  /** Same predicate as `isRiderFabEligible`: rider role OR any `greenhub_riders` row. */
+  const isRiderCapable = isRiderFabEligible(isRider, riderStatus);
   const canUseRiderPresence = riderStatus === "approved";
   const [isPanelOpen, setIsPanelOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -137,7 +143,8 @@ export default function RiderPresenceFab() {
     };
   }, [pos.x, pos.y]);
 
-  if (!hasUser || location.pathname === "/") return null;
+  /** Logged-in only; hide on home; hide when `!isRider && riderStatus === "none"`. */
+  if (!hasUser || location.pathname === "/" || !isRiderCapable) return null;
 
   return (
     <motion.div

@@ -27,13 +27,14 @@ describe("CartProvider", () => {
 
     act(() => {
       result.current.addToCart(firstAdd);
-      result.current.addToCart({ ...firstAdd, quantity: 2, deliveryFee: 6000 });
+      result.current.addToCart({ ...firstAdd, quantity: 2, deliveryFee: 6000, price: 260_000 });
     });
 
     expect(result.current.items).toHaveLength(1);
     expect(result.current.items[0]?.quantity).toBe(3);
     expect(result.current.items[0]?.deliveryFee).toBe(6000);
+    expect(result.current.items[0]?.price).toBe(260_000);
     expect(result.current.cartCount).toBe(3);
-    expect(result.current.cartTotal).toBe(750000);
+    expect(result.current.cartTotal).toBe(780_000);
   });
 });

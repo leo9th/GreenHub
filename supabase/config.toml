@@ -15,5 +15,8 @@ verify_jwt = false
 [functions.verify-boost-payment]
 verify_jwt = true
 
+[functions.verify-checkout-payment]
+verify_jwt = true
+
 [functions.send-scheduled-notifications]
 verify_jwt = false

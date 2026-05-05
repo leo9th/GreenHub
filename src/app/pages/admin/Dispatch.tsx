@@ -109,6 +109,8 @@ export default function AdminDispatch() {
   const [productRideBookings, setProductRideBookings] = useState<ProductRideBookingRow[]>([]);
   const [pending, setPending] = useState<RiderRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [riderActionUserId, setRiderActionUserId] = useState<string | null>(null);
   const [assignRiderByJob, setAssignRiderByJob] = useState<Record<string, string>>({});
   const [assigningId, setAssigningId] = useState<string | null>(null);
   const [historyRequestId, setHistoryRequestId] = useState<string | null>(null);
@@ -146,8 +148,13 @@ export default function AdminDispatch() {
     }
   }, [lastSyncSeconds]);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (options?: { soft?: boolean }) => {
+    const soft = Boolean(options?.soft);
+    if (soft) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
     try {
       const [jRes, rRes, prbRes] = await Promise.all([
         supabase.rpc("admin_list_delivery_jobs"),
@@ -174,7 +181,11 @@ export default function AdminDispatch() {
       setProductRideBookings([]);
       setPending([]);
     } finally {
-      setLoading(false);
+      if (soft) {
+        setRefreshing(false);
+      } else {
+        setLoading(false);
+      }
     }
   }, []);
 
@@ -211,7 +222,7 @@ export default function AdminDispatch() {
       });
       if (error) throw error;
       toast.success("Rider assigned");
-      await load();
+      await load({ soft: true });
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Assign failed");
     } finally {
@@ -233,7 +244,7 @@ export default function AdminDispatch() {
       });
       if (error) throw error;
       toast.success("Rider assigned to product ride booking");
-      await load();
+      await load({ soft: true });
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Assign failed");
     } finally {
@@ -281,7 +292,7 @@ export default function AdminDispatch() {
       });
       if (error) throw error;
       toast.success(`Nearest rider assigned ${String(data || "").slice(0, 8)}…`);
-      await load();
+      await load({ soft: true });
       await findNearbyRiders(bookingId, true);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Auto-assign failed");
@@ -312,6 +323,7 @@ export default function AdminDispatch() {
   }, [tab, nearbyByBooking, findNearbyRiders, resetFreshness]);
 
   const approveRider = async (userId: string) => {
+    setRiderActionUserId(userId);
     try {
       const { error } = await supabase.rpc("admin_set_greenhub_rider_status", {
         p_user_id: userId,
@@ -319,13 +331,33 @@ export default function AdminDispatch() {
       });
       if (error) throw error;
       toast.success("Rider approved");
-      await load();
+      await load({ soft: true });
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Could not approve");
+    } finally {
+      setRiderActionUserId(null);
+    }
+  };
+
+  const rejectRider = async (userId: string) => {
+    setRiderActionUserId(userId);
+    try {
+      const { error } = await supabase.rpc("admin_set_greenhub_rider_status", {
+        p_user_id: userId,
+        p_status: "rejected",
+      });
+      if (error) throw error;
+      toast.success("Application rejected");
+      await load({ soft: true });
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Could not reject");
+    } finally {
+      setRiderActionUserId(null);
     }
   };
 
   const blockRider = async (userId: string) => {
+    setRiderActionUserId(userId);
     try {
       const { error } = await supabase.rpc("admin_set_greenhub_rider_status", {
         p_user_id: userId,
@@ -333,9 +365,11 @@ export default function AdminDispatch() {
       });
       if (error) throw error;
       toast.success("Rider suspended");
-      await load();
+      await load({ soft: true });
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Could not update");
+    } finally {
+      setRiderActionUserId(null);
     }
   };
 
@@ -355,9 +389,23 @@ export default function AdminDispatch() {
             <h1 className="text-2xl font-bold tracking-tight text-emerald-300 sm:text-3xl">Rider delivery</h1>
             <p className="mt-1 text-sm text-emerald-100/60">GreenHub delivery jobs, riders, and job event history.</p>
           </div>
-          <Link to="/admin/dashboard" className="text-sm text-emerald-200/80 hover:text-emerald-300">
-            ← Dashboard
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              disabled={loading || refreshing}
+              onClick={() => {
+                resetFreshness();
+                void load({ soft: true });
+              }}
+              className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/40 bg-emerald-950/40 px-3 py-2 text-sm font-medium text-emerald-100 transition hover:bg-emerald-900/50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {refreshing ? <Loader2 className="h-4 w-4 shrink-0 animate-spin text-emerald-300" aria-hidden /> : null}
+              Refresh data
+            </button>
+            <Link to="/admin/dashboard" className="text-sm text-emerald-200/80 hover:text-emerald-300">
+              ← Dashboard
+            </Link>
+          </div>
         </div>
         {missingProductRideBookingsTable || missingRiderPresenceTable ? (
           <div className="mb-4 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-100">
@@ -414,47 +462,72 @@ export default function AdminDispatch() {
               <p className="mt-2 text-sm text-slate-400">None.</p>
             ) : (
               <ul className="mt-4 divide-y divide-slate-700/80">
-                {pending.map((p) => (
+                {pending.map((p) => {
+                  const rowBusy = riderActionUserId === p.user_id;
+                  return (
                   <li key={p.user_id} className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0">
                     <p className="font-mono text-sm text-slate-200">{p.user_id}</p>
-                    <div className="flex gap-2">
+                    <div className="flex items-center gap-2">
+                      {rowBusy ? <Loader2 className="h-4 w-4 shrink-0 animate-spin text-emerald-400" aria-hidden /> : null}
                       <button
                         type="button"
+                        disabled={rowBusy}
                         onClick={() => void approveRider(p.user_id)}
-                        className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500"
+                        className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         Approve
                       </button>
                       <button
                         type="button"
-                        onClick={() => void blockRider(p.user_id)}
-                        className="rounded-lg border border-slate-600 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800"
+                        disabled={rowBusy}
+                        onClick={() => void rejectRider(p.user_id)}
+                        className="rounded-lg border border-slate-500 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        Suspend
+                        Reject
                       </button>
                     </div>
                   </li>
-                ))}
+                  );
+                })}
               </ul>
             )}
 
             <h2 className="mt-8 text-lg font-semibold text-white">All riders</h2>
             <ul className="mt-2 divide-y divide-slate-800 text-sm">
-              {riders.map((r) => (
+              {riders.map((r) => {
+                const rowBusy = riderActionUserId === r.user_id;
+                return (
                 <li key={r.user_id} className="flex flex-wrap items-center justify-between gap-2 py-2">
                   <span className="font-mono text-xs text-slate-300">{r.user_id}</span>
                   <span className="text-slate-400">{r.status}</span>
                   {String(r.status).toLowerCase() === "approved" ? (
-                    <button type="button" onClick={() => void blockRider(r.user_id)} className="text-xs text-rose-300 hover:underline">
-                      Suspend
-                    </button>
+                    <span className="inline-flex items-center gap-1.5">
+                      {rowBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-400" aria-hidden /> : null}
+                      <button
+                        type="button"
+                        disabled={rowBusy}
+                        onClick={() => void blockRider(r.user_id)}
+                        className="text-xs text-rose-300 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Suspend
+                      </button>
+                    </span>
                   ) : String(r.status).toLowerCase() === "suspended" ? (
-                    <button type="button" onClick={() => void approveRider(r.user_id)} className="text-xs text-emerald-300 hover:underline">
-                      Approve
-                    </button>
+                    <span className="inline-flex items-center gap-1.5">
+                      {rowBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-400" aria-hidden /> : null}
+                      <button
+                        type="button"
+                        disabled={rowBusy}
+                        onClick={() => void approveRider(r.user_id)}
+                        className="text-xs text-emerald-300 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Approve
+                      </button>
+                    </span>
                   ) : null}
                 </li>
-              ))}
+                );
+              })}
             </ul>
           </section>
         ) : null}
@@ -605,8 +678,10 @@ export default function AdminDispatch() {
                                     {autoAssigningId === b.id ? "Assigning..." : "Auto-assign nearest"}
                                   </button>
                                 </div>
-                                <p className={`text-xs ${isStale ? "text-red-600" : "text-gray-400"}`}>
-                                  {isStale ? "⚠️ Connection stale" : `Last sync: ${lastSyncSeconds}s ago`}
+                                <p className={`text-xs ${isStale ? "text-amber-200/90" : "text-slate-400"}`}>
+                                  {isStale
+                                    ? "Nearby rider list may be stale — use Find nearby to refresh."
+                                    : `Nearby rider sync: ${lastSyncSeconds}s ago`}
                                 </p>
                                 {nearbyByBooking[b.id]?.length ? (
                                   <ul className="space-y-1 rounded-md border border-slate-700 bg-[#0b1220] p-2 text-[11px] text-slate-300">
@@ -662,8 +737,10 @@ export default function AdminDispatch() {
               <div className="mt-6 flex justify-center">
                 <Loader2 className="h-8 w-8 animate-spin text-emerald-400" />
               </div>
+            ) : !historyRequestId ? (
+              <p className="mt-4 text-sm text-slate-500">Select a job to view its events.</p>
             ) : historyRows.length === 0 ? (
-              <p className="mt-4 text-sm text-slate-500">No events loaded.</p>
+              <p className="mt-4 text-sm text-slate-500">No events found for this job.</p>
             ) : (
               <ul className="mt-4 max-h-80 overflow-auto rounded-lg border border-slate-700 bg-[#0b1220] p-2 text-xs text-slate-400">
                 {historyRows.map((h) => (

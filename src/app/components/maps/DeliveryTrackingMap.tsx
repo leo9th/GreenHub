@@ -26,6 +26,11 @@ type DeliveryTrackingMapProps = {
    * `arriving`: under 500 m to current leg target · `almost_there`: under 50 m.
    */
   onRiderLegProximity?: (stage: "arriving" | "almost_there") => void;
+  /**
+   * When false, skip mock pickup approach and route-demo rider (no `onMockRiderAssigned` / `onArrival` from demos).
+   * Real `riderLocation` smoothing is unchanged. Default true for preview flows (e.g. BookRide).
+   */
+  enableDemoRiderMovement?: boolean;
 };
 
 const FALLBACK_STYLE_URL = "https://tiles.openfreemap.org/styles/liberty";
@@ -362,6 +367,7 @@ function DeliveryTrackingMap({
   onArrival,
   onMockRiderAssigned,
   onRiderLegProximity,
+  enableDemoRiderMovement = true,
 }: DeliveryTrackingMapProps) {
   const onArrivalRef = useRef(onArrival);
   onArrivalRef.current = onArrival;
@@ -695,6 +701,14 @@ function DeliveryTrackingMap({
       activeMockRiderRef.current = null;
     };
 
+    if (!enableDemoRiderMovement) {
+      mockPickupApproachSeqRef.current += 1;
+      cancelApproach();
+      removeActiveMock();
+      mockPickupApproachDoneRef.current = true;
+      return;
+    }
+
     const p = normalizeLocation(pickupLocation);
     const liveRider = normalizeLocation(riderLocation);
 
@@ -782,7 +796,15 @@ function DeliveryTrackingMap({
       removeActiveMock();
       mockPickupApproachDoneRef.current = true;
     };
-  }, [pickupLocation, riderLocation, mapReadyTick, safeAddMarker, safeSetMarker, scheduleDebouncedCameraFit]);
+  }, [
+    pickupLocation,
+    riderLocation,
+    mapReadyTick,
+    safeAddMarker,
+    safeSetMarker,
+    scheduleDebouncedCameraFit,
+    enableDemoRiderMovement,
+  ]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -870,6 +892,24 @@ function DeliveryTrackingMap({
       routeDemoRiderMarkerRef.current?.remove();
       routeDemoRiderMarkerRef.current = null;
     };
+
+    if (!enableDemoRiderMovement) {
+      cancelDemoAnimation();
+      removeDemoMarker();
+      if (routeDemoApproachWaitTimerRef.current != null) {
+        window.clearTimeout(routeDemoApproachWaitTimerRef.current);
+        routeDemoApproachWaitTimerRef.current = null;
+      }
+      mockPickupApproachDoneRef.current = true;
+      return () => {
+        cancelDemoAnimation();
+        removeDemoMarker();
+        if (routeDemoApproachWaitTimerRef.current != null) {
+          window.clearTimeout(routeDemoApproachWaitTimerRef.current);
+          routeDemoApproachWaitTimerRef.current = null;
+        }
+      };
+    }
 
     // NOTE: Always use normalized locations (p/d), never raw props
     const p = normalizeLocation(pickupLocation);
@@ -988,7 +1028,15 @@ function DeliveryTrackingMap({
       cancelDemoAnimation();
       removeDemoMarker();
     };
-  }, [pickupLocation, dropoffLocation, riderLocation, safeAddMarker, safeSetMarker, scheduleDebouncedCameraFit]);
+  }, [
+    pickupLocation,
+    dropoffLocation,
+    riderLocation,
+    safeAddMarker,
+    safeSetMarker,
+    scheduleDebouncedCameraFit,
+    enableDemoRiderMovement,
+  ]);
 
   useEffect(() => {
     liveProximityRef.current = { near500: false, near50: false };
@@ -1133,7 +1181,8 @@ function areDeliveryTrackingMapPropsEqual(prev: DeliveryTrackingMapProps, next: 
     prev.className === next.className &&
     prev.onArrival === next.onArrival &&
     prev.onMockRiderAssigned === next.onMockRiderAssigned &&
-    prev.onRiderLegProximity === next.onRiderLegProximity
+    prev.onRiderLegProximity === next.onRiderLegProximity &&
+    (prev.enableDemoRiderMovement ?? true) === (next.enableDemoRiderMovement ?? true)
   );
 }
 

@@ -1,4 +1,4 @@
-import { OrderState, OrderAction, OrderStatus } from "./OrderState";
+import { OrderState, OrderAction } from "./OrderState";
 
 export const initialOrderState: OrderState = {
   orderId: "",
@@ -23,25 +23,43 @@ export function orderReducer(state: OrderState, action: OrderAction): OrderState
       return { ...state, riderInfo: action.riderInfo };
     case "UPDATE_ESTIMATED_ARRIVAL_TIME":
       return { ...state, estimatedArrivalTime: action.time };
-      case "UPDATE_RIDER_LOCATION":
-        return {
-          ...state,
-          currentRiderLocation: action.lat != null && action.lng != null && action.bearing != null
-            ? { lat: action.lat, lng: action.lng, bearing: action.bearing }
-            : null,
-        };
-      case "INITIATE_REVIEW":
-        // State for review modal should probably be in OrderDetail local state
+    case "UPDATE_RIDER_LOCATION": {
+      if (action.lat == null || action.lng == null || !Number.isFinite(action.lat) || !Number.isFinite(action.lng)) {
         return state;
-      case "SUBMIT_REVIEW":
-        // Review submission is a side effect, not a state change in the reducer
-        return state;
-      case "CANCEL_REVIEW":
-        // Review cancellation is a side effect, not a state change in the reducer
-        return state;
-      case "SUBMIT_ORDER_ACTION":
-        // Order actions are side effects, not a state change in the reducer
-        return state;
+      }
+      const prev = state.currentRiderLocation;
+      const bearing =
+        action.bearing != null && Number.isFinite(action.bearing)
+          ? action.bearing
+          : prev != null && Number.isFinite(prev.bearing)
+            ? prev.bearing
+            : 0;
+      const lastSeenAt =
+        action.lastSeenAt !== undefined ? action.lastSeenAt : prev?.lastSeenAt;
+      return {
+        ...state,
+        currentRiderLocation: {
+          lat: action.lat,
+          lng: action.lng,
+          bearing,
+          ...(lastSeenAt !== undefined ? { lastSeenAt } : {}),
+        },
+      };
+    }
+    case "CLEAR_RIDER_LOCATION":
+      return { ...state, currentRiderLocation: null };
+    case "INITIATE_REVIEW":
+      // State for review modal should probably be in OrderDetail local state
+      return state;
+    case "SUBMIT_REVIEW":
+      // Review submission is a side effect, not a state change in the reducer
+      return state;
+    case "CANCEL_REVIEW":
+      // Review cancellation is a side effect, not a state change in the reducer
+      return state;
+    case "SUBMIT_ORDER_ACTION":
+      // Order actions are side effects, not a state change in the reducer
+      return state;
     default:
       return state;
   }

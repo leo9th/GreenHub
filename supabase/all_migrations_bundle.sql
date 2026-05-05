@@ -4001,3 +4001,165 @@ create trigger trigger_sync_verified_advertiser
   for each row
   execute function public.sync_verified_advertiser_from_boost();
 
+-- ========== 20260713120000_orders_total_amount_column_compat.sql ==========
+-- Align public.orders with create_checkout_order RPCs that insert total_amount,
+-- and with dynamic RPCs that prefer this column when present (information_schema order).
+-- Fixes: column "total_amount" of relation "orders" does not exist (42703).
+
+alter table public.orders add column if not exists total_amount numeric(14, 2);
+
+do $$
+declare
+  v_has_total_price boolean;
+  v_has_amount boolean;
+begin
+  select exists (
+    select 1
+    from information_schema.columns c
+    where c.table_schema = 'public'
+      and c.table_name = 'orders'
+      and c.column_name = 'total_price'
+  )
+  into v_has_total_price;
+
+  select exists (
+    select 1
+    from information_schema.columns c
+    where c.table_schema = 'public'
+      and c.table_name = 'orders'
+      and c.column_name = 'amount'
+  )
+  into v_has_amount;
+
+  if v_has_total_price then
+    execute $q$
+      update public.orders o
+      set total_amount = coalesce(o.total_amount, o.total_price)
+      where o.total_amount is null
+         and o.total_price is not null
+    $q$;
+  elsif v_has_amount then
+    execute $q$
+      update public.orders o
+      set total_amount = coalesce(o.total_amount, o.amount)
+      where o.total_amount is null
+         and o.amount is not null
+    $q$;
+  end if;
+end $$;
+
+comment on column public.orders.total_amount is
+  'Order total in major currency units; preferred by checkout RPC; backfilled from total_price/amount when added.';
+
+notify pgrst, 'reload schema';
+
+-- ========== 20260713130000_orders_delivery_fee_platform_fee_compat.sql ==========
+-- Align public.orders with create_checkout_order RPCs that insert delivery_fee and platform_fee.
+-- Fixes: column "delivery_fee" of relation "orders" does not exist (42703).
+
+alter table public.orders add column if not exists delivery_fee numeric(14, 2);
+alter table public.orders add column if not exists platform_fee numeric(14, 2);
+
+do $$
+declare
+  v_has_shipping_fee boolean;
+begin
+  select exists (
+    select 1
+    from information_schema.columns c
+    where c.table_schema = 'public'
+      and c.table_name = 'orders'
+      and c.column_name = 'shipping_fee'
+  )
+  into v_has_shipping_fee;
+
+  if v_has_shipping_fee then
+    execute $q$
+      update public.orders o
+      set delivery_fee = coalesce(o.delivery_fee, o.shipping_fee)
+      where o.delivery_fee is null
+        and o.shipping_fee is not null
+    $q$;
+  end if;
+end $$;
+
+comment on column public.orders.delivery_fee is
+  'Aggregate delivery fee at checkout; used by create_checkout_order; optional backfill from shipping_fee.';
+
+comment on column public.orders.platform_fee is
+  'Platform fee at checkout; used by create_checkout_order.';
+
+notify pgrst, 'reload schema';
+
+-- ========== 20260715120000_orders_seller_id_nullable_marketplace.sql ==========
+-- Marketplace checkout creates one orders row per buyer cart; each line has seller_id on order_items.
+-- Legacy schemas sometimes enforce orders.seller_id NOT NULL, which breaks create_checkout_order inserts.
+-- Fixes: null value in column "seller_id" of relation "orders" violates not-null constraint (23502).
+
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns c
+    where c.table_schema = 'public'
+      and c.table_name = 'orders'
+      and c.column_name = 'seller_id'
+  ) then
+    alter table public.orders alter column seller_id drop not null;
+    execute $cmt$
+      comment on column public.orders.seller_id is
+        'Optional legacy hint for single-seller orders; marketplace checkout leaves null — use order_items.seller_id.';
+    $cmt$;
+  end if;
+end $$;
+
+notify pgrst, 'reload schema';
+
+-- ========== 20260715130000_orders_product_id_nullable_marketplace.sql ==========
+-- Marketplace checkout: product lines live on order_items (product_id per line).
+-- Legacy schemas may enforce orders.product_id NOT NULL for single-line orders.
+-- Fixes: null value in column "product_id" of relation "orders" violates not-null constraint (23502).
+
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns c
+    where c.table_schema = 'public'
+      and c.table_name = 'orders'
+      and c.column_name = 'product_id'
+  ) then
+    alter table public.orders alter column product_id drop not null;
+    execute $cmt$
+      comment on column public.orders.product_id is
+        'Optional legacy single-product reference; marketplace checkout uses order_items.product_id.';
+    $cmt$;
+  end if;
+end $$;
+
+notify pgrst, 'reload schema';
+
+-- ========== 20260715140000_orders_unit_price_local_nullable_marketplace.sql ==========
+-- Marketplace checkout: line prices live on order_items (unit_price / price_at_time).
+-- Legacy schemas may enforce orders.unit_price_local NOT NULL.
+-- Fixes: null value in column "unit_price_local" of relation "orders" violates not-null constraint (23502).
+
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns c
+    where c.table_schema = 'public'
+      and c.table_name = 'orders'
+      and c.column_name = 'unit_price_local'
+  ) then
+    alter table public.orders alter column unit_price_local drop not null;
+    execute $cmt$
+      comment on column public.orders.unit_price_local is
+        'Optional legacy pricing; marketplace checkout uses order_items unit/price columns.';
+    $cmt$;
+  end if;
+end $$;
+
+notify pgrst, 'reload schema';
+

@@ -593,23 +593,22 @@ export default function Home() {
         />
 
         <div className="mb-6 flex justify-center">
-          <div className="w-full max-w-3xl">
+          <div className="flex w-full max-w-3xl flex-col gap-2 sm:flex-row sm:items-start sm:justify-end sm:gap-2">
             <AdvancedSearch
-              className="w-full"
+              className={`w-full ${service === "shop" ? "sm:w-[200px] md:w-[280px] sm:shrink-0 sm:max-w-xl" : ""}`}
               placeholder="Find anything on GreenHub..."
               value={globalSearchTerm}
               onQueryChange={setGlobalSearchTerm}
               onSelectCategory={(category) => setGlobalSearchTerm(category)}
             />
+            {service === "shop" ? (
+              <SortBar id="home-listing-sort" value={listingSort} onChange={setListingSort} className="shrink-0" />
+            ) : null}
           </div>
         </div>
 
         {service === "shop" ? (
           <>
-            <div className="mb-1 flex flex-wrap items-center justify-end gap-2">
-              <SortBar id="home-listing-sort" value={listingSort} onChange={setListingSort} />
-            </div>
-
             <CollapsibleFilters
               idPrefix="home-collapsible-filters"
               sectionId="more-filters-section"

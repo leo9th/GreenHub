@@ -187,9 +187,10 @@ export default function TopNav() {
           >
             Shop
           </Link>
-          <div className="hidden md:block w-[320px] xl:w-[380px]">
+          <div className="hidden md:flex min-w-0 flex-1 justify-end pr-1">
             <AdvancedSearch
-              className="w-full"
+              compact
+              className="w-[200px] md:w-[260px] xl:w-[280px] shrink-0"
               placeholder="Search GreenHub..."
               onSelectCategory={(category) => navigate(`/products?search=${encodeURIComponent(category)}`)}
             />

@@ -192,9 +192,9 @@ export default function Products() {
           onCategoryChange={setSelectedCategory}
         />
 
-        <div className="mb-4">
+        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-end sm:gap-2">
           <AdvancedSearch
-            className="w-full"
+            className="w-full sm:w-[200px] md:w-[280px] sm:shrink-0"
             placeholder="Search products and categories..."
             value={globalSearchTerm}
             showTopRatedToggle
@@ -224,10 +224,7 @@ export default function Products() {
               setSearchParams(nextParams, { replace: true });
             }}
           />
-        </div>
-
-        <div className="mb-1 flex flex-wrap items-center justify-end gap-2">
-          <SortBar id="shop-listing-sort" value={listingSort} onChange={setListingSort} />
+          <SortBar id="shop-listing-sort" value={listingSort} onChange={setListingSort} className="shrink-0" />
         </div>
 
         <CollapsibleFilters

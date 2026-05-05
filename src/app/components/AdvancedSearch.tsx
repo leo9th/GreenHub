@@ -44,6 +44,8 @@ type AdvancedSearchProps = {
   onTopRatedOnlyChange?: (next: boolean) => void;
   onSelectProduct?: (productId: string) => void;
   onSelectCategory?: (category: string) => void;
+  /** Smaller input padding for TopNav / tight toolbars */
+  compact?: boolean;
 };
 
 function productAmount(p: ProductLite): number {
@@ -60,6 +62,7 @@ export default function AdvancedSearch({
   onTopRatedOnlyChange,
   onSelectProduct,
   onSelectCategory,
+  compact = false,
 }: AdvancedSearchProps) {
   const navigate = useNavigate();
   const formatPrice = useCurrency();
@@ -216,10 +219,13 @@ export default function AdvancedSearch({
     }
   }, [query, user?.id]);
 
+  const inputPad = compact ? "py-2 pl-10 pr-3 text-sm" : "py-3 pl-11 pr-4 text-sm";
+  const iconLeft = compact ? "left-3 h-3.5 w-3.5" : "left-4 h-4 w-4";
+
   return (
     <div ref={containerRef} className={`relative ${className}`}>
       <div className="relative">
-        <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+        <Search className={`pointer-events-none absolute top-1/2 -translate-y-1/2 text-gray-500 ${iconLeft}`} />
         <input
           type="search"
           value={query}
@@ -231,7 +237,7 @@ export default function AdvancedSearch({
           }}
           onFocus={() => setOpen(true)}
           placeholder={placeholder}
-          className="w-full rounded-2xl border border-white/30 bg-white/60 py-3 pl-11 pr-4 text-sm text-gray-900 shadow-[0_8px_30px_rgba(0,0,0,0.08)] backdrop-blur-md placeholder:text-gray-500 focus:border-[#22c55e]/40 focus:outline-none focus:ring-2 focus:ring-[#22c55e]/20"
+          className={`w-full rounded-2xl border border-white/30 bg-white/60 ${inputPad} text-gray-900 shadow-[0_8px_30px_rgba(0,0,0,0.08)] backdrop-blur-md placeholder:text-gray-500 focus:border-[#22c55e]/40 focus:outline-none focus:ring-2 focus:ring-[#22c55e]/20`}
         />
       </div>
       {showTopRatedToggle ? (

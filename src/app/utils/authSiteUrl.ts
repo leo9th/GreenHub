@@ -36,3 +36,16 @@ export function authRedirectTo(path: string): string {
   const p = path.startsWith("/") ? path : `/${path}`;
   return `${origin}${basePath}${p}`;
 }
+
+/**
+ * Return URL after Google/Facebook OAuth — must match an entry in
+ * Supabase → Authentication → URL Configuration → Redirect URLs (exact match).
+ * Uses `/auth/callback` so PKCE code exchange runs in `AuthCallback.tsx`.
+ */
+export function oauthCallbackRedirectTo(nextInternalPath?: string | null): string {
+  const next = nextInternalPath?.trim();
+  if (next && next.startsWith("/") && !next.startsWith("//")) {
+    return authRedirectTo(`/auth/callback?next=${encodeURIComponent(next)}`);
+  }
+  return authRedirectTo("/auth/callback");
+}

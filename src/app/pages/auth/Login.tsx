@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { useAuth } from "../../context/AuthContext";
 import { AuthSocialButtons } from "../../components/auth/AuthSocialButtons";
 import { toE164Ng } from "../../utils/phoneE164";
-import { authRedirectTo } from "../../utils/authSiteUrl";
+import { oauthCallbackRedirectTo } from "../../utils/authSiteUrl";
 import { safeInternalPath } from "../../utils/authSignupValidation";
 import { AuthFloatingIcons } from "../../components/auth/AuthFloatingIcons";
 
@@ -51,15 +51,17 @@ export default function Login() {
   }, [session?.user, navigate, nextParam]);
 
   useEffect(() => {
-    const code = searchParams.get("code");
-    if (code) {
+    const raw = searchParams.get("code");
+    const code = typeof raw === "string" ? raw.trim() : "";
+    if (code.length > 0) {
       setLoading(true);
       void exchangeCodeForSession(code)
         .then(() => {
           toast.success("You’re signed in.");
           stripOAuthCodeFromUrl();
         })
-        .catch(() => {
+        .catch((err) => {
+          console.error("[Login] exchangeCodeForSession (OAuth callback)", { error: err });
           toast.error("This sign-in link is invalid or expired.");
           setError("Verification failed. Try signing in again.");
           stripOAuthCodeFromUrl();
@@ -82,7 +84,7 @@ export default function Login() {
   }, [exchangeCodeForSession, searchParams]);
 
   const safeNext = safeInternalPath(nextParam);
-  const oauthRedirect = authRedirectTo(safeNext ? `/login?next=${encodeURIComponent(safeNext)}` : "/login");
+  const oauthRedirect = oauthCallbackRedirectTo(safeNext);
 
   const handleSocialLogin = async (provider: "google" | "facebook") => {
     setError(null);
@@ -100,6 +102,10 @@ export default function Login() {
           : {}),
       });
     } catch (err) {
+      console.error("[Login] handleSocialLogin", {
+        clickedProvider: provider,
+        error: err,
+      });
       const message = err instanceof Error ? err.message : "Could not start social sign-in.";
       toast.error(message);
       setError(message);
@@ -119,6 +125,11 @@ export default function Login() {
       const next = safeInternalPath(nextParam);
       navigate(next ?? "/dashboard", { replace: true });
     } catch (err) {
+      console.error("[Login] handleLogin (email/password)", {
+        authMethod: "email_password",
+        email: email.trim().toLowerCase(),
+        error: err,
+      });
       if (err && typeof err === "object" && "message" in err && isEmailNotConfirmedError(err as AuthError)) {
         const message = "Please confirm your email before logging in.";
         setError(message);
@@ -148,6 +159,7 @@ export default function Login() {
         state: { phone: parsed.e164, flow: "login" as const },
       });
     } catch (err) {
+      console.error("[Login] sendPhoneLoginCode (OTP)", { authMethod: "phone_otp", error: err });
       const message = err instanceof Error ? err.message : "Could not send code.";
       setError(message);
       toast.error(message);

@@ -1,8 +1,27 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import type { AuthChangeEvent, Provider, Session, User } from '@supabase/supabase-js';
+import type { AuthChangeEvent, AuthError, Provider, Session, User } from '@supabase/supabase-js';
 import { supabase } from '../../lib/supabase';
 import { ensureOAuthProfile, isOAuthUser } from '../utils/ensureOAuthProfile';
 import { authRedirectTo } from '../utils/authSiteUrl';
+
+/** Logs full Supabase Auth errors (message, code, status) for debugging provider / env mismatches. */
+function logSupabaseAuthError(
+  operation: string,
+  err: unknown,
+  extra?: Record<string, unknown>,
+): void {
+  const auth = err as Partial<AuthError> | null;
+  const payload = {
+    operation,
+    supabaseProjectUrl: import.meta.env.VITE_SUPABASE_URL ?? '(unset)',
+    message: auth?.message ?? (err instanceof Error ? err.message : String(err)),
+    code: auth?.code,
+    status: auth?.status,
+    name: err instanceof Error ? err.name : undefined,
+    ...extra,
+  };
+  console.error('[GreenHub Auth]', payload);
+}
 
 export interface UserProfile {
   id: string;
@@ -168,7 +187,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       email: email.trim().toLowerCase(),
       password,
     });
-    if (error) throw error;
+    if (error) {
+      logSupabaseAuthError('signInWithPassword', error, {
+        authMethod: 'email_password',
+        email: email.trim().toLowerCase(),
+      });
+      throw error;
+    }
   }, []);
 
   const signUp = useCallback(async (email: string, password: string, metadata: Record<string, unknown> = {}) => {
@@ -194,14 +219,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       options: { redirectTo?: string; queryParams?: Record<string, string> } = {},
     ) => {
       const { error } = await supabase.auth.signInWithOAuth({ provider, options });
-      if (error) throw error;
+      if (error) {
+        logSupabaseAuthError('signInWithOAuth', error, {
+          authMethod: 'oauth',
+          oauthProvider: provider,
+          hint:
+            provider === 'google'
+              ? 'Enable Google under Supabase → Authentication → Providers → Google for this project.'
+              : 'Enable Facebook under Supabase → Authentication → Providers → Facebook, or disable the Facebook button (VITE_ENABLE_FACEBOOK_LOGIN).',
+        });
+        throw error;
+      }
     },
     [],
   );
 
   const exchangeCodeForSession = useCallback(async (code: string) => {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
-    if (error) throw error;
+    if (error) {
+      logSupabaseAuthError('exchangeCodeForSession', error, { authMethod: 'oauth_pkce_callback' });
+      throw error;
+    }
   }, []);
 
   const sendOtp = useCallback(async ({ email, phone, shouldCreateUser = false }: { email?: string; phone?: string; shouldCreateUser?: boolean }) => {
@@ -220,7 +258,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             options: { shouldCreateUser },
           },
     );
-    if (error) throw error;
+    if (error) {
+      logSupabaseAuthError('signInWithOtp', error, {
+        authMethod: normalizedPhone ? 'phone_otp' : 'email_otp',
+        destination: normalizedPhone ? '(phone)' : normalizedEmail,
+      });
+      throw error;
+    }
   }, []);
 
   const verifyOtp = useCallback(async (identifier: string, token: string, type: 'email' | 'sms') => {

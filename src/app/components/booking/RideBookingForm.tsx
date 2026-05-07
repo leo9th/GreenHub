@@ -1,61 +1,48 @@
-import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router";
+import { Suspense, lazy, useCallback, useMemo, useState } from "react";
+import { Link, useNavigate } from "react-router";
 import { Loader2 } from "@/app/icons/emojiLucide";
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../context/AuthContext";
 import { toast } from "sonner";
-import { reverseGeocode, searchAddressSuggestions, type AddressSuggestion } from "../../utils/osmGeocode";
-import { GREENHUB_STANDALONE_BOOKING_PRODUCT_ID } from "../../constants/standaloneBooking";
+import { reverseGeocode } from "../../utils/osmGeocode";
+import {
+  createStandaloneRideBooking,
+  estimateRideFareNgn,
+  formatNgn,
+  haversineKm,
+  useDebouncedAddressSuggestions,
+  type RideVehicleTier,
+  VEHICLE_TIER_OPTIONS,
+} from "../../../modules/rider";
 
-type RideVehicle = "bike" | "car";
+const DeliveryTrackingMapPreview = lazy(() => import("../maps/DeliveryTrackingMap"));
 
 export default function RideBookingForm() {
   const navigate = useNavigate();
   const { user: authUser } = useAuth();
-  const [vehicle, setVehicle] = useState<RideVehicle | null>(null);
+  const [vehicleTier, setVehicleTier] = useState<RideVehicleTier>("economy");
   const [pickupQuery, setPickupQuery] = useState("");
   const [dropoffQuery, setDropoffQuery] = useState("");
   const [pickupLat, setPickupLat] = useState<number | null>(null);
   const [pickupLng, setPickupLng] = useState<number | null>(null);
   const [dropoffLat, setDropoffLat] = useState<number | null>(null);
   const [dropoffLng, setDropoffLng] = useState<number | null>(null);
-  const [pickupSuggestions, setPickupSuggestions] = useState<AddressSuggestion[]>([]);
-  const [dropoffSuggestions, setDropoffSuggestions] = useState<AddressSuggestion[]>([]);
-  const [searchingPickup, setSearchingPickup] = useState(false);
-  const [searchingDropoff, setSearchingDropoff] = useState(false);
   const [contactPhone, setContactPhone] = useState("");
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    const q = pickupQuery.trim();
-    if (q.length < 3) {
-      setPickupSuggestions([]);
-      return;
-    }
-    const t = window.setTimeout(() => {
-      setSearchingPickup(true);
-      void searchAddressSuggestions(q)
-        .then(setPickupSuggestions)
-        .finally(() => setSearchingPickup(false));
-    }, 320);
-    return () => window.clearTimeout(t);
-  }, [pickupQuery]);
+  const pickupSearch = useDebouncedAddressSuggestions(pickupQuery);
+  const dropoffSearch = useDebouncedAddressSuggestions(dropoffQuery);
 
-  useEffect(() => {
-    const q = dropoffQuery.trim();
-    if (q.length < 3) {
-      setDropoffSuggestions([]);
-      return;
-    }
-    const t = window.setTimeout(() => {
-      setSearchingDropoff(true);
-      void searchAddressSuggestions(q)
-        .then(setDropoffSuggestions)
-        .finally(() => setSearchingDropoff(false));
-    }, 320);
-    return () => window.clearTimeout(t);
-  }, [dropoffQuery]);
+  const distanceKm = useMemo(() => {
+    if (pickupLat == null || pickupLng == null || dropoffLat == null || dropoffLng == null) return null;
+    return haversineKm(pickupLat, pickupLng, dropoffLat, dropoffLng);
+  }, [pickupLat, pickupLng, dropoffLat, dropoffLng]);
+
+  const estimatedFareNgn = useMemo(() => {
+    if (distanceKm == null) return null;
+    return estimateRideFareNgn(distanceKm, vehicleTier);
+  }, [distanceKm, vehicleTier]);
 
   const useGpsPickup = useCallback(() => {
     if (typeof navigator === "undefined" || !navigator.geolocation) {
@@ -84,10 +71,6 @@ export default function RideBookingForm() {
       navigate(`/login?next=${encodeURIComponent("/home?service=ride")}`);
       return;
     }
-    if (!vehicle) {
-      toast.error("Choose bike or car.");
-      return;
-    }
     if (!pickupQuery.trim() || !dropoffQuery.trim()) {
       toast.error("Pickup and drop-off are required.");
       return;
@@ -100,31 +83,40 @@ export default function RideBookingForm() {
       toast.error("Contact phone is required.");
       return;
     }
+    if (distanceKm == null || estimatedFareNgn == null) {
+      toast.error("Could not estimate fare — check your route.");
+      return;
+    }
 
     setSubmitting(true);
     try {
-      const riderNote = JSON.stringify({ kind: "ride", vehicle, note: note.trim() || undefined });
-      const payload: Record<string, unknown> = {
-        user_id: authUser.id,
-        buyer_user_id: authUser.id,
-        product_id: GREENHUB_STANDALONE_BOOKING_PRODUCT_ID,
-        seller_user_id: null,
-        pickup_address: pickupQuery.trim(),
-        pickup_lat: pickupLat,
-        pickup_lng: pickupLng,
-        dropoff_address: dropoffQuery.trim(),
-        dropoff_lat: dropoffLat,
-        dropoff_lng: dropoffLng,
-        contact_phone: contactPhone.trim(),
-        rider_note: riderNote,
+      const result = await createStandaloneRideBooking(supabase, {
+        userId: authUser.id,
+        pickup: { address: pickupQuery.trim(), lat: pickupLat, lng: pickupLng },
+        dropoff: { address: dropoffQuery.trim(), lat: dropoffLat, lng: dropoffLng },
+        contactPhone: contactPhone.trim(),
+        vehicleTier,
+        estimatedFareNgn,
+        distanceKm,
+        note: note.trim() || null,
         source: "home_ride",
-        status: "pending",
-      };
-      const { data: inserted, error } = await supabase.from("product_ride_bookings").insert(payload).select("id").maybeSingle();
-      if (error) throw error;
-      const newId = inserted && typeof (inserted as { id?: unknown }).id === "string" ? (inserted as { id: string }).id : "";
+      });
+      if ("error" in result) {
+        const msg = result.error.message || "";
+        if (
+          msg.includes("estimated_fare_ngn") ||
+          msg.includes("vehicle_tier") ||
+          msg.includes("distance_km") ||
+          msg.includes("schema cache")
+        ) {
+          toast.error("Apply pending Supabase migrations for ride columns, then retry.");
+        } else {
+          toast.error(msg || "Could not submit booking.");
+        }
+        return;
+      }
       toast.success("Looking for a rider…", { description: "We’ll notify you when someone accepts." });
-      if (newId) navigate(`/bookings/${encodeURIComponent(newId)}`);
+      navigate(`/bookings/${encodeURIComponent(result.id)}`);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Could not submit booking.");
     } finally {
@@ -133,46 +125,79 @@ export default function RideBookingForm() {
   }, [
     authUser?.id,
     contactPhone,
+    distanceKm,
     dropoffLat,
     dropoffLng,
     dropoffQuery,
+    estimatedFareNgn,
     navigate,
     note,
     pickupLat,
     pickupLng,
     pickupQuery,
-    vehicle,
+    vehicleTier,
   ]);
+
+  const mapReady = pickupLat != null && pickupLng != null && dropoffLat != null && dropoffLng != null;
 
   return (
     <section className="mt-6 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
-      <h2 className="text-lg font-semibold text-gray-900 dark:text-foreground">Book a Ride</h2>
-      <p className="mt-1 text-sm text-gray-600 dark:text-muted-foreground">Choose vehicle and route. Confirm stops from suggestions for accurate pricing.</p>
-
-      <div className="mt-4 flex gap-3">
-        <button
-          type="button"
-          onClick={() => setVehicle("bike")}
-          className={`flex-1 rounded-xl border px-4 py-3 text-sm font-semibold transition ${
-            vehicle === "bike"
-              ? "border-[#22c55e] bg-[#22c55e]/10 text-[#15803d]"
-              : "border-gray-200 bg-gray-50 text-gray-800 hover:bg-gray-100 dark:border-zinc-600 dark:bg-zinc-800 dark:text-foreground"
-          }`}
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-foreground">Book a Ride</h2>
+          <p className="mt-1 text-sm text-gray-600 dark:text-muted-foreground">
+            Fares in Nigerian Naira (₦). Pick addresses from suggestions for accurate pricing.
+          </p>
+        </div>
+        <Link
+          to="/book"
+          className="shrink-0 text-sm font-semibold text-[#16a34a] hover:underline"
         >
-          Bike
-        </button>
-        <button
-          type="button"
-          onClick={() => setVehicle("car")}
-          className={`flex-1 rounded-xl border px-4 py-3 text-sm font-semibold transition ${
-            vehicle === "car"
-              ? "border-[#22c55e] bg-[#22c55e]/10 text-[#15803d]"
-              : "border-gray-200 bg-gray-50 text-gray-800 hover:bg-gray-100 dark:border-zinc-600 dark:bg-zinc-800 dark:text-foreground"
-          }`}
-        >
-          Car
-        </button>
+          Open map booking
+        </Link>
       </div>
+
+      <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+        {VEHICLE_TIER_OPTIONS.map((tier) => (
+          <button
+            key={tier.id}
+            type="button"
+            onClick={() => setVehicleTier(tier.id)}
+            className={`rounded-xl border px-3 py-2.5 text-left text-sm font-semibold transition ${
+              vehicleTier === tier.id
+                ? "border-[#22c55e] bg-[#22c55e]/10 text-[#15803d]"
+                : "border-gray-200 bg-gray-50 text-gray-800 hover:bg-gray-100 dark:border-zinc-600 dark:bg-zinc-800 dark:text-foreground"
+            }`}
+          >
+            <span className="block">{tier.label}</span>
+            <span className="mt-0.5 block text-[11px] font-normal text-gray-500 dark:text-zinc-400">{tier.description}</span>
+          </button>
+        ))}
+      </div>
+
+      {estimatedFareNgn != null ? (
+        <p className="mt-3 text-sm text-gray-700 dark:text-zinc-200">
+          Estimated fare ({VEHICLE_TIER_OPTIONS.find((t) => t.id === vehicleTier)?.label ?? vehicleTier}):{" "}
+          <span className="font-bold text-emerald-700">{formatNgn(estimatedFareNgn)}</span>
+        </p>
+      ) : (
+        <p className="mt-3 text-xs text-gray-500 dark:text-zinc-400">Select pickup and destination to see an estimate.</p>
+      )}
+
+      {mapReady ? (
+        <div className="relative mt-4 overflow-hidden rounded-2xl border border-gray-200 dark:border-zinc-600">
+          <Suspense
+            fallback={<div className="h-[220px] w-full animate-pulse bg-gradient-to-br from-gray-100 to-gray-200 dark:from-zinc-800 dark:to-zinc-900" />}
+          >
+            <DeliveryTrackingMapPreview
+              pickupLocation={{ lat: pickupLat, lng: pickupLng }}
+              dropoffLocation={{ lat: dropoffLat, lng: dropoffLng }}
+              className="h-[220px] w-full"
+              enableDemoRiderMovement={false}
+            />
+          </Suspense>
+        </div>
+      ) : null}
 
       <div className="mt-4 space-y-3">
         <div>
@@ -181,7 +206,7 @@ export default function RideBookingForm() {
             <input
               value={pickupQuery}
               onChange={(e) => setPickupQuery(e.target.value)}
-              placeholder="Search area (min 3 characters)"
+              placeholder="Search area"
               className="min-w-0 flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-950 dark:text-foreground"
               autoComplete="off"
             />
@@ -193,14 +218,14 @@ export default function RideBookingForm() {
               GPS
             </button>
           </div>
-          {searchingPickup ? (
+          {pickupSearch.searching ? (
             <p className="mt-1 flex items-center gap-2 text-xs text-gray-500">
               <Loader2 className="h-3.5 w-3.5 animate-spin" /> Searching…
             </p>
           ) : null}
-          {pickupSuggestions.length > 0 ? (
+          {pickupSearch.suggestions.length > 0 ? (
             <ul className="mt-2 max-h-40 overflow-y-auto rounded-lg border border-gray-100 bg-gray-50 text-sm dark:border-zinc-700 dark:bg-zinc-800">
-              {pickupSuggestions.map((s) => (
+              {pickupSearch.suggestions.map((s) => (
                 <li key={`${s.lat}-${s.lng}-${s.display_name}`}>
                   <button
                     type="button"
@@ -209,7 +234,6 @@ export default function RideBookingForm() {
                       setPickupQuery(s.display_name);
                       setPickupLat(s.lat);
                       setPickupLng(s.lng);
-                      setPickupSuggestions([]);
                     }}
                   >
                     {s.display_name}
@@ -229,14 +253,14 @@ export default function RideBookingForm() {
             className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-950 dark:text-foreground"
             autoComplete="off"
           />
-          {searchingDropoff ? (
+          {dropoffSearch.searching ? (
             <p className="mt-1 flex items-center gap-2 text-xs text-gray-500">
               <Loader2 className="h-3.5 w-3.5 animate-spin" /> Searching…
             </p>
           ) : null}
-          {dropoffSuggestions.length > 0 ? (
+          {dropoffSearch.suggestions.length > 0 ? (
             <ul className="mt-2 max-h-40 overflow-y-auto rounded-lg border border-gray-100 bg-gray-50 text-sm dark:border-zinc-700 dark:bg-zinc-800">
-              {dropoffSuggestions.map((s) => (
+              {dropoffSearch.suggestions.map((s) => (
                 <li key={`${s.lat}-${s.lng}-${s.display_name}-d`}>
                   <button
                     type="button"
@@ -245,7 +269,6 @@ export default function RideBookingForm() {
                       setDropoffQuery(s.display_name);
                       setDropoffLat(s.lat);
                       setDropoffLng(s.lng);
-                      setDropoffSuggestions([]);
                     }}
                   >
                     {s.display_name}

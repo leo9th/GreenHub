@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { toast } from "sonner";
 import { useAuth } from "../../context/AuthContext";
 import { AuthSocialButtons } from "../../components/auth/AuthSocialButtons";
-import { authRedirectTo } from "../../utils/authSiteUrl";
+import { oauthCallbackRedirectTo } from "../../utils/authSiteUrl";
 import {
   getPasswordStrength,
   isValidEmailFormat,
@@ -63,7 +63,7 @@ export default function Register() {
   const [loading, setLoading] = useState(false);
   const [oauthBusy, setOauthBusy] = useState<"google" | "facebook" | null>(null);
 
-  const oauthRedirect = authRedirectTo("/login?next=/welcome");
+  const oauthRedirect = oauthCallbackRedirectTo("/welcome");
 
   useEffect(() => {
     if (user) {

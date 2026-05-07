@@ -48,12 +48,12 @@ export default function TopNav() {
   const mobileMenuRef = useRef<HTMLDivElement>(null);
   const bookGoRef = useRef<HTMLDivElement>(null);
 
-  /** Close menus on outside click only while one is open; defer attach so the opening click cannot fire close. */
+  /** Outside-click closes menus; listener attaches only when a menu is open, after 50ms so the opening click doesn’t close it. */
   useEffect(() => {
     const anyOpen = showDropdown || showNotifications || showBookGo || mobileMenuOpen;
-    if (!anyOpen) return;
+    if (!anyOpen) return undefined;
 
-    function handleDocumentClick(event: MouseEvent) {
+    function handleClickOutside(event: MouseEvent) {
       const target = event.target as Node | null;
       if (!target) return;
       if (dropdownRef.current?.contains(target)) return;
@@ -66,13 +66,14 @@ export default function TopNav() {
       setShowBookGo(false);
     }
 
-    const timerId = window.setTimeout(() => {
-      document.addEventListener("click", handleDocumentClick);
-    }, 0);
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    timeoutId = window.setTimeout(() => {
+      document.addEventListener("click", handleClickOutside);
+    }, 50);
 
     return () => {
-      window.clearTimeout(timerId);
-      document.removeEventListener("click", handleDocumentClick);
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+      document.removeEventListener("click", handleClickOutside);
     };
   }, [showDropdown, showNotifications, showBookGo, mobileMenuOpen]);
 
@@ -175,8 +176,8 @@ export default function TopNav() {
   const totalUnread = (notificationUnreadCount || 0) + (messageUnread || 0);
 
   return (
-    <div className={`${bgClass} sticky top-0 z-[90] transition-colors duration-200`}>
-      <div className="relative isolate h-16 px-2 sm:px-4 max-w-7xl mx-auto flex flex-nowrap items-center justify-between gap-1 md:gap-2 min-w-0 overflow-x-hidden overflow-y-visible">
+    <div className={`${bgClass} sticky top-0 z-[90] overflow-visible transition-colors duration-200`}>
+      <div className="relative isolate h-16 px-2 sm:px-4 max-w-7xl mx-auto flex flex-nowrap items-center justify-between gap-1 md:gap-2 min-w-0 overflow-visible">
         <div className="flex min-w-0 flex-1 items-center gap-2 md:gap-2">
           <Link
             to="/"
@@ -220,7 +221,7 @@ export default function TopNav() {
               )}
             </button>
             {mobileMenuOpen ? (
-              <div className="absolute left-0 top-full z-[60] mt-2 min-w-[12.5rem] rounded-lg border border-gray-200 bg-white py-2 shadow-xl dark:border-border dark:bg-card">
+              <div className="absolute left-0 top-full z-[100] mt-2 min-w-[12.5rem] rounded-lg border border-gray-200 bg-white py-2 shadow-xl dark:border-border dark:bg-card">
                 <Link
                   to="/products"
                   onClick={() => setMobileMenuOpen(false)}
@@ -321,7 +322,7 @@ export default function TopNav() {
             ) : null}
           </div>
         </div>
-        <div className="relative z-[1] flex shrink-0 items-center gap-1 md:gap-2 pointer-events-auto">
+        <div className="relative z-[50] flex shrink-0 items-center gap-1 md:gap-2 pointer-events-auto overflow-visible">
           <button
             type="button"
             onClick={() => toggleTheme()}
@@ -352,7 +353,7 @@ export default function TopNav() {
               <Bike className={navIconClass} />
             </button>
             {showBookGo ? (
-              <div className="absolute top-full right-0 z-50 mt-2 w-56 rounded-lg border border-gray-200 bg-white py-2 shadow-xl dark:border-border dark:bg-card">
+              <div className="absolute top-full right-0 z-[100] mt-2 w-56 rounded-lg border border-gray-200 bg-white py-2 shadow-xl dark:border-border dark:bg-card">
                 <Link
                   to="/home?service=ride"
                   onClick={() => setShowBookGo(false)}
@@ -417,7 +418,7 @@ export default function TopNav() {
               </button>
 
               {showNotifications && (
-                <div className="absolute top-full right-0 mt-2 sm:mt-3 w-[min(20rem,calc(100vw-1rem))] max-w-[calc(100vw-1rem)] sm:w-80 bg-white dark:bg-card shadow-xl border border-gray-100 dark:border-border rounded-lg overflow-hidden z-50">
+                <div className="absolute top-full right-0 z-[100] mt-2 sm:mt-3 w-[min(20rem,calc(100vw-1rem))] max-w-[calc(100vw-1rem)] sm:w-80 bg-white dark:bg-card shadow-xl border border-gray-100 dark:border-border rounded-lg overflow-hidden">
                   <div className="px-4 py-3 border-b border-gray-100 dark:border-border flex justify-between items-center bg-gray-50/50 dark:bg-muted/50">
                     <h3 className="font-semibold text-gray-800 dark:text-foreground">Notifications</h3>
                     <button
@@ -515,7 +516,7 @@ export default function TopNav() {
                 </button>
 
                 {showDropdown && (
-                  <div className="absolute top-full right-0 mt-3 w-48 bg-white dark:bg-card shadow-xl border border-gray-200 dark:border-border rounded-md py-2 z-50">
+                  <div className="absolute top-full right-0 z-[100] mt-3 w-48 bg-white dark:bg-card shadow-xl border border-gray-200 dark:border-border rounded-md py-2">
                     <div className="px-4 py-3 border-b border-gray-100 dark:border-border">
                       <div className="flex items-center gap-3">
                         <img src={avatarUrl} alt={fullName} className="w-10 h-10 rounded-full object-cover" />

@@ -340,7 +340,7 @@ function DeliveryTrackingMapEditor({
 
   return (
     <div className={`relative bg-gray-100 ${className}`}>
-      <div ref={containerRef} className="h-full min-h-[300px] w-full border-2 border-red-500" />
+      <div ref={containerRef} className="h-full min-h-[300px] w-full" />
       {interactive && interactionMode === "fixedPin" ? (
         <div className="pointer-events-none absolute inset-0 z-[500] flex items-center justify-center">
           <div className="flex flex-col items-center">
